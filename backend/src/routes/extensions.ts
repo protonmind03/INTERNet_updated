@@ -233,7 +233,7 @@ export function registerExtensionRoutes(
       const result = await pool.query(
         `DELETE FROM absences
          WHERE id = $1 AND student_id = $2 AND status = 'Pending'
-         RETURNING id`,
+         RETURNING id, TO_CHAR(date, 'YYYY-MM-DD') AS date`,
         [req.params.id, auth.id]
       );
       if (result.rows.length === 0) {
@@ -241,6 +241,22 @@ export function registerExtensionRoutes(
           message: "Only an absence that has not been reviewed can be withdrawn.",
         });
       }
+
+      // Without this the supervisor's queue would keep a request that is gone.
+      await quietly("ABSENCE WITHDRAWN NOTIFICATION ERROR", async () => {
+        const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+          `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+          [auth.id]
+        );
+        if (owner.rows[0]?.supervisor_id) {
+          await createNotification({
+            supervisorId: owner.rows[0].supervisor_id,
+            title: "Absence withdrawn",
+            message: `${owner.rows[0].name} withdrew the absence filed for ${result.rows[0].date}. No decision is needed.`,
+            type: "attendance",
+          });
+        }
+      });
       return res.json({ message: "Absence withdrawn." });
     } catch (error) {
       console.error("WITHDRAW ABSENCE ERROR:", error);
@@ -257,6 +273,7 @@ export function registerExtensionRoutes(
         FROM absences a
         INNER JOIN students s ON s.student_id = a.student_id
         WHERE s.supervisor_id = $1
+          AND s.is_active = TRUE
         ORDER BY CASE WHEN a.status = 'Pending' THEN 0 ELSE 1 END, a.date DESC
         LIMIT 500
         `,
@@ -301,8 +318,9 @@ export function registerExtensionRoutes(
           return res.status(404).json({ message: "Absence not found." });
         }
 
-        if (status !== "Excused" && status !== "Unexcused") {
-          return res.status(400).json({ message: "Status must be Excused or Unexcused." });
+        // "Pending" withdraws a decision made by mistake.
+        if (status !== "Excused" && status !== "Unexcused" && status !== "Pending") {
+          return res.status(400).json({ message: "Status must be Excused, Unexcused, or Pending." });
         }
         if (status === "Unexcused" && !notes) {
           return res.status(400).json({
@@ -313,28 +331,51 @@ export function registerExtensionRoutes(
         const result = await pool.query(
           `
           UPDATE absences a
-          SET status = $1::text, review_notes = $2::text,
-              reviewed_by = $4::text, reviewed_at = NOW()
+          SET status = $1::text,
+              review_notes = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $2::text END,
+              reviewed_by = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $4::text END,
+              reviewed_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END
           FROM students s
           WHERE a.id = $3
             AND s.student_id = a.student_id
             AND ($5::text = 'coordinator' OR s.supervisor_id = $4::text)
+            -- A decision applies to a pending absence; an undo to a decided one.
+            AND (($1::text = 'Pending') <> (a.status = 'Pending'))
           RETURNING ${ABSENCE_COLUMNS}
           `,
           [status, notes || null, req.params.id, auth.id, auth.role]
         );
         if (result.rows.length === 0) {
-          return res.status(404).json({ message: "Absence not found." });
+          const current = await pool.query(
+            `SELECT 1 FROM absences a JOIN students s ON s.student_id = a.student_id
+             WHERE a.id = $1 AND ($3::text = 'coordinator' OR s.supervisor_id = $2::text)`,
+            [req.params.id, auth.id, auth.role]
+          );
+          if (current.rows.length > 0) {
+            return res.status(409).json({
+              message:
+                status === "Pending"
+                  ? "This absence is already waiting for review."
+                  : "This absence was already reviewed.",
+            });
+          }
+          return res.status(404).json({
+            message: "Absence not found. The intern may have withdrawn it.",
+          });
         }
 
         const absence = result.rows[0];
         await quietly("ABSENCE REVIEW NOTIFICATION ERROR", () =>
           createNotification({
             studentId: absence.student_id,
-            title: `Absence ${status.toLowerCase()}`,
-            message: `Your absence on ${absence.date} was marked ${status.toLowerCase()}.${
-              notes ? ` Note: ${notes}` : ""
-            }`,
+            title:
+              status === "Pending" ? "Absence back under review" : `Absence ${status.toLowerCase()}`,
+            message:
+              status === "Pending"
+                ? `The decision on your absence for ${absence.date} was withdrawn. It is waiting to be reviewed again.`
+                : `Your absence on ${absence.date} was marked ${status.toLowerCase()}.${
+                    notes ? ` Note: ${notes}` : ""
+                  }`,
             type: "attendance",
           })
         );
@@ -498,6 +539,225 @@ export function registerExtensionRoutes(
 
   /*
   |--------------------------------------------------------------------------
+  | UNDO A REVIEW (supervisor)
+  |--------------------------------------------------------------------------
+  |
+  | A task or document decision made by mistake can be taken back for a
+  | short while, which returns the item to the review queue. After that the
+  | intern has probably acted on it, so the decision stands.
+  |
+  */
+
+  const UNDO_WINDOW = "15 minutes";
+
+  app.post("/api/tasks/:id/review/undo", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (!/^\d+$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Task not found." });
+      }
+      const result = await pool.query(
+        `
+        UPDATE tasks t
+        SET status = 'Submitted', review_notes = NULL, review_rating = NULL, reviewed_at = NULL
+        FROM students s
+        WHERE t.id = $1
+          AND s.student_id = t.student_id
+          AND s.supervisor_id = $2
+          AND t.status IN ('Reviewed', 'In Progress')
+          AND t.submitted_at IS NOT NULL
+          AND t.reviewed_at > NOW() - INTERVAL '${UNDO_WINDOW}'
+        RETURNING t.id, t.student_id, t.title
+        `,
+        [req.params.id, auth.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({
+          message: "This review can no longer be undone.",
+        });
+      }
+      const task = result.rows[0];
+      await quietly("TASK UNDO NOTIFICATION ERROR", () =>
+        createNotification({
+          studentId: String(task.student_id),
+          title: "Task back under review",
+          message: `The review of "${task.title}" was withdrawn. It is waiting to be reviewed again.`,
+          type: "task",
+        })
+      );
+      return res.json({ message: "Review withdrawn." });
+    } catch (error) {
+      console.error("UNDO TASK REVIEW ERROR:", error);
+      return res.status(500).json({ message: "Failed to undo the review." });
+    }
+  });
+
+  app.post("/api/documents/:id/review/undo", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (!/^\d+$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Document not found." });
+      }
+      const result = await pool.query(
+        `
+        UPDATE documents d
+        SET status = 'Pending', review_notes = NULL, reviewed_by_supervisor_id = NULL, reviewed_at = NULL
+        FROM students s
+        WHERE d.id = $1
+          AND s.student_id = d.student_id
+          AND s.supervisor_id = $2
+          AND d.status IN ('Approved', 'Rejected')
+          AND d.reviewed_at > NOW() - INTERVAL '${UNDO_WINDOW}'
+          -- Not once the intern has uploaded a replacement for it.
+          AND NOT EXISTS (
+            SELECT 1 FROM documents newer
+            WHERE newer.student_id = d.student_id
+              AND newer.doc_type = d.doc_type
+              AND newer.id > d.id
+          )
+        RETURNING d.id, d.student_id, d.doc_type
+        `,
+        [req.params.id, auth.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({
+          message: "This review can no longer be undone.",
+        });
+      }
+      const document = result.rows[0];
+      await quietly("DOCUMENT UNDO NOTIFICATION ERROR", () =>
+        createNotification({
+          studentId: String(document.student_id),
+          title: "Document back under review",
+          message: `The review of your ${document.doc_type} was withdrawn. It is waiting to be reviewed again.`,
+          type: "document",
+        })
+      );
+      return res.json({ message: "Review withdrawn." });
+    } catch (error) {
+      console.error("UNDO DOCUMENT REVIEW ERROR:", error);
+      return res.status(500).json({ message: "Failed to undo the review." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | AN INTERN'S SCHEDULE (supervisor)
+  |--------------------------------------------------------------------------
+  */
+
+  app.get(
+    "/api/supervisor/interns/:studentId/schedule",
+    requireRole("supervisor"),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        const assigned = await pool.query(
+          `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+          [req.params.studentId, auth.id]
+        );
+        if (assigned.rows.length === 0) {
+          return res.status(403).json({ message: "You can only view your own interns." });
+        }
+        const result = await pool.query(
+          `
+          SELECT id, day, start_time, end_time, focus, hours
+          FROM ojt_schedule
+          WHERE student_id = $1 AND is_active = TRUE
+          ORDER BY CASE day
+            WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
+            WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
+            WHEN 'Sunday' THEN 7 ELSE 8 END
+          `,
+          [req.params.studentId]
+        );
+        return res.json({ schedule: result.rows });
+      } catch (error) {
+        console.error("GET INTERN SCHEDULE ERROR:", error);
+        return res.status(500).json({ message: "Failed to load the schedule." });
+      }
+    }
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | EDIT / REMOVE AN EVALUATION (its author only)
+  |--------------------------------------------------------------------------
+  */
+
+  const evaluatorTypeOf = (role: Role) => (role === "coordinator" ? "teacher" : role);
+
+  app.put(
+    "/api/evaluations/:id",
+    requireRole(["supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        const rating = Number(req.body?.rating);
+        const category = text(req.body?.category);
+        const comments = text(req.body?.comments);
+        if (!/^\d+$/.test(String(req.params.id))) {
+          return res.status(404).json({ message: "Evaluation not found." });
+        }
+        if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+          return res.status(400).json({ message: "Rating must be between 1 and 5." });
+        }
+        const result = await pool.query(
+          `
+          UPDATE evaluations
+          SET rating = $1, comments = $2, category = COALESCE(NULLIF($3, ''), category)
+          WHERE id = $4 AND evaluator_id = $5 AND evaluator_type = $6
+          RETURNING id, student_id, category
+          `,
+          [rating, comments || null, category, req.params.id, auth.id, evaluatorTypeOf(auth.role)]
+        );
+        if (result.rows.length === 0) {
+          return res.status(404).json({ message: "You can only change an evaluation you wrote." });
+        }
+        await quietly("EVALUATION UPDATE NOTIFICATION ERROR", () =>
+          createNotification({
+            studentId: String(result.rows[0].student_id),
+            title: "Evaluation updated",
+            message: `Your ${result.rows[0].category} evaluation was updated.`,
+            type: "evaluation",
+          })
+        );
+        return res.json({ message: "Evaluation updated." });
+      } catch (error) {
+        console.error("UPDATE EVALUATION ERROR:", error);
+        return res.status(500).json({ message: "Failed to update the evaluation." });
+      }
+    }
+  );
+
+  app.delete(
+    "/api/evaluations/:id",
+    requireRole(["supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        if (!/^\d+$/.test(String(req.params.id))) {
+          return res.status(404).json({ message: "Evaluation not found." });
+        }
+        const result = await pool.query(
+          `DELETE FROM evaluations
+           WHERE id = $1 AND evaluator_id = $2 AND evaluator_type = $3
+           RETURNING id`,
+          [req.params.id, auth.id, evaluatorTypeOf(auth.role)]
+        );
+        if (result.rows.length === 0) {
+          return res.status(404).json({ message: "You can only remove an evaluation you wrote." });
+        }
+        return res.json({ message: "Evaluation removed." });
+      } catch (error) {
+        console.error("DELETE EVALUATION ERROR:", error);
+        return res.status(500).json({ message: "Failed to remove the evaluation." });
+      }
+    }
+  );
+
+  /*
+  |--------------------------------------------------------------------------
   | BULK STUDENT IMPORT (coordinator)
   |--------------------------------------------------------------------------
   |
@@ -522,8 +782,9 @@ export function registerExtensionRoutes(
     }
 
     const coordinatorId = (req as AuthedRequest).auth?.id || null;
+    // Only an active supervisor can be given interns.
     const supervisors = await pool.query<{ supervisor_id: string; name: string }>(
-      `SELECT supervisor_id, name FROM supervisors`
+      `SELECT supervisor_id, name FROM supervisors WHERE is_active = TRUE`
     );
     const knownSupervisors = new Map(
       supervisors.rows.map((row) => [row.supervisor_id, row.name])
@@ -558,12 +819,12 @@ export function registerExtensionRoutes(
         fail("The email address is not valid.");
         continue;
       }
-      if (!Number.isFinite(requiredHours) || requiredHours <= 0) {
-        fail("Required hours must be a number greater than zero.");
+      if (!Number.isFinite(requiredHours) || requiredHours <= 0 || requiredHours > 5000) {
+        fail("Required hours must be a number between 1 and 5000.");
         continue;
       }
       if (supervisorId && !knownSupervisors.has(supervisorId)) {
-        fail(`No supervisor has the ID "${supervisorId}".`);
+        fail(`No active supervisor has the ID "${supervisorId}".`);
         continue;
       }
 
@@ -648,7 +909,7 @@ export function registerExtensionRoutes(
   app.get("/api/coordinator/announcements", requireCoordinator, async (_req, res) => {
     try {
       const result = await pool.query(
-        `SELECT id, title, message, audience, recipients, created_at
+        `SELECT id, title, message, audience, company, recipients, created_at
          FROM announcements ORDER BY created_at DESC LIMIT 100`
       );
       return res.json({ announcements: result.rows });
@@ -674,16 +935,23 @@ export function registerExtensionRoutes(
         return res.status(400).json({ message: "Choose who the announcement is for." });
       }
 
+      // An optional company narrows the audience to that host company.
+      const company = text(req.body?.company) || null;
+
       const [students, supervisors] = await Promise.all([
         audience === "supervisors"
           ? Promise.resolve({ rows: [] as { student_id: string }[] })
           : pool.query<{ student_id: string }>(
-              `SELECT student_id FROM students WHERE is_active = TRUE`
+              `SELECT student_id FROM students
+               WHERE is_active = TRUE AND ($1::text IS NULL OR company = $1::text)`,
+              [company]
             ),
         audience === "students"
           ? Promise.resolve({ rows: [] as { supervisor_id: string }[] })
           : pool.query<{ supervisor_id: string }>(
-              `SELECT supervisor_id FROM supervisors WHERE is_active = TRUE`
+              `SELECT supervisor_id FROM supervisors
+               WHERE is_active = TRUE AND ($1::text IS NULL OR company = $1::text)`,
+              [company]
             ),
       ]);
       const recipients = students.rows.length + supervisors.rows.length;
@@ -695,11 +963,11 @@ export function registerExtensionRoutes(
 
       const saved = await pool.query(
         `
-        INSERT INTO announcements (title, message, audience, created_by, recipients)
-        VALUES ($1, $2, $3, $4, $5)
-        RETURNING id, title, message, audience, recipients, created_at
+        INSERT INTO announcements (title, message, audience, created_by, recipients, company)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, title, message, audience, company, recipients, created_at
         `,
-        [title, message, audience, (req as AuthedRequest).auth?.id || null, recipients]
+        [title, message, audience, (req as AuthedRequest).auth?.id || null, recipients, company]
       );
 
       await quietly("ANNOUNCEMENT DELIVERY ERROR", () =>
@@ -732,6 +1000,251 @@ export function registerExtensionRoutes(
       return res.status(500).json({ message: "Failed to send the announcement." });
     }
   });
+
+  app.get("/api/coordinator/companies", requireCoordinator, async (_req, res) => {
+    try {
+      const result = await pool.query<{ company: string }>(
+        `
+        SELECT company FROM students WHERE is_active = TRUE AND company IS NOT NULL AND company <> ''
+        UNION
+        SELECT company FROM supervisors WHERE is_active = TRUE AND company IS NOT NULL AND company <> ''
+        ORDER BY company
+        `
+      );
+      return res.json({ companies: result.rows.map((row) => row.company) });
+    } catch (error) {
+      console.error("GET COMPANIES ERROR:", error);
+      return res.status(500).json({ message: "Failed to load companies." });
+    }
+  });
+
+  // Withdrawing removes the announcement and the notification each person got.
+  app.delete("/api/coordinator/announcements/:id", requireCoordinator, async (req, res) => {
+    try {
+      if (!/^\d+$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Announcement not found." });
+      }
+      const removed = await pool.query<{ title: string; message: string }>(
+        `DELETE FROM announcements WHERE id = $1 RETURNING title, message`,
+        [req.params.id]
+      );
+      if (removed.rows.length === 0) {
+        return res.status(404).json({ message: "Announcement not found." });
+      }
+      const notices = await pool.query(
+        `DELETE FROM notifications
+         WHERE type = 'announcement' AND title = $1 AND message = $2`,
+        [`Announcement: ${removed.rows[0].title}`, removed.rows[0].message]
+      );
+      return res.json({
+        message: "Announcement withdrawn.",
+        removedNotifications: notices.rowCount || 0,
+      });
+    } catch (error) {
+      console.error("WITHDRAW ANNOUNCEMENT ERROR:", error);
+      return res.status(500).json({ message: "Failed to withdraw the announcement." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | SETTLE A REJECTED ATTENDANCE LOG (coordinator)
+  |--------------------------------------------------------------------------
+  |
+  | A rejection that was correct needs no further action. Settling it keeps
+  | the log rejected and takes it off the list of flagged logs.
+  |
+  */
+
+  app.post(
+    "/api/coordinator/attendance/:id/acknowledge",
+    requireCoordinator,
+    async (req, res) => {
+      try {
+        if (!/^\d+$/.test(String(req.params.id))) {
+          return res.status(404).json({ message: "Attendance record not found." });
+        }
+        const result = await pool.query(
+          `UPDATE attendance SET flag_acknowledged_at = NOW()
+           WHERE id = $1 AND status = 'Rejected' AND flag_acknowledged_at IS NULL
+           RETURNING id`,
+          [req.params.id]
+        );
+        if (result.rows.length === 0) {
+          return res.status(409).json({
+            message: "Only a rejected log that is still flagged can be settled.",
+          });
+        }
+        return res.json({ message: "Rejection kept. The log is no longer flagged." });
+      } catch (error) {
+        console.error("ACKNOWLEDGE REJECTION ERROR:", error);
+        return res.status(500).json({ message: "Failed to settle the log." });
+      }
+    }
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | MOVE ALL OF A SUPERVISOR'S INTERNS (coordinator)
+  |--------------------------------------------------------------------------
+  */
+
+  app.post(
+    "/api/coordinator/supervisors/:supervisorId/reassign",
+    requireCoordinator,
+    async (req, res) => {
+      try {
+        const from = String(req.params.supervisorId);
+        const to = text(req.body?.to);
+        if (!to || to === from) {
+          return res.status(400).json({ message: "Choose a different supervisor to move them to." });
+        }
+        const target = await pool.query<{ name: string; company: string | null; is_active: boolean }>(
+          `SELECT name, company, is_active FROM supervisors WHERE supervisor_id = $1`,
+          [to]
+        );
+        if (target.rows.length === 0 || !target.rows[0].is_active) {
+          return res.status(400).json({ message: "Choose an active supervisor to move them to." });
+        }
+        const moved = await pool.query<{ student_id: string; name: string }>(
+          `UPDATE students SET supervisor_id = $1
+           WHERE supervisor_id = $2 AND is_active = TRUE
+           RETURNING student_id, name`,
+          [to, from]
+        );
+        if (moved.rows.length === 0) {
+          return res.status(409).json({ message: "That supervisor has no active interns to move." });
+        }
+
+        const names = moved.rows.map((row) => row.name).join(", ");
+        const count = moved.rows.length;
+        await quietly("REASSIGN NOTIFICATION ERROR", () =>
+          Promise.all([
+            createNotification({
+              supervisorId: to,
+              title: count === 1 ? "New intern assigned" : "New interns assigned",
+              message: `${names} ${count === 1 ? "has" : "have"} been assigned to you by the OJT coordinator.`,
+              type: "info",
+            }),
+            createNotification({
+              supervisorId: from,
+              title: count === 1 ? "Intern reassigned" : "Interns reassigned",
+              message: `${names} ${count === 1 ? "is" : "are"} no longer assigned to you.`,
+              type: "info",
+            }),
+            ...moved.rows.map((row) =>
+              createNotification({
+                studentId: String(row.student_id),
+                title: "Supervisor assigned",
+                message: `${target.rows[0].name}${
+                  target.rows[0].company ? ` of ${target.rows[0].company}` : ""
+                } is now your OJT supervisor.`,
+                type: "info",
+              })
+            ),
+          ])
+        );
+
+        return res.json({
+          message: `${count} ${count === 1 ? "intern" : "interns"} moved to ${target.rows[0].name}.`,
+          moved: count,
+        });
+      } catch (error) {
+        console.error("REASSIGN INTERNS ERROR:", error);
+        return res.status(500).json({ message: "Failed to move the interns." });
+      }
+    }
+  );
+
+  /*
+  |--------------------------------------------------------------------------
+  | ONE STUDENT'S FULL RECORD (coordinator)
+  |--------------------------------------------------------------------------
+  */
+
+  app.get(
+    "/api/coordinator/students/:studentId/overview",
+    requireCoordinator,
+    async (req, res) => {
+      try {
+        const id = String(req.params.studentId);
+        const student = await pool.query(
+          `
+          SELECT s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
+                 s.is_active, s.completed_at, s.supervisor_id,
+                 sup.name AS supervisor_name,
+                 COALESCE(sup.is_active, FALSE) AS supervisor_active,
+                 COALESCE((
+                   SELECT SUM(a.hours) FROM attendance a
+                   WHERE a.student_id = s.student_id AND a.status = 'Verified'
+                 ), 0) AS hours_rendered
+          FROM students s
+          LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+          WHERE s.student_id = $1
+          `,
+          [id]
+        );
+        if (student.rows.length === 0) {
+          return res.status(404).json({ message: "Student not found." });
+        }
+
+        const [attendance, tasks, documents, evaluations, absences, schedule] = await Promise.all([
+          pool.query(
+            `SELECT id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
+                    time_out, hours, note, status, review_notes, correction_note
+             FROM attendance WHERE student_id = $1
+             ORDER BY date DESC, id DESC LIMIT 1000`,
+            [id]
+          ),
+          pool.query(
+            `SELECT id, title, description, priority, status, due_date, assigned_by,
+                    submitted_at, review_notes, review_rating, reviewed_at
+             FROM tasks WHERE student_id = $1 ORDER BY due_date DESC NULLS LAST, id DESC`,
+            [id]
+          ),
+          pool.query(
+            `SELECT id, doc_type, original_filename, size_bytes, status, review_notes,
+                    uploaded_at, reviewed_at
+             FROM documents WHERE student_id = $1 ORDER BY uploaded_at DESC, id DESC`,
+            [id]
+          ),
+          pool.query(
+            `SELECT id, evaluator_type, evaluator_name, category, rating, comments, created_at
+             FROM evaluations WHERE student_id = $1 ORDER BY created_at DESC`,
+            [id]
+          ),
+          pool.query(
+            `SELECT ${ABSENCE_COLUMNS} FROM absences a WHERE a.student_id = $1 ORDER BY a.date DESC`,
+            [id]
+          ),
+          pool.query(
+            `SELECT id, day, TO_CHAR(start_time, 'HH24:MI') AS start_time,
+                    TO_CHAR(end_time, 'HH24:MI') AS end_time, focus, hours
+             FROM ojt_schedule WHERE student_id = $1 AND is_active = TRUE
+             ORDER BY CASE day
+               WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
+               WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
+               WHEN 'Sunday' THEN 7 ELSE 8 END`,
+            [id]
+          ),
+        ]);
+
+        const row = student.rows[0];
+        return res.json({
+          student: { ...row, hours_rendered: Number(row.hours_rendered) },
+          attendance: attendance.rows,
+          tasks: tasks.rows,
+          documents: documents.rows,
+          evaluations: evaluations.rows,
+          absences: absences.rows,
+          schedule: schedule.rows,
+        });
+      } catch (error) {
+        console.error("STUDENT OVERVIEW ERROR:", error);
+        return res.status(500).json({ message: "Failed to load the student's record." });
+      }
+    }
+  );
 
   /*
   |--------------------------------------------------------------------------

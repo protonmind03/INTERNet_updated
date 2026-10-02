@@ -2703,10 +2703,12 @@ app.get(
             TRIM(
               $1::text
             )
+            AND s.is_active = TRUE
 
           ORDER BY
             a.date DESC,
             a.id DESC
+          LIMIT 3000
           `,
           [supervisor.supervisor_id]
         );
@@ -2906,6 +2908,14 @@ app.patch(
         reason,
       } = req.body;
 
+      // The status the reviewer was looking at. When it is sent, the decision
+      // is saved only if the log is still in that state, so two reviewers
+      // cannot silently overwrite each other.
+      const expectedStatus =
+        typeof req.body?.expected_status === "string" && req.body.expected_status.trim() !== ""
+          ? req.body.expected_status.trim()
+          : null;
+
       // "Pending" reopens a log: it undoes a decision made by mistake and
       // puts the log back in the review queue.
       if (
@@ -2963,16 +2973,20 @@ app.patch(
             review_notes = $2::text,
             verified_by = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $5::text END,
             verifier_role = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $4::text END,
-            verified_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END
+            verified_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END,
+            flag_acknowledged_at = NULL
 
           FROM students s
           WHERE a.id = $3
           AND s.student_id = a.student_id
           AND ($4::text = 'coordinator' OR s.supervisor_id = $5::text)
+          AND ($6::text IS NULL OR a.status = $6::text)
 
           RETURNING
             a.id,
             a.student_id,
+            s.name AS student_name,
+            s.supervisor_id,
             TO_CHAR(
               a.date,
               'YYYY-MM-DD'
@@ -2996,15 +3010,45 @@ app.patch(
             id,
             auth?.role,
             auth?.id,
+            expectedStatus,
           ]
         );
 
       if (
         result.rows.length === 0
       ) {
+        const current = await pool.query<{ status: string }>(
+          `
+          SELECT a.status FROM attendance a
+          JOIN students s ON s.student_id = a.student_id
+          WHERE a.id = $1 AND ($2::text = 'coordinator' OR s.supervisor_id = $3::text)
+          `,
+          [id, auth?.role, auth?.id]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message: `This log changed while you had it open: it is now ${current.rows[0].status.toLowerCase()}. Check it again before deciding.`,
+            currentStatus: current.rows[0].status,
+          });
+        }
         return res.status(404).json({
           message:
             "Attendance record not found.",
+        });
+      }
+
+      // The supervisor is the usual reviewer, so a decision the coordinator
+      // makes on one of their interns' logs should not come as a surprise.
+      if (auth?.role === "coordinator" && result.rows[0].supervisor_id) {
+        const outcome =
+          status === "Pending" ? "returned to pending" : status.toLowerCase();
+        await createNotification({
+          supervisorId: String(result.rows[0].supervisor_id),
+          title: "Coordinator decided an attendance log",
+          message: `${result.rows[0].student_name}'s attendance for ${result.rows[0].date} was ${outcome} by the OJT coordinator.${
+            cleanReason ? ` Reason: ${cleanReason}` : ""
+          }`,
+          type: "attendance",
         });
       }
 
@@ -4278,15 +4322,64 @@ async function notifySupervisorAssignment(
   }
 }
 
-async function supervisorIdIsValid(supervisorId: unknown): Promise<boolean> {
+/**
+ * Why a student cannot be given this supervisor, or null when they can.
+ * A deactivated supervisor is refused, except when they are already the
+ * student's supervisor (so an unrelated edit does not fail).
+ */
+async function supervisorProblem(
+  supervisorId: unknown,
+  currentStudentId?: string
+): Promise<string | null> {
   if (supervisorId === undefined || supervisorId === null || supervisorId === "") {
-    return true;
+    return null;
   }
-  const result = await pool.query(
-    `SELECT 1 FROM supervisors WHERE supervisor_id = $1`,
+  const result = await pool.query<{ is_active: boolean }>(
+    `SELECT is_active FROM supervisors WHERE supervisor_id = $1`,
     [String(supervisorId)]
   );
-  return result.rows.length > 0;
+  if (result.rows.length === 0) return "Selected supervisor does not exist.";
+  if (result.rows[0].is_active) return null;
+  if (currentStudentId) {
+    const current = await pool.query(
+      `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+      [currentStudentId, String(supervisorId)]
+    );
+    if (current.rows.length > 0) return null;
+  }
+  return "That supervisor's account is deactivated. Choose an active supervisor.";
+}
+
+/** Why a required-hours value is not acceptable, or null when it is. */
+function requiredHoursProblem(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const hours = Number(value);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 5000) {
+    return "Required hours must be a number between 1 and 5000.";
+  }
+  return null;
+}
+
+/** Sends the same notification to every active student and supervisor. */
+async function notifyEveryone(notification: {
+  title: string;
+  message: string;
+  type?: string;
+}): Promise<void> {
+  const [students, supervisors] = await Promise.all([
+    pool.query<{ student_id: string }>(`SELECT student_id FROM students WHERE is_active = TRUE`),
+    pool.query<{ supervisor_id: string }>(
+      `SELECT supervisor_id FROM supervisors WHERE is_active = TRUE`
+    ),
+  ]);
+  await Promise.all([
+    ...students.rows.map((row) =>
+      createNotification({ studentId: String(row.student_id), ...notification })
+    ),
+    ...supervisors.rows.map((row) =>
+      createNotification({ supervisorId: String(row.supervisor_id), ...notification })
+    ),
+  ]);
 }
 
 app.post(
@@ -4316,8 +4409,13 @@ app.post(
         return res.status(400).json({ message: `Starting password: ${policyError}` });
       }
 
-      if (!(await supervisorIdIsValid(supervisor_id))) {
-        return res.status(400).json({ message: "Selected supervisor does not exist." });
+      const supervisorIssue = await supervisorProblem(supervisor_id);
+      if (supervisorIssue) {
+        return res.status(400).json({ message: supervisorIssue });
+      }
+      const hoursIssue = requiredHoursProblem(required_hours);
+      if (hoursIssue) {
+        return res.status(400).json({ message: hoursIssue });
       }
 
       const hashed = await hashPassword(password);
@@ -4391,22 +4489,32 @@ app.put(
         required_hours,
       } = req.body;
 
-      if (!(await supervisorIdIsValid(supervisor_id))) {
-        return res.status(400).json({ message: "Selected supervisor does not exist." });
+      const supervisorIssue = await supervisorProblem(supervisor_id, String(studentId));
+      if (supervisorIssue) {
+        return res.status(400).json({ message: supervisorIssue });
+      }
+      const hoursIssue = requiredHoursProblem(required_hours);
+      if (hoursIssue) {
+        return res.status(400).json({ message: hoursIssue });
       }
 
-      const before = await pool.query<{ supervisor_id: string | null }>(
-        `SELECT supervisor_id FROM students WHERE student_id = $1`,
+      const before = await pool.query<{ supervisor_id: string | null; required_hours: number }>(
+        `SELECT supervisor_id, required_hours FROM students WHERE student_id = $1`,
         [studentId]
       );
+
+      // A field named in the request is saved as sent, so an optional field
+      // can be cleared; a field left out of the request keeps its value.
+      const sent = (field: string) =>
+        Object.prototype.hasOwnProperty.call(req.body ?? {}, field);
 
       const result = await pool.query(
         `
         UPDATE students SET
           name = COALESCE($1, name),
           email = COALESCE($2, email),
-          program = COALESCE($3, program),
-          company = COALESCE($4, company),
+          program = CASE WHEN $9::boolean THEN $3::text ELSE program END,
+          company = CASE WHEN $10::boolean THEN $4::text ELSE company END,
           supervisor_id = CASE WHEN $8::boolean THEN $5 ELSE supervisor_id END,
           required_hours = COALESCE($6, required_hours)
         WHERE student_id = $7
@@ -4418,16 +4526,29 @@ app.put(
           program || null,
           company || null,
           supervisor_id || null,
-          required_hours || null,
+          required_hours ? Math.round(Number(required_hours)) : null,
           studentId,
           // Only reassign (or unassign) when the request names a supervisor
           // field; an edit that omits it keeps the current supervisor.
-          Object.prototype.hasOwnProperty.call(req.body ?? {}, "supervisor_id"),
+          sent("supervisor_id"),
+          sent("program"),
+          sent("company"),
         ]
       );
 
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Student not found." });
+      }
+
+      const previousHours = Number(before.rows[0]?.required_hours);
+      const currentHours = Number(result.rows[0].required_hours);
+      if (previousHours !== currentHours) {
+        await createNotification({
+          studentId: String(result.rows[0].student_id),
+          title: "Required hours changed",
+          message: `Your required OJT hours were changed from ${previousHours} to ${currentHours} by the OJT coordinator.`,
+          type: "info",
+        }).catch((error) => console.error("REQUIRED HOURS NOTIFICATION ERROR:", error));
       }
 
       const previousSupervisor = before.rows[0]?.supervisor_id ?? null;
@@ -4449,6 +4570,11 @@ app.put(
         student: result.rows[0],
       });
     } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({
+          message: "That email address is already used by another student.",
+        });
+      }
       console.error("UPDATE STUDENT ERROR:", error);
       return res.status(500).json({
         message: "Failed to update student.",
@@ -4470,13 +4596,32 @@ app.patch(
         `
         UPDATE students SET is_active = $1
         WHERE student_id = $2
-        RETURNING student_id, name, is_active
+        RETURNING student_id, name, is_active, supervisor_id
         `,
         [Boolean(is_active), studentId]
       );
 
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Student not found." });
+      }
+
+      if (result.rows[0].supervisor_id) {
+        await createNotification({
+          supervisorId: String(result.rows[0].supervisor_id),
+          title: is_active ? "Intern account reactivated" : "Intern account deactivated",
+          message: is_active
+            ? `${result.rows[0].name}'s account is active again. Their records are back in your lists.`
+            : `${result.rows[0].name}'s account was deactivated by the OJT coordinator. Their records no longer appear in your lists.`,
+          type: "info",
+        }).catch((error) => console.error("STUDENT STATUS NOTIFICATION ERROR:", error));
+      }
+      if (is_active) {
+        await createNotification({
+          studentId: String(result.rows[0].student_id),
+          title: "Account reactivated",
+          message: "Your OJT account is active again. Your records were kept while it was off.",
+          type: "info",
+        }).catch((error) => console.error("STUDENT STATUS NOTIFICATION ERROR:", error));
       }
 
       return res.json({
@@ -4513,6 +4658,7 @@ app.get(
           sup.department, sup.is_active,
           (SELECT COUNT(*) FROM students s
             WHERE TRIM(s.supervisor_id::text) = TRIM(sup.supervisor_id::text)
+              AND s.is_active = TRUE
           ) AS intern_count
         FROM supervisors sup
         WHERE (sup.name ILIKE $1 OR sup.email ILIKE $1 OR sup.company ILIKE $1 OR sup.department ILIKE $1)
@@ -4694,14 +4840,17 @@ app.put(
     try {
       const { supervisorId } = req.params;
       const { name, email, company, department } = req.body;
+      // A field named in the request is saved as sent, so it can be cleared.
+      const sent = (field: string) =>
+        Object.prototype.hasOwnProperty.call(req.body ?? {}, field);
 
       const result = await pool.query(
         `
         UPDATE supervisors SET
           name = COALESCE($1, name),
           email = COALESCE($2, email),
-          company = COALESCE($3, company),
-          department = COALESCE($4, department)
+          company = CASE WHEN $6::boolean THEN $3::text ELSE company END,
+          department = CASE WHEN $7::boolean THEN $4::text ELSE department END
         WHERE supervisor_id = $5
         RETURNING id, supervisor_id, email, name, company, department, is_active
         `,
@@ -4711,6 +4860,8 @@ app.put(
           company || null,
           department || null,
           supervisorId,
+          sent("company"),
+          sent("department"),
         ]
       );
 
@@ -4723,6 +4874,11 @@ app.put(
         supervisor: result.rows[0],
       });
     } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({
+          message: "That email address is already used by another supervisor.",
+        });
+      }
       console.error("UPDATE SUPERVISOR ERROR:", error);
       return res.status(500).json({
         message: "Failed to update supervisor.",
@@ -4739,6 +4895,22 @@ app.patch(
     try {
       const { supervisorId } = req.params;
       const { is_active } = req.body;
+
+      if (!is_active) {
+        const assigned = await pool.query<{ count: string }>(
+          `SELECT COUNT(*) AS count FROM students
+           WHERE supervisor_id = $1 AND is_active = TRUE`,
+          [supervisorId]
+        );
+        const interns = Number(assigned.rows[0]?.count || 0);
+        if (interns > 0) {
+          return res.status(409).json({
+            message: `This supervisor still has ${interns} active ${
+              interns === 1 ? "intern" : "interns"
+            }. Assign ${interns === 1 ? "that intern" : "them"} to another supervisor first, so their work is not left without a reviewer.`,
+          });
+        }
+      }
 
       const result = await pool.query(
         `
@@ -4788,6 +4960,11 @@ app.patch(
 
 const STALE_PENDING_DAYS = 2;
 
+// A rejected log stays flagged until the coordinator settles it.
+function openRejectionCondition(alias: string): string {
+  return `(${alias}.status = 'Rejected' AND ${alias}.flag_acknowledged_at IS NULL)`;
+}
+
 function missingTimeoutCondition(alias: string): string {
   return `(${alias}.time_out IS NULL AND ${alias}.date < CURRENT_DATE)`;
 }
@@ -4797,7 +4974,7 @@ function stalePendingCondition(alias: string): string {
 }
 
 function flaggedLogCondition(alias: string): string {
-  return `(${alias}.status = 'Rejected' OR ${missingTimeoutCondition(alias)} OR ${stalePendingCondition(alias)})`;
+  return `(${openRejectionCondition(alias)} OR ${missingTimeoutCondition(alias)} OR ${stalePendingCondition(alias)})`;
 }
 
 app.get(
@@ -4829,7 +5006,7 @@ app.get(
           a.review_notes,
           a.correction_note,
           ARRAY_REMOVE(ARRAY[
-            CASE WHEN a.status = 'Rejected' THEN 'Rejected by supervisor' END,
+            CASE WHEN ${openRejectionCondition("a")} THEN 'Rejected by supervisor' END,
             CASE WHEN ${missingTimeoutCondition("a")} THEN 'No time-out recorded' END,
             CASE WHEN ${stalePendingCondition("a")}
               THEN 'Unverified for more than ${STALE_PENDING_DAYS} days' END
@@ -4874,10 +5051,14 @@ app.get(
           `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM supervisors`
         ),
         pool.query(
-          `SELECT COUNT(*) AS count FROM attendance WHERE status = 'Pending'`
+          `SELECT COUNT(*) AS count FROM attendance a
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           WHERE a.status = 'Pending'`
         ),
         pool.query(
-          `SELECT COUNT(*) AS count FROM attendance a WHERE ${flaggedLogCondition("a")}`
+          `SELECT COUNT(*) AS count FROM attendance a
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           WHERE ${flaggedLogCondition("a")}`
         ),
         pool.query(
           `SELECT COUNT(*) AS count FROM complaints WHERE status = 'Pending'`
@@ -4888,7 +5069,8 @@ app.get(
             COUNT(*) FILTER (WHERE status = 'Submitted') AS awaiting_review,
             COUNT(*) FILTER (WHERE status = 'Reviewed') AS completed,
             COUNT(*) AS total
-          FROM tasks
+          FROM tasks t
+          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE
           `
         ),
         pool.query(
@@ -4962,7 +5144,7 @@ app.get(
           SELECT
             COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours_rendered,
             COUNT(*) FILTER (WHERE a.status = 'Pending') AS pending_logs,
-            COUNT(*) FILTER (WHERE a.status = 'Rejected') AS rejected_logs,
+            COUNT(*) FILTER (WHERE ${openRejectionCondition("a")}) AS rejected_logs,
             COUNT(*) FILTER (WHERE ${missingTimeoutCondition("a")}) AS missing_timeout_logs,
             COUNT(*) FILTER (WHERE ${stalePendingCondition("a")}) AS stale_pending_logs,
             COUNT(*) FILTER (WHERE ${flaggedLogCondition("a")}) AS flagged_logs,
@@ -5044,7 +5226,7 @@ app.get(
           c.id, c.student_id, c.filed_by_supervisor_id,
           COALESCE(s.name, sup.name) AS filed_by_name,
           CASE WHEN c.filed_by_supervisor_id IS NOT NULL THEN 'supervisor' ELSE 'student' END AS filed_by_role,
-          c.report_type, c.reported_student_name, c.reported_program_section,
+          c.report_type, c.reported_student_name, c.reported_student_id, c.reported_program_section,
           c.supervisor_name, c.company_name, c.category, c.description,
           c.evidence_url, c.status, c.resolved_by, c.resolution_notes,
           c.resolved_at, c.created_at, c.updated_at
@@ -5091,6 +5273,29 @@ app.patch(
           message:
             "Status must be 'In Review', 'Resolved', or 'Dismissed'.",
         });
+      }
+
+      // Re-saving a closed complaint replaces its note; keep the old one in
+      // the conversation so the record of what was decided is not lost.
+      const earlier = await pool.query<{ status: string; resolution_notes: string | null }>(
+        `SELECT status, resolution_notes FROM complaints WHERE id = $1`,
+        [id]
+      );
+      const previousNote = earlier.rows[0]?.resolution_notes?.trim();
+      if (
+        previousNote &&
+        ["Resolved", "Dismissed"].includes(earlier.rows[0].status) &&
+        typeof resolution_notes === "string" &&
+        resolution_notes.trim() &&
+        resolution_notes.trim() !== previousNote
+      ) {
+        await pool
+          .query(
+            `INSERT INTO complaint_messages (complaint_id, author_role, author_id, author_name, message)
+             VALUES ($1, 'coordinator', $2, 'OJT Coordinator', $3)`,
+            [id, req.auth?.id || "coordinator", `Earlier note (${earlier.rows[0].status.toLowerCase()}): ${previousNote}`]
+          )
+          .catch((error) => console.error("KEEP RESOLUTION NOTE ERROR:", error));
       }
 
       const result = await pool.query(
@@ -5382,6 +5587,7 @@ app.get(
         INNER JOIN students s
           ON TRIM(s.student_id::text) = TRIM(t.student_id::text)
         WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+          AND s.is_active = TRUE
         ORDER BY
           CASE t.status WHEN 'Submitted' THEN 0 ELSE 1 END,
           t.due_date ASC
@@ -5455,9 +5661,15 @@ app.post(
       const task = result.rows[0];
       taskSaved = true;
 
-      if (task.assigned_by_id) {
+      // The intern may have been reassigned since the task was given.
+      const reviewer = await pool.query<{ supervisor_id: string | null }>(
+        `SELECT supervisor_id FROM students WHERE student_id = $1`,
+        [auth.id]
+      );
+      const reviewerId = reviewer.rows[0]?.supervisor_id || task.assigned_by_id;
+      if (reviewerId) {
         await createNotification({
-          supervisorId: task.assigned_by_id,
+          supervisorId: String(reviewerId),
           title: "Task submitted",
           message: `A student submitted "${task.title}" for your review.`,
           type: "info",
@@ -5537,6 +5749,16 @@ app.patch(
       );
 
       if (result.rows.length === 0) {
+        const current = await pool.query(
+          `SELECT 1 FROM tasks t JOIN students s ON s.student_id = t.student_id
+           WHERE t.id = $1 AND s.supervisor_id = $2`,
+          [id, auth.id]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message: "This task is no longer waiting for review. It was already reviewed, or the intern's submission changed.",
+          });
+        }
         return res.status(404).json({ message: "Submitted task not found for your assigned interns." });
       }
 
@@ -5678,16 +5900,18 @@ app.post(
 app.get(
   "/api/coordinator/evaluations",
   requireCoordinator,
-  async (_req, res) => {
+  async (req, res) => {
     try {
       const result = await pool.query(
         `
-        SELECT e.*, s.name AS student_name, s.company
+        SELECT e.*, s.name AS student_name, s.company,
+               (e.evaluator_type = 'teacher' AND e.evaluator_id = $1) AS mine
         FROM evaluations e
         LEFT JOIN students s ON s.student_id::text = e.student_id::text
         ORDER BY e.created_at DESC
         LIMIT 200
-        `
+        `,
+        [(req as AuthedRequest).auth?.id || ""]
       );
 
       return res.json({ evaluations: result.rows });
@@ -5727,12 +5951,13 @@ app.get(
     // coordinator, so it is not shown to the supervisor it may be about.
     const result = await pool.query(
       `
-      SELECT * FROM evaluations
+      SELECT *, (evaluator_type = $2 AND evaluator_id = $3) AS mine
+      FROM evaluations
       WHERE student_id = $1
         AND ($2 = 'student' OR evaluator_type <> 'student')
       ORDER BY created_at DESC
       `,
-      [studentId, auth.role]
+      [studentId, auth.role, auth.id]
     );
 
     return res.json({ evaluations: result.rows });
@@ -6317,6 +6542,26 @@ app.post(
       });
     }
 
+    // When the report names one of the supervisor's interns, keep the link
+    // to that student so the coordinator knows exactly who it is about.
+    let reportedStudentId: string | null = null;
+    let reportedStudentName: string | null = reported_student_name || null;
+    const requestedStudentId =
+      typeof req.body?.reported_student_id === "string" ? req.body.reported_student_id.trim() : "";
+    if (requestedStudentId) {
+      const intern = await pool.query<{ student_id: string; name: string }>(
+        `SELECT student_id, name FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+        [requestedStudentId, auth.id]
+      );
+      if (intern.rows.length === 0) {
+        return res.status(403).json({
+          message: "You can only report an incident about one of your own interns.",
+        });
+      }
+      reportedStudentId = intern.rows[0].student_id;
+      reportedStudentName = intern.rows[0].name;
+    }
+
     // "File Complaint" includes "Attach Evidence/File" for every actor.
     let evidenceUrl: string | null = null;
     if (req.file) {
@@ -6327,16 +6572,18 @@ app.post(
     const result = await pool.query(
       `
       INSERT INTO complaints
-        (filed_by_supervisor_id, report_type, reported_student_name, category, description, evidence_url, status)
-      VALUES ($1, 'student', $2, $3, $4, $5, 'Pending')
+        (filed_by_supervisor_id, report_type, reported_student_name, category, description, evidence_url, status,
+         reported_student_id)
+      VALUES ($1, 'student', $2, $3, $4, $5, 'Pending', $6)
       RETURNING *
       `,
       [
         auth.id,
-        reported_student_name || null,
+        reportedStudentName,
         String(category).trim(),
         String(description).trim(),
         evidenceUrl,
+        reportedStudentId,
       ]
     );
     complaintSaved = true;
@@ -6487,16 +6734,27 @@ app.post(
           const students = await pool.query<{ student_id: string }>(
             `SELECT student_id FROM students WHERE is_active = TRUE`
           );
-          await Promise.all(
-            students.rows.map((row) =>
+          const supervisors = await pool.query<{ supervisor_id: string }>(
+            `SELECT supervisor_id FROM supervisors WHERE is_active = TRUE`
+          );
+          await Promise.all([
+            ...students.rows.map((row) =>
               createNotification({
                 studentId: String(row.student_id),
                 title: "New document required",
                 message: `"${name}" was added to your OJT requirements. Upload it from your Documents page.`,
                 type: "document",
               })
-            )
-          );
+            ),
+            ...supervisors.rows.map((row) =>
+              createNotification({
+                supervisorId: String(row.supervisor_id),
+                title: "New document required",
+                message: `"${name}" was added to the OJT requirements. Your interns will upload it for you to review.`,
+                type: "document",
+              })
+            ),
+          ]);
         } catch (notifyError) {
           console.error("NEW REQUIREMENT NOTIFICATION ERROR:", notifyError);
         }
@@ -6531,8 +6789,8 @@ app.put(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const previous = await client.query<{ name: string }>(
-        `SELECT name FROM ojt_requirements WHERE id = $1 FOR UPDATE`,
+      const previous = await client.query<{ name: string; is_active: boolean }>(
+        `SELECT name, is_active FROM ojt_requirements WHERE id = $1 FOR UPDATE`,
         [req.params.id]
       );
       if (previous.rows.length === 0) {
@@ -6557,6 +6815,33 @@ app.put(
         );
       }
       await client.query("COMMIT");
+
+      // A renamed, retired or restored requirement changes what everyone
+      // sees on their Documents pages, so say what happened.
+      const old = previous.rows[0];
+      const change =
+        old.is_active && !isActive
+          ? {
+              title: "Document requirement removed",
+              message: `"${old.name}" is no longer an OJT requirement.`,
+            }
+          : !old.is_active && isActive
+            ? {
+                title: "New document required",
+                message: `"${name}" is an OJT requirement again.`,
+              }
+            : old.name !== name && isActive
+              ? {
+                  title: "Document requirement renamed",
+                  message: `The requirement "${old.name}" is now called "${name}". Files already uploaded were kept.`,
+                }
+              : null;
+      if (change) {
+        await notifyEveryone({ ...change, type: "document" }).catch((error) =>
+          console.error("REQUIREMENT CHANGE NOTIFICATION ERROR:", error)
+        );
+      }
+
       return res.json({
         message: "Requirement updated.",
         requirement: result.rows[0],
@@ -6712,6 +6997,18 @@ app.put(
         message: `Your coordinator updated your OJT schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
         type: "schedule",
       });
+      const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+        `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+        [studentId]
+      );
+      if (owner.rows[0]?.supervisor_id) {
+        await createNotification({
+          supervisorId: String(owner.rows[0].supervisor_id),
+          title: "Intern schedule updated",
+          message: `The OJT coordinator updated ${owner.rows[0].name}'s weekly schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
+          type: "schedule",
+        });
+      }
     } catch (error) {
       console.error("SCHEDULE NOTIFICATION ERROR:", error);
     }
@@ -6860,6 +7157,7 @@ app.get(
         FROM documents d
         INNER JOIN students s ON s.student_id = d.student_id
         WHERE s.supervisor_id = $1
+          AND s.is_active = TRUE
         ORDER BY CASE WHEN d.status = 'Pending' THEN 0 ELSE 1 END,
                  d.uploaded_at DESC, d.id DESC
         LIMIT 1000
@@ -6964,10 +7262,12 @@ app.get(
 
 app.patch(
   "/api/documents/:documentId/review",
-  requireRole("supervisor"),
+  // The supervisor reviews their interns' documents. The coordinator may
+  // review only for a student who has no active supervisor to do it.
+  requireRole(["supervisor", "coordinator"]),
   async (req, res) => {
     const auth = (req as AuthedRequest).auth;
-    if (!auth || auth.role !== "supervisor") {
+    if (!auth || (auth.role !== "supervisor" && auth.role !== "coordinator")) {
       return res.status(401).json({ message: "Supervisor login is required." });
     }
 
@@ -6993,13 +7293,22 @@ app.patch(
         UPDATE documents d
         SET status = $1,
             review_notes = $2,
-            reviewed_by_supervisor_id = $3,
+            reviewed_by_supervisor_id = CASE WHEN $5::text = 'supervisor' THEN $3 ELSE NULL END,
             reviewed_at = NOW()
         FROM students s
         WHERE d.id = $4
           AND s.student_id = d.student_id
-          AND s.supervisor_id = $3
           AND d.status = 'Pending'
+          AND (
+            ($5::text = 'supervisor' AND s.supervisor_id = $3)
+            OR (
+              $5::text = 'coordinator'
+              AND NOT EXISTS (
+                SELECT 1 FROM supervisors sup
+                WHERE sup.supervisor_id = s.supervisor_id AND sup.is_active = TRUE
+              )
+            )
+          )
         RETURNING d.id, d.student_id, d.doc_type, d.status, d.review_notes,
                   d.reviewed_at
         `,
@@ -7008,10 +7317,24 @@ app.patch(
           reviewNotes || null,
           auth.id,
           documentId,
+          auth.role,
         ]
       );
 
       if (result.rows.length === 0) {
+        const current = await pool.query<{ status: string }>(
+          `SELECT d.status FROM documents d JOIN students s ON s.student_id = d.student_id
+           WHERE d.id = $1 AND ($3::text = 'coordinator' OR s.supervisor_id = $2)`,
+          [documentId, auth.id, auth.role]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message:
+              current.rows[0].status !== "Pending"
+                ? "This document is no longer waiting for review. It was already reviewed."
+                : "This student has an active supervisor, who reviews their documents.",
+          });
+        }
         return res.status(404).json({
           message: "Pending document not found for your assigned interns.",
         });
@@ -7149,7 +7472,13 @@ app.get(
                   $1 = 'coordinator'
                   OR
                   ($1 = 'student' AND t.student_id = $3)
-                  OR ($1 = 'supervisor' AND t.assigned_by_id = $3)
+                  OR (
+                    $1 = 'supervisor'
+                    AND EXISTS (
+                      SELECT 1 FROM students s
+                      WHERE s.student_id = t.student_id AND s.supervisor_id = $3
+                    )
+                  )
                 )
             )
             OR EXISTS (
