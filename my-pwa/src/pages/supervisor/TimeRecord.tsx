@@ -61,6 +61,7 @@ export default function SupervisorTimeRecord() {
               supervisor: supervisor?.name,
             }}
             logs={work.attendance.filter((entry) => entry.student_id === intern.student_id)}
+            absences={work.absences.filter((entry) => entry.student_id === intern.student_id)}
           />
         ) : (
           !work.loading && (

@@ -80,6 +80,21 @@ export default function SupervisorAttendanceApproval() {
     .reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
 
   const pager = usePagination(visible, 20);
+
+  // The absences list follows the same intern, search and date filters.
+  const visibleAbsences = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    return work.absences.filter(
+      (item) =>
+        (!internId || item.student_id === internId) &&
+        isWithinDateRange(item.date, dateFrom, dateTo) &&
+        (!text ||
+          [item.student_name, item.student_id, item.reason, item.review_notes]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(text)))
+    );
+  }, [work.absences, internId, search, dateFrom, dateTo]);
+  const absencePager = usePagination(visibleAbsences, 10);
   const opened = attendance.find((entry) => entry.id === openId) ?? null;
   const filtered =
     filter !== "all" || internId !== "" || search.trim() !== "" || dateFrom !== "" || dateTo !== "";
@@ -259,14 +274,19 @@ export default function SupervisorAttendanceApproval() {
           <div className="mt-3">
             {loading ? (
               <SkeletonRows rows={2} />
-            ) : work.absences.length === 0 ? (
-              <EmptyState icon="calendar" title="No absences filed" />
+            ) : visibleAbsences.length === 0 ? (
+              <EmptyState
+                icon="calendar"
+                title={
+                  work.absences.length === 0
+                    ? "No absences filed"
+                    : "No absences match these filters"
+                }
+              />
             ) : (
+              <>
               <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                {work.absences
-                  .filter((item) => !internId || item.student_id === internId)
-                  .slice(0, 30)
-                  .map((item) => (
+                {absencePager.pageItems.map((item) => (
                     <li
                       key={item.id}
                       className="flex flex-col gap-1 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5"
@@ -297,6 +317,8 @@ export default function SupervisorAttendanceApproval() {
                     </li>
                   ))}
               </ul>
+              <Pagination state={absencePager} noun="absence" />
+              </>
             )}
           </div>
         </Card>

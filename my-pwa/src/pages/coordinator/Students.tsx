@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
@@ -46,7 +46,9 @@ type SupervisorOption = {
   is_active: boolean;
 };
 
-type StatusFilter = "all" | "active" | "inactive";
+// "unassigned" is active students who have no supervisor.
+type StatusFilter = "all" | "active" | "inactive" | "unassigned";
+type SortBy = "name" | "progress" | "supervisor";
 
 const EMPTY_FORM = {
   student_id: "",
@@ -68,23 +70,43 @@ export default function CoordinatorStudents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState(() => searchParams.get("q") || "");
-  const [status, setStatus] = useState<StatusFilter>("all");
+  const [status, setStatus] = useState<StatusFilter>(() =>
+    searchParams.get("filter") === "unassigned" ? "unassigned" : "all"
+  );
+  const [sortBy, setSortBy] = useState<SortBy>("name");
 
   const [editing, setEditing] = useState<Student | "new" | null>(null);
   const [toggling, setToggling] = useState<Student | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [importing, setImporting] = useState(false);
-  const pager = usePagination(students, 20);
+  const sorted = useMemo(() => {
+    const progress = (student: Student) =>
+      Number(student.required_hours) > 0
+        ? Number(student.hours_rendered) / Number(student.required_hours)
+        : 0;
+    return [...students].sort((a, b) =>
+      sortBy === "progress"
+        ? progress(a) - progress(b)
+        : sortBy === "supervisor"
+          ? (a.supervisor_name || "").localeCompare(b.supervisor_name || "") ||
+            a.name.localeCompare(b.name)
+          : a.name.localeCompare(b.name)
+    );
+  }, [students, sortBy]);
+  const pager = usePagination(sorted, 20);
 
   const load = useCallback(async () => {
     const params = new URLSearchParams();
     if (search.trim()) params.set("q", search.trim());
-    if (status !== "all") params.set("status", status);
+    if (status !== "all") params.set("status", status === "unassigned" ? "active" : status);
     try {
       const data = await coordinatorRequest<{ students: Student[] }>(
         `/api/coordinator/students?${params.toString()}`
       );
-      setStudents(data.students || []);
+      const list = data.students || [];
+      setStudents(
+        status === "unassigned" ? list.filter((student) => !student.supervisor_name) : list
+      );
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load students."));
@@ -163,9 +185,22 @@ export default function CoordinatorStudents() {
               options={[
                 { value: "all", label: "All" },
                 { value: "active", label: "Active" },
+                { value: "unassigned", label: "No supervisor" },
                 { value: "inactive", label: "Deactivated" },
               ]}
             />
+            <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
+              Sort by
+              <select
+                value={sortBy}
+                onChange={(event) => setSortBy(event.target.value as SortBy)}
+                className="field w-auto"
+              >
+                <option value="name">Name</option>
+                <option value="progress">Least progress first</option>
+                <option value="supervisor">Supervisor</option>
+              </select>
+            </label>
           </div>
 
           {loading ? (
@@ -194,9 +229,12 @@ export default function CoordinatorStudents() {
                       <Avatar name={student.name} />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-start justify-between gap-2">
-                          <p className="truncate text-sm font-semibold text-slate-900">
+                          <Link
+                            to={`/coordinator/students/${encodeURIComponent(student.student_id)}`}
+                            className="truncate text-sm font-semibold text-slate-900 hover:text-psu-700 hover:underline"
+                          >
                             {student.name}
-                          </p>
+                          </Link>
                           <StatusBadge status={student.is_active ? "Active" : "Deactivated"} tone={student.is_active ? "good" : "neutral"} />
                         </div>
                         <p className="truncate text-xs text-slate-500">
@@ -250,7 +288,12 @@ export default function CoordinatorStudents() {
                           <div className="flex items-center gap-3">
                             <Avatar name={student.name} size="sm" />
                             <div className="min-w-0">
-                              <p className="font-medium text-slate-900">{student.name}</p>
+                              <Link
+                                to={`/coordinator/students/${encodeURIComponent(student.student_id)}`}
+                                className="font-medium text-slate-900 hover:text-psu-700 hover:underline"
+                              >
+                                {student.name}
+                              </Link>
                               <p className="text-xs text-slate-500">
                                 {student.student_id} · {student.email}
                               </p>

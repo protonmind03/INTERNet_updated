@@ -23,6 +23,8 @@ type Announcement = {
   title: string;
   message: string;
   audience: Audience;
+  /** Set when it went to one host company only. */
+  company: string | null;
   recipients: number;
   created_at: string;
 };
@@ -41,6 +43,10 @@ export default function CoordinatorAnnouncements() {
   const [title, setTitle] = useState("");
   const [message, setMessage] = useState("");
   const [audience, setAudience] = useState<Audience>("students");
+  const [companies, setCompanies] = useState<string[]>([]);
+  const [company, setCompany] = useState("");
+  const [withdrawing, setWithdrawing] = useState<Announcement | null>(null);
+  const [withdrawBusy, setWithdrawBusy] = useState(false);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [sending, setSending] = useState(false);
@@ -63,6 +69,29 @@ export default function CoordinatorAnnouncements() {
     void Promise.resolve().then(load);
   }, [load]);
 
+  useEffect(() => {
+    coordinatorRequest<{ companies: string[] }>("/api/coordinator/companies")
+      .then((data) => setCompanies(data.companies || []))
+      .catch(() => undefined);
+  }, []);
+
+  const withdraw = async () => {
+    if (!withdrawing) return;
+    setWithdrawBusy(true);
+    try {
+      await coordinatorRequest(`/api/coordinator/announcements/${withdrawing.id}`, {
+        method: "DELETE",
+      });
+      toast.success("Announcement withdrawn. It was removed from everyone's notifications.");
+      setWithdrawing(null);
+      await load();
+    } catch (withdrawError) {
+      toast.error(errorText(withdrawError, "The announcement could not be withdrawn."));
+    } finally {
+      setWithdrawBusy(false);
+    }
+  };
+
   const review = (event: React.FormEvent) => {
     event.preventDefault();
     if (title.trim().length < 3) return setError("Give the announcement a title.");
@@ -76,7 +105,10 @@ export default function CoordinatorAnnouncements() {
     try {
       const data = await coordinatorRequest<{ message: string }>(
         "/api/coordinator/announcements",
-        { method: "POST", body: { title: title.trim(), message: message.trim(), audience } }
+        {
+          method: "POST",
+          body: { title: title.trim(), message: message.trim(), audience, company: company || null },
+        }
       );
       toast.success(data.message);
       setTitle("");
@@ -96,7 +128,7 @@ export default function CoordinatorAnnouncements() {
   return (
     <CoordinatorLayout
       title="Announcements"
-      subtitle="Send one message to every student, every supervisor, or both. It arrives as a notification."
+      subtitle="Send one message to students, supervisors, or both, across the programme or at one company. It arrives as a notification."
     >
       <div className="grid items-start gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-2">
@@ -117,6 +149,22 @@ export default function CoordinatorAnnouncements() {
                 ))}
               </select>
             </FormField>
+
+            {companies.length > 1 && (
+              <FormField label="Company" htmlFor="announcement-company" optional>
+                <select
+                  id="announcement-company"
+                  value={company}
+                  onChange={(event) => setCompany(event.target.value)}
+                  className="field"
+                >
+                  <option value="">All companies</option>
+                  {companies.map((option) => (
+                    <option key={option}>{option}</option>
+                  ))}
+                </select>
+              </FormField>
+            )}
 
             <FormField label="Title" htmlFor="announcement-title">
               <input
@@ -184,7 +232,15 @@ export default function CoordinatorAnnouncements() {
                     <p className="mt-2 text-xs text-slate-500">
                       {formatDateTime(item.created_at)} · sent to {item.recipients}{" "}
                       {item.recipients === 1 ? "person" : "people"}
+                      {item.company && ` at ${item.company}`}
                     </p>
+                    <button
+                      type="button"
+                      onClick={() => setWithdrawing(item)}
+                      className="mt-1.5 text-sm font-medium text-red-600 hover:underline"
+                    >
+                      Withdraw
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -196,7 +252,9 @@ export default function CoordinatorAnnouncements() {
       <ConfirmDialog
         open={confirming}
         title="Send this announcement?"
-        message={`It goes to ${chosen.label.toLowerCase()} straight away and cannot be recalled.`}
+        message={`It goes to ${chosen.label.toLowerCase()}${
+          company ? ` at ${company}` : ""
+        } straight away. You can withdraw it afterwards, but people may already have read it.`}
         confirmLabel="Send"
         busy={sending}
         onConfirm={() => void send()}
@@ -209,6 +267,21 @@ export default function CoordinatorAnnouncements() {
           </p>
         </div>
       </ConfirmDialog>
+      <ConfirmDialog
+        open={withdrawing !== null}
+        title="Withdraw this announcement?"
+        message={
+          withdrawing
+            ? `"${withdrawing.title}" will be removed from this list and from the notifications of everyone it was sent to. People who already read it will simply stop seeing it.`
+            : undefined
+        }
+        confirmLabel="Withdraw"
+        cancelLabel="Keep it"
+        tone="danger"
+        busy={withdrawBusy}
+        onConfirm={() => void withdraw()}
+        onCancel={() => setWithdrawing(null)}
+      />
     </CoordinatorLayout>
   );
 }

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import Icon from "../../components/Icon";
 import { Button, StarInput, StatusBadge } from "../../components/ui";
@@ -38,30 +38,49 @@ export default function ReviewDetail({
   item,
   work,
   onDecided,
+  shortcuts = false,
 }: {
   item: QueueItem;
   work: SupervisorWork;
   /** Called after a decision is saved, so the caller can move on. */
   onDecided: () => void;
+  /** Lets the A key approve. Only for the Review queue's side-by-side view. */
+  shortcuts?: boolean;
 }) {
+  const shared = { work, onDecided, shortcuts };
   // Keyed so notes and ratings never carry over from one item to the next.
   if (item.kind === "attendance") {
-    return (
-      <AttendanceDetail key={item.key} entry={item.entry} work={work} onDecided={onDecided} />
-    );
+    return <AttendanceDetail key={item.key} entry={item.entry} {...shared} />;
   }
   if (item.kind === "task") {
-    return <TaskDetail key={item.key} entry={item.entry} work={work} onDecided={onDecided} />;
+    return <TaskDetail key={item.key} entry={item.entry} {...shared} />;
   }
   if (item.kind === "absence") {
-    return <AbsenceDetail key={item.key} entry={item.entry} work={work} onDecided={onDecided} />;
+    return <AbsenceDetail key={item.key} entry={item.entry} {...shared} />;
   }
-  return (
-    <DocumentDetail key={item.key} entry={item.entry} work={work} onDecided={onDecided} />
-  );
+  return <DocumentDetail key={item.key} entry={item.entry} {...shared} />;
 }
 
-type DetailProps<T> = { entry: T; work: SupervisorWork; onDecided: () => void };
+type DetailProps<T> = {
+  entry: T;
+  work: SupervisorWork;
+  onDecided: () => void;
+  shortcuts?: boolean;
+};
+
+/** A toast action that takes back the decision just made. */
+function undoAction(undo: () => Promise<void>, done: string) {
+  return {
+    label: "Undo",
+    onClick: () => {
+      undo()
+        .then(() => toast.info(done))
+        .catch((error: unknown) =>
+          toast.error(errorText(error, "The decision could not be undone."))
+        );
+    },
+  };
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -69,23 +88,17 @@ type DetailProps<T> = { entry: T; work: SupervisorWork; onDecided: () => void };
 |--------------------------------------------------------------------------
 */
 
-function AttendanceDetail({ entry, work, onDecided }: DetailProps<AttendanceEntry>) {
+function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<AttendanceEntry>) {
   const open = !entry.time_out;
   const decided = entry.status !== "Pending";
   const rejected = entry.status === "Rejected" || entry.status === "Flagged";
 
   /** Lets a decision made by mistake be taken back straight from the toast. */
-  const undo = {
-    label: "Undo",
-    onClick: () => {
-      work
-        .decideAttendance(entry.id, "Pending")
-        .then(() => toast.info("Decision withdrawn. The log is back in your queue."))
-        .catch((error: unknown) =>
-          toast.error(errorText(error, "The decision could not be undone."))
-        );
-    },
-  };
+  const undoFrom = (decided: "Verified" | "Rejected") =>
+    undoAction(
+      () => work.decideAttendance(entry.id, "Pending", undefined, decided),
+      "Decision withdrawn. The log is back in your queue."
+    );
 
   return (
     <DetailShell
@@ -145,17 +158,21 @@ function AttendanceDetail({ entry, work, onDecided }: DetailProps<AttendanceEntr
             ? "This intern has not timed out yet. You can verify the log once they do."
             : undefined
         }
+        shortcut={shortcuts}
         onApprove={async () => {
-          await work.decideAttendance(entry.id, "Verified");
+          await work.decideAttendance(entry.id, "Verified", undefined, entry.status);
           toast.success(
             `${entry.student_name}'s log for ${formatDate(entry.date)} verified.`,
-            undo
+            undoFrom("Verified")
           );
           onDecided();
         }}
         onReject={async (note) => {
-          await work.decideAttendance(entry.id, "Rejected", note);
-          toast.success(`Log rejected. ${entry.student_name} has been notified.`, undo);
+          await work.decideAttendance(entry.id, "Rejected", note, entry.status);
+          toast.success(
+            `Log rejected. ${entry.student_name} has been notified.`,
+            undoFrom("Rejected")
+          );
           onDecided();
         }}
       />
@@ -169,8 +186,12 @@ function AttendanceDetail({ entry, work, onDecided }: DetailProps<AttendanceEntr
 |--------------------------------------------------------------------------
 */
 
-function TaskDetail({ entry, work, onDecided }: DetailProps<TaskEntry>) {
+function TaskDetail({ entry, work, onDecided, shortcuts }: DetailProps<TaskEntry>) {
   const [rating, setRating] = useState(0);
+  const undo = undoAction(
+    () => work.undoTask(entry.id),
+    "Review withdrawn. The task is back in your queue."
+  );
 
   const download = async () => {
     if (!entry.submission_file) return;
@@ -236,14 +257,15 @@ function TaskDetail({ entry, work, onDecided }: DetailProps<TaskEntry>) {
             <StarInput value={rating} onChange={setRating} label="Rating for this task" clearable />
           </div>
         }
+        shortcut={shortcuts}
         onApprove={async (note) => {
           await work.decideTask(entry.id, "Reviewed", note, rating || null);
-          toast.success(`"${entry.title}" approved.`);
+          toast.success(`"${entry.title}" approved.`, undo);
           onDecided();
         }}
         onReject={async (note) => {
           await work.decideTask(entry.id, "In Progress", note, null);
-          toast.success(`Task sent back to ${entry.student_name} for revision.`);
+          toast.success(`Task sent back to ${entry.student_name} for revision.`, undo);
           onDecided();
         }}
       />
@@ -257,7 +279,11 @@ function TaskDetail({ entry, work, onDecided }: DetailProps<TaskEntry>) {
 |--------------------------------------------------------------------------
 */
 
-function DocumentDetail({ entry, work, onDecided }: DetailProps<DocumentEntry>) {
+function DocumentDetail({ entry, work, onDecided, shortcuts }: DetailProps<DocumentEntry>) {
+  const undo = undoAction(
+    () => work.undoDocument(entry.id),
+    "Review withdrawn. The document is back in your queue."
+  );
   const download = async () => {
     try {
       await downloadDocument(entry);
@@ -296,14 +322,18 @@ function DocumentDetail({ entry, work, onDecided }: DetailProps<DocumentEntry>) 
         rejectLabel="Reject"
         noteLabel="Reason for rejecting"
         notePlaceholder="Tell the intern what to fix before uploading again."
+        shortcut={shortcuts}
         onApprove={async () => {
           await work.decideDocument(entry.id, "Approved", "");
-          toast.success(`${entry.doc_type} approved for ${entry.student_name}.`);
+          toast.success(`${entry.doc_type} approved for ${entry.student_name}.`, undo);
           onDecided();
         }}
         onReject={async (note) => {
           await work.decideDocument(entry.id, "Rejected", note);
-          toast.success(`${entry.doc_type} rejected. ${entry.student_name} has been notified.`);
+          toast.success(
+            `${entry.doc_type} rejected. ${entry.student_name} has been notified.`,
+            undo
+          );
           onDecided();
         }}
       />
@@ -317,7 +347,11 @@ function DocumentDetail({ entry, work, onDecided }: DetailProps<DocumentEntry>) 
 |--------------------------------------------------------------------------
 */
 
-function AbsenceDetail({ entry, work, onDecided }: DetailProps<AbsenceEntry>) {
+function AbsenceDetail({ entry, work, onDecided, shortcuts }: DetailProps<AbsenceEntry>) {
+  const undo = undoAction(
+    () => work.decideAbsence(entry.id, "Pending", ""),
+    "Decision withdrawn. The absence is back in your queue."
+  );
   return (
     <DetailShell
       eyebrow="Absence"
@@ -336,14 +370,18 @@ function AbsenceDetail({ entry, work, onDecided }: DetailProps<AbsenceEntry>) {
         rejectLabel="Mark unexcused"
         noteLabel="Reason it is not excused"
         notePlaceholder="Tell the intern why this absence is not excused."
+        shortcut={shortcuts}
         onApprove={async () => {
           await work.decideAbsence(entry.id, "Excused", "");
-          toast.success(`Absence excused for ${entry.student_name}.`);
+          toast.success(`Absence excused for ${entry.student_name}.`, undo);
           onDecided();
         }}
         onReject={async (note) => {
           await work.decideAbsence(entry.id, "Unexcused", note);
-          toast.success(`Absence marked unexcused. ${entry.student_name} has been notified.`);
+          toast.success(
+            `Absence marked unexcused. ${entry.student_name} has been notified.`,
+            undo
+          );
           onDecided();
         }}
       />
@@ -441,10 +479,13 @@ function Decision({
   approveBlocked,
   approveHidden = false,
   rejectHidden = false,
+  shortcut = false,
   extra,
   onApprove,
   onReject,
 }: {
+  /** When true, pressing A approves. */
+  shortcut?: boolean;
   approveLabel: string;
   rejectLabel: string;
   /** Hide a choice that is already the current decision. */
@@ -480,6 +521,32 @@ function Decision({
       setBusy(null);
     }
   };
+
+  // Re-attached on every render so the handler always sees the current note
+  // and busy state.
+  useEffect(() => {
+    if (!shortcut || approveHidden) return;
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        event.key.toLowerCase() !== "a" ||
+        event.repeat ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.altKey ||
+        (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) ||
+        document.querySelector('[role="dialog"]') ||
+        busy !== null ||
+        approveBlocked
+      ) {
+        return;
+      }
+      event.preventDefault();
+      void run("approve");
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  });
 
   return (
     <div className="space-y-4 border-t border-slate-200 pt-5">

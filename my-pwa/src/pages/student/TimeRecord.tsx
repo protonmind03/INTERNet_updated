@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import DtrSheet from "../../components/DtrSheet";
+import DtrSheet, { type DtrAbsence } from "../../components/DtrSheet";
 import Icon from "../../components/Icon";
 import { ErrorNotice } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
@@ -13,6 +13,7 @@ export default function TimeRecord() {
   const student = useAccount("student");
   const attendance = useAttendance(student?.student_id);
   const [supervisor, setSupervisor] = useState("");
+  const [absences, setAbsences] = useState<DtrAbsence[]>([]);
 
   const studentId = student?.student_id;
   useEffect(() => {
@@ -22,6 +23,12 @@ export default function TimeRecord() {
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (active && data?.company?.supervisor) setSupervisor(String(data.company.supervisor));
+      })
+      .catch(() => undefined);
+    fetch(`${API_URL}/api/absences/student/${encodeURIComponent(studentId)}`, withStudentAuth())
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (active && Array.isArray(data?.absences)) setAbsences(data.absences);
       })
       .catch(() => undefined);
     return () => {
@@ -58,6 +65,7 @@ export default function TimeRecord() {
           supervisor,
         }}
         logs={attendance.logs.map((log) => ({ ...log, date: logDateKey(log) }))}
+        absences={absences}
       />
     </StudentLayout>
   );

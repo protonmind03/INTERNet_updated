@@ -77,24 +77,31 @@ export default function SupervisorDashboard() {
   const wide = useIsWide();
 
   const [filter, setFilter] = useState<Filter>("all");
+  const [internId, setInternId] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
 
+  // The queue narrowed to one intern, when one is chosen.
+  const scoped = useMemo(
+    () => (internId ? queue.filter((item) => item.entry.student_id === internId) : queue),
+    [queue, internId]
+  );
+
   const counts = useMemo(
     () => ({
-      all: queue.length,
-      attendance: queue.filter((item) => item.kind === "attendance").length,
-      task: queue.filter((item) => item.kind === "task").length,
-      document: queue.filter((item) => item.kind === "document").length,
-      absence: queue.filter((item) => item.kind === "absence").length,
+      all: scoped.length,
+      attendance: scoped.filter((item) => item.kind === "attendance").length,
+      task: scoped.filter((item) => item.kind === "task").length,
+      document: scoped.filter((item) => item.kind === "document").length,
+      absence: scoped.filter((item) => item.kind === "absence").length,
     }),
-    [queue]
+    [scoped]
   );
 
   const visible = useMemo(
-    () => (filter === "all" ? queue : queue.filter((item) => item.kind === filter)),
-    [queue, filter]
+    () => (filter === "all" ? scoped : scoped.filter((item) => item.kind === filter)),
+    [scoped, filter]
   );
 
   // On a wide screen something is always open; on a phone only what was tapped.
@@ -104,11 +111,11 @@ export default function SupervisorDashboard() {
   // Attendance logs that are complete and can be verified in one go.
   const verifiable = useMemo(
     () =>
-      queue.filter(
+      scoped.filter(
         (item): item is Extract<QueueItem, { kind: "attendance" }> =>
           item.kind === "attendance" && Boolean(item.entry.time_out)
       ),
-    [queue]
+    [scoped]
   );
 
   const moveOn = () => {
@@ -151,17 +158,15 @@ export default function SupervisorDashboard() {
 
   const verifyAll = async () => {
     setBulkBusy(true);
-    let done = 0;
     try {
-      for (const item of verifiable) {
-        await work.decideAttendance(item.entry.id, "Verified");
-        done += 1;
+      const { done, failure } = await work.verifyMany(verifiable.map((item) => item.entry.id));
+      if (failure) {
+        toast.error(`${done} verified, then it stopped: ${failure}`);
+      } else {
+        toast.success(`${done} attendance ${done === 1 ? "log" : "logs"} verified.`);
       }
-      toast.success(`${done} attendance ${done === 1 ? "log" : "logs"} verified.`);
     } catch (error) {
-      toast.error(
-        `${done} verified, then it stopped: ${errorText(error, "a log could not be saved.")}`
-      );
+      toast.error(errorText(error, "The logs could not be verified."));
     } finally {
       setBulkBusy(false);
       setConfirmBulk(false);
@@ -194,21 +199,45 @@ export default function SupervisorDashboard() {
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
-        <FilterChips
-          label="Filter the queue"
-          value={filter}
-          onChange={(next) => {
-            setFilter(next);
-            setSelectedKey(null);
-          }}
-          options={[
-            { value: "all", label: "Everything", count: counts.all },
-            { value: "attendance", label: "Attendance", count: counts.attendance },
-            { value: "task", label: "Tasks", count: counts.task },
-            { value: "document", label: "Documents", count: counts.document },
-            { value: "absence", label: "Absences", count: counts.absence },
-          ]}
-        />
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <FilterChips
+              label="Filter the queue"
+              value={filter}
+              onChange={(next) => {
+                setFilter(next);
+                setSelectedKey(null);
+              }}
+              options={[
+                { value: "all", label: "Everything", count: counts.all },
+                { value: "attendance", label: "Attendance", count: counts.attendance },
+                { value: "task", label: "Tasks", count: counts.task },
+                { value: "document", label: "Documents", count: counts.document },
+                { value: "absence", label: "Absences", count: counts.absence },
+              ]}
+            />
+          </div>
+          {interns.length > 1 && (
+            <label className="block w-full sm:w-56">
+              <span className="sr-only">Intern</span>
+              <select
+                value={internId}
+                onChange={(event) => {
+                  setInternId(event.target.value);
+                  setSelectedKey(null);
+                }}
+                className="field"
+              >
+                <option value="">All interns</option>
+                {interns.map((intern) => (
+                  <option key={intern.student_id} value={intern.student_id}>
+                    {intern.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
 
         <div className="grid items-start gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
           {/* QUEUE */}
@@ -222,7 +251,7 @@ export default function SupervisorDashboard() {
                 description={
                   queue.length === 0
                     ? "New attendance logs, task submissions, documents and absences will appear here."
-                    : "Choose another filter to see the rest of the queue."
+                    : "Change the filters to see the rest of the queue."
                 }
               />
             ) : (
@@ -271,11 +300,13 @@ export default function SupervisorDashboard() {
                 })}
               </ul>
             )}
-            {wide && visible.length > 1 && (
+            {wide && visible.length > 0 && (
               <p className="border-t border-slate-100 px-4 py-2.5 text-xs text-slate-500">
-                Press <kbd className="rounded border border-slate-200 bg-slate-50 px-1">↑</kbd>{" "}
-                or <kbd className="rounded border border-slate-200 bg-slate-50 px-1">↓</kbd> to
-                move through the queue.
+                <kbd className="rounded border border-slate-200 bg-slate-50 px-1">↑</kbd>{" "}
+                <kbd className="rounded border border-slate-200 bg-slate-50 px-1">↓</kbd> to move
+                through the queue,{" "}
+                <kbd className="rounded border border-slate-200 bg-slate-50 px-1">A</kbd> to
+                approve.
               </p>
             )}
           </Card>
@@ -284,7 +315,7 @@ export default function SupervisorDashboard() {
           <div className="hidden lg:block">
             {selected ? (
               <Card key={selected.key} className="animate-page-in p-6">
-                <ReviewDetail item={selected} work={work} onDecided={moveOn} />
+                <ReviewDetail item={selected} work={work} onDecided={moveOn} shortcuts />
               </Card>
             ) : (
               !loading && <InternOverview work={work} />

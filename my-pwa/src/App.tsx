@@ -59,6 +59,7 @@ import CoordinatorProfile from "./pages/coordinator/Profile";
 import CoordinatorRequirements from "./pages/coordinator/Requirements";
 import CoordinatorDocuments from "./pages/coordinator/Documents";
 import CoordinatorAnnouncements from "./pages/coordinator/Announcements";
+import CoordinatorStudentRecord from "./pages/coordinator/StudentRecord";
 
 function App() {
   return (
@@ -213,6 +214,11 @@ function App() {
         <Route
           path="/coordinator/students"
           element={<CoordinatorStudents />}
+        />
+
+        <Route
+          path="/coordinator/students/:studentId"
+          element={<CoordinatorStudentRecord />}
         />
 
         <Route

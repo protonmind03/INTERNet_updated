@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import Pagination from "../../components/Pagination";
 import { Card, CardHeader, EmptyState, SkeletonRows, StatusBadge } from "../../components/ui";
 import { formatDayDate } from "../../lib/format";
@@ -57,7 +58,7 @@ export default function AbsenceList({ search }: { search: string }) {
     <Card>
       <CardHeader
         title="Absences"
-        description="Filed by students and reviewed by their supervisors."
+        description="Filed by students and reviewed by their supervisors. You decide for a student who has none."
       />
       <div className="mt-3">
         {loading ? (
@@ -81,7 +82,12 @@ export default function AbsenceList({ search }: { search: string }) {
                 >
                   <div className="min-w-0">
                     <p className="text-sm font-medium text-slate-900">
-                      {item.student_name}
+                      <Link
+                        to={`/coordinator/students/${encodeURIComponent(item.student_id)}`}
+                        className="hover:text-psu-700 hover:underline"
+                      >
+                        {item.student_name}
+                      </Link>
                       <span className="font-normal text-slate-500">
                         {" "}
                         · {formatDayDate(item.date)}
@@ -93,6 +99,11 @@ export default function AbsenceList({ search }: { search: string }) {
                       {item.supervisor_name || "unassigned"}
                       {item.review_notes && ` · Note: ${item.review_notes}`}
                     </p>
+                    {item.status === "Pending" && !item.supervisor_name && (
+                      <p className="text-xs font-medium text-amber-700">
+                        No supervisor to review this. Open the student to decide it yourself.
+                      </p>
+                    )}
                   </div>
                   <StatusBadge
                     status={item.status === "Pending" ? "Awaiting supervisor" : item.status}

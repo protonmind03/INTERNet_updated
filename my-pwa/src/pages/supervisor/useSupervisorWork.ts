@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText } from "../../lib/toast";
@@ -8,10 +8,10 @@ import { errorText } from "../../lib/toast";
 | SUPERVISOR DATA
 |--------------------------------------------------------------------------
 |
-| Everything a supervisor works with comes from four lists: their interns,
-| and those interns' attendance logs, tasks and documents. This hook loads
-| them once and exposes the three review actions, so the Review queue and
-| the individual pages always show the same thing.
+| Everything a supervisor works with comes from five lists: their interns,
+| and those interns' attendance logs, tasks, documents and absences. This
+| hook loads them once and exposes the review actions, so the Review queue
+| and the individual pages always show the same thing.
 |
 */
 
@@ -113,13 +113,18 @@ async function getJson(path: string): Promise<Record<string, unknown>> {
   return data;
 }
 
-async function patchJson(path: string, body: unknown, fallback: string): Promise<void> {
+async function sendJson(
+  method: "PATCH" | "POST",
+  path: string,
+  body: unknown,
+  fallback: string
+): Promise<void> {
   const response = await fetch(
     `${API_URL}${path}`,
     withSupervisorAuth({
-      method: "PATCH",
+      method,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(body ?? {}),
     })
   );
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
@@ -137,7 +142,12 @@ export function useSupervisorWork(supervisorId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const load = useCallback(async () => {
+  // A burst of live notifications should not start a burst of reloads: while
+  // one is running, later requests share it and at most one more follows.
+  const inFlight = useRef<Promise<void> | null>(null);
+  const queued = useRef(false);
+
+  const fetchAll = useCallback(async () => {
     if (!supervisorId) return;
     const id = encodeURIComponent(supervisorId);
     try {
@@ -161,6 +171,23 @@ export function useSupervisorWork(supervisorId: string | undefined) {
       setLoading(false);
     }
   }, [supervisorId]);
+
+  const load = useCallback((): Promise<void> => {
+    if (inFlight.current) {
+      queued.current = true;
+      return inFlight.current;
+    }
+    const run = (async () => {
+      do {
+        queued.current = false;
+        await fetchAll();
+      } while (queued.current);
+    })().finally(() => {
+      inFlight.current = null;
+    });
+    inFlight.current = run;
+    return run;
+  }, [fetchAll]);
 
   useEffect(() => {
     const refresh = () => {
@@ -221,62 +248,131 @@ export function useSupervisorWork(supervisorId: string | undefined) {
     );
   }, [attendance, tasks, documents, absences]);
 
-  const decideAttendance = useCallback(
-    // "Pending" withdraws an earlier decision and returns the log to the queue.
-    async (id: number, status: "Verified" | "Rejected" | "Pending", reason?: string) => {
-      await patchJson(
-        `/api/attendance/${id}/status`,
-        { status, reason: reason?.trim() || undefined },
-        "The attendance log could not be updated."
-      );
+  /**
+   * Runs one change, then reloads. The reload also happens when the change
+   * is refused, because a refusal usually means the item was changed by
+   * someone else and the screen is out of date.
+   */
+  const change = useCallback(
+    async (work: () => Promise<void>) => {
+      try {
+        await work();
+      } catch (changeError) {
+        await load();
+        throw changeError;
+      }
       await load();
       notifyDataChanged();
+    },
+    [load]
+  );
+
+  const decideAttendance = useCallback(
+    // "Pending" withdraws an earlier decision and returns the log to the queue.
+    // `expected` is the status the supervisor was looking at; the decision is
+    // refused if the coordinator changed the log in the meantime.
+    (
+      id: number,
+      status: "Verified" | "Rejected" | "Pending",
+      reason?: string,
+      expected?: AttendanceEntry["status"]
+    ) =>
+      change(() =>
+        sendJson(
+          "PATCH",
+          `/api/attendance/${id}/status`,
+          { status, reason: reason?.trim() || undefined, expected_status: expected },
+          "The attendance log could not be updated."
+        )
+      ),
+    [change]
+  );
+
+  /** Verifies several complete logs, reloading once at the end. */
+  const verifyMany = useCallback(
+    async (ids: number[]): Promise<{ done: number; failure: string }> => {
+      let done = 0;
+      let failure = "";
+      for (const id of ids) {
+        try {
+          await sendJson(
+            "PATCH",
+            `/api/attendance/${id}/status`,
+            { status: "Verified", expected_status: "Pending" },
+            "A log could not be saved."
+          );
+          done += 1;
+        } catch (verifyError) {
+          failure = errorText(verifyError, "A log could not be saved.");
+          break;
+        }
+      }
+      await load();
+      notifyDataChanged();
+      return { done, failure };
     },
     [load]
   );
 
   const decideTask = useCallback(
-    async (
-      id: number,
-      status: "Reviewed" | "In Progress",
-      notes: string,
-      rating: number | null
-    ) => {
-      await patchJson(
-        `/api/tasks/${id}/review`,
-        { status, review_notes: notes.trim(), review_rating: rating || null },
-        "The task review could not be saved."
-      );
-      await load();
-      notifyDataChanged();
-    },
-    [load]
+    (id: number, status: "Reviewed" | "In Progress", notes: string, rating: number | null) =>
+      change(() =>
+        sendJson(
+          "PATCH",
+          `/api/tasks/${id}/review`,
+          { status, review_notes: notes.trim(), review_rating: rating || null },
+          "The task review could not be saved."
+        )
+      ),
+    [change]
+  );
+
+  const undoTask = useCallback(
+    (id: number) =>
+      change(() =>
+        sendJson("POST", `/api/tasks/${id}/review/undo`, null, "The review could not be undone.")
+      ),
+    [change]
   );
 
   const decideDocument = useCallback(
-    async (id: number, status: "Approved" | "Rejected", notes: string) => {
-      await patchJson(
-        `/api/documents/${id}/review`,
-        { status, review_notes: notes.trim() },
-        "The document review could not be saved."
-      );
-      await load();
-      notifyDataChanged();
-    },
-    [load]
+    (id: number, status: "Approved" | "Rejected", notes: string) =>
+      change(() =>
+        sendJson(
+          "PATCH",
+          `/api/documents/${id}/review`,
+          { status, review_notes: notes.trim() },
+          "The document review could not be saved."
+        )
+      ),
+    [change]
+  );
+
+  const undoDocument = useCallback(
+    (id: number) =>
+      change(() =>
+        sendJson(
+          "POST",
+          `/api/documents/${id}/review/undo`,
+          null,
+          "The review could not be undone."
+        )
+      ),
+    [change]
   );
 
   const decideAbsence = useCallback(
-    async (id: number, status: "Excused" | "Unexcused", notes: string) => {
-      await patchJson(
-        `/api/absences/${id}/review`,
-        { status, notes: notes.trim() },
-        "The absence could not be reviewed."
-      );
-      await load();
-      notifyDataChanged();
-    },
-    [load]
+    // "Pending" withdraws the decision.
+    (id: number, status: "Excused" | "Unexcused" | "Pending", notes: string) =>
+      change(() =>
+        sendJson(
+          "PATCH",
+          `/api/absences/${id}/review`,
+          { status, notes: notes.trim() },
+          "The absence could not be reviewed."
+        )
+      ),
+    [change]
   );
 
   return {
@@ -290,8 +386,11 @@ export function useSupervisorWork(supervisorId: string | undefined) {
     error,
     reload: load,
     decideAttendance,
+    verifyMany,
     decideTask,
+    undoTask,
     decideDocument,
+    undoDocument,
     decideAbsence,
   };
 }

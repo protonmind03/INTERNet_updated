@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../../components/Icon";
 import {
@@ -12,6 +12,7 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
+import { API_URL, withSupervisorAuth } from "../../lib/api";
 import {
   dueLabel,
   formatDayDate,
@@ -225,6 +226,8 @@ function InternDialog({
           </a>
         </div>
 
+        <InternSchedule key={intern.student_id} studentId={intern.student_id} />
+
         <Section title="Recent attendance" empty="No attendance logged yet." count={logs.length}>
           {logs.slice(0, 5).map((entry) => (
             <Line key={entry.id} status={entry.status}>
@@ -258,6 +261,81 @@ function InternDialog({
         </Section>
       </div>
     </Modal>
+  );
+}
+
+type ScheduleDay = {
+  id: number;
+  day: string;
+  start_time: string | null;
+  end_time: string | null;
+  focus: string | null;
+  hours: number | string | null;
+};
+
+/** "08:00:00" as "8:00 AM". */
+function clockTime(value: string | null): string {
+  const match = /^(\d{1,2}):(\d{2})/.exec(value || "");
+  if (!match) return "";
+  const hour = Number(match[1]);
+  return `${hour % 12 === 0 ? 12 : hour % 12}:${match[2]} ${hour < 12 ? "AM" : "PM"}`;
+}
+
+/** The weekly OJT schedule the coordinator set for this intern. */
+function InternSchedule({ studentId }: { studentId: string }) {
+  const [days, setDays] = useState<ScheduleDay[] | null>(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    fetch(
+      `${API_URL}/api/supervisor/interns/${encodeURIComponent(studentId)}/schedule`,
+      withSupervisorAuth()
+    )
+      .then(async (response) => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error();
+        if (active) setDays(Array.isArray(data.schedule) ? data.schedule : []);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+    return () => {
+      active = false;
+    };
+  }, [studentId]);
+
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-slate-900">Weekly schedule</h3>
+      {failed ? (
+        <p className="mt-2 text-sm text-red-700">The schedule could not be loaded.</p>
+      ) : days === null ? (
+        <Skeleton className="mt-2 h-10 w-full" />
+      ) : days.length === 0 ? (
+        <p className="mt-2 text-sm text-slate-500">
+          The OJT coordinator has not set a schedule for this intern yet.
+        </p>
+      ) : (
+        <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {days.map((day) => (
+            <li
+              key={day.id}
+              className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-3 py-2.5 text-sm"
+            >
+              <span className="min-w-0">
+                <span className="font-medium text-slate-900">{day.day}</span>
+                {day.focus && <span className="text-slate-500"> · {day.focus}</span>}
+              </span>
+              <span className="tabular shrink-0 text-slate-600">
+                {clockTime(day.start_time)} – {clockTime(day.end_time)}
+                {day.hours !== null && ` · ${formatHours(day.hours)}`}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

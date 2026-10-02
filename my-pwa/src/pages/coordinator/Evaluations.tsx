@@ -3,6 +3,7 @@ import Pagination from "../../components/Pagination";
 import {
   Button,
   Card,
+  ConfirmDialog,
   EmptyState,
   ErrorNotice,
   FilterChips,
@@ -14,6 +15,7 @@ import {
   Stars,
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
+import { EVALUATION_CATEGORIES } from "../../lib/evaluation";
 import { formatDate } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
@@ -33,19 +35,16 @@ type EvaluationRow = {
   comments: string | null;
   eval_date: string | null;
   created_at: string;
+  /** True for an evaluation this coordinator wrote, which they may change. */
+  mine?: boolean;
 };
 
 type StudentOption = { student_id: string; name: string; company: string | null };
 
 type Filter = "all" | EvaluatorType;
 
-const CATEGORIES = [
-  "Overall OJT Performance",
-  "Professionalism & Conduct",
-  "Technical Competence",
-  "Attendance & Punctuality",
-  "Documentation & Reports",
-];
+// The same list the supervisor portal uses, so ratings group together.
+const CATEGORIES: readonly string[] = EVALUATION_CATEGORIES;
 
 /** Who rated whom, in a sentence. */
 function summaryOf(row: EvaluationRow): string {
@@ -65,6 +64,24 @@ export default function CoordinatorEvaluations() {
   const [error, setError] = useState("");
   const [filter, setFilter] = useState<Filter>("all");
   const [evaluating, setEvaluating] = useState(false);
+  const [editing, setEditing] = useState<EvaluationRow | null>(null);
+  const [removing, setRemoving] = useState<EvaluationRow | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+
+  const remove = async () => {
+    if (!removing) return;
+    setRemoveBusy(true);
+    try {
+      await coordinatorRequest(`/api/evaluations/${removing.id}`, { method: "DELETE" });
+      toast.success("Evaluation removed.");
+      setRemoving(null);
+      await load();
+    } catch (removeError) {
+      toast.error(errorText(removeError, "The evaluation could not be removed."));
+    } finally {
+      setRemoveBusy(false);
+    }
+  };
 
   const load = useCallback(async () => {
     try {
@@ -158,6 +175,24 @@ export default function CoordinatorEvaluations() {
                   <p className="mt-2 text-xs text-slate-500">
                     {formatDate(row.eval_date || row.created_at)}
                   </p>
+                  {row.mine && (
+                    <div className="mt-1.5 flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditing(row)}
+                        className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRemoving(row)}
+                        className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-slate-100"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
                 </li>
               ))}
             </ul>
@@ -168,13 +203,37 @@ export default function CoordinatorEvaluations() {
       </div>
 
       <EvaluateDialog
-        open={evaluating}
-        onClose={() => setEvaluating(false)}
+        key={editing ? `edit-${editing.id}` : "new"}
+        open={evaluating || editing !== null}
+        editing={editing}
+        onClose={() => {
+          setEvaluating(false);
+          setEditing(null);
+        }}
         onSaved={() => {
           setEvaluating(false);
+          setEditing(null);
           setFilter("all");
           void load();
         }}
+      />
+
+      <ConfirmDialog
+        open={removing !== null}
+        title="Remove this evaluation?"
+        message={
+          removing
+            ? `Your ${removing.category} rating for ${
+                removing.student_name || removing.student_id
+              } will be deleted for them too. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Remove"
+        cancelLabel="Keep it"
+        tone="danger"
+        busy={removeBusy}
+        onConfirm={() => void remove()}
+        onCancel={() => setRemoving(null)}
       />
     </CoordinatorLayout>
   );
@@ -182,18 +241,21 @@ export default function CoordinatorEvaluations() {
 
 function EvaluateDialog({
   open,
+  editing,
   onClose,
   onSaved,
 }: {
   open: boolean;
+  /** The evaluation being changed, or null when adding a new one. */
+  editing: EvaluationRow | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [students, setStudents] = useState<StudentOption[]>([]);
-  const [studentId, setStudentId] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [rating, setRating] = useState(0);
-  const [comments, setComments] = useState("");
+  const [studentId, setStudentId] = useState(editing?.student_id ?? "");
+  const [category, setCategory] = useState(editing?.category ?? CATEGORIES[0]);
+  const [rating, setRating] = useState(editing ? Number(editing.rating) : 0);
+  const [comments, setComments] = useState(editing?.comments ?? "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -225,12 +287,15 @@ function EvaluateDialog({
     setSaving(true);
     setError("");
     try {
-      await coordinatorRequest("/api/evaluations", {
-        method: "POST",
+      await coordinatorRequest(editing ? `/api/evaluations/${editing.id}` : "/api/evaluations", {
+        method: editing ? "PUT" : "POST",
         body: { student_id: studentId, category, rating, comments: comments.trim() || null },
       });
-      const name = students.find((item) => item.student_id === studentId)?.name || "The student";
-      toast.success(`Evaluation saved. ${name} has been notified.`);
+      const name =
+        students.find((item) => item.student_id === studentId)?.name ||
+        editing?.student_name ||
+        "The student";
+      toast.success(`Evaluation ${editing ? "updated" : "saved"}. ${name} has been notified.`);
       reset();
       onSaved();
     } catch (saveError) {
@@ -244,7 +309,7 @@ function EvaluateDialog({
     <Modal
       open={open}
       onClose={close}
-      title="Evaluate a student"
+      title={editing ? "Edit evaluation" : "Evaluate a student"}
       description="The student sees this evaluation on their Feedback page."
       locked={saving}
       footer={
@@ -253,7 +318,7 @@ function EvaluateDialog({
             Cancel
           </Button>
           <Button type="submit" form="evaluation-form" busy={saving}>
-            {saving ? "Saving" : "Save evaluation"}
+            {saving ? "Saving" : editing ? "Save changes" : "Save evaluation"}
           </Button>
         </>
       }
@@ -263,10 +328,17 @@ function EvaluateDialog({
           <select
             id="evaluation-student"
             value={studentId}
+            disabled={editing !== null}
             onChange={(event) => setStudentId(event.target.value)}
             className="field"
           >
             <option value="">Choose a student</option>
+            {/* Keeps the name showing for a student who is no longer active. */}
+            {editing && !students.some((item) => item.student_id === editing.student_id) && (
+              <option value={editing.student_id}>
+                {editing.student_name || editing.student_id}
+              </option>
+            )}
             {students.map((item) => (
               <option key={item.student_id} value={item.student_id}>
                 {item.name}
@@ -282,6 +354,7 @@ function EvaluateDialog({
             onChange={(event) => setCategory(event.target.value)}
             className="field"
           >
+            {!CATEGORIES.includes(category) && <option>{category}</option>}
             {CATEGORIES.map((option) => (
               <option key={option}>{option}</option>
             ))}

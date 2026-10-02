@@ -31,6 +31,8 @@ type Complaint = {
   filed_by_name: string | null;
   report_type: "student" | "supervisor";
   reported_student_name: string | null;
+  /** Set when a supervisor's report is about one of their interns. */
+  reported_student_id?: string | null;
   supervisor_name: string | null;
   company_name: string | null;
   category: string;
@@ -46,7 +48,8 @@ type Filter = "all" | ComplaintStatus;
 
 function subjectOf(complaint: Complaint): string {
   if (complaint.report_type === "student") {
-    return complaint.reported_student_name || "a student";
+    const name = complaint.reported_student_name || "a student";
+    return complaint.reported_student_id ? `${name} (${complaint.reported_student_id})` : name;
   }
   return [complaint.supervisor_name, complaint.company_name].filter(Boolean).join(", ") || "a supervisor";
 }

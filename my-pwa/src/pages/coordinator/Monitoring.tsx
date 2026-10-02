@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
@@ -85,7 +86,10 @@ export default function CoordinatorMonitoring() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [scope, setScope] = useState<Scope>("all");
+  const [searchParams] = useSearchParams();
+  const [scope, setScope] = useState<Scope>(() =>
+    searchParams.get("scope") === "attention" ? "attention" : "all"
+  );
   const [query, setQuery] = useState("");
   const [focusStudent, setFocusStudent] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
@@ -113,8 +117,17 @@ export default function CoordinatorMonitoring() {
       void load();
     };
     refresh();
-    window.addEventListener("internet-notification", refresh);
-    return () => window.removeEventListener("internet-notification", refresh);
+    // Several notifications often arrive together; reload once for the burst.
+    let timer = 0;
+    const later = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, 400);
+    };
+    window.addEventListener("internet-notification", later);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("internet-notification", later);
+    };
   }, [load]);
 
   const text = query.trim().toLowerCase();
@@ -203,7 +216,12 @@ export default function CoordinatorMonitoring() {
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-slate-900">
-                          {row.name}
+                          <Link
+                            to={`/coordinator/students/${encodeURIComponent(row.student_id)}`}
+                            className="hover:text-psu-700 hover:underline"
+                          >
+                            {row.name}
+                          </Link>
                           {row.completed_at && (
                             <span className="ml-2 text-xs font-semibold text-emerald-700">
                               Hours completed
@@ -246,7 +264,12 @@ export default function CoordinatorMonitoring() {
                       <tr key={row.student_id} className="hover:bg-slate-50">
                         <td className="px-5 py-3">
                           <p className="font-medium text-slate-900">
-                            {row.name}
+                            <Link
+                              to={`/coordinator/students/${encodeURIComponent(row.student_id)}`}
+                              className="hover:text-psu-700 hover:underline"
+                            >
+                              {row.name}
+                            </Link>
                             {row.completed_at && (
                               <span className="ml-2 inline-flex">
                                 <StatusBadge status="Hours completed" tone="good" />
@@ -426,6 +449,23 @@ function FlaggedLogDialog({
   const open = !flag.time_out;
   const rejected = flag.status === "Rejected";
 
+  // Keeps the log rejected and takes it off the flagged list.
+  const keepRejected = async () => {
+    setBusy("Keep");
+    setError("");
+    try {
+      await coordinatorRequest(`/api/coordinator/attendance/${flag.id}/acknowledge`, {
+        method: "POST",
+        body: {},
+      });
+      toast.success("Rejection kept. The log is no longer flagged.");
+      onDecided();
+    } catch (keepError) {
+      setError(errorText(keepError, "The log could not be updated."));
+      setBusy(null);
+    }
+  };
+
   const decide = async (status: "Verified" | "Rejected" | "Pending") => {
     if (status === "Rejected" && !reason.trim()) {
       setReasonOpen(true);
@@ -437,7 +477,8 @@ function FlaggedLogDialog({
     try {
       await coordinatorRequest(`/api/attendance/${flag.id}/status`, {
         method: "PATCH",
-        body: { status, reason: reason.trim() || undefined },
+        // Refused if the supervisor decided this log in the meantime.
+        body: { status, reason: reason.trim() || undefined, expected_status: flag.status },
       });
       toast.success(
         status === "Verified"
@@ -466,6 +507,16 @@ function FlaggedLogDialog({
           <Button variant="secondary" onClick={onClose} disabled={busy !== null}>
             Close
           </Button>
+          {rejected && (
+            <Button
+              variant="secondary"
+              onClick={() => void keepRejected()}
+              busy={busy === "Keep"}
+              disabled={busy !== null}
+            >
+              Keep rejected
+            </Button>
+          )}
           {rejected && (
             <Button
               variant="secondary"
@@ -557,6 +608,13 @@ function FlaggedLogDialog({
         )}
 
         <AttendancePhoto path={flag.image_url} role="coordinator" />
+
+        {rejected && (
+          <p className="text-sm text-slate-600">
+            If the rejection was right, choose Keep rejected: the log stays rejected and leaves
+            this list.
+          </p>
+        )}
 
         {reasonOpen && (
           <div>

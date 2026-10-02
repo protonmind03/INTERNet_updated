@@ -75,8 +75,17 @@ export default function CoordinatorDashboard() {
       void load();
     };
     refresh();
-    window.addEventListener("internet-notification", refresh);
-    return () => window.removeEventListener("internet-notification", refresh);
+    // Several notifications often arrive together; reload once for the burst.
+    let timer = 0;
+    const later = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, 400);
+    };
+    window.addEventListener("internet-notification", later);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("internet-notification", later);
+    };
   }, [load]);
 
   // Students with a flagged log or an overdue task, worst first.
@@ -115,7 +124,7 @@ export default function CoordinatorDashboard() {
           title:
             data.flaggedAttendance === 1 ? "flagged attendance log" : "flagged attendance logs",
           detail: "Rejected, missing a time-out, or left unverified for days.",
-          to: "/coordinator/monitoring",
+          to: "/coordinator/monitoring?scope=attention",
           icon: "alert",
           urgent: true,
         },
@@ -124,7 +133,7 @@ export default function CoordinatorDashboard() {
           count: unassigned,
           title: unassigned === 1 ? "student without a supervisor" : "students without a supervisor",
           detail: "They cannot upload documents or have logs verified until assigned.",
-          to: "/coordinator/students",
+          to: "/coordinator/students?filter=unassigned",
           icon: "users",
           urgent: true,
         },
@@ -270,7 +279,12 @@ export default function CoordinatorDashboard() {
                   {watchList.map((row) => (
                     <li key={row.student_id} className="px-4 py-3.5 sm:px-5">
                       <div className="flex items-baseline justify-between gap-3">
-                        <p className="truncate text-sm font-medium text-slate-900">{row.name}</p>
+                        <Link
+                          to={`/coordinator/students/${encodeURIComponent(row.student_id)}`}
+                          className="truncate text-sm font-medium text-slate-900 hover:text-psu-700 hover:underline"
+                        >
+                          {row.name}
+                        </Link>
                         <p className="shrink-0 text-xs font-semibold text-red-600">
                           {[
                             row.flagged_logs > 0 &&

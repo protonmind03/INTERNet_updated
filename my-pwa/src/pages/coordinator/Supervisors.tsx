@@ -53,6 +53,8 @@ export default function CoordinatorSupervisors() {
   const [editing, setEditing] = useState<Supervisor | "new" | null>(null);
   const [toggling, setToggling] = useState<Supervisor | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
+  // The supervisor whose interns are being moved to someone else.
+  const [moving, setMoving] = useState<Supervisor | null>(null);
   const pager = usePagination(supervisors, 20);
 
   const load = useCallback(async () => {
@@ -173,6 +175,7 @@ export default function CoordinatorSupervisors() {
                           supervisor={supervisor}
                           onEdit={() => setEditing(supervisor)}
                           onToggle={() => setToggling(supervisor)}
+                          onMove={() => setMoving(supervisor)}
                         />
                       </div>
                     </div>
@@ -227,6 +230,7 @@ export default function CoordinatorSupervisors() {
                             compact
                             onEdit={() => setEditing(supervisor)}
                             onToggle={() => setToggling(supervisor)}
+                            onMove={() => setMoving(supervisor)}
                           />
                         </td>
                       </tr>
@@ -251,8 +255,27 @@ export default function CoordinatorSupervisors() {
         }}
       />
 
+      {/* A supervisor who still has interns must hand them over first. */}
       <ConfirmDialog
-        open={toggling !== null}
+        open={toggling !== null && toggling.is_active && internsOf(toggling) > 0}
+        title={`Move ${toggling?.name}'s interns first`}
+        message={
+          toggling
+            ? `${toggling.name} still has ${internsOf(toggling)} active ${
+                internsOf(toggling) === 1 ? "intern" : "interns"
+              }. Their work needs a reviewer, so move them to another supervisor before deactivating this account.`
+            : undefined
+        }
+        confirmLabel="Move interns"
+        onConfirm={() => {
+          setMoving(toggling);
+          setToggling(null);
+        }}
+        onCancel={() => setToggling(null)}
+      />
+
+      <ConfirmDialog
+        open={toggling !== null && !(toggling.is_active && internsOf(toggling) > 0)}
         title={
           toggling?.is_active
             ? `Deactivate ${toggling.name}'s account?`
@@ -260,11 +283,7 @@ export default function CoordinatorSupervisors() {
         }
         message={
           toggling?.is_active
-            ? toggling && internsOf(toggling) > 0
-              ? `They will not be able to sign in, and their ${internsOf(toggling)} assigned ${
-                  internsOf(toggling) === 1 ? "intern" : "interns"
-                } will have nobody to verify logs until you reassign them.`
-              : "They will not be able to sign in. You can reactivate the account at any time."
+            ? "They will not be able to sign in. You can reactivate the account at any time."
             : "They will be able to sign in again with their existing password."
         }
         confirmLabel={toggling?.is_active ? "Deactivate" : "Reactivate"}
@@ -273,6 +292,22 @@ export default function CoordinatorSupervisors() {
         onConfirm={() => void toggle()}
         onCancel={() => setToggling(null)}
       />
+
+      {moving && (
+        <MoveInternsDialog
+          key={moving.supervisor_id}
+          from={moving}
+          count={internsOf(moving)}
+          others={supervisors.filter(
+            (item) => item.is_active && item.supervisor_id !== moving.supervisor_id
+          )}
+          onClose={() => setMoving(null)}
+          onMoved={() => {
+            setMoving(null);
+            void load();
+          }}
+        />
+      )}
     </CoordinatorLayout>
   );
 }
@@ -282,11 +317,13 @@ function RowActions({
   compact = false,
   onEdit,
   onToggle,
+  onMove,
 }: {
   supervisor: Supervisor;
   compact?: boolean;
   onEdit: () => void;
   onToggle: () => void;
+  onMove: () => void;
 }) {
   const base =
     "inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium hover:bg-slate-100";
@@ -296,6 +333,12 @@ function RowActions({
         <Icon name="edit" size={15} />
         Edit
       </button>
+      {Number(supervisor.intern_count) > 0 && (
+        <button type="button" onClick={onMove} className={`${base} text-psu-700`}>
+          <Icon name="users" size={15} />
+          Move interns
+        </button>
+      )}
       <button
         type="button"
         onClick={onToggle}
@@ -304,6 +347,92 @@ function RowActions({
         {supervisor.is_active ? "Deactivate" : "Reactivate"}
       </button>
     </div>
+  );
+}
+
+/** Moves every active intern of one supervisor to another in one step. */
+function MoveInternsDialog({
+  from,
+  count,
+  others,
+  onClose,
+  onMoved,
+}: {
+  from: Supervisor;
+  count: number;
+  others: Supervisor[];
+  onClose: () => void;
+  onMoved: () => void;
+}) {
+  const [to, setTo] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const move = async () => {
+    if (!to) return setError("Choose the supervisor who will take them.");
+    setBusy(true);
+    setError("");
+    try {
+      const data = await coordinatorRequest<{ message: string }>(
+        `/api/coordinator/supervisors/${encodeURIComponent(from.supervisor_id)}/reassign`,
+        { method: "POST", body: { to } }
+      );
+      toast.success(`${data.message} Everyone involved has been notified.`);
+      onMoved();
+    } catch (moveError) {
+      setError(errorText(moveError, "The interns could not be moved."));
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Modal
+      open
+      onClose={() => !busy && onClose()}
+      title={`Move ${from.name}'s interns`}
+      description={`${count} active ${count === 1 ? "intern" : "interns"} will be reassigned together.`}
+      locked={busy}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button onClick={() => void move()} busy={busy} disabled={others.length === 0}>
+            {busy ? "Moving" : `Move ${count} ${count === 1 ? "intern" : "interns"}`}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        {others.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            There is no other active supervisor to move them to. Register one first.
+          </p>
+        ) : (
+          <FormField label="New supervisor" htmlFor="move-target">
+            <select
+              id="move-target"
+              value={to}
+              onChange={(event) => setTo(event.target.value)}
+              className="field"
+            >
+              <option value="">Choose a supervisor</option>
+              {others.map((item) => (
+                <option key={item.supervisor_id} value={item.supervisor_id}>
+                  {item.name}
+                  {item.company ? ` · ${item.company}` : ""}
+                </option>
+              ))}
+            </select>
+          </FormField>
+        )}
+        <p className="text-sm text-slate-600">
+          Their attendance, tasks and documents move with them, and the new supervisor reviews
+          anything still waiting.
+        </p>
+        <FormError message={error} />
+      </div>
+    </Modal>
   );
 }
 

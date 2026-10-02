@@ -13,6 +13,8 @@ export type DtrLog = {
   status: string;
 };
 
+export type DtrAbsence = { date: string; status: string };
+
 export type DtrPerson = {
   name: string;
   studentId: string;
@@ -40,10 +42,13 @@ function monthLabel(month: string): string {
 export default function DtrSheet({
   person,
   logs,
+  absences = [],
   loading,
 }: {
   person: DtrPerson;
   logs: DtrLog[];
+  /** Absences the student filed, shown on the days they cover. */
+  absences?: DtrAbsence[];
   loading: boolean;
 }) {
   const months = useMemo(() => {
@@ -60,15 +65,20 @@ export default function DtrSheet({
     const [year, index] = month.split("-").map(Number);
     const days = new Date(year, index, 0).getDate();
     const byDate = new Map(logs.map((log) => [String(log.date).slice(0, 10), log]));
+    const absentOn = new Map(
+      absences.map((absence) => [String(absence.date).slice(0, 10), absence.status])
+    );
     return Array.from({ length: days }, (_, offset) => {
       const day = offset + 1;
       const key = `${month}-${String(day).padStart(2, "0")}`;
       const weekday = new Date(year, index - 1, day).toLocaleDateString("en-PH", {
         weekday: "short",
       });
-      return { key, day, weekday, log: byDate.get(key) };
+      const log = byDate.get(key);
+      // A day with a log is not an absence, whatever was filed.
+      return { key, day, weekday, log, absence: log ? undefined : absentOn.get(key) };
     });
-  }, [logs, month]);
+  }, [logs, absences, month]);
 
   const verified = rows.reduce(
     (sum, row) => sum + (row.log?.status === "Verified" ? Number(row.log.hours) || 0 : 0),
@@ -80,6 +90,8 @@ export default function DtrSheet({
     0
   );
   const daysPresent = rows.filter((row) => row.log).length;
+  const excused = rows.filter((row) => row.absence === "Excused").length;
+  const unexcused = rows.filter((row) => row.absence === "Unexcused").length;
 
   return (
     <div className="space-y-4">
@@ -139,7 +151,9 @@ export default function DtrSheet({
               {rows.map((row) => (
                 <tr
                   key={row.key}
-                  className={`border-b border-slate-200 ${row.log ? "" : "text-slate-400"}`}
+                  className={`border-b border-slate-200 ${
+                    row.log || row.absence ? "" : "text-slate-400"
+                  }`}
                 >
                   <td className="tabular whitespace-nowrap py-1.5 pr-2">
                     {String(row.day).padStart(2, "0")}{" "}
@@ -161,7 +175,16 @@ export default function DtrSheet({
                   <td className="tabular whitespace-nowrap px-2 py-1.5 text-right">
                     {row.log && row.log.hours !== null ? formatHours(row.log.hours) : ""}
                   </td>
-                  <td className="whitespace-nowrap py-1.5 pl-2">{row.log?.status || ""}</td>
+                  <td className="whitespace-nowrap py-1.5 pl-2">
+                    {row.log?.status ||
+                      (row.absence === "Excused"
+                        ? "Absent, excused"
+                        : row.absence === "Unexcused"
+                          ? "Absent, unexcused"
+                          : row.absence
+                            ? "Absence filed"
+                            : "")}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -179,6 +202,8 @@ export default function DtrSheet({
 
         <p className="mt-2 text-sm text-slate-600">
           {daysPresent} {daysPresent === 1 ? "day" : "days"} logged.
+          {excused + unexcused > 0 &&
+            ` Absences: ${excused} excused, ${unexcused} unexcused.`}
           {unverified > 0 &&
             ` ${formatHours(unverified)} more are logged but not verified, and are not counted above.`}
         </p>

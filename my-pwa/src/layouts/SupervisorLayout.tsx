@@ -71,6 +71,15 @@ export default function SupervisorLayout({
     document.title = `${title} · INTERNet`;
   }, [title]);
 
+  // On a phone the links scroll sideways; bring the current page into view.
+  const phoneNav = useRef<HTMLElement | null>(null);
+  useEffect(() => {
+    const current = phoneNav.current?.querySelector<HTMLElement>('[aria-current="page"]');
+    const nav = phoneNav.current;
+    if (!current || !nav) return;
+    nav.scrollLeft = current.offsetLeft - (nav.clientWidth - current.offsetWidth) / 2;
+  }, [title]);
+
   if (!supervisor) return <Navigate to="/" replace />;
 
   const signOut = () => {
@@ -158,14 +167,22 @@ export default function SupervisorLayout({
         </div>
 
         {/* Below large screens the same links sit in a scrollable second row. */}
-        <nav
-          aria-label="Main"
-          className="flex h-11 items-stretch gap-1 overflow-x-auto border-t border-white/10 px-2 lg:hidden"
-        >
-          {NAV.map((item) => (
-            <TopLink key={item.path} {...item} count={counts[item.path]} />
-          ))}
-        </nav>
+        <div className="relative border-t border-white/10 lg:hidden">
+          <nav
+            ref={phoneNav}
+            aria-label="Main"
+            className="flex h-11 items-stretch gap-1 overflow-x-auto px-2 pr-8"
+          >
+            {NAV.map((item) => (
+              <TopLink key={item.path} {...item} count={counts[item.path]} />
+            ))}
+          </nav>
+          {/* A fading edge shows that the row scrolls to more pages. */}
+          <span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-linear-to-l from-psu-950 to-transparent"
+          />
+        </div>
       </header>
 
       <main className="mx-auto w-full max-w-7xl flex-1 animate-page-in px-4 pb-12 pt-6 md:px-8 md:pt-8 print:max-w-none print:p-0">

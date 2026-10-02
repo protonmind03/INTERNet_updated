@@ -226,6 +226,8 @@ function FileDialog({
     const form = new FormData();
     const internName = interns.find((intern) => intern.student_id === studentId)?.name;
     if (internName) form.append("reported_student_name", internName);
+    // The ID lets the coordinator know exactly which intern this is about.
+    if (studentId) form.append("reported_student_id", studentId);
     form.append("category", category);
     form.append("description", description.trim());
     if (evidence) form.append("evidence", evidence);
