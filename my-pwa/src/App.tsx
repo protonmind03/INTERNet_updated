@@ -1,6 +1,8 @@
 import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
+import OfflineBanner from "./components/OfflineBanner";
 import PushNotificationSettings from "./components/PushNotificationSettings";
 import RealtimeNotificationBridge from "./components/RealtimeNotificationBridge";
+import Toaster from "./components/Toaster";
 
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
@@ -20,6 +22,7 @@ import Documents from "./pages/student/document";
 import Report from "./pages/student/report";
 import Notifications from "./pages/student/notifications";
 import StudentFeedback from "./pages/student/Feedback";
+import StudentTimeRecord from "./pages/student/TimeRecord";
 
 /*
 |--------------------------------------------------------------------------
@@ -37,6 +40,7 @@ import SupervisorComplaints from "./pages/supervisor/complaints";
 import SupervisorProfilePage from "./pages/supervisor/profile";
 import SupervisorDocuments from "./pages/supervisor/documents";
 import SupervisorNotifications from "./pages/supervisor/notifications";
+import SupervisorTimeRecord from "./pages/supervisor/TimeRecord";
 
 /*
 |--------------------------------------------------------------------------
@@ -54,6 +58,7 @@ import CoordinatorAnalytics from "./pages/coordinator/Analytics";
 import CoordinatorProfile from "./pages/coordinator/Profile";
 import CoordinatorRequirements from "./pages/coordinator/Requirements";
 import CoordinatorDocuments from "./pages/coordinator/Documents";
+import CoordinatorAnnouncements from "./pages/coordinator/Announcements";
 
 function App() {
   return (
@@ -129,6 +134,11 @@ function App() {
           element={<StudentFeedback />}
         />
 
+        <Route
+          path="/time-record"
+          element={<StudentTimeRecord />}
+        />
+
         {/* 
         |--------------------------------------------------------------------------
         | SUPERVISOR
@@ -157,6 +167,11 @@ function App() {
         <Route
           path="/supervisor/notifications"
           element={<SupervisorNotifications />}
+        />
+
+        <Route
+          path="/supervisor/time-record"
+          element={<SupervisorTimeRecord />}
         />
 
 <Route
@@ -240,12 +255,19 @@ function App() {
           element={<CoordinatorDocuments />}
         />
 
+        <Route
+          path="/coordinator/announcements"
+          element={<CoordinatorAnnouncements />}
+        />
+
         {/* Unknown URLs go back to the login page instead of a blank screen. */}
         <Route path="*" element={<Navigate to="/" replace />} />
 
       </Routes>
       <RealtimeNotificationBridge />
       <PushNotificationSettings />
+      <Toaster />
+      <OfflineBanner />
     </BrowserRouter>
   );
 }

@@ -1,48 +1,32 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useRef, useState } from "react";
+import ComplaintThread from "../../components/ComplaintThread";
+import Icon from "../../components/Icon";
 import {
-  API_URL,
-  downloadProtectedUpload,
-  withSupervisorAuth,
-} from "../../lib/api";
+  Button,
+  Card,
+  EmptyState,
+  ErrorNotice,
+  Modal,
+  SkeletonRows,
+  StatusBadge,
+} from "../../components/ui";
+import SupervisorLayout from "../../layouts/SupervisorLayout";
+import { API_URL, downloadProtectedUpload, withSupervisorAuth } from "../../lib/api";
+import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
+import { formatDateTime } from "../../lib/format";
+import { useAccount } from "../../lib/session";
+import { errorText, toast } from "../../lib/toast";
+import { useSupervisorWork, type Intern } from "./useSupervisorWork";
 
-interface Supervisor {
-  supervisor_id: string;
-  name: string;
-  company: string;
-}
-
-interface Intern {
-  student_id: string;
-  name: string;
-}
-
-interface Complaint {
+type Complaint = {
   id: number;
   reported_student_name: string | null;
   category: string;
   description: string;
-  status: "Pending" | "In Review" | "Resolved" | "Dismissed";
+  status: string;
   resolution_notes: string | null;
   evidence_url?: string | null;
   created_at: string;
-}
-
-const NAV_ITEMS = [
-  { label: "Dashboard", path: "/supervisor/dashboard" },
-  { label: "Attendance", path: "/supervisor/attendance" },
-  { label: "My Interns", path: "/supervisor/interns" },
-  { label: "Tasks", path: "/supervisor/tasks" },
-  { label: "Documents", path: "/supervisor/documents" },
-  { label: "Evaluation", path: "/supervisor/evaluation" },
-  { label: "Complaints", path: "/supervisor/complaints" },
-];
-
-const STATUS_STYLES: Record<string, string> = {
-  Pending: "bg-amber-50 text-amber-600",
-  "In Review": "bg-blue-50 text-blue-600",
-  Resolved: "bg-emerald-50 text-emerald-600",
-  Dismissed: "bg-slate-100 text-slate-500",
 };
 
 const CATEGORIES = [
@@ -53,429 +37,352 @@ const CATEGORIES = [
   "Other",
 ];
 
+const MAX_EVIDENCE_MB = 5;
+
 export default function SupervisorComplaints() {
-  const navigate = useNavigate();
-  const [supervisor, setSupervisor] = useState<Supervisor | null>(null);
-  const [interns, setInterns] = useState<Intern[]>([]);
+  const supervisor = useAccount("supervisor");
+  const supervisorId = supervisor?.supervisor_id;
+  const { interns } = useSupervisorWork(supervisorId);
+
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
-
-  const [showFileModal, setShowFileModal] = useState(false);
-  const [studentId, setStudentId] = useState("");
-  const [category, setCategory] = useState(CATEGORIES[0]);
-  const [description, setDescription] = useState("");
-  const [evidence, setEvidence] = useState<File | null>(null);
+  const [error, setError] = useState("");
   const [filing, setFiling] = useState(false);
-  const [fileErr, setFileErr] = useState("");
+  // The report whose conversation with the coordinator is open, if any.
+  const [openThread, setOpenThread] = useState<number | null>(null);
 
-  useEffect(() => {
-    const saved = localStorage.getItem("supervisor");
-    if (!saved) {
-      navigate("/");
-      return;
-    }
-    setSupervisor(JSON.parse(saved));
-  }, [navigate]);
-
-  const loadComplaints = async (supervisorId: string) => {
+  const load = useCallback(async () => {
+    if (!supervisorId) return;
     try {
-      setLoading(true);
       const response = await fetch(
-        `${API_URL}/api/complaints/supervisor/${supervisorId}`,
+        `${API_URL}/api/complaints/supervisor/${encodeURIComponent(supervisorId)}`,
         withSupervisorAuth()
       );
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.message || "Failed to load complaints.");
-      setComplaints(data.complaints || []);
-    } catch {
-      // stays empty
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not load your reports.");
+      setComplaints(Array.isArray(data.complaints) ? data.complaints : []);
+      setError("");
+    } catch (loadError) {
+      setError(errorText(loadError, "Could not load your reports."));
     } finally {
       setLoading(false);
     }
-  };
+  }, [supervisorId]);
 
   useEffect(() => {
-    if (!supervisor) return;
+    const refresh = () => {
+      void load();
+    };
+    refresh();
+    window.addEventListener("internet-notification", refresh);
+    return () => window.removeEventListener("internet-notification", refresh);
+  }, [load]);
 
-    fetch(
-      `${API_URL}/api/supervisor/${supervisor.supervisor_id}/interns`,
-      withSupervisorAuth()
-    )
-      .then((r) => r.json())
-      .then((data) => setInterns(data.interns || []))
-      .catch(() => {});
-
-    loadComplaints(supervisor.supervisor_id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supervisor]);
-
-  const handleLogout = () => {
-    localStorage.removeItem("supervisor");
-    localStorage.removeItem("supervisor_id");
-    localStorage.removeItem("supervisor_token");
-    navigate("/");
-  };
-
-  const handleFile = async () => {
-    setFileErr("");
-
-    if (!description.trim()) {
-      setFileErr("Please describe the concern.");
-      return;
-    }
-
+  const downloadEvidence = async (path: string) => {
     try {
-      setFiling(true);
-      const internName =
-        interns.find((i) => i.student_id === studentId)?.name || null;
-
-      // Multipart so an optional evidence file can be attached
-      // (use case "File Complaint" includes "Attach Evidence/File").
-      const formData = new FormData();
-      if (internName) formData.append("reported_student_name", internName);
-      formData.append("category", category);
-      formData.append("description", description.trim());
-      if (evidence) formData.append("evidence", evidence);
-
-      const response = await fetch(`${API_URL}/api/complaints/supervisor`, withSupervisorAuth({
-        method: "POST",
-        body: formData,
-      }));
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setFileErr(data.message || "Failed to file complaint.");
-        return;
-      }
-
-      setShowFileModal(false);
-      setStudentId("");
-      setDescription("");
-      setEvidence(null);
-      if (supervisor) loadComplaints(supervisor.supervisor_id);
-    } catch {
-      setFileErr("Unable to connect to the server.");
-    } finally {
-      setFiling(false);
+      await downloadProtectedUpload(path, "supervisor");
+    } catch (downloadError) {
+      toast.error(errorText(downloadError, "The evidence file could not be downloaded."));
     }
   };
 
   return (
-    <div className="flex h-screen bg-slate-50">
-      {mobileNavOpen && (
-        <div
-          className="fixed inset-0 z-40 bg-slate-900/50 md:hidden"
-          onClick={() => setMobileNavOpen(false)}
-        />
-      )}
+    <SupervisorLayout
+      title="Incidents"
+      subtitle="Report a concern about an intern to the OJT coordinator, and follow what happens to it."
+      actions={
+        <Button icon="plus" onClick={() => setFiling(true)}>
+          Report an incident
+        </Button>
+      }
+    >
+      <div className="space-y-5">
+        {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-60 flex-col bg-[#0c1322] text-slate-300 transition-transform duration-200 md:static md:z-auto md:flex md:translate-x-0 md:shrink-0 ${
-          mobileNavOpen ? "flex translate-x-0" : "hidden -translate-x-full md:flex"
-        }`}
-      >
-        <button
-          type="button"
-          onClick={() => setMobileNavOpen(false)}
-          className="absolute right-3 top-3 flex h-7 w-7 items-center justify-center rounded-lg text-slate-400 hover:bg-white/10 hover:text-white md:hidden"
-        >
-          ✕
-        </button>
-
-        <div className="flex items-center gap-2.5 px-4 py-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-500 font-bold text-slate-900">
-            IN
-          </div>
-          <div>
-            <p className="text-sm font-semibold leading-tight text-white">
-              INTERNet
-            </p>
-            <p className="text-[11px] leading-tight text-slate-400">
-              Supervisor Portal
-            </p>
-          </div>
-        </div>
-
-        <nav className="flex-1 space-y-1 px-3 pt-2">
-          {NAV_ITEMS.map((item) => {
-            const active = item.path === "/supervisor/complaints";
-            return (
-              <button
-                key={item.path}
-                type="button"
-                onClick={() => navigate(item.path)}
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm ${
-                  active
-                    ? "border-l-2 border-amber-500 bg-white/5 font-medium text-amber-500"
-                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            );
-          })}
-        </nav>
-
-        <div className="space-y-1 border-t border-white/10 px-3 py-2">
-          <button
-            type="button"
-            onClick={() => navigate("/supervisor/profile")}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-slate-400 hover:bg-white/5 hover:text-slate-200"
-          >
-            Profile
-          </button>
-          <button
-            type="button"
-            onClick={() => setShowLogoutConfirm(true)}
-            className="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm text-red-400 hover:bg-white/5"
-          >
-            Sign Out
-          </button>
-        </div>
-      </aside>
-
-      <div className="flex flex-1 flex-col overflow-y-auto">
-        <header className="flex items-center justify-between bg-gradient-to-r from-amber-500 to-orange-500 px-4 py-2.5">
-          <button
-            type="button"
-            onClick={() => setMobileNavOpen(true)}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-white md:hidden"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
-          <p className="hidden text-sm font-medium text-white md:block">
-            {supervisor?.company || "Company"} · Supervisor Portal
-          </p>
-          <button
-            type="button"
-            onClick={() => setShowLogoutConfirm(true)}
-            className="text-sm font-medium text-white md:hidden"
-          >
-            Sign Out
-          </button>
-        </header>
-
-        <main className="flex-1 space-y-4 p-4 md:p-6">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-xl font-semibold text-slate-900">
-                Complaints & Incidents
-              </h1>
-              <p className="text-sm text-slate-400">
-                File a concern and track ones you've already reported
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowFileModal(true)}
-              className="rounded-lg bg-[#0c1322] px-4 py-2 text-sm font-semibold text-white hover:bg-[#16233f]"
-            >
-              + File Complaint
-            </button>
-          </div>
-
-          <div className="space-y-2.5">
-            {loading && (
-              <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-                Loading...
-              </div>
-            )}
-
-            {!loading && complaints.length === 0 && (
-              <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-                You haven't filed any complaints.
-              </div>
-            )}
-
-            {!loading &&
-              complaints.map((c) => (
-                <div
-                  key={c.id}
-                  className="rounded-xl border border-slate-200 bg-white p-4"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        {c.category}
-                        {c.reported_student_name && (
-                          <span className="ml-2 text-xs font-normal text-slate-400">
-                            about {c.reported_student_name}
-                          </span>
-                        )}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        {c.description}
-                      </p>
-                      <p className="mt-1.5 text-xs text-slate-400">
-                        {new Date(c.created_at).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <span
-                      className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium ${
-                        STATUS_STYLES[c.status]
-                      }`}
-                    >
-                      {c.status}
-                    </span>
+        <Card>
+          {loading ? (
+            <SkeletonRows rows={3} />
+          ) : complaints.length === 0 ? (
+            <EmptyState
+              icon="flag"
+              title="No incidents reported"
+              description="Reports you send to the OJT coordinator are listed here with their status."
+            />
+          ) : (
+            <ul className="divide-y divide-slate-100">
+              {complaints.map((item) => (
+                <li key={item.id} className="px-4 py-4 sm:px-5">
+                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                    <p className="text-sm font-semibold text-slate-900">{item.category}</p>
+                    <StatusBadge status={item.status} />
                   </div>
-                  {c.resolution_notes && (
-                    <p className="mt-2 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">
-                      Coordinator note: {c.resolution_notes}
-                    </p>
-                  )}
-                  {c.evidence_url && (
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {formatDateTime(item.created_at)}
+                    {item.reported_student_name && ` · About ${item.reported_student_name}`}
+                  </p>
+                  <p className="mt-2 whitespace-pre-line text-sm text-slate-700">
+                    {item.description}
+                  </p>
+                  {item.evidence_url && (
                     <button
                       type="button"
-                      onClick={() =>
-                        downloadProtectedUpload(
-                          c.evidence_url as string,
-                          "supervisor"
-                        ).catch(() =>
-                          setFileErr("Unable to download the evidence file.")
-                        )
-                      }
-                      className="mt-2 text-xs font-medium text-indigo-600 hover:underline"
+                      onClick={() => void downloadEvidence(item.evidence_url!)}
+                      className="mt-2 inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
                     >
+                      <Icon name="download" size={15} />
                       Download evidence
                     </button>
                   )}
-                </div>
+                  {item.resolution_notes && (
+                    <p className="mt-3 rounded-md bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                      <span className="font-semibold">Coordinator:</span> {item.resolution_notes}
+                    </p>
+                  )}
+                  {openThread === item.id ? (
+                    <div className="mt-3 border-t border-slate-100 pt-3">
+                      <ComplaintThread complaintId={item.id} role="supervisor" />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setOpenThread(item.id)}
+                      className="mt-2 block text-sm font-semibold text-psu-700 hover:underline"
+                    >
+                      Conversation with the coordinator
+                    </button>
+                  )}
+                </li>
               ))}
-          </div>
-        </main>
+            </ul>
+          )}
+        </Card>
       </div>
 
-      {showFileModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-slate-900">
-              File a Complaint
-            </h2>
+      <FileDialog
+        open={filing}
+        interns={interns}
+        onClose={() => setFiling(false)}
+        onFiled={() => {
+          setFiling(false);
+          void load();
+        }}
+      />
+    </SupervisorLayout>
+  );
+}
 
-            {fileErr && (
-              <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">
-                {fileErr}
-              </div>
-            )}
+function FileDialog({
+  open,
+  interns,
+  onClose,
+  onFiled,
+}: {
+  open: boolean;
+  interns: Intern[];
+  onClose: () => void;
+  onFiled: () => void;
+}) {
+  const [studentId, setStudentId] = useState("");
+  const [category, setCategory] = useState(CATEGORIES[0]);
+  const [description, setDescription] = useState("");
+  const [evidence, setEvidence] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const evidenceInput = useRef<HTMLInputElement | null>(null);
 
-            <div className="mt-4 space-y-3">
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  About which student? (optional)
-                </label>
-                <select
-                  value={studentId}
-                  onChange={(e) => setStudentId(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                >
-                  <option value="">General / not student-specific</option>
-                  {interns.map((i) => (
-                    <option key={i.student_id} value={i.student_id}>
-                      {i.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+  const reset = () => {
+    setStudentId("");
+    setCategory(CATEGORIES[0]);
+    setDescription("");
+    setEvidence(null);
+    setError("");
+  };
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Category
-                </label>
-                <select
-                  value={category}
-                  onChange={(e) => setCategory(e.target.value)}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                >
-                  {CATEGORIES.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </div>
+  const close = () => {
+    if (saving) return;
+    reset();
+    onClose();
+  };
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Description
-                </label>
-                <textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
-                />
-              </div>
+  const chooseEvidence = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) return;
+    const problem = uploadProblem(file, MAX_EVIDENCE_MB);
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setError("");
+    setEvidence(file);
+  };
 
-              <div>
-                <label className="mb-1 block text-xs font-medium text-slate-500">
-                  Evidence (optional)
-                </label>
-                <input
-                  type="file"
-                  accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
-                  onChange={(e) => setEvidence(e.target.files?.[0] || null)}
-                  className="block w-full text-xs text-slate-500 file:mr-3 file:rounded-lg file:border-0 file:bg-slate-100 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-slate-700"
-                />
-                <p className="mt-1 text-[11px] text-slate-400">
-                  JPG, PNG, PDF, DOC, or DOCX up to 5 MB.
-                </p>
-              </div>
-            </div>
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (description.trim().length < 20) {
+      setError("Describe what happened in at least a sentence or two.");
+      return;
+    }
+    const form = new FormData();
+    const internName = interns.find((intern) => intern.student_id === studentId)?.name;
+    if (internName) form.append("reported_student_name", internName);
+    form.append("category", category);
+    form.append("description", description.trim());
+    if (evidence) form.append("evidence", evidence);
 
-            <div className="mt-6 flex gap-2.5">
-              <button
-                type="button"
-                onClick={() => setShowFileModal(false)}
-                className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleFile}
-                disabled={filing}
-                className="flex-1 rounded-lg bg-[#0c1322] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#16233f] disabled:opacity-60"
-              >
-                {filing ? "Filing..." : "Submit"}
-              </button>
-            </div>
-          </div>
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${API_URL}/api/complaints/supervisor`,
+        withSupervisorAuth({ method: "POST", body: form })
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "The report could not be sent.");
+      toast.success("Report sent to the OJT coordinator.");
+      reset();
+      onFiled();
+    } catch (submitError) {
+      setError(errorText(submitError, "The report could not be sent."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      title="Report an incident"
+      description="This goes to the OJT coordinator."
+      locked={saving}
+      footer={
+        <>
+          <Button variant="secondary" onClick={close} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" form="incident-form" busy={saving}>
+            {saving ? "Sending" : "Send report"}
+          </Button>
+        </>
+      }
+    >
+      <form id="incident-form" onSubmit={submit} className="space-y-4" noValidate>
+        <div>
+          <label
+            htmlFor="incident-intern"
+            className="mb-1.5 block text-sm font-medium text-slate-700"
+          >
+            Intern involved <span className="font-normal text-slate-400">(optional)</span>
+          </label>
+          <select
+            id="incident-intern"
+            value={studentId}
+            onChange={(event) => setStudentId(event.target.value)}
+            className="field"
+          >
+            <option value="">Not about a specific intern</option>
+            {interns.map((intern) => (
+              <option key={intern.student_id} value={intern.student_id}>
+                {intern.name}
+              </option>
+            ))}
+          </select>
         </div>
-      )}
 
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Sign out?
-            </h2>
-            <p className="mt-1.5 text-sm text-slate-500">
-              Are you sure you want to sign out?
-            </p>
-            <div className="mt-6 flex gap-2.5">
+        <div>
+          <label
+            htmlFor="incident-category"
+            className="mb-1.5 block text-sm font-medium text-slate-700"
+          >
+            Category
+          </label>
+          <select
+            id="incident-category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            className="field"
+          >
+            {CATEGORIES.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label
+            htmlFor="incident-description"
+            className="mb-1.5 block text-sm font-medium text-slate-700"
+          >
+            What happened?
+          </label>
+          <textarea
+            id="incident-description"
+            rows={5}
+            maxLength={4000}
+            value={description}
+            onChange={(event) => setDescription(event.target.value)}
+            placeholder="Include dates, times and who was involved."
+            className="field resize-none"
+          />
+        </div>
+
+        <div>
+          <p className="mb-1.5 text-sm font-medium text-slate-700">
+            Evidence <span className="font-normal text-slate-400">(optional)</span>
+          </p>
+          <input
+            ref={evidenceInput}
+            type="file"
+            accept={UPLOAD_ACCEPT}
+            onChange={chooseEvidence}
+            className="sr-only"
+            aria-label="Evidence file"
+            tabIndex={-1}
+          />
+          {evidence ? (
+            <div className="flex items-center gap-3 rounded-lg border border-slate-300 px-3 py-2.5">
+              <Icon name="document" className="shrink-0 text-psu-600" />
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium text-slate-800">{evidence.name}</p>
+                <p className="text-xs text-slate-500">{formatFileSize(evidence.size)}</p>
+              </div>
               <button
                 type="button"
-                onClick={() => setShowLogoutConfirm(false)}
-                className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50"
+                onClick={() => setEvidence(null)}
+                aria-label="Remove evidence file"
+                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
-                No, Stay
-              </button>
-              <button
-                type="button"
-                onClick={handleLogout}
-                className="flex-1 rounded-lg bg-red-500 px-4 py-2.5 text-sm font-semibold text-white hover:bg-red-600"
-              >
-                Yes, Sign Out
+                <Icon name="close" size={16} />
               </button>
             </div>
-          </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => evidenceInput.current?.click()}
+              className="flex w-full items-center gap-3 rounded-lg border border-dashed border-slate-300 px-3 py-3 text-left hover:border-psu-400 hover:bg-psu-50"
+            >
+              <Icon name="upload" className="shrink-0 text-slate-400" />
+              <span className="text-sm">
+                <span className="font-semibold text-psu-700">Attach a file</span>
+                <span className="block text-xs text-slate-500">
+                  {UPLOAD_HINT}, up to {MAX_EVIDENCE_MB} MB
+                </span>
+              </span>
+            </button>
+          )}
         </div>
-      )}
-    </div>
+
+        {error && (
+          <p
+            role="alert"
+            className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700"
+          >
+            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
+            {error}
+          </p>
+        )}
+      </form>
+    </Modal>
   );
 }

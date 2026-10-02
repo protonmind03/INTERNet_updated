@@ -113,7 +113,7 @@ export default function RealtimeNotificationBridge() {
     <aside
       role="status"
       aria-live="polite"
-      className="fixed right-4 top-4 z-[60] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-indigo-200 bg-white p-4 shadow-xl"
+      className="fixed right-4 top-4 z-[60] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-slate-200 border-l-4 border-l-gold-400 bg-white p-4 shadow-xl"
     >
       <button
         type="button"

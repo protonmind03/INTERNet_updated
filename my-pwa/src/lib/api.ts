@@ -99,10 +99,12 @@ export async function getProtectedUploadUrl(
 
 export async function downloadProtectedUpload(
   filePath: string,
-  role: "coordinator" | "student" | "supervisor"
+  role: "coordinator" | "student" | "supervisor",
+  /** The name to save the file under, when the original name is known. */
+  downloadName?: string | null
 ): Promise<void> {
   const objectUrl = await getProtectedUploadUrl(filePath, role);
-  const filename = filePath.split(/[\\/]/).pop() || "download";
+  const filename = downloadName?.trim() || filePath.split(/[\\/]/).pop() || "download";
   const link = document.createElement("a");
   link.href = objectUrl;
   link.download = filename;

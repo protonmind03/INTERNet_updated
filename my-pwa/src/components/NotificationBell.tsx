@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import Icon from "./Icon";
+import Tooltip from "./Tooltip";
 import {
   formatNotificationTime,
   useNotifications,
+  type NotificationItem,
   type NotificationRole,
 } from "../lib/useNotifications";
 
@@ -12,6 +15,8 @@ type Props = {
   buttonClassName: string;
   /** When set, the panel shows a link to the full notification page. */
   viewAllPath?: string;
+  /** When set, clicking a notification also opens the page it is about. */
+  resolvePath?: (item: NotificationItem) => string;
 };
 
 /** Header bell with an unread count and a panel for reading notifications. */
@@ -19,6 +24,7 @@ export default function NotificationBell({
   role,
   buttonClassName,
   viewAllPath,
+  resolvePath,
 }: Props) {
   const navigate = useNavigate();
   const { notifications, unreadCount, loading, error, markRead, markAllRead } =
@@ -27,6 +33,7 @@ export default function NotificationBell({
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    if (!open) return;
     const handleClickOutside = (event: MouseEvent) => {
       if (
         containerRef.current &&
@@ -35,13 +42,20 @@ export default function NotificationBell({
         setOpen(false);
       }
     };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", handleClickOutside);
-    return () =>
+    document.addEventListener("keydown", handleEscape);
+    return () => {
       document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [open]);
 
   return (
     <div className="relative" ref={containerRef}>
+      <Tooltip label="Notifications" side="bottom">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -53,89 +67,90 @@ export default function NotificationBell({
         aria-expanded={open}
         className={buttonClassName}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          width="18"
-          height="18"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.8"
-        >
-          <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
-          <path d="M13.7 21a2 2 0 0 1-3.4 0" />
-        </svg>
+        <Icon name="bell" />
         {unreadCount > 0 && (
-          <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-red-500 px-1 text-[9px] font-semibold text-white">
+          <span className="tabular absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white ring-2 ring-white">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
       </button>
+      </Tooltip>
 
       {open && (
-        <div className="absolute right-0 z-30 mt-2 w-80 rounded-xl border border-slate-200 bg-white text-left shadow-lg">
+        <div className="fixed inset-x-3 top-16 z-40 origin-top-right animate-pop-in rounded-xl border border-slate-200 bg-white text-left shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <p className="text-sm font-semibold text-slate-800">
-              Notifications
-            </p>
+            <p className="text-sm font-semibold text-slate-900">Notifications</p>
             {unreadCount > 0 && (
               <button
                 type="button"
                 onClick={() => void markAllRead()}
-                className="text-xs font-medium text-indigo-600 hover:underline"
+                className="text-xs font-semibold text-psu-700 hover:underline"
               >
                 Mark all as read
               </button>
             )}
           </div>
 
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-[min(24rem,60dvh)] overflow-y-auto">
             {loading && (
-              <p className="px-4 py-6 text-center text-xs text-slate-400">
-                Loading...
-              </p>
+              <div className="space-y-3 px-4 py-4" aria-hidden="true">
+                {[0, 1, 2].map((row) => (
+                  <div key={row} className="space-y-1.5">
+                    <div className="h-3 w-2/5 animate-pulse rounded bg-slate-200" />
+                    <div className="h-3 w-4/5 animate-pulse rounded bg-slate-100" />
+                  </div>
+                ))}
+              </div>
             )}
             {!loading && error && (
-              <p role="alert" className="px-4 py-6 text-center text-xs text-red-600">
+              <p role="alert" className="px-4 py-6 text-center text-sm text-red-600">
                 {error}
               </p>
             )}
             {!loading && !error && notifications.length === 0 && (
-              <p className="px-4 py-6 text-center text-xs text-slate-400">
-                No notifications yet.
+              <p className="px-4 py-8 text-center text-sm text-slate-500">
+                You have no notifications.
               </p>
             )}
-            {notifications.slice(0, 20).map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => {
-                  if (!item.is_read) void markRead(item.id);
-                }}
-                className={`block w-full border-b border-slate-50 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
-                  item.is_read ? "" : "bg-indigo-50/60"
-                }`}
-              >
-                <span className="flex items-start justify-between gap-2">
+            {!loading &&
+              notifications.slice(0, 20).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    if (!item.is_read) void markRead(item.id);
+                    const path = resolvePath?.(item);
+                    if (path) {
+                      setOpen(false);
+                      navigate(path);
+                    }
+                  }}
+                  className={`flex w-full gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${
+                    item.is_read ? "" : "bg-psu-50/60"
+                  }`}
+                >
                   <span
-                    className={`text-xs text-slate-800 ${
-                      item.is_read ? "font-medium" : "font-semibold"
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${
+                      item.is_read ? "bg-transparent" : "bg-psu-600"
                     }`}
-                  >
-                    {item.title}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span
+                      className={`block text-sm text-slate-900 ${
+                        item.is_read ? "font-medium" : "font-semibold"
+                      }`}
+                    >
+                      {item.title}
+                    </span>
+                    <span className="mt-0.5 block text-sm text-slate-600">
+                      {item.message}
+                    </span>
+                    <span className="mt-1 block text-xs text-slate-400">
+                      {formatNotificationTime(item.created_at)}
+                    </span>
                   </span>
-                  {!item.is_read && (
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-500" />
-                  )}
-                </span>
-                <span className="mt-0.5 block text-xs text-slate-500">
-                  {item.message}
-                </span>
-                <span className="mt-1 block text-[10px] text-slate-400">
-                  {formatNotificationTime(item.created_at)}
-                </span>
-              </button>
-            ))}
+                </button>
+              ))}
           </div>
 
           {viewAllPath && (
@@ -145,7 +160,7 @@ export default function NotificationBell({
                 setOpen(false);
                 navigate(viewAllPath);
               }}
-              className="block w-full border-t border-slate-100 px-4 py-2.5 text-center text-xs font-medium text-indigo-600 hover:bg-slate-50"
+              className="block w-full rounded-b-xl border-t border-slate-100 px-4 py-3 text-center text-sm font-semibold text-psu-700 hover:bg-slate-50"
             >
               View all notifications
             </button>
