@@ -2,7 +2,8 @@ import type { Pool } from "pg";
 import { isSmtpConfigured, sendEmail } from "./mailer";
 
 type NotificationWriter = (notification: {
-  studentId: string;
+  studentId?: string;
+  supervisorId?: string;
   title: string;
   message: string;
   type: string;
@@ -53,13 +54,14 @@ export function startDeadlineReminderScheduler(
             student_id: string;
             student_email: string;
             student_name: string;
+            assigned_by_id: string | null;
             title: string;
             due_date: string;
           }>(
             `
             SELECT r.id, r.reminder_type, r.notification_sent_at, r.email_sent_at,
                    t.student_id, s.email AS student_email, s.name AS student_name,
-                   t.title, t.due_date::text AS due_date
+                   t.assigned_by_id, t.title, t.due_date::text AS due_date
             FROM task_deadline_reminders r
             JOIN tasks t ON t.id = r.task_id
             JOIN students s ON s.student_id = t.student_id
@@ -91,6 +93,15 @@ export function startDeadlineReminderScheduler(
               message: deadlineText,
               type: "task",
             });
+            // The supervisor who assigned it hears once, when it goes overdue.
+            if (isDue && reminder.assigned_by_id) {
+              await createNotification({
+                supervisorId: reminder.assigned_by_id,
+                title: "Task past its deadline",
+                message: `${reminder.student_name} has not submitted "${reminder.title}", which was due on ${reminder.due_date}.`,
+                type: "task",
+              });
+            }
             await client.query(
               `UPDATE task_deadline_reminders
                SET notification_sent_at = NOW() WHERE id = $1`,
