@@ -1,0 +1,23 @@
+{
+  "name": "INTERNet: OJT Monitoring & Analytics",
+  "short_name": "INTERNet",
+  "description": "A data-driven monitoring and analytics system for On-the-Job Training.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0c1322",
+  "theme_color": "#0c1322",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+node_modules/
+dist/
+
+# Secrets
+.env
+.env.local
+*.local
+
+# Uploaded attendance photos, evidence and documents
+backend/uploads/
+backend/private-uploads/
+
+# Paper drafts stay local; they carry the group members' names
+CC106 GROUP 9*.docx
+CC106 GROUP 9*.pdf

@@ -1,0 +1,6733 @@
+// Must stay first: the service modules below read process.env when imported.
+import "dotenv/config";
+import express from "express";
+import cors from "cors";
+import helmet from "helmet";
+import { Pool } from "pg";
+import multer from "multer";
+import { createHash, randomBytes } from "node:crypto";
+import path from "path";
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import webpush from "web-push";
+import {
+  deletePrivateFile,
+  isAzureBlobStorageConfigured,
+  readPrivateFile,
+  savePrivateFile,
+} from "./services/privateFileStore";
+import { isSmtpConfigured, sendEmail } from "./services/mailer";
+import {
+  publishNotification,
+  closeNotificationStreams,
+  registerNotificationStream,
+  startPostgresNotificationListener,
+} from "./services/liveNotifications";
+import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
+
+// Attendance timestamps are stored as Philippine wall-clock time. Node must
+// read them in the same zone, or a host running on UTC shifts every
+// displayed time by eight hours.
+if (!process.env.TZ) {
+  process.env.TZ = "Asia/Manila";
+}
+
+const app = express();
+
+// Hosting platforms put the API behind one reverse proxy. Without this,
+// req.ip is the proxy's address and every user shares one rate limit.
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
+
+/*
+|--------------------------------------------------------------------------
+| MIDDLEWARE
+|--------------------------------------------------------------------------
+*/
+
+// In production only the deployed frontend (FRONTEND_URL, plus any extra
+// comma-separated origins in CORS_ORIGINS) may call the API from a browser.
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  ...(process.env.CORS_ORIGINS || "").split(","),
+]
+  .map((origin) => (origin || "").trim().replace(/\/+$/, ""))
+  .filter(Boolean);
+
+// Standard security headers. The frontend lives on another origin and
+// downloads files from this API, so cross-origin reads stay allowed here
+// and are restricted by CORS and per-record authorization instead.
+app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
+
+app.use(
+  process.env.NODE_ENV === "production" && allowedOrigins.length > 0
+    ? cors({ origin: allowedOrigins })
+    : cors()
+);
+app.use(express.json());
+
+// Unauthenticated liveness probe for the hosting platform's health check.
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok" });
+});
+
+// In production, never send raw server/database error text to clients.
+// Handlers include `error: error.message` in 500 responses for local
+// debugging; this strips it before the response leaves the server.
+if (process.env.NODE_ENV === "production") {
+  app.use((_req, res, next) => {
+    const originalJson = res.json.bind(res);
+    res.json = (body?: unknown) => {
+      if (
+        res.statusCode >= 500 &&
+        body &&
+        typeof body === "object" &&
+        "error" in body
+      ) {
+        const { error: _hidden, ...safeBody } = body as Record<string, unknown>;
+        return originalJson(safeBody);
+      }
+      return originalJson(body);
+    };
+    next();
+  });
+}
+
+/*
+|--------------------------------------------------------------------------
+| DATABASE
+|--------------------------------------------------------------------------
+*/
+
+console.log(
+  "DATABASE_PUBLIC_URL exists:",
+  !!process.env.DATABASE_PUBLIC_URL
+);
+
+const databaseUrl = process.env.DATABASE_PUBLIC_URL;
+if (!databaseUrl) {
+  throw new Error("DATABASE_PUBLIC_URL must be configured before starting the API.");
+}
+if (/USER:PASSWORD@HOST:PORT\/DATABASE/i.test(databaseUrl)) {
+  throw new Error(
+    "DATABASE_PUBLIC_URL still contains template values; configure backend/.env."
+  );
+}
+
+let parsedDatabaseUrl: URL;
+try {
+  parsedDatabaseUrl = new URL(databaseUrl);
+} catch {
+  throw new Error(
+    "DATABASE_PUBLIC_URL must be a valid PostgreSQL URL. Keep credentials in backend/.env."
+  );
+}
+if (
+  !["postgres:", "postgresql:"].includes(parsedDatabaseUrl.protocol) ||
+  !parsedDatabaseUrl.hostname ||
+  parsedDatabaseUrl.pathname.length < 2
+) {
+  throw new Error(
+    "DATABASE_PUBLIC_URL must include a PostgreSQL scheme, host, and database name."
+  );
+}
+
+const databaseHost = parsedDatabaseUrl.hostname.replace(/^\[|\]$/g, "");
+const isLocalDatabase = ["localhost", "127.0.0.1", "::1"].includes(
+  databaseHost
+);
+
+const pool = new Pool({
+  connectionString: databaseUrl,
+  ssl: isLocalDatabase ? false : { rejectUnauthorized: false },
+  options: "-c timezone=Asia/Manila",
+});
+
+const vapidPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
+const vapidPrivateKey = process.env.WEB_PUSH_VAPID_PRIVATE_KEY;
+const vapidSubject = process.env.WEB_PUSH_SUBJECT;
+if ([vapidPublicKey, vapidPrivateKey, vapidSubject].some(Boolean)) {
+  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
+    throw new Error(
+      "WEB_PUSH_VAPID_PUBLIC_KEY, WEB_PUSH_VAPID_PRIVATE_KEY, and WEB_PUSH_SUBJECT must all be configured together."
+    );
+  }
+  webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+}
+
+function isWebPushConfigured(): boolean {
+  return Boolean(vapidPublicKey && vapidPrivateKey && vapidSubject);
+}
+
+async function sendWebPush(
+  recipient: { role: "coordinator" | "student" | "supervisor"; id: string },
+  notification: {
+    title: string;
+    message: string;
+    id: number;
+  }
+): Promise<void> {
+  const result = await pool.query<{ id: number; subscription: webpush.PushSubscription }>(
+    `SELECT id, subscription FROM web_push_subscriptions WHERE role = $1 AND account_id = $2`,
+    [recipient.role, recipient.id]
+  );
+  await Promise.all(
+    result.rows.map(async (row) => {
+      try {
+        await webpush.sendNotification(
+          row.subscription,
+          JSON.stringify({
+            title: notification.title,
+            body: notification.message,
+            notificationId: notification.id,
+            url:
+              recipient.role === "student"
+                ? "/notifications"
+                : `/${recipient.role}/dashboard`,
+          }),
+          { TTL: 86400 }
+        );
+      } catch (error) {
+        const statusCode =
+          typeof error === "object" && error !== null && "statusCode" in error
+            ? Number(error.statusCode)
+            : 0;
+        if (statusCode === 404 || statusCode === 410) {
+          await pool.query(
+            "DELETE FROM web_push_subscriptions WHERE id = $1",
+            [row.id]
+          );
+        } else {
+          console.error("WEB PUSH DELIVERY ERROR:", error);
+        }
+      }
+    })
+  );
+}
+
+pool.on("error", (error) => {
+  console.error(
+    "Unexpected PostgreSQL pool error:",
+    error
+  );
+});
+
+/*
+|--------------------------------------------------------------------------
+| AUTH HELPERS (JWT + PASSWORD HASHING)
+|--------------------------------------------------------------------------
+|
+| Student/supervisor accounts were created with plain-text passwords
+| before this migration, so `verifyPassword` accepts either a bcrypt
+| hash (new accounts, and anything created through the coordinator's
+| User Management screens) or a legacy plain-text match, so existing
+| logins keep working. New accounts should always be hashed going
+| forward — `hashPassword` is used everywhere a password is written.
+|
+*/
+
+function requireJwtSecret(): string {
+  const secret = process.env.JWT_SECRET;
+  if (!secret || secret.length < 32) {
+    throw new Error("JWT_SECRET must contain at least 32 characters.");
+  }
+  if (/replace-this/i.test(secret)) {
+    throw new Error(
+      "JWT_SECRET still contains the .env.example placeholder; set a random value."
+    );
+  }
+  return secret;
+}
+
+const JWT_SECRET = requireJwtSecret();
+const accountTables = {
+  student: { table: "students", idColumn: "student_id" },
+  supervisor: { table: "supervisors", idColumn: "supervisor_id" },
+  coordinator: { table: "coordinators", idColumn: "coordinator_id" },
+} as const;
+
+const genericResetMessage =
+  "If an active account matches that email, password-reset instructions will be sent.";
+
+app.post("/api/auth/password-reset/request", async (req, res) => {
+  const role = req.body?.role as keyof typeof accountTables;
+  const email =
+    typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  if (!(role in accountTables) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ message: "Enter a valid role and email address." });
+  }
+  if (!isSmtpConfigured() || !process.env.FRONTEND_URL) {
+    return res.status(503).json({
+      message: "Password recovery is temporarily unavailable. Contact your OJT coordinator.",
+    });
+  }
+
+  const ipHash = createHash("sha256")
+    .update(String(req.ip || req.socket.remoteAddress || "unknown"))
+    .digest("hex");
+  const ipLimit = await pool.query<{ attempt_count: number }>(
+    `
+    INSERT INTO password_reset_ip_limits(ip_hash, window_started_at, attempt_count)
+    VALUES ($1, NOW(), 1)
+    ON CONFLICT (ip_hash) DO UPDATE
+    SET attempt_count = CASE
+          WHEN password_reset_ip_limits.window_started_at < NOW() - INTERVAL '15 minutes'
+            THEN 1
+          ELSE password_reset_ip_limits.attempt_count + 1
+        END,
+        window_started_at = CASE
+          WHEN password_reset_ip_limits.window_started_at < NOW() - INTERVAL '15 minutes'
+            THEN NOW()
+          ELSE password_reset_ip_limits.window_started_at
+        END
+    RETURNING attempt_count
+    `,
+    [ipHash]
+  );
+  if (Number(ipLimit.rows[0]?.attempt_count) > 5) {
+    return res.status(429).json({
+      message: "Too many password-reset requests. Try again in 15 minutes.",
+    });
+  }
+
+  let frontendUrl: URL;
+  try {
+    frontendUrl = new URL(process.env.FRONTEND_URL);
+  } catch {
+    console.error("FRONTEND_URL must be an absolute HTTP or HTTPS URL.");
+    return res.status(503).json({
+      message: "Password recovery is temporarily unavailable. Contact your OJT coordinator.",
+    });
+  }
+  if (
+    !["http:", "https:"].includes(frontendUrl.protocol) ||
+    (frontendUrl.protocol !== "https:" &&
+      !["localhost", "127.0.0.1"].includes(frontendUrl.hostname))
+  ) {
+    console.error("FRONTEND_URL must use HTTPS except for local development.");
+    return res.status(503).json({
+      message: "Password recovery is temporarily unavailable. Contact your OJT coordinator.",
+    });
+  }
+
+  const emailHash = createHash("sha256").update(email).digest("hex");
+  const throttle = await pool.query(
+    `
+    INSERT INTO password_reset_requests(email_hash, requested_at)
+    VALUES ($1, NOW())
+    ON CONFLICT (email_hash) DO UPDATE
+      SET requested_at = NOW()
+      WHERE password_reset_requests.requested_at < NOW() - INTERVAL '60 seconds'
+    RETURNING email_hash
+    `,
+    [emailHash]
+  );
+  if (throttle.rows.length === 0) {
+    return res.json({ message: genericResetMessage });
+  }
+
+  const account = accountTables[role];
+  const found = await pool.query<{ id: string; email: string; name: string }>(
+    `SELECT ${account.idColumn} AS id, email, name FROM ${account.table}
+     WHERE LOWER(email) = $1 AND is_active = TRUE`,
+    [email]
+  );
+  if (found.rows.length === 0) {
+    return res.json({ message: genericResetMessage });
+  }
+
+  const rawToken = randomBytes(32).toString("base64url");
+  const tokenHash = createHash("sha256").update(rawToken).digest("hex");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `UPDATE password_reset_tokens SET used_at = NOW()
+       WHERE role = $1 AND account_id = $2 AND used_at IS NULL`,
+      [role, found.rows[0].id]
+    );
+    await client.query(
+      `INSERT INTO password_reset_tokens(role, account_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '30 minutes')`,
+      [role, found.rows[0].id, tokenHash]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("CREATE PASSWORD RESET TOKEN ERROR:", error);
+    return res.status(500).json({ message: "Could not start password recovery." });
+  } finally {
+    client.release();
+  }
+
+  const resetUrl = new URL("/reset-password", frontendUrl);
+  resetUrl.searchParams.set("token", rawToken);
+  try {
+    await sendEmail({
+      to: found.rows[0].email,
+      subject: "Reset your INTERNet account password",
+      text: `Hello ${found.rows[0].name},\n\nUse this link within 30 minutes to set a new password:\n${resetUrl.href}\n\nIf you did not request this, ignore this message.`,
+    });
+  } catch (error) {
+    await pool.query(
+      "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1",
+      [tokenHash]
+    );
+    console.error("SEND PASSWORD RESET EMAIL ERROR:", error);
+    return res.status(503).json({
+      message: "Password recovery email could not be sent. Please try again later.",
+    });
+  }
+
+  return res.json({ message: genericResetMessage });
+});
+
+app.post("/api/auth/password-reset/confirm", async (req, res) => {
+  const token = typeof req.body?.token === "string" ? req.body.token : "";
+  const password =
+    typeof req.body?.password === "string" ? req.body.password : "";
+  if (!/^[A-Za-z0-9_-]{40,50}$/.test(token)) {
+    return res.status(400).json({ message: "This password-reset link is invalid or expired." });
+  }
+  if (passwordPolicyError(password)) {
+    return res.status(400).json({
+      message: "Use 12–128 characters with at least one uppercase letter, one lowercase letter, and one number.",
+    });
+  }
+
+  const tokenHash = createHash("sha256").update(token).digest("hex");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const reset = await client.query<{
+      role: keyof typeof accountTables;
+      account_id: string;
+    }>(
+      `SELECT role, account_id FROM password_reset_tokens
+       WHERE token_hash = $1 AND used_at IS NULL AND expires_at > NOW()
+       FOR UPDATE`,
+      [tokenHash]
+    );
+    if (reset.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "This password-reset link is invalid or expired.",
+      });
+    }
+
+    const { role, account_id: accountId } = reset.rows[0];
+    const account = accountTables[role];
+    const updated = await client.query(
+      `UPDATE ${account.table}
+       SET password = $1, auth_version = auth_version + 1,
+           must_change_password = FALSE
+       WHERE ${account.idColumn} = $2 AND is_active = TRUE`,
+      [await hashPassword(password), accountId]
+    );
+    if (updated.rowCount !== 1) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({
+        message: "This password-reset link is invalid or expired.",
+      });
+    }
+    await client.query(
+      `UPDATE password_reset_tokens SET used_at = NOW()
+       WHERE role = $1 AND account_id = $2 AND used_at IS NULL`,
+      [role, accountId]
+    );
+    await client.query("COMMIT");
+    closeNotificationStreams({ role, id: accountId });
+    return res.json({ message: "Password updated. You can now sign in." });
+  } catch (error) {
+    await client.query("ROLLBACK");
+    console.error("CONFIRM PASSWORD RESET ERROR:", error);
+    return res.status(500).json({ message: "Could not update the password." });
+  } finally {
+    client.release();
+  }
+});
+
+const BCRYPT_ROUNDS = 12;
+const PASSWORD_POLICY_MESSAGE =
+  "Use 12–128 characters with at least one uppercase letter, one lowercase letter, and one number.";
+
+/** Returns the reason a new password is unacceptable, or null if it is fine. */
+function passwordPolicyError(password: unknown): string | null {
+  if (
+    typeof password !== "string" ||
+    password.length < 12 ||
+    password.length > 128 ||
+    !/[a-z]/.test(password) ||
+    !/[A-Z]/.test(password) ||
+    !/\d/.test(password)
+  ) {
+    return PASSWORD_POLICY_MESSAGE;
+  }
+  return null;
+}
+
+// Forcing a first-login password change is enforced on the deployed system
+// only, so local demo accounts and the API tests keep working unchanged.
+const ENFORCE_PASSWORD_CHANGE = process.env.NODE_ENV === "production";
+const PASSWORD_CHANGE_PATH =
+  /^\/api\/(students|supervisors|coordinators)\/[^/]+\/password\/?$/;
+
+function passwordChangeBlocks(
+  req: express.Request,
+  mustChangePassword: boolean | undefined
+): boolean {
+  return (
+    ENFORCE_PASSWORD_CHANGE &&
+    mustChangePassword === true &&
+    !PASSWORD_CHANGE_PATH.test(req.path)
+  );
+}
+
+// Sent with every "this login is no longer valid" response so the frontend
+// can tell it apart from an ordinary 401/403 (for example a wrong current
+// password) and return the user to the login page.
+const SESSION_INVALID = "SESSION_INVALID";
+
+const PASSWORD_CHANGE_REQUIRED_RESPONSE = {
+  code: "PASSWORD_CHANGE_REQUIRED",
+  message: "Set a new password before using the system.",
+};
+
+async function hashPassword(
+  plain: string
+): Promise<string> {
+  return bcrypt.hash(plain, BCRYPT_ROUNDS);
+}
+
+function needsRehash(stored: unknown): boolean {
+  if (typeof stored !== "string" || !stored.startsWith("$2")) return true;
+  try {
+    return bcrypt.getRounds(stored) < BCRYPT_ROUNDS;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Verifies the current password, stores the new one, and ends every other
+ * session for the account. Returns a fresh token for the device that made
+ * the change so it stays signed in.
+ */
+async function changeOwnPassword(
+  role: keyof typeof accountTables,
+  accountId: string,
+  currentPassword: unknown,
+  newPassword: unknown
+): Promise<{ status: number; body: Record<string, unknown> }> {
+  if (
+    typeof currentPassword !== "string" ||
+    typeof newPassword !== "string" ||
+    !currentPassword ||
+    !newPassword
+  ) {
+    return {
+      status: 400,
+      body: { message: "Current and new password are required." },
+    };
+  }
+  const policyError = passwordPolicyError(newPassword);
+  if (policyError) {
+    return { status: 400, body: { message: policyError } };
+  }
+  if (newPassword === currentPassword) {
+    return {
+      status: 400,
+      body: { message: "The new password must differ from the current one." },
+    };
+  }
+
+  const { table, idColumn } = accountTables[role];
+  const result = await pool.query<{ password: string }>(
+    `SELECT password FROM ${table} WHERE ${idColumn} = $1`,
+    [accountId]
+  );
+  if (result.rows.length === 0) {
+    return { status: 404, body: { message: "Account not found." } };
+  }
+  if (!(await verifyPassword(currentPassword, result.rows[0].password))) {
+    return {
+      status: 401,
+      body: { message: "Current password is incorrect." },
+    };
+  }
+
+  const updated = await pool.query<{ auth_version: number }>(
+    `UPDATE ${table}
+     SET password = $1,
+         auth_version = auth_version + 1,
+         must_change_password = FALSE
+     WHERE ${idColumn} = $2
+     RETURNING auth_version`,
+    [await hashPassword(newPassword), accountId]
+  );
+  closeNotificationStreams({ role, id: accountId });
+  return {
+    status: 200,
+    body: {
+      message: "Password updated. Other devices have been signed out.",
+      token: signToken(role, accountId, Number(updated.rows[0].auth_version)),
+    },
+  };
+}
+
+async function verifyPassword(
+  plain: string,
+  stored: string
+): Promise<boolean> {
+  const looksHashed =
+    typeof stored === "string" &&
+    stored.startsWith("$2");
+
+  if (looksHashed) {
+    return bcrypt.compare(plain, stored);
+  }
+
+  // Legacy plain-text row — compare directly.
+  return plain === stored;
+}
+
+/**
+ * Re-hashes a legacy plain-text password with bcrypt after a successful
+ * login so that plain-text credentials disappear from the database over
+ * time without forcing a password reset.
+ */
+async function upgradeLegacyPassword(
+  role: keyof typeof accountTables,
+  accountId: string,
+  plain: string,
+  stored: string
+): Promise<void> {
+  if (!needsRehash(stored)) return;
+  const { table, idColumn } = accountTables[role];
+  try {
+    await pool.query(
+      `UPDATE ${table} SET password = $1 WHERE ${idColumn} = $2 AND password = $3`,
+      [await hashPassword(plain), accountId, stored]
+    );
+  } catch (error) {
+    console.error("LEGACY PASSWORD UPGRADE ERROR:", error);
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| LOGIN THROTTLING
+|--------------------------------------------------------------------------
+|
+| After LOGIN_MAX_FAILURES failed attempts for the same role + email within
+| LOGIN_WINDOW_MINUTES, that login is locked for LOGIN_LOCK_MINUTES. State
+| is stored in PostgreSQL (hashed keys only) so it survives restarts and is
+| shared by every API instance.
+|
+*/
+
+const LOGIN_MAX_FAILURES = Math.max(
+  1,
+  Number(process.env.LOGIN_MAX_FAILURES) || 5
+);
+const LOGIN_WINDOW_MINUTES = 15;
+const LOGIN_LOCK_MINUTES = 15;
+
+function loginAttemptKey(role: string, identifier: unknown): string {
+  return createHash("sha256")
+    .update(`${role}:${String(identifier ?? "").trim().toLowerCase()}`)
+    .digest("hex");
+}
+
+// Failed logins per client address, across all accounts. This stops one
+// address from trying a few passwords on many different accounts. The
+// default is generous because a whole campus can share one address.
+const LOGIN_IP_MAX_FAILURES = Math.max(
+  1,
+  Number(process.env.LOGIN_IP_MAX_FAILURES) || 100
+);
+const loginFailuresByIp = new Map<string, { count: number; resetAt: number }>();
+
+function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
+  return async (req, res, next) => {
+    const ip = req.ip || "unknown";
+    const now = Date.now();
+    const ipState = loginFailuresByIp.get(ip);
+    if (ipState && ipState.resetAt <= now) {
+      loginFailuresByIp.delete(ip);
+    } else if (ipState && ipState.count >= LOGIN_IP_MAX_FAILURES) {
+      return res.status(429).json({
+        message: "Too many failed login attempts from this network. Try again later.",
+      });
+    }
+    res.on("finish", () => {
+      if (res.statusCode !== 401) return;
+      const current = loginFailuresByIp.get(ip);
+      if (current && current.resetAt > Date.now()) {
+        current.count += 1;
+      } else {
+        if (loginFailuresByIp.size > 10_000) loginFailuresByIp.clear();
+        loginFailuresByIp.set(ip, {
+          count: 1,
+          resetAt: Date.now() + LOGIN_WINDOW_MINUTES * 60_000,
+        });
+      }
+    });
+
+    const identifier = req.body?.email;
+    if (!identifier || typeof identifier !== "string") return next();
+    const key = loginAttemptKey(role, identifier);
+
+    try {
+      const state = await pool.query<{ locked_until: Date | null }>(
+        `SELECT locked_until FROM login_attempts WHERE key_hash = $1`,
+        [key]
+      );
+      const lockedUntil = state.rows[0]?.locked_until;
+      if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
+        const minutes = Math.ceil(
+          (new Date(lockedUntil).getTime() - Date.now()) / 60000
+        );
+        return res.status(429).json({
+          message: `Too many failed login attempts. Try again in ${minutes} minute(s) or reset your password.`,
+        });
+      }
+    } catch (error) {
+      console.error("LOGIN THROTTLE CHECK ERROR:", error);
+    }
+
+    res.on("finish", () => {
+      const query =
+        res.statusCode === 401
+          ? pool.query(
+              `
+              INSERT INTO login_attempts (key_hash, window_start, failures)
+              VALUES ($1, NOW(), 1)
+              ON CONFLICT (key_hash) DO UPDATE SET
+                failures = CASE
+                  WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
+                  THEN 1 ELSE login_attempts.failures + 1 END,
+                window_start = CASE
+                  WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
+                  THEN NOW() ELSE login_attempts.window_start END,
+                locked_until = CASE
+                  WHEN login_attempts.window_start >= NOW() - make_interval(mins => $2)
+                   AND login_attempts.failures + 1 >= $3
+                  THEN NOW() + make_interval(mins => $4) ELSE NULL END
+              `,
+              [key, LOGIN_WINDOW_MINUTES, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
+            )
+          : res.statusCode === 200
+            ? pool.query(`DELETE FROM login_attempts WHERE key_hash = $1`, [key])
+            : null;
+      query?.catch((error) => {
+        console.error("LOGIN THROTTLE RECORD ERROR:", error);
+      });
+    });
+
+    return next();
+  };
+}
+
+type AuthedRequest = express.Request & {
+  auth?: {
+    role: "coordinator" | "supervisor" | "student";
+    id: string;
+  };
+};
+
+type AuthRole = NonNullable<AuthedRequest["auth"]>["role"];
+
+function isAuthRole(value: unknown): value is AuthRole {
+  return (
+    value === "coordinator" ||
+    value === "student" ||
+    value === "supervisor"
+  );
+}
+
+function signToken(
+  role: "coordinator" | "supervisor" | "student",
+  id: string,
+  authVersion = 0
+): string {
+  return jwt.sign(
+    { role, id, authVersion },
+    JWT_SECRET,
+    { expiresIn: "12h" }
+  );
+}
+
+/**
+ * Requires a valid Bearer token belonging to a coordinator.
+ * Used to protect the coordinator's user-management, monitoring,
+ * complaint-resolution, and analytics endpoints below.
+ */
+async function requireCoordinator(
+  req: AuthedRequest,
+  res: express.Response,
+  next: express.NextFunction
+) {
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ")
+    ? header.slice(7)
+    : null;
+
+  if (!token) {
+    return res.status(401).json({
+      message: "Missing authorization token.", code: SESSION_INVALID,
+    });
+  }
+
+  let payload: string | jwt.JwtPayload;
+  try {
+    payload = jwt.verify(token, JWT_SECRET);
+  } catch {
+    return res.status(401).json({
+      message: "Invalid or expired token.", code: SESSION_INVALID,
+    });
+  }
+
+  if (
+    typeof payload === "string" ||
+    payload.role !== "coordinator" ||
+    typeof payload.id !== "string"
+  ) {
+    return res.status(403).json({
+      message: "Coordinator access only.",
+    });
+  }
+
+  let account;
+  try {
+    account = await pool.query<{
+      auth_version: number;
+      must_change_password: boolean;
+    }>(
+      "SELECT auth_version, must_change_password FROM coordinators WHERE coordinator_id = $1 AND is_active = TRUE",
+      [payload.id]
+    );
+  } catch (error) {
+    console.error("COORDINATOR ACCOUNT CHECK ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to validate coordinator access.",
+    });
+  }
+
+  if (
+    account.rows.length === 0 ||
+    Number(payload.authVersion ?? 0) !== Number(account.rows[0].auth_version)
+  ) {
+    return res
+      .status(401)
+      .json({ message: "Invalid or expired token.", code: SESSION_INVALID });
+  }
+  if (passwordChangeBlocks(req, account.rows[0].must_change_password)) {
+    return res.status(403).json(PASSWORD_CHANGE_REQUIRED_RESPONSE);
+  }
+
+  req.auth = {
+    role: "coordinator",
+    id: payload.id,
+  };
+
+  next();
+}
+
+function requireRole(
+  roles: NonNullable<AuthedRequest["auth"]>["role"] | NonNullable<AuthedRequest["auth"]>["role"][]
+): express.RequestHandler {
+  const allowedRoles = Array.isArray(roles) ? roles : [roles];
+
+  return async (request, res, next) => {
+    const req = request as AuthedRequest;
+    const header = req.headers.authorization || "";
+    const token = header.startsWith("Bearer ") ? header.slice(7) : null;
+
+    if (!token) {
+      return res.status(401).json({
+        message: "Missing authorization token.", code: SESSION_INVALID,
+      });
+    }
+
+    let payload: string | jwt.JwtPayload;
+    try {
+      payload = jwt.verify(token, JWT_SECRET);
+    } catch {
+      return res.status(401).json({
+        message: "Invalid or expired token.", code: SESSION_INVALID,
+      });
+    }
+
+    const tokenRole =
+      typeof payload !== "string" && isAuthRole(payload.role)
+        ? payload.role
+        : null;
+    if (
+      !tokenRole ||
+      !allowedRoles.includes(tokenRole) ||
+      typeof payload === "string" ||
+      typeof payload.id !== "string"
+    ) {
+      return res.status(403).json({
+        message: `${allowedRoles.join(" or ")} access only.`,
+      });
+    }
+
+    const accountQueries: Record<
+      AuthRole,
+      string
+    > = {
+      student: "SELECT is_active, auth_version, must_change_password FROM students WHERE student_id = $1",
+      supervisor: "SELECT is_active, auth_version, must_change_password FROM supervisors WHERE supervisor_id = $1",
+      coordinator: "SELECT is_active, auth_version, must_change_password FROM coordinators WHERE coordinator_id = $1",
+    };
+    try {
+      const account = await pool.query<{
+        is_active: boolean;
+        auth_version: number;
+        must_change_password: boolean;
+      }>(
+        accountQueries[tokenRole],
+        [payload.id]
+      );
+      if (
+        account.rows.length === 0 ||
+        account.rows[0].is_active === false ||
+        Number(payload.authVersion ?? 0) !== Number(account.rows[0].auth_version)
+      ) {
+        return res.status(403).json({
+          message: "This account is unavailable or its session has expired.",
+          code: SESSION_INVALID,
+        });
+      }
+      if (passwordChangeBlocks(req, account.rows[0].must_change_password)) {
+        return res.status(403).json(PASSWORD_CHANGE_REQUIRED_RESPONSE);
+      }
+    } catch (error) {
+      console.error("ROLE ACCOUNT CHECK ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to validate account access.",
+      });
+    }
+
+    req.auth = { role: tokenRole, id: payload.id };
+    return next();
+  };
+}
+
+/**
+ * Writes one notification row. Pass exactly one of studentId,
+ * supervisorId, coordinatorId as the recipient.
+ */
+async function createNotification(options: {
+  studentId?: string | null;
+  supervisorId?: string | null;
+  coordinatorId?: string | null;
+  title: string;
+  message: string;
+  type?: string;
+}) {
+  const recipients: {
+    role: "coordinator" | "student" | "supervisor";
+    id: string;
+  }[] = [];
+  if (options.studentId) {
+    recipients.push({ role: "student", id: options.studentId });
+  }
+  if (options.supervisorId) {
+    recipients.push({ role: "supervisor", id: options.supervisorId });
+  }
+  if (options.coordinatorId) {
+    recipients.push({ role: "coordinator", id: options.coordinatorId });
+  }
+
+  const recipient = recipients[0];
+  if (recipients.length !== 1 || !recipient) {
+    throw new Error("A notification must have exactly one recipient.");
+  }
+
+  const result = await pool.query<{
+    id: number;
+    title: string;
+    message: string;
+    type: string;
+    created_at: string;
+  }>(
+    `
+    INSERT INTO notifications
+    (student_id, supervisor_id, coordinator_id, title, message, type, is_read)
+    VALUES ($1, $2, $3, $4, $5, $6, FALSE)
+    RETURNING id, title, message, type, created_at
+    `,
+    [
+      options.studentId || null,
+      options.supervisorId || null,
+      options.coordinatorId || null,
+      options.title,
+      options.message,
+      options.type || "info",
+    ]
+  );
+  const payload = result.rows[0];
+  try {
+    await pool.query(
+      "SELECT pg_notify('internet_notifications', $1)",
+      [JSON.stringify({ recipient, notification: payload })]
+    );
+  } catch (error) {
+    console.error("PUBLISH POSTGRES NOTIFICATION ERROR:", error);
+    publishNotification(recipient, payload);
+  }
+
+  if (isWebPushConfigured()) {
+    void sendWebPush(recipient, payload).catch((error) => {
+      console.error("WEB PUSH DELIVERY ERROR:", error);
+    });
+  }
+}
+
+app.get(
+  "/api/events",
+  requireRole(["coordinator", "student", "supervisor"]),
+  (request, response) => {
+    const auth = (request as AuthedRequest).auth;
+    if (!auth) {
+      return response.status(401).json({ message: "Login is required." });
+    }
+
+    response.status(200);
+    response.set({
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+      Connection: "keep-alive",
+      "X-Accel-Buffering": "no",
+    });
+    response.flushHeaders();
+    const disconnect = registerNotificationStream(auth, response);
+    request.on("close", disconnect);
+  }
+);
+
+app.get("/api/push/vapid-public-key", (_request, response) => {
+  if (!vapidPublicKey) {
+    return response.status(503).json({
+      message: "Browser push notifications are not configured.",
+    });
+  }
+  return response.json({ publicKey: vapidPublicKey });
+});
+
+app.post(
+  "/api/push/subscriptions",
+  requireRole(["coordinator", "student", "supervisor"]),
+  async (request, response) => {
+    const auth = (request as AuthedRequest).auth;
+    const subscription = request.body?.subscription;
+    if (!auth) {
+      return response.status(401).json({ message: "Login is required." });
+    }
+    if (!isWebPushConfigured()) {
+      return response.status(503).json({
+        message: "Browser push notifications are not configured.",
+      });
+    }
+    if (
+      typeof subscription?.endpoint !== "string" ||
+      !subscription.endpoint.startsWith("https://") ||
+      typeof subscription?.keys?.p256dh !== "string" ||
+      typeof subscription?.keys?.auth !== "string"
+    ) {
+      return response.status(400).json({ message: "Invalid browser push subscription." });
+    }
+
+    try {
+      await pool.query(
+        `
+        INSERT INTO web_push_subscriptions(role, account_id, endpoint, subscription)
+        VALUES ($1, $2, $3, $4::jsonb)
+        ON CONFLICT (endpoint) DO UPDATE
+        SET role = EXCLUDED.role,
+            account_id = EXCLUDED.account_id,
+            subscription = EXCLUDED.subscription,
+            updated_at = NOW()
+        `,
+        [auth.role, auth.id, subscription.endpoint, JSON.stringify(subscription)]
+      );
+      return response.status(201).json({ message: "Browser notifications enabled." });
+    } catch (error) {
+      console.error("SAVE WEB PUSH SUBSCRIPTION ERROR:", error);
+      return response.status(500).json({ message: "Could not enable browser notifications." });
+    }
+  }
+);
+
+app.delete(
+  "/api/push/subscriptions",
+  requireRole(["coordinator", "student", "supervisor"]),
+  async (request, response) => {
+    const auth = (request as AuthedRequest).auth;
+    const endpoint = request.body?.endpoint;
+    if (!auth || typeof endpoint !== "string") {
+      return response.status(400).json({ message: "A browser subscription endpoint is required." });
+    }
+
+    try {
+      await pool.query(
+        `DELETE FROM web_push_subscriptions
+         WHERE role = $1 AND account_id = $2 AND endpoint = $3`,
+        [auth.role, auth.id, endpoint]
+      );
+      return response.json({ message: "Browser notifications disabled." });
+    } catch (error) {
+      console.error("DELETE WEB PUSH SUBSCRIPTION ERROR:", error);
+      return response.status(500).json({ message: "Could not disable browser notifications." });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| FILE / IMAGE UPLOAD
+|--------------------------------------------------------------------------
+*/
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+
+  limits: {
+    fileSize: 5 * 1024 * 1024,
+  },
+
+  fileFilter: (_req, file, cb) => {
+    const allowedTypes = [
+      "image/jpeg",
+      "image/jpg",
+      "image/png",
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(
+        new Error(
+          "Only JPG, JPEG, PNG, PDF, DOC, and DOCX files are allowed."
+        )
+      );
+    }
+  },
+});
+
+const documentMimeTypes: Record<string, string> = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx":
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".png": "image/png",
+};
+
+const documentUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, callback) => {
+    const extension = path.extname(file.originalname).toLowerCase();
+    if (documentMimeTypes[extension] !== file.mimetype) {
+      callback(
+        new Error("Upload a PDF, DOC, DOCX, JPG, JPEG, or PNG file.")
+      );
+      return;
+    }
+    callback(null, true);
+  },
+});
+
+/*
+|--------------------------------------------------------------------------
+| DATABASE TEST
+|--------------------------------------------------------------------------
+*/
+
+app.get("/api/test-db", async (_req, res) => {
+  // Diagnostic endpoint: unavailable in production so it cannot be used to
+  // probe the database from the public internet.
+  if (process.env.NODE_ENV === "production") {
+    return res.status(404).json({ message: "Not found." });
+  }
+  try {
+    const result = await pool.query(
+      "SELECT NOW() AS now"
+    );
+
+    return res.json({
+      message: "Database connected!",
+      timezone: "Asia/Manila",
+      time: result.rows[0].now,
+    });
+  } catch (error) {
+    console.error(
+      "DATABASE ERROR:",
+      error
+    );
+
+    return res.status(500).json({
+      message:
+        "Database connection failed.",
+      error:
+        error instanceof Error
+          ? error.message
+          : String(error),
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| STUDENT LOGIN
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  "/api/login/student",
+  loginGuard("student"),
+  async (req, res) => {
+    try {
+      const {
+        email,
+        password,
+      } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({
+          message:
+            "Email and password are required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            email,
+            password,
+            name,
+            program,
+            company,
+            supervisor_id,
+            required_hours,
+            is_active,
+            auth_version,
+            must_change_password
+          FROM students
+          WHERE email = $1
+          OR student_id::text = $1
+          `,
+          [
+            email,
+          ]
+        );
+
+      if (result.rows.length === 0) {
+        return res.status(401).json({
+          message:
+            "Invalid student email or password.",
+        });
+      }
+
+      const student =
+        result.rows[0];
+
+      const passwordOk = await verifyPassword(
+        password,
+        student.password
+      );
+
+      if (!passwordOk) {
+        return res.status(401).json({
+          message:
+            "Invalid student email or password.",
+        });
+      }
+
+      if (student.is_active === false) {
+        return res.status(403).json({
+          message:
+            "This account has been deactivated. Please contact your OJT coordinator.",
+        });
+      }
+
+      await upgradeLegacyPassword(
+        "student",
+        String(student.student_id),
+        password,
+        student.password
+      );
+      delete student.password;
+      student.must_change_password =
+        ENFORCE_PASSWORD_CHANGE && student.must_change_password === true;
+
+      return res.json({
+        message:
+          "Login successful!",
+        student,
+        must_change_password: student.must_change_password,
+        token: signToken(
+          "student",
+          String(student.student_id),
+          Number(student.auth_version)
+        ),
+      });
+    } catch (error) {
+      console.error(
+        "STUDENT LOGIN ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Login failed.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUPERVISOR LOGIN
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  "/api/login/supervisor",
+  loginGuard("supervisor"),
+  async (req, res) => {
+    try {
+      const {
+        email,
+        password,
+      } = req.body;
+
+      if (!email || !password) {
+        return res.status(400).json({
+          message:
+            "Email and password are required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            supervisor_id,
+            email,
+            password,
+            name,
+            company,
+            department,
+            is_active,
+            auth_version,
+            must_change_password
+          FROM supervisors
+          WHERE email = $1
+          `,
+          [
+            email,
+          ]
+        );
+
+      if (result.rows.length === 0) {
+        return res.status(401).json({
+          message:
+            "Invalid supervisor email or password.",
+        });
+      }
+
+      const supervisor =
+        result.rows[0];
+
+      const passwordOk = await verifyPassword(
+        password,
+        supervisor.password
+      );
+
+      if (!passwordOk) {
+        return res.status(401).json({
+          message:
+            "Invalid supervisor email or password.",
+        });
+      }
+
+      if (supervisor.is_active === false) {
+        return res.status(403).json({
+          message:
+            "This account has been deactivated. Please contact your OJT coordinator.",
+        });
+      }
+
+      await upgradeLegacyPassword(
+        "supervisor",
+        String(supervisor.supervisor_id),
+        password,
+        supervisor.password
+      );
+      delete supervisor.password;
+      supervisor.must_change_password =
+        ENFORCE_PASSWORD_CHANGE && supervisor.must_change_password === true;
+
+      return res.json({
+        message:
+          "Login successful!",
+        supervisor,
+        must_change_password: supervisor.must_change_password,
+        token: signToken(
+          "supervisor",
+          String(supervisor.supervisor_id),
+          Number(supervisor.auth_version)
+        ),
+      });
+    } catch (error) {
+      console.error(
+        "SUPERVISOR LOGIN ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Supervisor login failed.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GET STUDENT INFORMATION
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/student/:studentId",
+  requireRole(["student", "supervisor", "coordinator"]),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+      if (auth?.role === "student" && auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own student information.",
+        });
+      }
+      if (auth?.role === "supervisor") {
+        const assignment = await pool.query(
+          `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2 AND is_active = TRUE`,
+          [studentId, auth.id]
+        );
+        if (assignment.rows.length === 0) {
+          return res.status(403).json({
+            message: "You can only view your assigned interns.",
+          });
+        }
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            email,
+            name,
+            program,
+            company
+          FROM students
+          WHERE student_id = $1
+          `,
+          [studentId]
+        );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          message:
+            "Student not found.",
+        });
+      }
+
+      return res.json({
+        student:
+          result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "GET STUDENT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get student information.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GET TASKS FOR STUDENT
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/tasks/student/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({ message: "You can only view your own tasks." });
+      }
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            title,
+            status,
+            description,
+            assigned_by,
+            assigned_by_id,
+            priority,
+            due_date,
+            submission_notes,
+            submission_file,
+            submitted_at,
+            review_notes,
+            review_rating,
+            reviewed_at,
+            created_at
+          FROM tasks
+          WHERE student_id = $1
+          ORDER BY due_date ASC
+          `,
+          [studentId]
+        );
+
+      return res.json(result.rows);
+    } catch (error) {
+      console.error(
+        "GET TASKS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get tasks.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GET STUDENT ATTENDANCE
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/attendance/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own attendance.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            TO_CHAR(
+              date,
+              'YYYY-MM-DD'
+            ) AS date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url,
+            review_notes,
+            verified_by,
+            verified_at
+          FROM attendance
+          WHERE student_id = $1
+          ORDER BY
+            date DESC,
+            id DESC
+          `,
+          [studentId]
+        );
+
+      return res.json({
+        attendance:
+          result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET ATTENDANCE ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get attendance records.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| RECORD TIME IN
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  "/api/attendance",
+  requireRole("student"),
+  upload.single("image"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        student_id,
+        note,
+        notes,
+      } = req.body;
+
+      if (!student_id) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+      if (!auth || auth.id !== String(student_id)) {
+        return res.status(403).json({
+          message: "You can only record your own attendance.",
+        });
+      }
+      if (!req.file) {
+        return res.status(400).json({
+          message: "An attendance photo is required to record time-in.",
+        });
+      }
+      if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
+        return res.status(400).json({
+          message: "Attendance photo must be a JPG or PNG image.",
+        });
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | VERIFY STUDENT
+      |--------------------------------------------------------------------------
+      */
+
+      const studentResult =
+        await pool.query(
+          `
+          SELECT
+            student_id,
+            name,
+            company
+          FROM students
+          WHERE student_id = $1
+          `,
+          [student_id]
+        );
+
+      if (
+        studentResult.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Student does not exist.",
+        });
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | CHECK TODAY'S ATTENDANCE
+      |--------------------------------------------------------------------------
+      */
+
+      const existing =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            TO_CHAR(
+              date,
+              'YYYY-MM-DD'
+            ) AS date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url
+          FROM attendance
+          WHERE student_id = $1
+          AND date = CURRENT_DATE
+          LIMIT 1
+          `,
+          [student_id]
+        );
+
+      if (
+        existing.rows.length > 0
+      ) {
+        return res.status(409).json({
+          message:
+            "You already logged attendance today.",
+          attendance:
+            existing.rows[0],
+        });
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | IMAGE
+      |--------------------------------------------------------------------------
+      */
+
+      uploadedFileName = await savePrivateFile(req.file);
+      const imageUrl = `/uploads/${uploadedFileName}`;
+
+      /*
+      |--------------------------------------------------------------------------
+      | NOTE
+      |--------------------------------------------------------------------------
+      */
+
+      const submittedNote =
+        typeof note === "string"
+          ? note
+          : typeof notes === "string"
+            ? notes
+            : null;
+
+      const cleanNote =
+        submittedNote &&
+        submittedNote.trim() !== ""
+          ? submittedNote.trim()
+          : null;
+
+      /*
+      |--------------------------------------------------------------------------
+      | INSERT ATTENDANCE
+      |--------------------------------------------------------------------------
+      |
+      | NOW() uses Asia/Manila because the PostgreSQL
+      | connection timezone was configured above.
+      |
+      */
+
+      const result =
+        await pool.query(
+          `
+          INSERT INTO attendance
+          (
+            student_id,
+            date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url
+          )
+          VALUES
+          (
+            $1,
+            CURRENT_DATE,
+            NOW(),
+            NULL,
+            NULL,
+            NULL,
+            NULL,
+            $2,
+            'Pending',
+            $3
+          )
+          RETURNING
+            id,
+            student_id,
+            TO_CHAR(
+              date,
+              'YYYY-MM-DD'
+            ) AS date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url
+          `,
+          [
+            student_id,
+            cleanNote,
+            imageUrl,
+          ]
+        );
+
+      // Feature 7: alert the assigned supervisor that a new log is waiting
+      // for verification. A notification failure must not undo the log.
+      try {
+        const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+          `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+          [student_id]
+        );
+        const supervisorId = owner.rows[0]?.supervisor_id;
+        if (supervisorId) {
+          await createNotification({
+            supervisorId,
+            title: "Attendance log awaiting verification",
+            message: `${owner.rows[0].name} timed in on ${result.rows[0].date}. Review the attendance photo and confirm the log.`,
+            type: "attendance",
+          });
+        }
+      } catch (notifyError) {
+        console.error("TIME-IN SUPERVISOR NOTIFICATION ERROR:", notifyError);
+      }
+
+      return res.status(201).json({
+        message:
+          "Attendance recorded successfully.",
+        attendance:
+          result.rows[0],
+      });
+    } catch (error) {
+      if (uploadedFileName) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE UNRECORDED ATTENDANCE PHOTO:", cleanupError);
+        });
+      }
+      // Two time-in requests raced past the "already logged" check; the
+      // unique index on (student_id, date) let only the first one through.
+      if ((error as { code?: string })?.code === "23505") {
+        return res.status(409).json({
+          message: "You already logged attendance today.",
+        });
+      }
+      console.error(
+        "TIME-IN ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to record attendance.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| RECORD BREAK START
+|--------------------------------------------------------------------------
+*/
+
+app.put(
+  "/api/attendance/:id/break",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        id,
+      } = req.params;
+
+      const result =
+        await pool.query(
+          `
+          UPDATE attendance
+          SET
+            break_time = NOW()
+          WHERE id = $1
+          AND student_id = $2
+          AND break_time IS NULL
+          AND time_out IS NULL
+          RETURNING
+            id,
+            student_id,
+            TO_CHAR(
+              date,
+              'YYYY-MM-DD'
+            ) AS date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url
+          `,
+          [id, auth?.id]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Attendance record not found or break was already recorded.",
+        });
+      }
+
+      return res.json({
+        message:
+          "Break recorded successfully.",
+        attendance:
+          result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "BREAK ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to record break.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| RECORD BREAK END / RETURN FROM BREAK
+|--------------------------------------------------------------------------
+*/
+
+app.put(
+  "/api/attendance/:id/break-end",
+  requireRole("student"),
+  async (req, res) => {
+    const {
+      id,
+    } = req.params;
+
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const result =
+        await pool.query(
+          `
+          UPDATE attendance
+          SET
+            break_end_time = NOW()
+          WHERE id = $1
+          AND student_id = $2
+          AND break_time IS NOT NULL
+          AND break_end_time IS NULL
+          AND time_out IS NULL
+          RETURNING
+            id,
+            student_id,
+            TO_CHAR(
+              date,
+              'YYYY-MM-DD'
+            ) AS date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url
+          `,
+          [id, auth?.id]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Attendance record not found or return from break was already recorded.",
+        });
+      }
+
+      return res.status(200).json({
+        message:
+          "Returned from break successfully.",
+        attendance:
+          result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "BREAK-END ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to record return from break.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| RECORD TIME OUT
+|--------------------------------------------------------------------------
+*/
+
+app.put(
+  "/api/attendance/:id/time-out",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        id,
+      } = req.params;
+
+      /*
+      |--------------------------------------------------------------------------
+      | TIME OUT
+      |--------------------------------------------------------------------------
+      |
+      | NOW() = Philippine Time because the database
+      | connection timezone is Asia/Manila.
+      |
+      */
+
+      const result =
+        await pool.query(
+          `
+          UPDATE attendance
+          SET
+            time_out = NOW(),
+
+            -- A break still open at time-out ends now.
+            break_end_time = CASE
+              WHEN break_time IS NOT NULL
+              THEN COALESCE(break_end_time, NOW())
+              ELSE break_end_time
+            END,
+
+            -- Rendered hours exclude the recorded break.
+            hours = GREATEST(
+              ROUND(
+                (
+                  (
+                    EXTRACT(EPOCH FROM (NOW() - time_in))
+                    - CASE
+                        WHEN break_time IS NOT NULL
+                        THEN EXTRACT(
+                          EPOCH FROM (
+                            COALESCE(break_end_time, NOW()) - break_time
+                          )
+                        )
+                        ELSE 0
+                      END
+                  ) / 3600.0
+                )::numeric,
+                2
+              ),
+              0
+            )
+
+          WHERE id = $1
+          AND student_id = $2
+          AND time_out IS NULL
+          AND time_in IS NOT NULL
+
+          RETURNING
+            id,
+            student_id,
+            TO_CHAR(
+              date,
+              'YYYY-MM-DD'
+            ) AS date,
+            time_in,
+            break_time,
+            break_end_time,
+            time_out,
+            hours,
+            note,
+            status,
+            image_url
+          `,
+          [id, auth?.id]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Attendance record not found or time-out was already recorded.",
+        });
+      }
+
+      return res.json({
+        message:
+          "Time-out recorded successfully.",
+        attendance:
+          result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "TIME-OUT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to record time-out.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GET SUPERVISOR'S INTERNS' ATTENDANCE
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/supervisor/attendance/:supervisorId",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        supervisorId,
+      } = req.params;
+
+      if (!auth || auth.id !== supervisorId) {
+        return res.status(403).json({
+          message: "You can only view attendance for your own interns.",
+        });
+      }
+
+      if (!supervisorId) {
+        return res.status(400).json({
+          message:
+            "Supervisor ID is required.",
+        });
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | GET SUPERVISOR
+      |--------------------------------------------------------------------------
+      */
+
+      const supervisorResult =
+        await pool.query(
+          `
+          SELECT
+            supervisor_id,
+            name,
+            company,
+            department
+          FROM supervisors
+          WHERE supervisor_id = $1
+          LIMIT 1
+          `,
+          [supervisorId]
+        );
+
+      if (
+        supervisorResult.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Supervisor not found.",
+        });
+      }
+
+      const supervisor =
+        supervisorResult.rows[0];
+
+      /*
+      |--------------------------------------------------------------------------
+      | GET ATTENDANCE
+      |--------------------------------------------------------------------------
+      */
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            a.id,
+            a.student_id,
+
+            s.name AS student_name,
+            s.email AS student_email,
+            s.program,
+            s.company,
+
+            TO_CHAR(
+              a.date,
+              'YYYY-MM-DD'
+            ) AS date,
+
+            a.time_in,
+            a.break_time,
+            a.break_end_time,
+            a.time_out,
+            a.hours,
+            a.note,
+            a.status,
+            a.image_url,
+            a.review_notes,
+            a.verified_by,
+            a.verified_at
+
+          FROM attendance a
+
+          INNER JOIN students s
+            ON TRIM(
+              s.student_id::text
+            ) =
+            TRIM(
+              a.student_id::text
+            )
+
+          WHERE
+            TRIM(
+              s.supervisor_id::text
+            ) =
+            TRIM(
+              $1::text
+            )
+
+          ORDER BY
+            a.date DESC,
+            a.id DESC
+          `,
+          [supervisor.supervisor_id]
+        );
+
+      return res.json({
+        attendance:
+          result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET SUPERVISOR ATTENDANCE ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get intern attendance.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/supervisor/dashboard/:supervisorId",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { supervisorId } = req.params;
+      if (!auth || auth.id !== supervisorId) {
+        return res.status(403).json({
+          message: "You can only view your own dashboard.",
+        });
+      }
+      const supervisorResult = await pool.query(
+        `SELECT supervisor_id FROM supervisors WHERE supervisor_id = $1`,
+        [supervisorId]
+      );
+
+      if (supervisorResult.rows.length === 0) {
+        return res.status(404).json({ message: "Supervisor not found." });
+      }
+
+      const [
+        internsResult,
+        pendingAttendanceCountResult,
+        pendingLogsResult,
+        activeTasksResult,
+        deadlinesResult,
+        evaluationsResult,
+      ] =
+        await Promise.all([
+          pool.query(
+            `
+            SELECT
+              s.student_id,
+              s.name,
+              s.program,
+              s.required_hours AS "hoursRequired",
+              COALESCE((
+                SELECT SUM(a.hours)
+                FROM attendance a
+                WHERE a.student_id::text = s.student_id::text
+                  AND a.status = 'Verified'
+              ), 0) AS "hoursLogged",
+              (
+                SELECT COUNT(*)
+                FROM tasks t
+                WHERE t.student_id::text = s.student_id::text
+                  AND t.status IN ('Pending', 'In Progress', 'Submitted')
+              ) AS "activeTasks"
+            FROM students s
+            WHERE s.supervisor_id::text = $1::text
+            ORDER BY s.name
+            `,
+            [supervisorId]
+          ),
+          pool.query(
+            `
+            SELECT COUNT(*) AS count
+            FROM attendance a
+            INNER JOIN students s ON s.student_id::text = a.student_id::text
+            WHERE s.supervisor_id::text = $1::text
+              AND a.status = 'Pending'
+            `,
+            [supervisorId]
+          ),
+          pool.query(
+            `
+            SELECT
+              a.id,
+              a.student_id,
+              s.name AS student_name,
+              TO_CHAR(a.date, 'YYYY-MM-DD') AS date,
+              a.time_in,
+              a.time_out,
+              a.hours
+            FROM attendance a
+            INNER JOIN students s ON s.student_id::text = a.student_id::text
+            WHERE s.supervisor_id::text = $1::text
+              AND a.status = 'Pending'
+            ORDER BY a.date ASC, a.id ASC
+            LIMIT 20
+            `,
+            [supervisorId]
+          ),
+          pool.query(
+            `
+            SELECT COUNT(*) AS count
+            FROM tasks t
+            INNER JOIN students s ON s.student_id::text = t.student_id::text
+            WHERE s.supervisor_id::text = $1::text
+              AND t.status IN ('Pending', 'In Progress', 'Submitted')
+            `,
+            [supervisorId]
+          ),
+          pool.query(
+            `
+            SELECT t.id, t.title, t.description, t.due_date
+            FROM tasks t
+            INNER JOIN students s ON s.student_id::text = t.student_id::text
+            WHERE s.supervisor_id::text = $1::text
+              AND t.status IN ('Pending', 'In Progress', 'Submitted')
+              AND t.due_date >= CURRENT_DATE
+            ORDER BY t.due_date ASC
+            LIMIT 10
+            `,
+            [supervisorId]
+          ),
+          pool.query(
+            `
+            SELECT COUNT(*) AS count
+            FROM students s
+            WHERE s.supervisor_id::text = $1::text
+              AND NOT EXISTS (
+                SELECT 1
+                FROM evaluations e
+                WHERE e.student_id::text = s.student_id::text
+                  AND e.evaluator_type = 'supervisor'
+                  AND e.evaluator_id::text = $1::text
+              )
+            `,
+            [supervisorId]
+          ),
+        ]);
+
+      const interns = internsResult.rows.map((intern) => ({
+        ...intern,
+        hoursLogged: Number(intern.hoursLogged),
+        hoursRequired: Number(intern.hoursRequired),
+        activeTasks: Number(intern.activeTasks),
+      }));
+
+      return res.json({
+        totalInterns: interns.length,
+        pendingAttendance: Number(
+          pendingAttendanceCountResult.rows[0].count
+        ),
+        activeTasks: Number(activeTasksResult.rows[0].count),
+        pendingEvaluations: Number(evaluationsResult.rows[0].count),
+        interns,
+        pendingLogs: pendingLogsResult.rows,
+        deadlines: deadlinesResult.rows,
+      });
+    } catch (error) {
+      console.error("GET SUPERVISOR DASHBOARD ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load supervisor dashboard.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| APPROVE / REJECT ATTENDANCE
+|--------------------------------------------------------------------------
+*/
+
+app.patch(
+  "/api/attendance/:id/status",
+  requireRole(["supervisor", "coordinator"]),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        id,
+      } = req.params;
+
+      const {
+        status,
+        reason,
+      } = req.body;
+
+      if (
+        status !== "Verified" &&
+        status !== "Rejected"
+      ) {
+        return res.status(400).json({
+          message:
+            "Status must be Verified or Rejected.",
+        });
+      }
+
+      const cleanReason =
+        typeof reason === "string" &&
+        reason.trim() !== ""
+          ? reason.trim()
+          : null;
+
+      if (status === "Rejected" && !cleanReason) {
+        return res.status(400).json({
+          message: "A reason is required when rejecting an attendance log.",
+        });
+      }
+
+      // A log with no time-out has no rendered hours yet, so it cannot be
+      // confirmed. Rejecting an unfinished log is still allowed.
+      if (status === "Verified") {
+        const openLog = await pool.query(
+          `
+          SELECT 1
+          FROM attendance a
+          JOIN students s ON s.student_id = a.student_id
+          WHERE a.id = $1
+          AND a.time_out IS NULL
+          AND ($2 = 'coordinator' OR s.supervisor_id = $3)
+          `,
+          [id, auth?.role, auth?.id]
+        );
+        if (openLog.rows.length > 0) {
+          return res.status(409).json({
+            message:
+              "This log has no time-out yet. It can be verified after the student times out.",
+          });
+        }
+      }
+
+      const result =
+        await pool.query(
+          `
+          UPDATE attendance a
+
+          SET
+            status = $1,
+            review_notes = $2::text,
+            verified_by = $5,
+            verifier_role = $4,
+            verified_at = NOW()
+
+          FROM students s
+          WHERE a.id = $3
+          AND s.student_id = a.student_id
+          AND ($4 = 'coordinator' OR s.supervisor_id = $5)
+
+          RETURNING
+            a.id,
+            a.student_id,
+            TO_CHAR(
+              a.date,
+              'YYYY-MM-DD'
+            ) AS date,
+            a.time_in,
+            a.break_time,
+            a.break_end_time,
+            a.time_out,
+            a.hours,
+            a.note,
+            a.status,
+            a.image_url,
+            a.review_notes,
+            a.verified_by,
+            a.verifier_role,
+            a.verified_at
+          `,
+          [
+            status,
+            cleanReason,
+            id,
+            auth?.role,
+            auth?.id,
+          ]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Attendance record not found.",
+        });
+      }
+
+      await createNotification({
+        studentId: result.rows[0].student_id,
+        title:
+          status === "Verified"
+            ? "Attendance verified"
+            : "Attendance rejected",
+        message:
+          status === "Verified"
+            ? `Your attendance for ${result.rows[0].date} was verified by your supervisor.`
+            : `Your attendance for ${result.rows[0].date} was rejected.${
+                cleanReason ? ` Reason: ${cleanReason}` : ""
+              }`,
+        type:
+          status === "Verified" ? "success" : "warning",
+      });
+
+      return res.json({
+        message:
+          `Attendance ${status.toLowerCase()} successfully.`,
+
+        attendance:
+          result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "UPDATE ATTENDANCE STATUS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to update attendance status.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| STUDENT DASHBOARD
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/dashboard/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own dashboard.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      /*
+      |--------------------------------------------------------------------------
+      | ATTENDANCE TOTALS
+      |--------------------------------------------------------------------------
+      */
+
+      const attendanceResult =
+        await pool.query(
+          `
+          SELECT
+            COALESCE(
+              SUM(hours),
+              0
+            ) AS hours_rendered,
+
+            COUNT(*) AS days_logged
+
+          FROM attendance
+
+          WHERE student_id = $1
+          AND status = 'Verified'
+          `,
+          [studentId]
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | TASK TOTALS
+      |--------------------------------------------------------------------------
+      */
+
+      const taskResult =
+        await pool.query(
+          `
+          SELECT
+            COUNT(*) FILTER (
+              WHERE status IN (
+                'Pending',
+                'In Progress'
+              )
+            ) AS active_tasks,
+
+            COUNT(*) AS total_tasks,
+
+            COUNT(*) FILTER (
+              WHERE status = 'Reviewed'
+            ) AS completed_tasks
+
+          FROM tasks
+
+          WHERE student_id = $1
+          `,
+          [studentId]
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | WEEKLY HOURS
+      |--------------------------------------------------------------------------
+      */
+
+      const weeklyResult =
+        await pool.query(
+          `
+          SELECT
+            TO_CHAR(
+              date,
+              'Dy'
+            ) AS day,
+
+            COALESCE(
+              SUM(hours),
+              0
+            ) AS hours
+
+          FROM attendance
+
+          WHERE student_id = $1
+
+          AND status = 'Verified'
+
+          AND date >= CURRENT_DATE
+            - INTERVAL '6 days'
+
+          GROUP BY date
+
+          ORDER BY date ASC
+          `,
+          [studentId]
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | CONVERT VALUES
+      |--------------------------------------------------------------------------
+      */
+
+      const hoursRendered =
+        Number(
+          attendanceResult
+            .rows[0]
+            .hours_rendered
+        );
+
+      const daysLogged =
+        Number(
+          attendanceResult
+            .rows[0]
+            .days_logged
+        );
+
+      const activeTasks =
+        Number(
+          taskResult
+            .rows[0]
+            .active_tasks
+        );
+
+      const totalTasks =
+        Number(
+          taskResult
+            .rows[0]
+            .total_tasks
+        );
+
+      const completedTasks =
+        Number(
+          taskResult
+            .rows[0]
+            .completed_tasks
+        );
+
+      /*
+      |--------------------------------------------------------------------------
+      | REQUIRED HOURS
+      |--------------------------------------------------------------------------
+      */
+
+      const requiredHoursResult =
+        await pool.query(
+          `
+          SELECT required_hours
+          FROM students
+          WHERE student_id = $1
+          `,
+          [studentId]
+        );
+
+      const requiredHours =
+        requiredHoursResult.rows.length > 0 &&
+        requiredHoursResult.rows[0].required_hours
+          ? Number(requiredHoursResult.rows[0].required_hours)
+          : 180;
+
+      const completion =
+        requiredHours > 0
+          ? Math.min(
+              Math.round(
+                (
+                  hoursRendered /
+                  requiredHours
+                ) * 100
+              ),
+              100
+            )
+          : 0;
+
+      return res.json({
+        hoursRendered,
+        requiredHours,
+        daysLogged,
+        activeTasks,
+        completion,
+
+        weeklyHours:
+          weeklyResult.rows.map(
+            (item) => ({
+              day:
+                item.day,
+
+              hours:
+                Number(
+                  item.hours
+                ),
+            })
+          ),
+
+        totalTasks,
+        completedTasks,
+      });
+    } catch (error) {
+      console.error(
+        "DASHBOARD ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get dashboard data.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUBMIT COMPLAINT
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  "/api/complaints",
+  requireRole("student"),
+  upload.single("evidence"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    let complaintSaved = false;
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        report_type,
+        reported_student_name,
+        reported_program_section,
+        supervisor_name,
+        company_name,
+        category,
+        description,
+      } = req.body;
+
+      if (!report_type) {
+        return res.status(400).json({
+          message:
+            "Report type is required.",
+        });
+      }
+
+      if (
+        report_type !== "student" &&
+        report_type !== "supervisor"
+      ) {
+        return res.status(400).json({
+          message:
+            "Invalid report type.",
+        });
+      }
+
+      if (!category) {
+        return res.status(400).json({
+          message:
+            "Complaint category is required.",
+        });
+      }
+
+      if (
+        !description ||
+        description.trim() === ""
+      ) {
+        return res.status(400).json({
+          message:
+            "Complaint description is required.",
+        });
+      }
+      if (!auth || auth.role !== "student") {
+        return res.status(401).json({ message: "Student login is required." });
+      }
+
+      let evidenceUrl:
+        | string
+        | null = null;
+
+      if (req.file) {
+        uploadedFileName = await savePrivateFile(req.file);
+        evidenceUrl = `/uploads/${uploadedFileName}`;
+      }
+
+      const cleanStudentName =
+        typeof reported_student_name ===
+          "string" &&
+        reported_student_name.trim() !== ""
+          ? reported_student_name.trim()
+          : null;
+
+      const cleanProgramSection =
+        typeof reported_program_section ===
+          "string" &&
+        reported_program_section.trim() !== ""
+          ? reported_program_section.trim()
+          : null;
+
+      const cleanSupervisorName =
+        typeof supervisor_name ===
+          "string" &&
+        supervisor_name.trim() !== ""
+          ? supervisor_name.trim()
+          : null;
+
+      const cleanCompanyName =
+        typeof company_name ===
+          "string" &&
+        company_name.trim() !== ""
+          ? company_name.trim()
+          : null;
+
+      const result =
+        await pool.query(
+          `
+          INSERT INTO complaints
+          (
+            student_id,
+            report_type,
+            reported_student_name,
+            reported_program_section,
+            supervisor_name,
+            company_name,
+            category,
+            description,
+            evidence_url,
+            status
+          )
+
+          VALUES
+          (
+            $1,
+            $2,
+            $3,
+            $4,
+            $5,
+            $6,
+            $7,
+            $8,
+            $9,
+            'Pending'
+          )
+
+          RETURNING
+            id,
+            student_id,
+            report_type,
+            reported_student_name,
+            reported_program_section,
+            supervisor_name,
+            company_name,
+            category,
+            description,
+            evidence_url,
+            status,
+            resolved_by,
+            resolution_notes,
+            resolved_at,
+            created_at,
+            updated_at
+          `,
+          [
+            auth.id,
+            report_type,
+            cleanStudentName,
+            cleanProgramSection,
+            cleanSupervisorName,
+            cleanCompanyName,
+            category.trim(),
+            description.trim(),
+            evidenceUrl,
+          ]
+        );
+      complaintSaved = true;
+
+      const coordinators = await pool.query(
+        `SELECT coordinator_id FROM coordinators WHERE is_active = TRUE`
+      );
+      await Promise.all(
+        coordinators.rows.map((coordinator) =>
+          createNotification({
+            coordinatorId: String(coordinator.coordinator_id),
+            title: "New complaint filed",
+            message: `A student filed a ${category.trim()} complaint for coordinator review.`,
+            type: "warning",
+          })
+        )
+      );
+
+      return res.status(201).json({
+        message:
+          "Complaint submitted successfully.",
+
+        complaint:
+          result.rows[0],
+      });
+    } catch (error) {
+      if (uploadedFileName && !complaintSaved) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE UNRECORDED COMPLAINT EVIDENCE:", cleanupError);
+        });
+      }
+      console.error(
+        "SUBMIT COMPLAINT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to submit complaint.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GET COMPLAINTS FOR STUDENT
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/complaints/student/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own complaints.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            report_type,
+            reported_student_name,
+            reported_program_section,
+            supervisor_name,
+            company_name,
+            category,
+            description,
+            evidence_url,
+            status,
+            resolved_by,
+            resolution_notes,
+            resolved_at,
+            created_at,
+            updated_at
+          FROM complaints
+          WHERE student_id = $1
+          ORDER BY created_at DESC
+          `,
+          [studentId]
+        );
+
+      return res.json({
+        complaints:
+          result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET COMPLAINTS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get complaints.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GET NOTIFICATIONS
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/notifications/student/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own notifications.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            title,
+            message,
+            type,
+            is_read,
+            created_at
+          FROM notifications
+          WHERE student_id = $1
+          ORDER BY created_at DESC
+          `,
+          [studentId]
+        );
+
+      return res.json({
+        notifications:
+          result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET NOTIFICATIONS ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get notifications.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| COMPATIBILITY ROUTE FOR OLD NOTIFICATION FRONTEND
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/notifications/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own notifications.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            title,
+            message,
+            type,
+            is_read,
+            created_at
+          FROM notifications
+          WHERE student_id = $1
+          ORDER BY created_at DESC
+          `,
+          [studentId]
+        );
+
+      return res.json({
+        notifications:
+          result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET NOTIFICATIONS COMPATIBILITY ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get notifications.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| UNREAD NOTIFICATION COUNT
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/notifications/student/:studentId/unread-count",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own notification count.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            COUNT(*) AS count
+          FROM notifications
+          WHERE student_id = $1
+          AND is_read = FALSE
+          `,
+          [studentId]
+        );
+
+      return res.json({
+        count:
+          Number(
+            result.rows[0].count
+          ),
+      });
+    } catch (error) {
+      console.error(
+        "GET UNREAD NOTIFICATION COUNT ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get unread notification count.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| MARK NOTIFICATION AS READ
+|--------------------------------------------------------------------------
+*/
+
+app.put(
+  "/api/notifications/:id/read",
+  requireRole(["student", "supervisor", "coordinator"]),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        id,
+      } = req.params;
+      if (!auth) {
+        return res.status(401).json({ message: "Authentication is required." });
+      }
+      const recipientColumn = {
+        student: "student_id",
+        supervisor: "supervisor_id",
+        coordinator: "coordinator_id",
+      }[auth.role];
+
+      const result =
+        await pool.query(
+          `
+          UPDATE notifications
+          SET is_read = TRUE
+          WHERE id = $1
+          AND ${recipientColumn} = $2
+
+          RETURNING
+            id,
+            student_id,
+            supervisor_id,
+            coordinator_id,
+            title,
+            message,
+            type,
+            is_read,
+            created_at
+          `,
+          [id, auth.id]
+        );
+
+      if (
+        result.rows.length === 0
+      ) {
+        return res.status(404).json({
+          message:
+            "Notification not found.",
+        });
+      }
+
+      return res.json({
+        message:
+          "Notification marked as read.",
+
+        notification:
+          result.rows[0],
+      });
+    } catch (error) {
+      console.error(
+        "MARK NOTIFICATION READ ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to mark notification as read.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| MARK ALL NOTIFICATIONS AS READ
+|--------------------------------------------------------------------------
+*/
+
+app.put(
+  "/api/notifications/student/:studentId/read-all",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only mark your own notifications as read.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      await pool.query(
+        `
+        UPDATE notifications
+        SET is_read = TRUE
+        WHERE student_id = $1
+        AND is_read = FALSE
+        `,
+        [studentId]
+      );
+
+      return res.json({
+        message:
+          "All notifications marked as read.",
+      });
+    } catch (error) {
+      console.error(
+        "MARK ALL NOTIFICATIONS READ ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to mark notifications as read.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+// Marks every notification of the signed-in account as read, for any role.
+app.put(
+  "/api/notifications/read-all",
+  requireRole(["student", "supervisor", "coordinator"]),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth) {
+      return res.status(401).json({ message: "Authentication is required." });
+    }
+    const recipientColumn = {
+      student: "student_id",
+      supervisor: "supervisor_id",
+      coordinator: "coordinator_id",
+    }[auth.role];
+
+    try {
+      const result = await pool.query(
+        `UPDATE notifications SET is_read = TRUE
+         WHERE ${recipientColumn} = $1 AND is_read = FALSE`,
+        [auth.id]
+      );
+      return res.json({
+        message: "All notifications marked as read.",
+        updated: result.rowCount ?? 0,
+      });
+    } catch (error) {
+      console.error("MARK ALL NOTIFICATIONS READ ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to mark notifications as read.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| OJT SCHEDULE
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/ojt-schedule/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const {
+        studentId,
+      } = req.params;
+
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({
+          message: "You can only view your own OJT schedule.",
+        });
+      }
+
+      if (!studentId) {
+        return res.status(400).json({
+          message:
+            "Student ID is required.",
+        });
+      }
+
+      const result =
+        await pool.query(
+          `
+          SELECT
+            id,
+            student_id,
+            day,
+            start_time,
+            end_time,
+            focus,
+            hours,
+            is_active
+
+          FROM ojt_schedule
+
+          WHERE student_id = $1
+          AND is_active = TRUE
+
+          ORDER BY
+            CASE day
+              WHEN 'Monday' THEN 1
+              WHEN 'Tuesday' THEN 2
+              WHEN 'Wednesday' THEN 3
+              WHEN 'Thursday' THEN 4
+              WHEN 'Friday' THEN 5
+              WHEN 'Saturday' THEN 6
+              WHEN 'Sunday' THEN 7
+              ELSE 8
+            END
+          `,
+          [studentId]
+        );
+
+      return res.json({
+        schedule:
+          result.rows,
+      });
+    } catch (error) {
+      console.error(
+        "GET OJT SCHEDULE ERROR:",
+        error
+      );
+
+      return res.status(500).json({
+        message:
+          "Failed to get OJT schedule.",
+        error:
+          error instanceof Error
+            ? error.message
+            : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/company/:studentId",
+  requireRole("student"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { studentId } = req.params;
+    if (!auth || auth.id !== studentId) {
+      return res.status(403).json({
+        message: "You can only view your own company information.",
+      });
+    }
+    const result = await pool.query(
+      `
+      SELECT
+        s.company AS name,
+        COALESCE(sup.name, '') AS supervisor,
+        COALESCE(sup.department, '') AS department,
+        ''::text AS address
+      FROM students s
+      LEFT JOIN supervisors sup
+        ON sup.supervisor_id::text = s.supervisor_id::text
+      WHERE s.student_id::text = $1::text
+      `,
+      [studentId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    return res.json({ company: result.rows[0] });
+  } catch (error) {
+    console.error("GET STUDENT COMPANY ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to load company information.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| COORDINATOR LOGIN
+|--------------------------------------------------------------------------
+*/
+
+app.post("/api/login/coordinator", loginGuard("coordinator"), async (req, res) => {
+  try {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+      return res.status(400).json({
+        message: "Email and password are required.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT id, coordinator_id, email, password, name, department, is_active,
+             auth_version, must_change_password
+      FROM coordinators
+      WHERE email = $1
+      `,
+      [email]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({
+        message: "Invalid coordinator email or password.",
+      });
+    }
+
+    const coordinator = result.rows[0];
+
+    const passwordOk = await verifyPassword(
+      password,
+      coordinator.password
+    );
+
+    if (!passwordOk) {
+      return res.status(401).json({
+        message: "Invalid coordinator email or password.",
+      });
+    }
+
+    if (coordinator.is_active === false) {
+      return res.status(403).json({
+        message: "This coordinator account has been deactivated.",
+      });
+    }
+
+    await upgradeLegacyPassword(
+      "coordinator",
+      String(coordinator.coordinator_id),
+      password,
+      coordinator.password
+    );
+    delete coordinator.password;
+    coordinator.must_change_password =
+      ENFORCE_PASSWORD_CHANGE && coordinator.must_change_password === true;
+
+    return res.json({
+      message: "Login successful!",
+      coordinator,
+      must_change_password: coordinator.must_change_password,
+      token: signToken(
+        "coordinator",
+        String(coordinator.coordinator_id),
+        Number(coordinator.auth_version)
+      ),
+    });
+  } catch (error) {
+    console.error("COORDINATOR LOGIN ERROR:", error);
+
+    return res.status(500).json({
+      message: "Coordinator login failed.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| USER MANAGEMENT — STUDENTS (Coordinator only)
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/coordinator/students",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
+      const status = req.query.status as string | undefined;
+
+      const result = await pool.query(
+        `
+        SELECT
+          s.id, s.student_id, s.email, s.name, s.program, s.company,
+          s.supervisor_id, sup.name AS supervisor_name,
+          s.required_hours, s.is_active, s.coordinator_id,
+          COALESCE((
+            SELECT SUM(a.hours) FROM attendance a
+            WHERE a.student_id::text = s.student_id::text AND a.status = 'Verified'
+          ), 0) AS hours_rendered
+        FROM students s
+        LEFT JOIN supervisors sup
+          ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+        WHERE (s.name ILIKE $1 OR s.email ILIKE $1 OR s.student_id::text ILIKE $1 OR s.company ILIKE $1 OR s.program ILIKE $1)
+        AND ($2::text IS NULL
+          OR ($2 = 'active' AND s.is_active = TRUE)
+          OR ($2 = 'inactive' AND s.is_active = FALSE))
+        ORDER BY s.name ASC
+        `,
+        [q, status || null]
+      );
+
+      return res.json({ students: result.rows });
+    } catch (error) {
+      console.error("LIST STUDENTS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to list students.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+async function supervisorIdIsValid(supervisorId: unknown): Promise<boolean> {
+  if (supervisorId === undefined || supervisorId === null || supervisorId === "") {
+    return true;
+  }
+  const result = await pool.query(
+    `SELECT 1 FROM supervisors WHERE supervisor_id = $1`,
+    [String(supervisorId)]
+  );
+  return result.rows.length > 0;
+}
+
+app.post(
+  "/api/coordinator/students",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const {
+        student_id,
+        email,
+        password,
+        name,
+        program,
+        company,
+        supervisor_id,
+        required_hours,
+      } = req.body;
+
+      if (!student_id || !email || !password || !name) {
+        return res.status(400).json({
+          message: "student_id, email, password, and name are required.",
+        });
+      }
+
+      const policyError = passwordPolicyError(password);
+      if (policyError) {
+        return res.status(400).json({ message: `Starting password: ${policyError}` });
+      }
+
+      if (!(await supervisorIdIsValid(supervisor_id))) {
+        return res.status(400).json({ message: "Selected supervisor does not exist." });
+      }
+
+      const hashed = await hashPassword(password);
+
+      // The coordinator chose this password, so the student must replace it.
+      const result = await pool.query(
+        `
+        INSERT INTO students
+          (student_id, email, password, name, program, company, supervisor_id, required_hours, is_active, coordinator_id, must_change_password)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, TRUE)
+        RETURNING id, student_id, email, name, program, company, supervisor_id, required_hours, is_active
+        `,
+        [
+          student_id,
+          email,
+          hashed,
+          name,
+          program || null,
+          company || null,
+          supervisor_id || null,
+          required_hours || 180,
+          (req as AuthedRequest).auth?.id || null,
+        ]
+      );
+
+      await createNotification({
+        studentId: String(student_id),
+        title: "Welcome to INTERNet",
+        message: `Your OJT account has been created. You can now log in as ${email}.`,
+        type: "info",
+      });
+
+      return res.status(201).json({
+        message: "Student account created.",
+        student: result.rows[0],
+      });
+    } catch (error: any) {
+      console.error("CREATE STUDENT ERROR:", error);
+
+      if (error?.code === "23505") {
+        return res.status(409).json({
+          message: "A student with that ID or email already exists.",
+        });
+      }
+
+      return res.status(500).json({
+        message: "Failed to create student.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/coordinator/students/:studentId",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const { studentId } = req.params;
+
+      const {
+        name,
+        email,
+        program,
+        company,
+        supervisor_id,
+        required_hours,
+      } = req.body;
+
+      if (!(await supervisorIdIsValid(supervisor_id))) {
+        return res.status(400).json({ message: "Selected supervisor does not exist." });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE students SET
+          name = COALESCE($1, name),
+          email = COALESCE($2, email),
+          program = COALESCE($3, program),
+          company = COALESCE($4, company),
+          supervisor_id = CASE WHEN $8::boolean THEN $5 ELSE supervisor_id END,
+          required_hours = COALESCE($6, required_hours)
+        WHERE student_id = $7
+        RETURNING id, student_id, email, name, program, company, supervisor_id, required_hours, is_active
+        `,
+        [
+          name || null,
+          email || null,
+          program || null,
+          company || null,
+          supervisor_id || null,
+          required_hours || null,
+          studentId,
+          // Only reassign (or unassign) when the request names a supervisor
+          // field; an edit that omits it keeps the current supervisor.
+          Object.prototype.hasOwnProperty.call(req.body ?? {}, "supervisor_id"),
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Student not found." });
+      }
+
+      return res.json({
+        message: "Student updated.",
+        student: result.rows[0],
+      });
+    } catch (error) {
+      console.error("UPDATE STUDENT ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update student.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/coordinator/students/:studentId/status",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const { studentId } = req.params;
+      const { is_active } = req.body;
+
+      const result = await pool.query(
+        `
+        UPDATE students SET is_active = $1
+        WHERE student_id = $2
+        RETURNING student_id, name, is_active
+        `,
+        [Boolean(is_active), studentId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Student not found." });
+      }
+
+      return res.json({
+        message: `Student ${is_active ? "activated" : "deactivated"}.`,
+        student: result.rows[0],
+      });
+    } catch (error) {
+      console.error("TOGGLE STUDENT STATUS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update student status.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| USER MANAGEMENT — SUPERVISORS (Coordinator only)
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/coordinator/supervisors",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
+
+      const result = await pool.query(
+        `
+        SELECT
+          sup.id, sup.supervisor_id, sup.email, sup.name, sup.company,
+          sup.department, sup.is_active,
+          (SELECT COUNT(*) FROM students s
+            WHERE TRIM(s.supervisor_id::text) = TRIM(sup.supervisor_id::text)
+          ) AS intern_count
+        FROM supervisors sup
+        WHERE (sup.name ILIKE $1 OR sup.email ILIKE $1 OR sup.company ILIKE $1 OR sup.department ILIKE $1)
+        ORDER BY sup.name ASC
+        `,
+        [q]
+      );
+
+      return res.json({ supervisors: result.rows });
+    } catch (error) {
+      console.error("LIST SUPERVISORS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to list supervisors.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/coordinator/search",
+  requireCoordinator,
+  async (req, res) => {
+    const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+    if (query.length > 100) {
+      return res.status(400).json({
+        message: "Search query must be 100 characters or fewer.",
+      });
+    }
+
+    if (query.length < 2) {
+      return res.json({ results: [] });
+    }
+
+    try {
+      const pattern = `%${query}%`;
+      const [students, supervisors, complaints] = await Promise.all([
+        pool.query(
+          `SELECT student_id, name, company, program
+           FROM students
+           WHERE name ILIKE $1
+             OR email ILIKE $1
+             OR student_id::text ILIKE $1
+             OR company ILIKE $1
+             OR program ILIKE $1
+           ORDER BY name ASC
+           LIMIT 5`,
+          [pattern]
+        ),
+        pool.query(
+          `SELECT supervisor_id, name, company, department
+           FROM supervisors
+           WHERE name ILIKE $1
+             OR email ILIKE $1
+             OR supervisor_id::text ILIKE $1
+             OR company ILIKE $1
+             OR department ILIKE $1
+           ORDER BY name ASC
+           LIMIT 5`,
+          [pattern]
+        ),
+        pool.query(
+          `SELECT id, category, description, reported_student_name,
+                  company_name, status, created_at
+           FROM complaints
+           WHERE category ILIKE $1
+             OR description ILIKE $1
+             OR student_id::text ILIKE $1
+             OR reported_student_name ILIKE $1
+             OR company_name ILIKE $1
+             OR supervisor_name ILIKE $1
+             OR created_at::text ILIKE $1
+           ORDER BY created_at DESC
+           LIMIT 5`,
+          [pattern]
+        ),
+      ]);
+      const destination = `?q=${encodeURIComponent(query)}`;
+      const results = [
+        ...students.rows.map((row) => ({
+          type: "student",
+          id: String(row.student_id),
+          title: row.name,
+          detail: `${row.student_id} · ${row.company || row.program || "Student"}`,
+          href: `/coordinator/students${destination}`,
+        })),
+        ...supervisors.rows.map((row) => ({
+          type: "supervisor",
+          id: String(row.supervisor_id),
+          title: row.name,
+          detail: `${row.company || row.department || "Supervisor"} · ${row.supervisor_id}`,
+          href: `/coordinator/supervisors${destination}`,
+        })),
+        ...complaints.rows.map((row) => ({
+          type: "complaint",
+          id: String(row.id),
+          title: row.category || "Complaint",
+          detail: `${row.status} · ${row.reported_student_name || row.company_name || row.description}`,
+          href: `/coordinator/complaints${destination}`,
+        })),
+      ];
+
+      return res.json({ results });
+    } catch (error) {
+      console.error("COORDINATOR SEARCH ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to search coordinator records.",
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/coordinator/supervisors",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const { supervisor_id, email, password, name, company, department } =
+        req.body;
+
+      if (!supervisor_id || !email || !password || !name) {
+        return res.status(400).json({
+          message:
+            "supervisor_id, email, password, and name are required.",
+        });
+      }
+
+      const policyError = passwordPolicyError(password);
+      if (policyError) {
+        return res.status(400).json({ message: `Starting password: ${policyError}` });
+      }
+
+      const hashed = await hashPassword(password);
+
+      // The coordinator chose this password, so the supervisor must replace it.
+      const result = await pool.query(
+        `
+        INSERT INTO supervisors
+          (supervisor_id, email, password, name, company, department, is_active, must_change_password)
+        VALUES ($1, $2, $3, $4, $5, $6, TRUE, TRUE)
+        RETURNING id, supervisor_id, email, name, company, department, is_active
+        `,
+        [
+          supervisor_id,
+          email,
+          hashed,
+          name,
+          company || null,
+          department || null,
+        ]
+      );
+
+      return res.status(201).json({
+        message: "Supervisor account created.",
+        supervisor: result.rows[0],
+      });
+    } catch (error: any) {
+      console.error("CREATE SUPERVISOR ERROR:", error);
+
+      if (error?.code === "23505") {
+        return res.status(409).json({
+          message: "A supervisor with that ID or email already exists.",
+        });
+      }
+
+      return res.status(500).json({
+        message: "Failed to create supervisor.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/coordinator/supervisors/:supervisorId",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const { supervisorId } = req.params;
+      const { name, email, company, department } = req.body;
+
+      const result = await pool.query(
+        `
+        UPDATE supervisors SET
+          name = COALESCE($1, name),
+          email = COALESCE($2, email),
+          company = COALESCE($3, company),
+          department = COALESCE($4, department)
+        WHERE supervisor_id = $5
+        RETURNING id, supervisor_id, email, name, company, department, is_active
+        `,
+        [
+          name || null,
+          email || null,
+          company || null,
+          department || null,
+          supervisorId,
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Supervisor not found." });
+      }
+
+      return res.json({
+        message: "Supervisor updated.",
+        supervisor: result.rows[0],
+      });
+    } catch (error) {
+      console.error("UPDATE SUPERVISOR ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update supervisor.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/coordinator/supervisors/:supervisorId/status",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const { supervisorId } = req.params;
+      const { is_active } = req.body;
+
+      const result = await pool.query(
+        `
+        UPDATE supervisors SET is_active = $1
+        WHERE supervisor_id = $2
+        RETURNING supervisor_id, name, is_active
+        `,
+        [Boolean(is_active), supervisorId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Supervisor not found." });
+      }
+
+      return res.json({
+        message: `Supervisor ${is_active ? "activated" : "deactivated"}.`,
+        supervisor: result.rows[0],
+      });
+    } catch (error) {
+      console.error("TOGGLE SUPERVISOR STATUS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update supervisor status.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| COORDINATOR DASHBOARD
+|--------------------------------------------------------------------------
+*/
+
+/*
+|--------------------------------------------------------------------------
+| ATTENDANCE DISCREPANCY RULES (Feature 4: flagged discrepancies)
+|--------------------------------------------------------------------------
+|
+| A log is flagged when any of these is true:
+|  - Rejected:        the supervisor rejected the log.
+|  - Missing time-out: the log is from an earlier day and was never closed.
+|  - Stale pending:   the log has waited more than STALE_PENDING_DAYS days
+|                     for supervisor verification.
+|
+*/
+
+const STALE_PENDING_DAYS = 2;
+
+function missingTimeoutCondition(alias: string): string {
+  return `(${alias}.time_out IS NULL AND ${alias}.date < CURRENT_DATE)`;
+}
+
+function stalePendingCondition(alias: string): string {
+  return `(${alias}.status = 'Pending' AND ${alias}.date < CURRENT_DATE - ${STALE_PENDING_DAYS})`;
+}
+
+function flaggedLogCondition(alias: string): string {
+  return `(${alias}.status = 'Rejected' OR ${missingTimeoutCondition(alias)} OR ${stalePendingCondition(alias)})`;
+}
+
+app.get(
+  "/api/coordinator/discrepancies",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const studentId =
+        typeof req.query.student_id === "string" && req.query.student_id.trim()
+          ? req.query.student_id.trim()
+          : null;
+      const result = await pool.query(
+        `
+        SELECT
+          a.id,
+          a.student_id,
+          s.name AS student_name,
+          s.company,
+          sup.name AS supervisor_name,
+          TO_CHAR(a.date, 'YYYY-MM-DD') AS date,
+          a.time_in,
+          a.time_out,
+          a.hours,
+          a.status,
+          a.review_notes,
+          ARRAY_REMOVE(ARRAY[
+            CASE WHEN a.status = 'Rejected' THEN 'Rejected by supervisor' END,
+            CASE WHEN ${missingTimeoutCondition("a")} THEN 'No time-out recorded' END,
+            CASE WHEN ${stalePendingCondition("a")}
+              THEN 'Unverified for more than ${STALE_PENDING_DAYS} days' END
+          ], NULL) AS reasons
+        FROM attendance a
+        INNER JOIN students s ON s.student_id = a.student_id
+        LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+        WHERE ${flaggedLogCondition("a")}
+          AND s.is_active = TRUE
+          AND ($1::text IS NULL OR a.student_id = $1)
+        ORDER BY a.date DESC, a.id DESC
+        LIMIT 300
+        `,
+        [studentId]
+      );
+      return res.json({ discrepancies: result.rows });
+    } catch (error) {
+      console.error("COORDINATOR DISCREPANCIES ERROR:", error);
+      return res.status(500).json({ message: "Failed to load flagged logs." });
+    }
+  }
+);
+
+app.get(
+  "/api/coordinator/dashboard",
+  requireCoordinator,
+  async (_req, res) => {
+    try {
+      const [
+        studentCount,
+        supervisorCount,
+        pendingAttendance,
+        flagged,
+        pendingComplaints,
+        taskStats,
+        hoursStats,
+      ] = await Promise.all([
+        pool.query(
+          `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM students`
+        ),
+        pool.query(
+          `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM supervisors`
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS count FROM attendance WHERE status = 'Pending'`
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS count FROM attendance a WHERE ${flaggedLogCondition("a")}`
+        ),
+        pool.query(
+          `SELECT COUNT(*) AS count FROM complaints WHERE status = 'Pending'`
+        ),
+        pool.query(
+          `
+          SELECT
+            COUNT(*) FILTER (WHERE status = 'Submitted') AS awaiting_review,
+            COUNT(*) FILTER (WHERE status = 'Reviewed') AS completed,
+            COUNT(*) AS total
+          FROM tasks
+          `
+        ),
+        pool.query(
+          `SELECT COALESCE(SUM(hours), 0) AS total_hours FROM attendance WHERE status = 'Verified'`
+        ),
+      ]);
+
+      return res.json({
+        students: {
+          active: Number(studentCount.rows[0].active),
+          total: Number(studentCount.rows[0].total),
+        },
+        supervisors: {
+          active: Number(supervisorCount.rows[0].active),
+          total: Number(supervisorCount.rows[0].total),
+        },
+        pendingAttendance: Number(pendingAttendance.rows[0].count),
+        flaggedAttendance: Number(flagged.rows[0].count),
+        pendingComplaints: Number(pendingComplaints.rows[0].count),
+        tasks: {
+          awaitingReview: Number(taskStats.rows[0].awaiting_review),
+          completed: Number(taskStats.rows[0].completed),
+          total: Number(taskStats.rows[0].total),
+        },
+        totalHoursLogged: Number(hoursStats.rows[0].total_hours),
+      });
+    } catch (error) {
+      console.error("COORDINATOR DASHBOARD ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load coordinator dashboard.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| COORDINATOR MONITORING (per-student progress + flagged logs)
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/coordinator/monitoring",
+  requireCoordinator,
+  async (_req, res) => {
+    try {
+      // Attendance and task aggregates are computed in separate LATERAL
+      // subqueries. Joining both tables in one GROUP BY multiplies rows
+      // (each log x each task) and inflated hours and counts.
+      const result = await pool.query(
+        `
+        SELECT
+          s.student_id, s.name, s.program, s.company, s.required_hours,
+          sup.name AS supervisor_name,
+          att.hours_rendered,
+          att.pending_logs,
+          att.rejected_logs,
+          att.missing_timeout_logs,
+          att.stale_pending_logs,
+          att.flagged_logs,
+          att.last_log_date,
+          tk.active_tasks,
+          tk.tasks_awaiting_review,
+          tk.overdue_tasks
+        FROM students s
+        LEFT JOIN supervisors sup
+          ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+        LEFT JOIN LATERAL (
+          SELECT
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours_rendered,
+            COUNT(*) FILTER (WHERE a.status = 'Pending') AS pending_logs,
+            COUNT(*) FILTER (WHERE a.status = 'Rejected') AS rejected_logs,
+            COUNT(*) FILTER (WHERE ${missingTimeoutCondition("a")}) AS missing_timeout_logs,
+            COUNT(*) FILTER (WHERE ${stalePendingCondition("a")}) AS stale_pending_logs,
+            COUNT(*) FILTER (WHERE ${flaggedLogCondition("a")}) AS flagged_logs,
+            TO_CHAR(MAX(a.date), 'YYYY-MM-DD') AS last_log_date
+          FROM attendance a
+          WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)
+        ) att ON TRUE
+        LEFT JOIN LATERAL (
+          SELECT
+            COUNT(*) FILTER (WHERE t.status IN ('Pending', 'In Progress')) AS active_tasks,
+            COUNT(*) FILTER (WHERE t.status = 'Submitted') AS tasks_awaiting_review,
+            COUNT(*) FILTER (
+              WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < CURRENT_DATE
+            ) AS overdue_tasks
+          FROM tasks t
+          WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+        ) tk ON TRUE
+        WHERE s.is_active = TRUE
+        ORDER BY s.name ASC
+        `
+      );
+
+      const students = result.rows.map((row) => ({
+        ...row,
+        hours_rendered: Number(row.hours_rendered),
+        pending_logs: Number(row.pending_logs),
+        rejected_logs: Number(row.rejected_logs),
+        missing_timeout_logs: Number(row.missing_timeout_logs),
+        stale_pending_logs: Number(row.stale_pending_logs),
+        flagged_logs: Number(row.flagged_logs),
+        active_tasks: Number(row.active_tasks),
+        tasks_awaiting_review: Number(row.tasks_awaiting_review),
+        overdue_tasks: Number(row.overdue_tasks),
+        completion: row.required_hours
+          ? Math.min(
+              100,
+              Math.round(
+                (Number(row.hours_rendered) / Number(row.required_hours)) *
+                  100
+              )
+            )
+          : 0,
+      }));
+
+      return res.json({ students });
+    } catch (error) {
+      console.error("COORDINATOR MONITORING ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load monitoring data.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| COORDINATOR COMPLAINT OVERSIGHT
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/coordinator/complaints",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+
+      if (query.length > 100) {
+        return res.status(400).json({
+          message: "Search query must be 100 characters or fewer.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          c.id, c.student_id, c.filed_by_supervisor_id,
+          COALESCE(s.name, sup.name) AS filed_by_name,
+          CASE WHEN c.filed_by_supervisor_id IS NOT NULL THEN 'supervisor' ELSE 'student' END AS filed_by_role,
+          c.report_type, c.reported_student_name, c.reported_program_section,
+          c.supervisor_name, c.company_name, c.category, c.description,
+          c.evidence_url, c.status, c.resolved_by, c.resolution_notes,
+          c.resolved_at, c.created_at, c.updated_at
+        FROM complaints c
+        LEFT JOIN students s ON s.student_id::text = c.student_id::text
+        LEFT JOIN supervisors sup ON sup.supervisor_id::text = c.filed_by_supervisor_id::text
+        WHERE ($1::text IS NULL OR c.status = $1)
+          AND ($2::text IS NULL
+            OR c.id::text ILIKE $2
+            OR c.student_id::text ILIKE $2
+            OR c.category ILIKE $2
+            OR c.description ILIKE $2
+            OR COALESCE(c.reported_student_name, '') ILIKE $2
+            OR COALESCE(c.company_name, '') ILIKE $2
+            OR COALESCE(c.supervisor_name, '') ILIKE $2
+            OR COALESCE(s.name, sup.name, '') ILIKE $2
+            OR c.created_at::text ILIKE $2)
+        ORDER BY c.created_at DESC
+        `,
+        [status || null, query ? `%${query}%` : null]
+      );
+
+      return res.json({ complaints: result.rows });
+    } catch (error) {
+      console.error("COORDINATOR COMPLAINTS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load complaints.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/coordinator/complaints/:id/resolve",
+  requireCoordinator,
+  async (req: AuthedRequest, res) => {
+    try {
+      const { id } = req.params;
+      const { status, resolution_notes } = req.body;
+
+      if (!["In Review", "Resolved", "Dismissed"].includes(status)) {
+        return res.status(400).json({
+          message:
+            "Status must be 'In Review', 'Resolved', or 'Dismissed'.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE complaints SET
+          status = $1::text,
+          resolution_notes = COALESCE($2::text, resolution_notes),
+          resolved_by = $3,
+          resolved_at = CASE WHEN $1::text IN ('Resolved', 'Dismissed') THEN NOW() ELSE resolved_at END
+        WHERE id = $4
+        RETURNING *
+        `,
+        [
+          status,
+          resolution_notes || null,
+          req.auth?.id || "OJT Coordinator",
+          id,
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Complaint not found." });
+      }
+
+      const complaint = result.rows[0];
+
+      if (complaint.student_id) {
+        await createNotification({
+          studentId: complaint.student_id,
+          title: `Complaint ${status.toLowerCase()}`,
+          message: `Your filed complaint (${complaint.category}) is now ${status.toLowerCase()}.`,
+          type: status === "Resolved" ? "success" : "info",
+        });
+      }
+
+      if (complaint.filed_by_supervisor_id) {
+        await createNotification({
+          supervisorId: complaint.filed_by_supervisor_id,
+          title: `Complaint ${status.toLowerCase()}`,
+          message: `Your filed complaint (${complaint.category}) is now ${status.toLowerCase()}.`,
+          type: status === "Resolved" ? "success" : "info",
+        });
+      }
+
+      return res.json({
+        message: "Complaint updated.",
+        complaint,
+      });
+    } catch (error) {
+      console.error("RESOLVE COMPLAINT ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update complaint.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| COORDINATOR ANALYTICS
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/coordinator/analytics",
+  requireCoordinator,
+  async (_req, res) => {
+    try {
+      const [
+        byCompany,
+        complaintsByCategory,
+        taskFunnel,
+        attendanceTrend,
+        evaluationSummary,
+      ] =
+        await Promise.all([
+          pool.query(
+            `
+            SELECT company, COUNT(*) AS student_count
+            FROM students
+            WHERE company IS NOT NULL AND is_active = TRUE
+            GROUP BY company
+            ORDER BY student_count DESC
+            LIMIT 10
+            `
+          ),
+          pool.query(
+            `
+            SELECT category, COUNT(*) AS count
+            FROM complaints
+            GROUP BY category
+            ORDER BY count DESC
+            `
+          ),
+          pool.query(
+            `
+            SELECT status, COUNT(*) AS count
+            FROM tasks
+            GROUP BY status
+            `
+          ),
+          pool.query(
+            `
+            SELECT TO_CHAR(date, 'YYYY-MM-DD') AS day, COUNT(*) AS logs,
+              COALESCE(SUM(hours) FILTER (WHERE status = 'Verified'), 0) AS hours
+            FROM attendance
+            WHERE date >= CURRENT_DATE - INTERVAL '13 days'
+            GROUP BY date
+            ORDER BY date ASC
+            `
+          ),
+          pool.query(
+            `
+            SELECT
+              evaluator_type,
+              category,
+              COUNT(*) AS count,
+              ROUND(AVG(rating)::numeric, 2) AS average_rating
+            FROM evaluations
+            GROUP BY evaluator_type, category
+            ORDER BY evaluator_type, category
+            `
+          ),
+        ]);
+
+      return res.json({
+        studentsByCompany: byCompany.rows,
+        complaintsByCategory: complaintsByCategory.rows,
+        taskFunnel: taskFunnel.rows,
+        attendanceTrend: attendanceTrend.rows.map((r) => ({
+          day: r.day,
+          logs: Number(r.logs),
+          hours: Number(r.hours),
+        })),
+        evaluationSummary: evaluationSummary.rows.map((r) => ({
+          evaluatorType: r.evaluator_type === "teacher" ? "coordinator" : r.evaluator_type,
+          category: r.category,
+          count: Number(r.count),
+          averageRating: Number(r.average_rating),
+        })),
+      });
+    } catch (error) {
+      console.error("COORDINATOR ANALYTICS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load analytics.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| TASK ASSIGNMENT (Supervisor assigns a task to their intern)
+|--------------------------------------------------------------------------
+*/
+
+app.post("/api/tasks", requireRole("supervisor"), async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || auth.role !== "supervisor") {
+      return res.status(401).json({ message: "Supervisor login is required." });
+    }
+    const {
+      student_id,
+      title,
+      description,
+      priority,
+      due_date,
+    } = req.body;
+
+    if (!student_id || !title || !due_date) {
+      return res.status(400).json({
+        message: "student_id, title, and due_date are required.",
+      });
+    }
+
+    // Dates are compared as text in Philippine time, the zone deadlines use.
+    const todayInManila = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Manila",
+    }).format(new Date());
+    if (
+      typeof due_date !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(due_date) ||
+      Number.isNaN(Date.parse(due_date))
+    ) {
+      return res.status(400).json({
+        message: "Due date must be a valid date (YYYY-MM-DD).",
+      });
+    }
+    if (due_date < todayInManila) {
+      return res.status(400).json({
+        message: "The due date cannot be in the past.",
+      });
+    }
+
+    const intern = await pool.query(
+      `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2 AND is_active = TRUE`,
+      [student_id, auth.id]
+    );
+    if (intern.rows.length === 0) {
+      return res.status(403).json({
+        message: "Tasks can only be assigned to your active interns.",
+      });
+    }
+    if (typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({ message: "A task title is required." });
+    }
+
+    const supervisor = await pool.query(
+      `SELECT name FROM supervisors WHERE supervisor_id = $1`,
+      [auth.id]
+    );
+    const result = await pool.query(
+      `
+      INSERT INTO tasks
+        (student_id, title, description, assigned_by, assigned_by_id, priority, status, due_date, created_at)
+      VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, NOW())
+      RETURNING *
+      `,
+      [
+        student_id,
+        title.trim(),
+        description || null,
+        supervisor.rows[0].name,
+        auth.id,
+        priority || "Medium",
+        due_date,
+      ]
+    );
+
+    await createNotification({
+      studentId: String(student_id),
+      title: "New task assigned",
+      message: `"${title.trim()}" was assigned to you, due ${due_date}.`,
+      type: "info",
+    });
+
+    return res.status(201).json({
+      message: "Task assigned.",
+      task: result.rows[0],
+    });
+  } catch (error) {
+    console.error("ASSIGN TASK ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to assign task.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| GET TASKS FOR A SUPERVISOR'S INTERNS (assign + review queue)
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/tasks/supervisor/:supervisorId",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { supervisorId } = req.params;
+      if (!auth || auth.id !== supervisorId) {
+        return res.status(403).json({ message: "You can only view your own task queue." });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT
+          t.*, s.name AS student_name
+        FROM tasks t
+        INNER JOIN students s
+          ON TRIM(s.student_id::text) = TRIM(t.student_id::text)
+        WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+        ORDER BY
+          CASE t.status WHEN 'Submitted' THEN 0 ELSE 1 END,
+          t.due_date ASC
+        `,
+        [supervisorId]
+      );
+
+      return res.json({ tasks: result.rows });
+    } catch (error) {
+      console.error("GET SUPERVISOR TASKS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to get tasks.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUBMIT A COMPLETED TASK (Student)
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  "/api/tasks/:id/submit",
+  requireRole("student"),
+  upload.single("attachment"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    let taskSaved = false;
+    try {
+      const auth = (req as AuthedRequest).auth;
+      if (!auth || auth.role !== "student") {
+        return res.status(401).json({ message: "Student login is required." });
+      }
+      const { id } = req.params;
+      const { submission_notes } = req.body;
+
+      let fileUrl: string | null = null;
+
+      if (req.file) {
+        uploadedFileName = await savePrivateFile(req.file);
+        fileUrl = `/uploads/${uploadedFileName}`;
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE tasks SET
+          status = 'Submitted',
+          submission_notes = $1,
+          submission_file = COALESCE($2, submission_file),
+          submitted_at = NOW()
+        WHERE id = $3
+          AND student_id = $4
+          AND status IN ('Pending', 'In Progress')
+        RETURNING *
+        `,
+        [submission_notes || null, fileUrl, id, auth.id]
+      );
+
+      if (result.rows.length === 0) {
+        if (uploadedFileName) {
+          await deletePrivateFile(uploadedFileName).catch((error) => {
+            console.error("FAILED TO REMOVE UNOWNED TASK ATTACHMENT:", error);
+          });
+        }
+        return res.status(404).json({ message: "Task not found." });
+      }
+
+      const task = result.rows[0];
+      taskSaved = true;
+
+      if (task.assigned_by_id) {
+        await createNotification({
+          supervisorId: task.assigned_by_id,
+          title: "Task submitted",
+          message: `A student submitted "${task.title}" for your review.`,
+          type: "info",
+        });
+      }
+
+      return res.json({
+        message: "Task submitted for review.",
+        task,
+      });
+    } catch (error) {
+      if (uploadedFileName && !taskSaved) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE UNRECORDED TASK ATTACHMENT:", cleanupError);
+        });
+      }
+      console.error("SUBMIT TASK ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to submit task.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| REVIEW A SUBMITTED TASK (Supervisor)
+|--------------------------------------------------------------------------
+*/
+
+app.patch(
+  "/api/tasks/:id/review",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      if (!auth || auth.role !== "supervisor") {
+        return res.status(401).json({ message: "Supervisor login is required." });
+      }
+      const { id } = req.params;
+      const { status, review_notes, review_rating } = req.body;
+
+      if (!["Reviewed", "In Progress"].includes(status)) {
+        return res.status(400).json({
+          message:
+            "Status must be 'Reviewed' (approve) or 'In Progress' (send back for revision).",
+        });
+      }
+      if (
+        review_rating !== undefined &&
+        review_rating !== null &&
+        (!Number.isInteger(Number(review_rating)) ||
+          Number(review_rating) < 1 ||
+          Number(review_rating) > 5)
+      ) {
+        return res.status(400).json({
+          message: "Review rating must be between 1 and 5.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE tasks t SET
+          status = $1,
+          review_notes = $2,
+          review_rating = $3,
+          reviewed_at = NOW()
+        FROM students s
+        WHERE t.id = $4
+          AND s.student_id = t.student_id
+          AND s.supervisor_id = $5
+          AND t.status = 'Submitted'
+        RETURNING t.*
+        `,
+        [status, review_notes || null, review_rating ?? null, id, auth.id]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Submitted task not found for your assigned interns." });
+      }
+
+      const task = result.rows[0];
+
+      await createNotification({
+        studentId: task.student_id,
+        title:
+          status === "Reviewed" ? "Task reviewed" : "Revisions requested",
+        message:
+          status === "Reviewed"
+            ? `"${task.title}" has been reviewed and marked complete.`
+            : `"${task.title}" needs revisions before it can be approved.${
+                review_notes ? ` Note: ${review_notes}` : ""
+              }`,
+        type: status === "Reviewed" ? "success" : "warning",
+      });
+
+      return res.json({
+        message: "Task review saved.",
+        task,
+      });
+    } catch (error) {
+      console.error("REVIEW TASK ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to review task.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| EVALUATION & FEEDBACK
+|--------------------------------------------------------------------------
+*/
+
+app.post(
+  "/api/evaluations",
+  requireRole(["student", "supervisor", "coordinator"]),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { student_id, category, rating, comments } = req.body;
+
+    if (!auth || !student_id || !rating) {
+      return res.status(400).json({
+        message:
+          "student_id and rating are required.",
+      });
+    }
+
+    if (!Number.isInteger(Number(rating)) || Number(rating) < 1 || Number(rating) > 5) {
+      return res.status(400).json({
+        message: "Rating must be between 1 and 5.",
+      });
+    }
+
+    const evaluatorType =
+      auth.role === "coordinator" ? "teacher" : auth.role;
+    if (auth.role === "student" && auth.id !== String(student_id)) {
+      return res.status(403).json({
+        message: "Students can only submit feedback about their own placement.",
+      });
+    }
+    if (auth.role === "supervisor") {
+      const assignedStudent = await pool.query(
+        `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2 AND is_active = TRUE`,
+        [student_id, auth.id]
+      );
+      if (assignedStudent.rows.length === 0) {
+        return res.status(403).json({
+          message: "You can only evaluate your assigned interns.",
+        });
+      }
+    }
+
+    const targetStudent = await pool.query(
+      `SELECT 1 FROM students WHERE student_id = $1 AND is_active = TRUE`,
+      [student_id]
+    );
+    if (targetStudent.rows.length === 0) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+    const { table: evaluatorTable, idColumn: evaluatorIdColumn } =
+      accountTables[auth.role];
+    const evaluator = await pool.query<{ name: string }>(
+      `SELECT name FROM ${evaluatorTable} WHERE ${evaluatorIdColumn} = $1`,
+      [auth.id]
+    );
+    const result = await pool.query(
+      `
+      INSERT INTO evaluations
+        (student_id, evaluator_type, evaluator_id, evaluator_name, category, rating, comments)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING *
+      `,
+      [
+        student_id,
+        evaluatorType,
+        auth.id,
+        evaluator.rows[0]?.name || null,
+        category || "Overall Performance",
+        rating,
+        comments || null,
+      ]
+    );
+
+    if (evaluatorType !== "student") {
+      await createNotification({
+        studentId: String(student_id),
+        title: "New evaluation received",
+        message: `You received a new ${category || "performance"} evaluation.`,
+        type: "info",
+      });
+    }
+
+    return res.status(201).json({
+      message: "Evaluation submitted.",
+      evaluation: result.rows[0],
+    });
+  } catch (error) {
+    console.error("SUBMIT EVALUATION ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to submit evaluation.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+app.get(
+  "/api/coordinator/evaluations",
+  requireCoordinator,
+  async (_req, res) => {
+    try {
+      const result = await pool.query(
+        `
+        SELECT e.*, s.name AS student_name, s.company
+        FROM evaluations e
+        LEFT JOIN students s ON s.student_id::text = e.student_id::text
+        ORDER BY e.created_at DESC
+        LIMIT 200
+        `
+      );
+
+      return res.json({ evaluations: result.rows });
+    } catch (error) {
+      console.error("COORDINATOR EVALUATIONS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load evaluations.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/evaluations/student/:studentId",
+  requireRole(["student", "supervisor"]),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { studentId } = req.params;
+    if (!auth) {
+      return res.status(401).json({ message: "Login is required." });
+    }
+    if (auth.role === "student" && auth.id !== studentId) {
+      return res.status(403).json({ message: "You can only view your own evaluations." });
+    }
+    if (auth.role === "supervisor") {
+      const assignedStudent = await pool.query(
+        `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+        [studentId, auth.id]
+      );
+      if (assignedStudent.rows.length === 0) {
+        return res.status(403).json({ message: "You can only view your assigned interns." });
+      }
+    }
+    const result = await pool.query(
+      `
+      SELECT * FROM evaluations
+      WHERE student_id = $1
+      ORDER BY created_at DESC
+      `,
+      [studentId]
+    );
+
+    return res.json({ evaluations: result.rows });
+  } catch (error) {
+    console.error("GET EVALUATIONS ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to get evaluations.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| ROLE-BASED NOTIFICATIONS — SUPERVISOR & COORDINATOR
+|--------------------------------------------------------------------------
+*/
+
+app.get(
+  "/api/notifications/supervisor/:supervisorId",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { supervisorId } = req.params;
+      if (!auth || auth.id !== supervisorId) {
+        return res.status(403).json({
+          message: "You can only view your own notifications.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT id, supervisor_id, title, message, type, is_read, created_at
+        FROM notifications
+        WHERE supervisor_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+        `,
+        [supervisorId]
+      );
+
+      return res.json({ notifications: result.rows });
+    } catch (error) {
+      console.error("GET SUPERVISOR NOTIFICATIONS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to get notifications.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/notifications/coordinator/:coordinatorId",
+  requireRole("coordinator"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { coordinatorId } = req.params;
+      if (!auth || auth.id !== coordinatorId) {
+        return res.status(403).json({
+          message: "You can only view your own notifications.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT id, coordinator_id, title, message, type, is_read, created_at
+        FROM notifications
+        WHERE coordinator_id = $1
+        ORDER BY created_at DESC, id DESC
+        LIMIT 100
+        `,
+        [coordinatorId]
+      );
+
+      return res.json({ notifications: result.rows });
+    } catch (error) {
+      console.error("GET COORDINATOR NOTIFICATIONS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to get notifications.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| PROFILE MANAGEMENT (Feature 11) — self-service, any logged-in user
+|--------------------------------------------------------------------------
+|
+| This was completely missing — every "Profile" button across the app
+| pointed at a route that didn't exist. Students and supervisors can now
+| view and update their own name/email, and change their password.
+|
+*/
+
+app.get(
+  "/api/students/:studentId/profile",
+  requireRole("student"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { studentId } = req.params;
+    if (!auth || auth.id !== studentId) {
+      return res.status(403).json({ message: "You can only view your own profile." });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT student_id, email, name, program, company, supervisor_id,
+        required_hours, is_active
+      FROM students
+      WHERE student_id = $1
+      `,
+      [studentId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    return res.json({ student: result.rows[0] });
+  } catch (error) {
+    console.error("GET STUDENT PROFILE ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to load profile.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+app.put(
+  "/api/students/:studentId/profile",
+  requireRole("student"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { studentId } = req.params;
+    const { name, email } = req.body;
+
+    if (!auth || auth.id !== studentId) {
+      return res.status(403).json({ message: "You can only update your own profile." });
+    }
+    if (!name || !email) {
+      return res.status(400).json({
+        message: "Name and email are required.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE students SET name = $1, email = $2
+      WHERE student_id = $3
+      RETURNING student_id, email, name, program, company, supervisor_id, required_hours
+      `,
+      [name, email, studentId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+
+    return res.json({
+      message: "Profile updated.",
+      student: result.rows[0],
+    });
+  } catch (error: any) {
+    console.error("UPDATE STUDENT PROFILE ERROR:", error);
+
+    if (error?.code === "23505") {
+      return res.status(409).json({
+        message: "That email is already in use.",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Failed to update profile.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+app.put(
+  "/api/students/:studentId/password",
+  requireRole("student"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const accountId = String(req.params.studentId);
+
+    if (!auth || auth.id !== accountId) {
+      return res.status(403).json({
+        message: "You can only change your own password.",
+      });
+    }
+
+    try {
+      const outcome = await changeOwnPassword(
+        "student",
+        accountId,
+        req.body?.current_password,
+        req.body?.new_password
+      );
+      return res.status(outcome.status).json(outcome.body);
+    } catch (error) {
+      console.error("UPDATE STUDENT PASSWORD ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update password.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/supervisors/:supervisorId/profile",
+  requireRole("supervisor"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { supervisorId } = req.params;
+    if (!auth || auth.id !== supervisorId) {
+      return res.status(403).json({ message: "You can only view your own profile." });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT supervisor_id, email, name, company, department, is_active
+      FROM supervisors
+      WHERE supervisor_id = $1
+      `,
+      [supervisorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Supervisor not found." });
+    }
+
+    return res.json({ supervisor: result.rows[0] });
+  } catch (error) {
+    console.error("GET SUPERVISOR PROFILE ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to load profile.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+app.put(
+  "/api/supervisors/:supervisorId/profile",
+  requireRole("supervisor"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { supervisorId } = req.params;
+    const { name, email, department } = req.body;
+
+    if (!auth || auth.id !== supervisorId) {
+      return res.status(403).json({ message: "You can only update your own profile." });
+    }
+    if (!name || !email) {
+      return res.status(400).json({
+        message: "Name and email are required.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      UPDATE supervisors SET name = $1, email = $2, department = COALESCE($3, department)
+      WHERE supervisor_id = $4
+      RETURNING supervisor_id, email, name, company, department
+      `,
+      [name, email, department || null, supervisorId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Supervisor not found." });
+    }
+
+    return res.json({
+      message: "Profile updated.",
+      supervisor: result.rows[0],
+    });
+  } catch (error: any) {
+    console.error("UPDATE SUPERVISOR PROFILE ERROR:", error);
+
+    if (error?.code === "23505") {
+      return res.status(409).json({
+        message: "That email is already in use.",
+      });
+    }
+
+    return res.status(500).json({
+      message: "Failed to update profile.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+app.put(
+  "/api/supervisors/:supervisorId/password",
+  requireRole("supervisor"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const accountId = String(req.params.supervisorId);
+
+    if (!auth || auth.id !== accountId) {
+      return res.status(403).json({
+        message: "You can only change your own password.",
+      });
+    }
+
+    try {
+      const outcome = await changeOwnPassword(
+        "supervisor",
+        accountId,
+        req.body?.current_password,
+        req.body?.new_password
+      );
+      return res.status(outcome.status).json(outcome.body);
+    } catch (error) {
+      console.error("UPDATE SUPERVISOR PASSWORD ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update password.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/coordinators/:coordinatorId/profile",
+  requireRole("coordinator"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const { coordinatorId } = req.params;
+
+    if (!auth || auth.id !== coordinatorId) {
+      return res.status(403).json({
+        message: "You can only view your own profile.",
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT coordinator_id, email, name, department, is_active
+        FROM coordinators
+        WHERE coordinator_id = $1
+        `,
+        [coordinatorId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Coordinator not found." });
+      }
+
+      return res.json({ coordinator: result.rows[0] });
+    } catch (error) {
+      console.error("GET COORDINATOR PROFILE ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load profile.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/coordinators/:coordinatorId/profile",
+  requireRole("coordinator"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const { coordinatorId } = req.params;
+    const name =
+      typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const email =
+      typeof req.body?.email === "string"
+        ? req.body.email.trim().toLowerCase()
+        : "";
+    const department =
+      typeof req.body?.department === "string"
+        ? req.body.department.trim()
+        : null;
+
+    if (!auth || auth.id !== coordinatorId) {
+      return res.status(403).json({
+        message: "You can only update your own profile.",
+      });
+    }
+
+    if (!name || !email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return res.status(400).json({
+        message: "A valid name and email are required.",
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        UPDATE coordinators
+        SET name = $1, email = $2, department = $3
+        WHERE coordinator_id = $4
+        RETURNING coordinator_id, email, name, department, is_active
+        `,
+        [name, email, department || null, coordinatorId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Coordinator not found." });
+      }
+
+      return res.json({
+        message: "Profile updated.",
+        coordinator: result.rows[0],
+      });
+    } catch (error) {
+      console.error("UPDATE COORDINATOR PROFILE ERROR:", error);
+      if (
+        typeof error === "object" &&
+        error !== null &&
+        "code" in error &&
+        error.code === "23505"
+      ) {
+        return res.status(409).json({ message: "That email is already in use." });
+      }
+
+      return res.status(500).json({
+        message: "Failed to update profile.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.put(
+  "/api/coordinators/:coordinatorId/password",
+  requireRole("coordinator"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const accountId = String(req.params.coordinatorId);
+
+    if (!auth || auth.id !== accountId) {
+      return res.status(403).json({
+        message: "You can only change your own password.",
+      });
+    }
+
+    try {
+      const outcome = await changeOwnPassword(
+        "coordinator",
+        accountId,
+        req.body?.current_password,
+        req.body?.new_password
+      );
+      return res.status(outcome.status).json(outcome.body);
+    } catch (error) {
+      console.error("UPDATE COORDINATOR PASSWORD ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to update password.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUPERVISOR'S OWN INTERNS (list + quick stats)
+|--------------------------------------------------------------------------
+|
+| The supervisor dashboard already linked to "/supervisor/interns" but the
+| page — and this endpoint — never existed.
+|
+*/
+
+app.get(
+  "/api/supervisor/:supervisorId/interns",
+  requireRole("supervisor"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { supervisorId } = req.params;
+    if (!auth || auth.id !== supervisorId) {
+      return res.status(403).json({ message: "You can only view your own interns." });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT
+        s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
+        (
+          SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
+          WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)
+            AND a.status = 'Verified'
+        ) AS hours_rendered,
+        (
+          SELECT COUNT(*) FROM tasks t
+          WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+            AND t.status IN ('Pending', 'In Progress')
+        ) AS active_tasks,
+        (
+          SELECT COUNT(*) FROM tasks t
+          WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+            AND t.status = 'Submitted'
+        ) AS tasks_awaiting_review
+      FROM students s
+      WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+      AND s.is_active = TRUE
+      ORDER BY s.name ASC
+      `,
+      [supervisorId]
+    );
+
+    const interns = result.rows.map((row) => ({
+      ...row,
+      hours_rendered: Number(row.hours_rendered),
+      active_tasks: Number(row.active_tasks),
+      tasks_awaiting_review: Number(row.tasks_awaiting_review),
+      completion: row.required_hours
+        ? Math.min(
+            100,
+            Math.round(
+              (Number(row.hours_rendered) / Number(row.required_hours)) * 100
+            )
+          )
+        : 0,
+    }));
+
+    return res.json({ interns });
+  } catch (error) {
+    console.error("GET SUPERVISOR INTERNS ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to load interns.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUPERVISOR COMPLAINT FILING & TRACKING
+|--------------------------------------------------------------------------
+|
+| The original /api/complaints (student-facing) always wrote student_id as
+| the filer, so a supervisor had no way to file one themselves even though
+| the design doc lists Supervisor as one of the actors for this feature.
+| filed_by_supervisor_id is nullable so the original student flow is
+| untouched.
+|
+*/
+
+app.post(
+  "/api/complaints/supervisor",
+  requireRole("supervisor"),
+  upload.single("evidence"),
+  async (req, res) => {
+  let uploadedFileName: string | undefined;
+  let complaintSaved = false;
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const {
+      reported_student_name,
+      category,
+      description,
+    } = req.body;
+
+    if (!auth || auth.role !== "supervisor") {
+      return res.status(401).json({ message: "Supervisor login is required." });
+    }
+    if (!category || !description) {
+      return res.status(400).json({
+        message: "category and description are required.",
+      });
+    }
+
+    // "File Complaint" includes "Attach Evidence/File" for every actor.
+    let evidenceUrl: string | null = null;
+    if (req.file) {
+      uploadedFileName = await savePrivateFile(req.file);
+      evidenceUrl = `/uploads/${uploadedFileName}`;
+    }
+
+    const result = await pool.query(
+      `
+      INSERT INTO complaints
+        (filed_by_supervisor_id, report_type, reported_student_name, category, description, evidence_url, status)
+      VALUES ($1, 'student', $2, $3, $4, $5, 'Pending')
+      RETURNING *
+      `,
+      [
+        auth.id,
+        reported_student_name || null,
+        String(category).trim(),
+        String(description).trim(),
+        evidenceUrl,
+      ]
+    );
+    complaintSaved = true;
+    const coordinators = await pool.query(
+      `SELECT coordinator_id FROM coordinators WHERE is_active = TRUE`
+    );
+    await Promise.all(
+      coordinators.rows.map((coordinator) =>
+        createNotification({
+          coordinatorId: String(coordinator.coordinator_id),
+          title: "New complaint filed",
+          message: `A supervisor filed a ${String(category).trim()} complaint for coordinator review.`,
+          type: "warning",
+        })
+      )
+    );
+
+    return res.status(201).json({
+      message: "Complaint filed.",
+      complaint: result.rows[0],
+    });
+  } catch (error) {
+    if (uploadedFileName && !complaintSaved) {
+      await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+        console.error("FAILED TO REMOVE UNSAVED COMPLAINT EVIDENCE:", cleanupError);
+      });
+    }
+    console.error("FILE SUPERVISOR COMPLAINT ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to file complaint.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+app.get(
+  "/api/complaints/supervisor/:supervisorId",
+  requireRole("supervisor"),
+  async (req, res) => {
+  try {
+    const auth = (req as AuthedRequest).auth;
+    const { supervisorId } = req.params;
+    if (!auth || auth.id !== supervisorId) {
+      return res.status(403).json({
+        message: "You can only view your own complaints.",
+      });
+    }
+
+    const result = await pool.query(
+      `
+      SELECT * FROM complaints
+      WHERE filed_by_supervisor_id = $1
+      ORDER BY created_at DESC
+      `,
+      [supervisorId]
+    );
+
+    return res.json({ complaints: result.rows });
+  } catch (error) {
+    console.error("GET SUPERVISOR COMPLAINTS ERROR:", error);
+    return res.status(500).json({
+      message: "Failed to load complaints.",
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| OJT REQUIREMENTS (coordinator use case "Set OJT Requirements")
+|--------------------------------------------------------------------------
+|
+| Required documents are stored in ojt_requirements (migration 006) so the
+| coordinator can add, rename, reorder, or retire them without a code change.
+|
+*/
+
+async function getActiveRequirementNames(): Promise<string[]> {
+  const result = await pool.query<{ name: string }>(
+    `SELECT name FROM ojt_requirements WHERE is_active = TRUE ORDER BY sort_order, name`
+  );
+  return result.rows.map((row) => row.name);
+}
+
+app.get(
+  "/api/ojt-requirements",
+  requireRole(["student", "supervisor", "coordinator"]),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const includeInactive =
+        auth?.role === "coordinator" && req.query.all === "1";
+      const result = await pool.query(
+        `
+        SELECT id, name, description, is_active, sort_order
+        FROM ojt_requirements
+        WHERE ($1::boolean OR is_active = TRUE)
+        ORDER BY sort_order, name
+        `,
+        [includeInactive]
+      );
+      return res.json({ requirements: result.rows });
+    } catch (error) {
+      console.error("GET OJT REQUIREMENTS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load OJT requirements." });
+    }
+  }
+);
+
+function readRequirementInput(body: Record<string, unknown>) {
+  const name = typeof body.name === "string" ? body.name.trim() : "";
+  const description =
+    typeof body.description === "string" && body.description.trim()
+      ? body.description.trim()
+      : null;
+  const sortOrder = Number.isInteger(Number(body.sort_order))
+    ? Number(body.sort_order)
+    : 0;
+  const isActive = body.is_active === undefined ? true : Boolean(body.is_active);
+  return { name, description, sortOrder, isActive };
+}
+
+app.post(
+  "/api/coordinator/requirements",
+  requireCoordinator,
+  async (req, res) => {
+    const { name, description, sortOrder, isActive } = readRequirementInput(
+      req.body || {}
+    );
+    if (!name || name.length > 100) {
+      return res
+        .status(400)
+        .json({ message: "Requirement name is required (max 100 characters)." });
+    }
+    try {
+      const result = await pool.query(
+        `
+        INSERT INTO ojt_requirements (name, description, sort_order, is_active)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, name, description, is_active, sort_order
+        `,
+        [name, description, sortOrder, isActive]
+      );
+      return res.status(201).json({
+        message: "Requirement added.",
+        requirement: result.rows[0],
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({ message: "That requirement already exists." });
+      }
+      console.error("CREATE OJT REQUIREMENT ERROR:", error);
+      return res.status(500).json({ message: "Failed to add requirement." });
+    }
+  }
+);
+
+app.put(
+  "/api/coordinator/requirements/:id",
+  requireCoordinator,
+  async (req, res) => {
+    const { name, description, sortOrder, isActive } = readRequirementInput(
+      req.body || {}
+    );
+    if (!name || name.length > 100) {
+      return res
+        .status(400)
+        .json({ message: "Requirement name is required (max 100 characters)." });
+    }
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const previous = await client.query<{ name: string }>(
+        `SELECT name FROM ojt_requirements WHERE id = $1 FOR UPDATE`,
+        [req.params.id]
+      );
+      if (previous.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Requirement not found." });
+      }
+      const result = await client.query(
+        `
+        UPDATE ojt_requirements
+        SET name = $1, description = $2, sort_order = $3, is_active = $4,
+            updated_at = NOW()
+        WHERE id = $5
+        RETURNING id, name, description, is_active, sort_order
+        `,
+        [name, description, sortOrder, isActive, req.params.id]
+      );
+      // Keep already-uploaded documents attached to a renamed requirement.
+      if (previous.rows[0].name !== name) {
+        await client.query(
+          `UPDATE documents SET doc_type = $1 WHERE doc_type = $2`,
+          [name, previous.rows[0].name]
+        );
+      }
+      await client.query("COMMIT");
+      return res.json({
+        message: "Requirement updated.",
+        requirement: result.rows[0],
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({ message: "That requirement already exists." });
+      }
+      console.error("UPDATE OJT REQUIREMENT ERROR:", error);
+      return res.status(500).json({ message: "Failed to update requirement." });
+    } finally {
+      client.release();
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| OJT SCHEDULE MANAGEMENT (coordinator)
+|--------------------------------------------------------------------------
+|
+| Students could only view a schedule; nothing in the app could create one.
+| The coordinator now sets each student's weekly OJT schedule.
+|
+*/
+
+const SCHEDULE_DAYS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+app.get(
+  "/api/coordinator/students/:studentId/schedule",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const result = await pool.query(
+        `
+        SELECT id, student_id, day,
+               TO_CHAR(start_time, 'HH24:MI') AS start_time,
+               TO_CHAR(end_time, 'HH24:MI') AS end_time,
+               focus, hours, is_active
+        FROM ojt_schedule
+        WHERE student_id = $1 AND is_active = TRUE
+        ORDER BY array_position($2::text[], day::text), start_time
+        `,
+        [req.params.studentId, SCHEDULE_DAYS]
+      );
+      return res.json({ schedule: result.rows });
+    } catch (error) {
+      console.error("COORDINATOR GET SCHEDULE ERROR:", error);
+      return res.status(500).json({ message: "Failed to load schedule." });
+    }
+  }
+);
+
+app.put(
+  "/api/coordinator/students/:studentId/schedule",
+  requireCoordinator,
+  async (req, res) => {
+    const { studentId } = req.params;
+    const entries: unknown[] = Array.isArray(req.body?.schedule)
+      ? req.body.schedule
+      : [];
+    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
+    const clean: {
+      day: string;
+      start: string;
+      end: string;
+      focus: string | null;
+      hours: number;
+    }[] = [];
+
+    for (const raw of entries) {
+      const entry = (raw || {}) as Record<string, unknown>;
+      const day = String(entry.day || "");
+      const start = String(entry.start_time || "").slice(0, 5);
+      const end = String(entry.end_time || "").slice(0, 5);
+      if (!SCHEDULE_DAYS.includes(day)) {
+        return res.status(400).json({ message: `Invalid day: ${day || "(blank)"}.` });
+      }
+      if (!timePattern.test(start) || !timePattern.test(end)) {
+        return res
+          .status(400)
+          .json({ message: `Enter start and end times (HH:MM) for ${day}.` });
+      }
+      const [sh, sm] = start.split(":").map(Number);
+      const [eh, em] = end.split(":").map(Number);
+      const minutes = eh * 60 + em - (sh * 60 + sm);
+      if (minutes <= 0) {
+        return res
+          .status(400)
+          .json({ message: `End time must be after start time on ${day}.` });
+      }
+      if (clean.some((item) => item.day === day)) {
+        return res.status(400).json({ message: `${day} is listed more than once.` });
+      }
+      clean.push({
+        day,
+        start,
+        end,
+        focus:
+          typeof entry.focus === "string" && entry.focus.trim()
+            ? entry.focus.trim().slice(0, 200)
+            : null,
+        hours: Math.round((minutes / 60) * 100) / 100,
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const student = await client.query(
+        `SELECT 1 FROM students WHERE student_id = $1`,
+        [studentId]
+      );
+      if (student.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Student not found." });
+      }
+      await client.query(
+        `UPDATE ojt_schedule SET is_active = FALSE WHERE student_id = $1 AND is_active = TRUE`,
+        [studentId]
+      );
+      for (const item of clean) {
+        await client.query(
+          `
+          INSERT INTO ojt_schedule (student_id, day, start_time, end_time, focus, hours, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+          `,
+          [studentId, item.day, item.start, item.end, item.focus, item.hours]
+        );
+      }
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      console.error("COORDINATOR SAVE SCHEDULE ERROR:", error);
+      return res.status(500).json({ message: "Failed to save schedule." });
+    } finally {
+      client.release();
+    }
+
+    try {
+      await createNotification({
+        studentId: String(studentId),
+        title: "OJT schedule updated",
+        message: `Your coordinator updated your OJT schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
+        type: "schedule",
+      });
+    } catch (error) {
+      console.error("SCHEDULE NOTIFICATION ERROR:", error);
+    }
+
+    return res.json({
+      message: "Schedule saved.",
+      weeklyHours: clean.reduce((sum, item) => sum + item.hours, 0),
+    });
+  }
+);
+
+app.post(
+  "/api/documents",
+  requireRole("student"),
+  documentUpload.single("file"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    let documentSaved = false;
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || auth.role !== "student") {
+      return res.status(401).json({ message: "Student login is required." });
+    }
+
+    if (!req.file) {
+      return res.status(400).json({ message: "Select a document to upload." });
+    }
+
+    const docType = String(req.body.doc_type || "").trim();
+    let activeRequirements: string[];
+    try {
+      activeRequirements = await getActiveRequirementNames();
+    } catch (error) {
+      console.error("LOAD OJT REQUIREMENTS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load OJT requirements." });
+    }
+    if (!activeRequirements.includes(docType)) {
+      return res.status(400).json({ message: "Select a valid document type." });
+    }
+
+    try {
+      const studentResult = await pool.query(
+        `SELECT supervisor_id FROM students WHERE student_id = $1 AND is_active = TRUE`,
+        [auth.id]
+      );
+      if (studentResult.rows.length === 0) {
+        return res.status(403).json({ message: "Student account is unavailable." });
+      }
+      if (!studentResult.rows[0].supervisor_id) {
+        return res.status(409).json({
+          message: "No supervisor is assigned to this account yet.",
+        });
+      }
+
+      uploadedFileName = await savePrivateFile(req.file);
+      const result = await pool.query(
+        `
+        INSERT INTO documents
+          (student_id, doc_type, original_filename, file_path, mime_type, size_bytes)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        RETURNING id, student_id, doc_type, original_filename, mime_type,
+                  size_bytes, status, review_notes, uploaded_at, reviewed_at
+        `,
+        [
+          auth.id,
+          docType,
+          path.basename(req.file.originalname),
+          uploadedFileName,
+          req.file.mimetype,
+          req.file.size,
+        ]
+      );
+      documentSaved = true;
+
+      await createNotification({
+        supervisorId: studentResult.rows[0].supervisor_id,
+        title: "Document submitted for review",
+        message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}) for review.`,
+        type: "document",
+      });
+
+      return res.status(201).json({
+        message: "Document uploaded and submitted for review.",
+        document: result.rows[0],
+      });
+    } catch (error) {
+      if (uploadedFileName && !documentSaved) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+        console.error("FAILED TO REMOVE DOCUMENT AFTER UPLOAD ERROR:", cleanupError);
+        });
+      }
+      console.error("UPLOAD STUDENT DOCUMENT ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to upload document.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/documents/student",
+  requireRole("student"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || auth.role !== "student") {
+      return res.status(401).json({ message: "Student login is required." });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT id, student_id, doc_type, original_filename, mime_type,
+               size_bytes, status, review_notes, uploaded_at, reviewed_at
+        FROM documents
+        WHERE student_id = $1
+        ORDER BY uploaded_at DESC, id DESC
+        `,
+        [auth.id]
+      );
+      return res.json({ documents: result.rows });
+    } catch (error) {
+      console.error("GET STUDENT DOCUMENTS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load documents.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/documents/supervisor",
+  requireRole("supervisor"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || auth.role !== "supervisor") {
+      return res.status(401).json({ message: "Supervisor login is required." });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT d.id, d.student_id, s.name AS student_name, d.doc_type,
+               d.original_filename, d.mime_type, d.size_bytes, d.status,
+               d.review_notes, d.uploaded_at, d.reviewed_at
+        FROM documents d
+        INNER JOIN students s ON s.student_id = d.student_id
+        WHERE s.supervisor_id = $1
+        ORDER BY CASE WHEN d.status = 'Pending' THEN 0 ELSE 1 END,
+                 d.uploaded_at DESC, d.id DESC
+        LIMIT 100
+        `,
+        [auth.id]
+      );
+      return res.json({ documents: result.rows });
+    } catch (error) {
+      console.error("GET SUPERVISOR DOCUMENTS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load documents for review.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+// Coordinator oversight: every submitted document, plus how far each active
+// student is through the active OJT requirements. Read-only; reviewing a
+// document stays with the student's supervisor.
+app.get(
+  "/api/coordinator/documents",
+  requireCoordinator,
+  async (_req, res) => {
+    try {
+      const [documents, progress, requirements] = await Promise.all([
+        pool.query(
+          `
+          SELECT d.id, d.student_id, s.name AS student_name, s.program,
+                 s.company, sup.name AS supervisor_name, d.doc_type,
+                 d.original_filename, d.mime_type, d.size_bytes, d.status,
+                 d.review_notes, d.uploaded_at, d.reviewed_at
+          FROM documents d
+          LEFT JOIN students s ON s.student_id = d.student_id
+          LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+          ORDER BY d.uploaded_at DESC, d.id DESC
+          LIMIT 500
+          `
+        ),
+        pool.query(
+          `
+          SELECT s.student_id, s.name, s.program, s.company,
+                 sup.name AS supervisor_name,
+                 COUNT(DISTINCT d.doc_type)
+                   FILTER (WHERE d.status = 'Approved')::int AS approved,
+                 COUNT(DISTINCT d.doc_type)
+                   FILTER (WHERE d.status = 'Pending')::int AS pending,
+                 COUNT(DISTINCT d.doc_type)
+                   FILTER (WHERE d.status = 'Rejected')::int AS rejected,
+                 COALESCE(
+                   ARRAY_AGG(DISTINCT d.doc_type)
+                     FILTER (WHERE d.status = 'Approved'),
+                   '{}'
+                 ) AS approved_types
+          FROM students s
+          LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+          LEFT JOIN documents d
+            ON d.student_id = s.student_id
+           AND d.doc_type IN (
+             SELECT name FROM ojt_requirements WHERE is_active = TRUE
+           )
+          WHERE s.is_active = TRUE
+          GROUP BY s.student_id, s.name, s.program, s.company, sup.name
+          ORDER BY s.name
+          `
+        ),
+        pool.query(
+          `SELECT name FROM ojt_requirements
+           WHERE is_active = TRUE ORDER BY sort_order, name`
+        ),
+      ]);
+
+      const requirementNames: string[] = requirements.rows.map(
+        (row) => row.name
+      );
+      return res.json({
+        requirements: requirementNames,
+        documents: documents.rows,
+        students: progress.rows.map((row) => ({
+          student_id: row.student_id,
+          name: row.name,
+          program: row.program,
+          company: row.company,
+          supervisor_name: row.supervisor_name,
+          approved: row.approved,
+          pending: row.pending,
+          rejected: row.rejected,
+          missing: requirementNames.filter(
+            (name) => !row.approved_types.includes(name)
+          ),
+        })),
+      });
+    } catch (error) {
+      console.error("GET COORDINATOR DOCUMENTS ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to load submitted documents.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.patch(
+  "/api/documents/:documentId/review",
+  requireRole("supervisor"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || auth.role !== "supervisor") {
+      return res.status(401).json({ message: "Supervisor login is required." });
+    }
+
+    const documentId = Number(req.params.documentId);
+    const status = req.body.status;
+    const reviewNotes = String(req.body.review_notes || "").trim();
+    if (
+      !Number.isSafeInteger(documentId) ||
+      documentId < 1 ||
+      !["Approved", "Rejected"].includes(status)
+    ) {
+      return res.status(400).json({ message: "Invalid document review." });
+    }
+    if (status === "Rejected" && !reviewNotes) {
+      return res.status(400).json({
+        message: "A reason is required when rejecting a document.",
+      });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        UPDATE documents d
+        SET status = $1,
+            review_notes = $2,
+            reviewed_by_supervisor_id = $3,
+            reviewed_at = NOW()
+        FROM students s
+        WHERE d.id = $4
+          AND s.student_id = d.student_id
+          AND s.supervisor_id = $3
+          AND d.status = 'Pending'
+        RETURNING d.id, d.student_id, d.doc_type, d.status, d.review_notes,
+                  d.reviewed_at
+        `,
+        [
+          status,
+          reviewNotes || null,
+          auth.id,
+          documentId,
+        ]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          message: "Pending document not found for your assigned interns.",
+        });
+      }
+
+      const document = result.rows[0];
+      await createNotification({
+        studentId: document.student_id,
+        title: `Document ${status.toLowerCase()}`,
+        message: reviewNotes
+          ? `${document.doc_type}: ${reviewNotes}`
+          : `${document.doc_type} was approved.`,
+        type: "document",
+      });
+
+      return res.json({ message: "Document review saved.", document });
+    } catch (error) {
+      console.error("REVIEW STUDENT DOCUMENT ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to save document review.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/documents/:documentId/file",
+  requireRole(["student", "supervisor", "coordinator"]),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth) {
+      return res.status(401).json({ message: "Login is required." });
+    }
+
+    const documentId = Number(req.params.documentId);
+    if (!Number.isSafeInteger(documentId) || documentId < 1) {
+      return res.status(400).json({ message: "Invalid document ID." });
+    }
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT d.file_path, d.original_filename, d.mime_type
+        FROM documents d
+        LEFT JOIN students s ON s.student_id = d.student_id
+        WHERE d.id = $1
+          AND (
+            ($2 = 'student' AND d.student_id = $3)
+            OR ($2 = 'supervisor' AND s.supervisor_id = $3)
+            OR $2 = 'coordinator'
+          )
+        `,
+        [documentId, auth.role, auth.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Document not found." });
+      }
+
+      const fileName = path.basename(result.rows[0].file_path);
+      const downloadName = String(result.rows[0].original_filename)
+        .replace(/[\r\n"]/g, "_")
+        .trim();
+      const file = await readPrivateFile(fileName);
+      return res
+        .type(file.contentType || result.rows[0].mime_type)
+        .attachment(downloadName)
+        .send(file.buffer);
+    } catch (error) {
+      console.error("GET STUDENT DOCUMENT FILE ERROR:", error);
+      const statusCode =
+        typeof error === "object" && error !== null && "statusCode" in error
+          ? Number(error.statusCode)
+          : 0;
+      return res.status(statusCode === 404 ? 404 : 500).json({
+        message:
+          statusCode === 404
+            ? "Document file is unavailable."
+            : "Failed to retrieve document.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.get(
+  "/api/uploads/:filename",
+  requireRole(["coordinator", "supervisor", "student"]),
+  async (request, res) => {
+    const req = request as AuthedRequest;
+    const auth = req.auth;
+    const filename = req.params.filename;
+
+    if (
+      !auth ||
+      typeof filename !== "string" ||
+      filename !== path.basename(filename) ||
+      !/^(?:\d+-[a-f0-9]{12}|\d+-\d+|[a-f0-9-]{36})\.[a-z0-9]{1,10}$/i.test(filename) ||
+      filename.includes("\0")
+    ) {
+      return res.status(400).json({ message: "Invalid uploaded file name." });
+    }
+
+    const storedPath = `/uploads/${filename}`;
+
+    try {
+      const result = await pool.query(
+        `
+        SELECT
+          (
+            EXISTS (
+              SELECT 1
+              FROM attendance a
+              WHERE a.image_url = $2
+                AND (
+                  $1 = 'coordinator'
+                  OR
+                  ($1 = 'student' AND a.student_id = $3)
+                  OR (
+                    $1 = 'supervisor'
+                    AND EXISTS (
+                      SELECT 1
+                      FROM students s
+                      WHERE s.student_id = a.student_id
+                        AND s.supervisor_id = $3
+                    )
+                  )
+                )
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM tasks t
+              WHERE t.submission_file = $2
+                AND (
+                  $1 = 'coordinator'
+                  OR
+                  ($1 = 'student' AND t.student_id = $3)
+                  OR ($1 = 'supervisor' AND t.assigned_by_id = $3)
+                )
+            )
+            OR EXISTS (
+              SELECT 1
+              FROM complaints c
+              WHERE c.evidence_url = $2
+                AND (
+                  $1 = 'coordinator'
+                  OR
+                  ($1 = 'student' AND c.student_id = $3)
+                  OR ($1 = 'supervisor' AND c.filed_by_supervisor_id = $3)
+                )
+            )
+          ) AS authorized
+        `,
+        [auth.role, storedPath, auth.id]
+      );
+
+      if (!result.rows[0]?.authorized) {
+        return res.status(404).json({ message: "Uploaded file not found." });
+      }
+
+      const file = await readPrivateFile(filename);
+      return res
+        .type(file.contentType || "application/octet-stream")
+        .attachment(filename)
+        .send(file.buffer);
+    } catch (error) {
+      console.error("GET AUTHORIZED UPLOAD ERROR:", error);
+      const statusCode =
+        typeof error === "object" && error !== null && "statusCode" in error
+          ? Number(error.statusCode)
+          : 0;
+      return res.status(statusCode === 404 ? 404 : 500).json({
+        message:
+          statusCode === 404
+            ? "Uploaded file is unavailable."
+            : "Failed to retrieve uploaded file.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| UNKNOWN API ROUTE
+|--------------------------------------------------------------------------
+|
+| IMPORTANT:
+| This MUST remain at the bottom of all /api routes.
+|
+*/
+
+app.use(
+  "/api",
+  (
+    req,
+    res
+  ) => {
+    return res.status(404).json({
+      message:
+        `API route not found: ${req.method} ${req.originalUrl}`,
+    });
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| GLOBAL ERROR HANDLER
+|--------------------------------------------------------------------------
+*/
+
+app.use(
+  (
+    error: any,
+    _req: express.Request,
+    res: express.Response,
+    _next: express.NextFunction
+  ) => {
+    console.error(
+      "SERVER ERROR:",
+      error
+    );
+
+    if (
+      error instanceof multer.MulterError
+    ) {
+      return res.status(400).json({
+        message:
+          "File upload error.",
+        error:
+          error.message,
+      });
+    }
+
+    return res.status(400).json({
+      message:
+        error?.message ||
+        "Something went wrong.",
+    });
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SERVER
+|--------------------------------------------------------------------------
+*/
+
+const PORT =
+  process.env.PORT || 5000;
+
+if (!isAzureBlobStorageConfigured()) {
+  console.warn(
+    "Durable file storage is not configured; uploaded files currently use local disk."
+  );
+}
+
+app.listen(
+  PORT,
+  () => {
+    console.log(
+      `Backend running on port ${PORT}`
+    );
+
+    console.log(
+      "Server timezone: Asia/Manila"
+    );
+    startPostgresNotificationListener(pool);
+    startDeadlineReminderScheduler(pool, createNotification);
+  }
+);
