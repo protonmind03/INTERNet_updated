@@ -1497,3 +1497,39 @@ test("student records, reassignment and settling are coordinator-only and valida
   );
   assert.equal(coordinatorReview.response.status, 404);
 });
+
+test("the account wipe refuses requests it should not act on", async () => {
+  const path = "/api/coordinator/accounts/wipe";
+  const target = { student_ids: ["no-such-student"], supervisor_ids: [] };
+
+  const anonymous = await jsonRequest(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...target, password: coordinatorPassword }),
+  });
+  assert.equal(anonymous.response.status, 401);
+
+  const asStudent = await jsonRequest(
+    path,
+    jsonBody(studentToken, "POST", { ...target, password: studentPassword })
+  );
+  assert.equal(asStudent.response.status, 403);
+
+  const wrongPassword = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "POST", { ...target, password: "not-the-password" })
+  );
+  assert.equal(wrongPassword.response.status, 401);
+
+  const nothingSelected = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "POST", { password: coordinatorPassword })
+  );
+  assert.equal(nothingSelected.response.status, 400);
+
+  const unknownAccount = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "POST", { ...target, password: coordinatorPassword })
+  );
+  assert.equal(unknownAccount.response.status, 404);
+});

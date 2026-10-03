@@ -4,6 +4,7 @@ import { Button, Card, ErrorNotice, FormError, FormField } from "../../component
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { updateStoredAccount, useAccount, type CoordinatorAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import AccountWipe from "./AccountWipe";
 import { coordinatorRequest } from "./request";
 
 export default function CoordinatorProfilePage() {
@@ -77,7 +78,7 @@ export default function CoordinatorProfilePage() {
   };
 
   return (
-    <CoordinatorLayout title="Profile" subtitle="Your account details and password.">
+    <CoordinatorLayout title="Profile" subtitle="Your account details, password and test accounts.">
       <div className="max-w-3xl space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
@@ -136,6 +137,8 @@ export default function CoordinatorProfilePage() {
         </Card>
 
         {coordinatorId && <PasswordForm role="coordinator" accountId={coordinatorId} />}
+
+        <AccountWipe />
       </div>
     </CoordinatorLayout>
   );

@@ -1,6 +1,6 @@
 import { randomInt } from "node:crypto";
 import type express from "express";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 
 /*
 |--------------------------------------------------------------------------
@@ -46,9 +46,11 @@ export type ExtensionDependencies = {
     type?: string;
   }) => Promise<void>;
   hashPassword: (plain: string) => Promise<string>;
+  verifyPassword: (plain: string, stored: string) => Promise<boolean>;
   passwordPolicyError: (password: unknown) => string | null;
   loginAttemptKey: (role: string, identifier: unknown) => string;
   closeNotificationStreams: (account: { role: Role; id: string }) => void;
+  syncCompletion: (studentId: string) => Promise<void>;
   upload: { single: (field: string) => express.RequestHandler };
   savePrivateFile: (file: Express.Multer.File) => Promise<string>;
   deletePrivateFile: (fileName: string) => Promise<void>;
@@ -110,9 +112,11 @@ export function registerExtensionRoutes(
     createNotification,
     notifyCoordinators,
     hashPassword,
+    verifyPassword,
     passwordPolicyError,
     loginAttemptKey,
     closeNotificationStreams,
+    syncCompletion,
     upload,
     savePrivateFile,
     deletePrivateFile,
@@ -1309,6 +1313,241 @@ export function registerExtensionRoutes(
       }
     }
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | ACCOUNT WIPE (TRIAL PHASE)
+  |--------------------------------------------------------------------------
+  |
+  | Lets the coordinator clear test accounts between trial runs. Deleting an
+  | account removes everything it recorded and every file it uploaded. For a
+  | supervisor that also covers the tasks, evaluations and incident reports
+  | they wrote, and any log, document or absence they reviewed for a student
+  | who stays goes back to Pending. The coordinator's own password is asked
+  | for again because none of this can be undone.
+  |
+  */
+
+  /** Distinct account IDs from a request field; null when it is malformed. */
+  function idList(value: unknown): string[] | null {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value) || value.length > 1000) return null;
+    const ids = value.map(text);
+    if (ids.some((id) => !id || id.length > 50)) return null;
+    return [...new Set(ids)];
+  }
+
+  app.post("/api/coordinator/accounts/wipe", requireCoordinator, async (req, res) => {
+    const auth = (req as AuthedRequest).auth!;
+    const requestedStudents = idList(req.body?.student_ids);
+    const requestedSupervisors = idList(req.body?.supervisor_ids);
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+    if (!requestedStudents || !requestedSupervisors) {
+      return res.status(400).json({ message: "The list of accounts to delete is not valid." });
+    }
+    if (requestedStudents.length + requestedSupervisors.length === 0) {
+      return res.status(400).json({ message: "Select at least one account to delete." });
+    }
+    if (!password) {
+      return res.status(400).json({ message: "Enter your password to confirm." });
+    }
+
+    let client: PoolClient | null = null;
+    let committed = false;
+    try {
+      const coordinator = await pool.query<{ password: string }>(
+        `SELECT password FROM coordinators WHERE coordinator_id = $1`,
+        [auth.id]
+      );
+      if (
+        coordinator.rows.length === 0 ||
+        !(await verifyPassword(password, coordinator.rows[0].password))
+      ) {
+        return res.status(401).json({ message: "Your password is incorrect." });
+      }
+
+      client = await pool.connect();
+      await client.query("BEGIN");
+
+      const students = await client.query<{ student_id: string; email: string }>(
+        `SELECT student_id, email FROM students WHERE student_id = ANY($1::text[]) FOR UPDATE`,
+        [requestedStudents]
+      );
+      const supervisors = await client.query<{ supervisor_id: string; email: string }>(
+        `SELECT supervisor_id, email FROM supervisors WHERE supervisor_id = ANY($1::text[]) FOR UPDATE`,
+        [requestedSupervisors]
+      );
+      const studentIds = students.rows.map((row) => row.student_id);
+      const supervisorIds = supervisors.rows.map((row) => row.supervisor_id);
+      if (studentIds.length + supervisorIds.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "The selected accounts no longer exist." });
+      }
+
+      const both = [studentIds, supervisorIds];
+      const ownTasks = `student_id = ANY($1::text[]) OR assigned_by_id = ANY($2::text[])`;
+      const ownComplaints = `student_id = ANY($1::text[]) OR reported_student_id = ANY($1::text[])
+                             OR filed_by_supervisor_id = ANY($2::text[])`;
+
+      // Read before the rows go; the files are removed once the delete commits.
+      const files = await client.query<{ file: string | null }>(
+        `
+        SELECT image_url::text AS file FROM attendance WHERE student_id = ANY($1::text[])
+        UNION ALL SELECT submission_file::text FROM tasks WHERE ${ownTasks}
+        UNION ALL SELECT attachment_file::text FROM tasks WHERE ${ownTasks}
+        UNION ALL SELECT file_path::text FROM documents WHERE student_id = ANY($1::text[])
+        UNION ALL SELECT evidence_url::text FROM complaints WHERE ${ownComplaints}
+        `,
+        both
+      );
+
+      const statements: Array<[string, unknown[]]> = [
+        [`DELETE FROM task_deadline_reminders WHERE task_id IN (SELECT id FROM tasks WHERE ${ownTasks})`, both],
+        [`DELETE FROM tasks WHERE ${ownTasks}`, both],
+        [`DELETE FROM attendance WHERE student_id = ANY($1::text[])`, [studentIds]],
+        [`DELETE FROM absences WHERE student_id = ANY($1::text[])`, [studentIds]],
+        [`DELETE FROM ojt_schedule WHERE student_id = ANY($1::text[])`, [studentIds]],
+        [`DELETE FROM documents WHERE student_id = ANY($1::text[])`, [studentIds]],
+        [
+          `DELETE FROM evaluations
+           WHERE student_id = ANY($1::text[])
+              OR (evaluator_type = 'supervisor' AND evaluator_id = ANY($2::text[]))`,
+          both,
+        ],
+        [
+          `DELETE FROM complaint_messages
+           WHERE complaint_id IN (SELECT id FROM complaints WHERE ${ownComplaints})
+              OR (author_role = 'student' AND author_id = ANY($1::text[]))
+              OR (author_role = 'supervisor' AND author_id = ANY($2::text[]))`,
+          both,
+        ],
+        [`DELETE FROM complaints WHERE ${ownComplaints}`, both],
+        [
+          `DELETE FROM notifications
+           WHERE student_id = ANY($1::text[]) OR supervisor_id = ANY($2::text[])`,
+          both,
+        ],
+        [
+          `DELETE FROM password_reset_tokens
+           WHERE (role = 'student' AND account_id = ANY($1::text[]))
+              OR (role = 'supervisor' AND account_id = ANY($2::text[]))`,
+          both,
+        ],
+        [
+          `DELETE FROM web_push_subscriptions
+           WHERE (role = 'student' AND account_id = ANY($1::text[]))
+              OR (role = 'supervisor' AND account_id = ANY($2::text[]))`,
+          both,
+        ],
+        [
+          `UPDATE documents
+           SET status = 'Pending', review_notes = NULL, reviewed_by_supervisor_id = NULL, reviewed_at = NULL
+           WHERE reviewed_by_supervisor_id = ANY($1::text[])`,
+          [supervisorIds],
+        ],
+        [
+          `UPDATE absences
+           SET status = 'Pending', review_notes = NULL, reviewed_by = NULL, reviewed_at = NULL
+           WHERE reviewed_by = ANY($1::text[])`,
+          [supervisorIds],
+        ],
+        [`UPDATE students SET supervisor_id = NULL WHERE supervisor_id = ANY($1::text[])`, [supervisorIds]],
+        [`DELETE FROM students WHERE student_id = ANY($1::text[])`, [studentIds]],
+        [`DELETE FROM supervisors WHERE supervisor_id = ANY($1::text[])`, [supervisorIds]],
+        [
+          `DELETE FROM login_attempts WHERE key_hash = ANY($1::text[])`,
+          [
+            [
+              ...students.rows.flatMap((row) => [
+                loginAttemptKey("student", row.email),
+                loginAttemptKey("student", row.student_id),
+              ]),
+              ...supervisors.rows.flatMap((row) => [
+                loginAttemptKey("supervisor", row.email),
+                loginAttemptKey("supervisor", row.supervisor_id),
+              ]),
+            ],
+          ],
+        ],
+      ];
+      for (const [sql, params] of statements) {
+        await client.query(sql, params);
+      }
+
+      // Verified hours a deleted supervisor confirmed no longer count.
+      const reopened = await client.query<{ student_id: string }>(
+        `
+        UPDATE attendance
+        SET status = 'Pending', verified_by = NULL, verifier_role = NULL,
+            verified_at = NULL, review_notes = NULL
+        WHERE verifier_role = 'supervisor' AND verified_by = ANY($1::text[])
+        RETURNING student_id
+        `,
+        [supervisorIds]
+      );
+
+      await client.query("COMMIT");
+      committed = true;
+
+      for (const id of studentIds) closeNotificationStreams({ role: "student", id });
+      for (const id of supervisorIds) closeNotificationStreams({ role: "supervisor", id });
+      for (const id of new Set(reopened.rows.map((row) => row.student_id))) {
+        await syncCompletion(id);
+      }
+
+      const fileNames = new Set(
+        files.rows
+          .map((row) => row.file?.split("/").pop() || "")
+          .filter((name) => name !== "")
+      );
+      let filesFailed = 0;
+      for (const name of fileNames) {
+        try {
+          await deletePrivateFile(name);
+        } catch (error) {
+          filesFailed += 1;
+          console.error("ACCOUNT WIPE FILE ERROR:", name, error);
+        }
+      }
+      const filesRemoved = fileNames.size - filesFailed;
+
+      console.warn(
+        `ACCOUNT WIPE by ${auth.id}: ${studentIds.length} student(s), ${supervisorIds.length} supervisor(s), ${filesRemoved} file(s).`
+      );
+
+      const count = (total: number, noun: string) => `${total} ${noun}${total === 1 ? "" : "s"}`;
+      const accounts = [
+        studentIds.length > 0 ? count(studentIds.length, "student") : "",
+        supervisorIds.length > 0 ? count(supervisorIds.length, "supervisor") : "",
+      ].filter(Boolean);
+      return res.json({
+        message:
+          `Deleted ${accounts.join(" and ")}, with ${count(filesRemoved, "uploaded file")}.` +
+          (filesFailed > 0 ? ` ${count(filesFailed, "file")} could not be removed.` : ""),
+        deleted: {
+          students: studentIds.length,
+          supervisors: supervisorIds.length,
+          files: filesRemoved,
+        },
+        files_failed: filesFailed,
+      });
+    } catch (error) {
+      console.error("ACCOUNT WIPE ERROR:", error);
+      if (committed) {
+        return res.status(500).json({
+          message: "The accounts were deleted, but the clean-up afterwards did not finish.",
+        });
+      }
+      const open = client;
+      if (open) {
+        await quietly("ACCOUNT WIPE ROLLBACK ERROR", () => open.query("ROLLBACK"));
+      }
+      return res.status(500).json({ message: "Failed to delete the accounts. Nothing was changed." });
+    } finally {
+      client?.release();
+    }
+  });
 
   /*
   |--------------------------------------------------------------------------
