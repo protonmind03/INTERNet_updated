@@ -8,7 +8,7 @@ import { API_URL, withCoordinatorAuth } from "../lib/api";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import type { NotificationItem } from "../lib/useNotifications";
-import { clearSession, useAccount } from "../lib/session";
+import { signOut as endSession, useAccount } from "../lib/session";
 
 /*
 |--------------------------------------------------------------------------
@@ -96,7 +96,7 @@ export default function CoordinatorLayout({
   if (!coordinator) return <Navigate to="/" replace />;
 
   const signOut = () => {
-    clearSession("coordinator");
+    endSession("coordinator");
     navigate("/", { replace: true });
   };
 

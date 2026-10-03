@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "../../components/Icon";
 import { Button, FormError, FormField, Modal } from "../../components/ui";
 import { formatDayDate, formatLongDate, formatTime } from "../../lib/format";
+import { ATTENDANCE_PHOTO_MAX_MB, shrinkPhoto, uploadProblem } from "../../lib/files";
 import { errorText, toast } from "../../lib/toast";
 import {
   logDateKey,
@@ -93,6 +94,7 @@ export function LateTimeOutDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saving) return;
     const chosen = new Date(value);
     if (Number.isNaN(chosen.getTime())) return setError("Enter the time you left.");
     if (chosen.getTime() <= earliest.getTime()) {
@@ -197,12 +199,18 @@ export function ResubmitDialog({
     };
   }, [preview]);
 
-  const choosePhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const choosePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const chosen = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
+    if (!chosen) return;
+    if (!["image/jpeg", "image/png"].includes(chosen.type)) {
       setError("Use a JPG or PNG photo.");
+      return;
+    }
+    const file = await shrinkPhoto(chosen);
+    const problem = uploadProblem(file, ATTENDANCE_PHOTO_MAX_MB);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError("");
@@ -212,6 +220,7 @@ export function ResubmitDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saving) return;
     if (explanation.trim().length < 5) {
       return setError("Explain what you corrected, or why the log is accurate.");
     }

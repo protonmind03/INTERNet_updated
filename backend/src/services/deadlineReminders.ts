@@ -9,6 +9,8 @@ type NotificationWriter = (notification: {
   type: string;
 }) => Promise<void>;
 
+const MAX_EMAIL_ATTEMPTS = 5;
+
 let running = false;
 let warnedAboutSmtp = false;
 
@@ -51,6 +53,8 @@ export function startDeadlineReminderScheduler(
             reminder_type: "24_hours" | "deadline";
             notification_sent_at: Date | null;
             email_sent_at: Date | null;
+            email_attempts: number;
+            email_next_attempt_at: Date | null;
             student_id: string;
             student_email: string;
             student_name: string;
@@ -60,6 +64,7 @@ export function startDeadlineReminderScheduler(
           }>(
             `
             SELECT r.id, r.reminder_type, r.notification_sent_at, r.email_sent_at,
+                   r.email_attempts, r.email_next_attempt_at,
                    t.student_id, s.email AS student_email, s.name AS student_name,
                    t.assigned_by_id, t.title, t.due_date::text AS due_date
             FROM task_deadline_reminders r
@@ -69,13 +74,18 @@ export function startDeadlineReminderScheduler(
               AND t.status IN ('Pending', 'In Progress')
               AND (
                 r.notification_sent_at IS NULL
-                OR (r.email_sent_at IS NULL AND $1::boolean)
+                OR (
+                  r.email_sent_at IS NULL
+                  AND $1::boolean
+                  AND r.email_attempts < $2
+                  AND (r.email_next_attempt_at IS NULL OR r.email_next_attempt_at <= NOW())
+                )
               )
             ORDER BY r.scheduled_at, r.id
             LIMIT 1
             FOR UPDATE OF r SKIP LOCKED
             `,
-            [isSmtpConfigured()]
+            [isSmtpConfigured(), MAX_EMAIL_ATTEMPTS]
           );
           if (pending.rows.length === 0) {
             await client.query("COMMIT");
@@ -83,7 +93,12 @@ export function startDeadlineReminderScheduler(
           }
 
           const reminder = pending.rows[0];
-          let emailFailed = false;
+          const emailDue =
+            isSmtpConfigured() &&
+            !reminder.email_sent_at &&
+            reminder.email_attempts < MAX_EMAIL_ATTEMPTS &&
+            (!reminder.email_next_attempt_at ||
+              new Date(reminder.email_next_attempt_at).getTime() <= Date.now());
           const deadlineText = `The task "${reminder.title}" is due on ${reminder.due_date} (Philippine time).`;
           const isDue = reminder.reminder_type === "deadline";
           if (!reminder.notification_sent_at) {
@@ -109,7 +124,7 @@ export function startDeadlineReminderScheduler(
             );
           }
 
-          if (!reminder.email_sent_at && isSmtpConfigured()) {
+          if (emailDue) {
             try {
               await sendEmail({
                 to: reminder.student_email,
@@ -125,9 +140,19 @@ export function startDeadlineReminderScheduler(
               );
             } catch (error) {
               console.error("SEND TASK DEADLINE EMAIL ERROR:", error);
-              emailFailed = true;
+              // Try again later (5, 10, 20, 40 minutes), then give up. The
+              // row drops out of the queue meanwhile, so the reminders
+              // behind it are not held up.
+              await client.query(
+                `UPDATE task_deadline_reminders
+                 SET email_attempts = email_attempts + 1,
+                     email_next_attempt_at =
+                       NOW() + INTERVAL '5 minutes' * POWER(2, email_attempts)
+                 WHERE id = $1`,
+                [reminder.id]
+              );
             }
-          } else if (!reminder.email_sent_at && !warnedAboutSmtp) {
+          } else if (!reminder.email_sent_at && !isSmtpConfigured() && !warnedAboutSmtp) {
             warnedAboutSmtp = true;
             console.error(
               "Task deadline email reminders are pending SMTP configuration; configure SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, and SMTP_PASSWORD."
@@ -135,7 +160,6 @@ export function startDeadlineReminderScheduler(
           }
 
           await client.query("COMMIT");
-          if (emailFailed) break;
         } catch (error) {
           await client.query("ROLLBACK");
           console.error("TASK DEADLINE REMINDER ERROR:", error);

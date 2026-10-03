@@ -9,7 +9,7 @@ import {
   storeRotatedToken,
   withRoleAuth,
 } from "../lib/api";
-import { clearSession } from "../lib/session";
+import { signOut as endSession } from "../lib/session";
 
 type Role = "student" | "supervisor" | "coordinator";
 
@@ -145,7 +145,7 @@ export default function ChangePassword() {
         <button
           type="button"
           onClick={() => {
-            clearSession(role);
+            endSession(role);
             navigate("/", { replace: true });
           }}
           className="block w-full text-center text-sm font-semibold text-slate-600 hover:underline"

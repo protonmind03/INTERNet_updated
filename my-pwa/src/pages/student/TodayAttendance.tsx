@@ -8,6 +8,7 @@ import {
   formatLongDate,
   formatTime,
 } from "../../lib/format";
+import { ATTENDANCE_PHOTO_MAX_MB, shrinkPhoto, uploadProblem } from "../../lib/files";
 import { errorText, toast } from "../../lib/toast";
 import { workedMinutes, type AttendanceController } from "./useAttendance";
 
@@ -297,12 +298,18 @@ function TimeInDialog({
     onClose();
   };
 
-  const choosePhoto = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const choosePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const chosen = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
-    if (!["image/jpeg", "image/png"].includes(file.type)) {
+    if (!chosen) return;
+    if (!["image/jpeg", "image/png"].includes(chosen.type)) {
       setError("Use a JPG or PNG photo.");
+      return;
+    }
+    const file = await shrinkPhoto(chosen);
+    const problem = uploadProblem(file, ATTENDANCE_PHOTO_MAX_MB);
+    if (problem) {
+      setError(problem);
       return;
     }
     setError("");
@@ -312,6 +319,7 @@ function TimeInDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
+    if (saving) return;
     if (!photo) {
       setError("Take a photo first. It is required to record your time-in.");
       return;

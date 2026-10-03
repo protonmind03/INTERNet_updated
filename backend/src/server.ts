@@ -29,9 +29,9 @@ import { registerExtensionRoutes } from "./routes/extensions";
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
 // displayed time by eight hours.
-if (!process.env.TZ) {
-  process.env.TZ = "Asia/Manila";
-}
+// Set unconditionally: a host that presets TZ (for example to UTC) would
+// otherwise shift them just the same.
+process.env.TZ = "Asia/Manila";
 
 const app = express();
 
@@ -161,12 +161,47 @@ function isWebPushConfigured(): boolean {
   return Boolean(vapidPublicKey && vapidPrivateKey && vapidSubject);
 }
 
+// The page a tapped push notification opens, by recipient and subject, so
+// the tap lands on the thing the notification is about.
+const pushTargets: Record<
+  "coordinator" | "student" | "supervisor",
+  { fallback: string; byType: Record<string, string> }
+> = {
+  student: {
+    fallback: "/notifications",
+    byType: {
+      attendance: "/daily-log",
+      task: "/task",
+      document: "/documents",
+      schedule: "/schedule",
+    },
+  },
+  supervisor: {
+    fallback: "/supervisor/notifications",
+    byType: {
+      attendance: "/supervisor/attendance",
+      task: "/supervisor/tasks",
+      document: "/supervisor/documents",
+      complaint: "/supervisor/complaints",
+    },
+  },
+  coordinator: {
+    fallback: "/coordinator/dashboard",
+    byType: {
+      attendance: "/coordinator/monitoring",
+      document: "/coordinator/documents",
+      complaint: "/coordinator/complaints",
+    },
+  },
+};
+
 async function sendWebPush(
   recipient: { role: "coordinator" | "student" | "supervisor"; id: string },
   notification: {
     title: string;
     message: string;
     id: number;
+    type?: string;
   }
 ): Promise<void> {
   const result = await pool.query<{ id: number; subscription: webpush.PushSubscription }>(
@@ -183,9 +218,8 @@ async function sendWebPush(
             body: notification.message,
             notificationId: notification.id,
             url:
-              recipient.role === "student"
-                ? "/notifications"
-                : `/${recipient.role}/dashboard`,
+              pushTargets[recipient.role].byType[notification.type || ""] ||
+              pushTargets[recipient.role].fallback,
           }),
           { TTL: 86400 }
         );
@@ -364,22 +398,24 @@ app.post("/api/auth/password-reset/request", async (req, res) => {
 
   const resetUrl = new URL("/reset-password", frontendUrl);
   resetUrl.searchParams.set("token", rawToken);
-  try {
-    await sendEmail({
-      to: found.rows[0].email,
-      subject: "Reset your INTERNet account password",
-      text: `Hello ${found.rows[0].name},\n\nUse this link within 30 minutes to set a new password:\n${resetUrl.href}\n\nIf you did not request this, ignore this message.`,
-    });
-  } catch (error) {
-    await pool.query(
-      "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1",
-      [tokenHash]
-    );
+  // The email goes out after the reply. Waiting for the mail server here
+  // made a known address answer slower than (and, on a mail failure,
+  // differently from) an unknown one, which told a caller which emails exist.
+  void sendEmail({
+    to: found.rows[0].email,
+    subject: "Reset your INTERNet account password",
+    text: `Hello ${found.rows[0].name},\n\nUse this link within 30 minutes to set a new password:\n${resetUrl.href}\n\nIf you did not request this, ignore this message.`,
+  }).catch(async (error) => {
     console.error("SEND PASSWORD RESET EMAIL ERROR:", error);
-    return res.status(503).json({
-      message: "Password recovery email could not be sent. Please try again later.",
-    });
-  }
+    await pool
+      .query(
+        "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1",
+        [tokenHash]
+      )
+      .catch((cleanupError) =>
+        console.error("EXPIRE UNSENT RESET TOKEN ERROR:", cleanupError)
+      );
+  });
 
   return res.json({ message: genericResetMessage });
 });
@@ -481,7 +517,8 @@ function passwordChangeBlocks(
   return (
     ENFORCE_PASSWORD_CHANGE &&
     mustChangePassword === true &&
-    !PASSWORD_CHANGE_PATH.test(req.path)
+    !PASSWORD_CHANGE_PATH.test(req.path) &&
+    req.path !== "/api/logout"
   );
 }
 
@@ -678,21 +715,55 @@ function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
 
     const identifier = req.body?.email;
     if (!identifier || typeof identifier !== "string") return next();
-    const key = loginAttemptKey(role, identifier);
+    const tooMany = (lockedUntil: Date) =>
+      res.status(429).json({
+        message: `Too many failed login attempts. Try again in ${Math.max(
+          1,
+          Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 60000)
+        )} minute(s) or reset your password.`,
+      });
 
+    let key = loginAttemptKey(role, identifier);
     try {
-      const state = await pool.query<{ locked_until: Date | null }>(
-        `SELECT locked_until FROM login_attempts WHERE key_hash = $1`,
-        [key]
+      // Count against the account, not the text typed: a student's email
+      // and student ID are the same login and share one allowance.
+      const { table, idColumn } = accountTables[role];
+      const account = await pool.query<{ id: string }>(
+        `SELECT ${idColumn} AS id FROM ${table}
+         WHERE LOWER(email) = LOWER(TRIM($1))
+            ${role === "student" ? `OR ${idColumn}::text = TRIM($1)` : ""}
+         LIMIT 1`,
+        [identifier]
+      );
+      if (account.rows[0]) key = loginAttemptKey(role, account.rows[0].id);
+
+      // The attempt is counted before the password is checked, so a burst
+      // of parallel guesses cannot all slip in ahead of the lock.
+      const state = await pool.query<{ failures: number; locked_until: Date | null }>(
+        `
+        INSERT INTO login_attempts (key_hash, window_start, failures)
+        VALUES ($1, NOW(), 1)
+        ON CONFLICT (key_hash) DO UPDATE SET
+          failures = CASE
+            WHEN login_attempts.locked_until > NOW() THEN login_attempts.failures
+            WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
+            THEN 1 ELSE login_attempts.failures + 1 END,
+          window_start = CASE
+            WHEN login_attempts.locked_until > NOW() THEN login_attempts.window_start
+            WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
+            THEN NOW() ELSE login_attempts.window_start END,
+          locked_until = CASE
+            WHEN login_attempts.locked_until > NOW() THEN login_attempts.locked_until
+            WHEN login_attempts.window_start >= NOW() - make_interval(mins => $2)
+             AND login_attempts.failures + 1 > $3
+            THEN NOW() + make_interval(mins => $4) ELSE NULL END
+        RETURNING failures, locked_until
+        `,
+        [key, LOGIN_WINDOW_MINUTES, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
       );
       const lockedUntil = state.rows[0]?.locked_until;
       if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
-        const minutes = Math.ceil(
-          (new Date(lockedUntil).getTime() - Date.now()) / 60000
-        );
-        return res.status(429).json({
-          message: `Too many failed login attempts. Try again in ${minutes} minute(s) or reset your password.`,
-        });
+        return tooMany(lockedUntil);
       }
     } catch (error) {
       console.error("LOGIN THROTTLE CHECK ERROR:", error);
@@ -701,28 +772,23 @@ function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
     res.on("finish", () => {
       const query =
         res.statusCode === 401
-          ? pool.query(
-              `
-              INSERT INTO login_attempts (key_hash, window_start, failures)
-              VALUES ($1, NOW(), 1)
-              ON CONFLICT (key_hash) DO UPDATE SET
-                failures = CASE
-                  WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
-                  THEN 1 ELSE login_attempts.failures + 1 END,
-                window_start = CASE
-                  WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
-                  THEN NOW() ELSE login_attempts.window_start END,
-                locked_until = CASE
-                  WHEN login_attempts.window_start >= NOW() - make_interval(mins => $2)
-                   AND login_attempts.failures + 1 >= $3
-                  THEN NOW() + make_interval(mins => $4) ELSE NULL END
-              `,
-              [key, LOGIN_WINDOW_MINUTES, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
+          ? // The failure that uses up the allowance starts the lock.
+            pool.query(
+              `UPDATE login_attempts
+               SET locked_until = NOW() + make_interval(mins => $3)
+               WHERE key_hash = $1 AND failures >= $2 AND locked_until IS NULL`,
+              [key, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
             )
           : res.statusCode === 200
             ? pool.query(`DELETE FROM login_attempts WHERE key_hash = $1`, [key])
-            : null;
-      query?.catch((error) => {
+            : // Not a wrong password (bad request, deactivated, server
+              // error): give the counted attempt back.
+              pool.query(
+                `UPDATE login_attempts SET failures = GREATEST(failures - 1, 0)
+                 WHERE key_hash = $1 AND locked_until IS NULL`,
+                [key]
+              );
+      query.catch((error) => {
         console.error("LOGIN THROTTLE RECORD ERROR:", error);
       });
     });
@@ -758,6 +824,15 @@ function signToken(
     JWT_SECRET,
     { expiresIn: "12h" }
   );
+}
+
+// A token handed back at sign-out is refused from then on, even though its
+// signature stays valid until it expires.
+const REVOKED_TOKEN_SQL =
+  "EXISTS (SELECT 1 FROM revoked_tokens WHERE token_hash = $2)";
+
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 /**
@@ -805,9 +880,11 @@ async function requireCoordinator(
     account = await pool.query<{
       auth_version: number;
       must_change_password: boolean;
+      revoked: boolean;
     }>(
-      "SELECT auth_version, must_change_password FROM coordinators WHERE coordinator_id = $1 AND is_active = TRUE",
-      [payload.id]
+      `SELECT auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked
+       FROM coordinators WHERE coordinator_id = $1 AND is_active = TRUE`,
+      [payload.id, tokenHash(token)]
     );
   } catch (error) {
     console.error("COORDINATOR ACCOUNT CHECK ERROR:", error);
@@ -818,6 +895,7 @@ async function requireCoordinator(
 
   if (
     account.rows.length === 0 ||
+    account.rows[0].revoked ||
     Number(payload.authVersion ?? 0) !== Number(account.rows[0].auth_version)
   ) {
     return res
@@ -880,22 +958,24 @@ function requireRole(
       AuthRole,
       string
     > = {
-      student: "SELECT is_active, auth_version, must_change_password FROM students WHERE student_id = $1",
-      supervisor: "SELECT is_active, auth_version, must_change_password FROM supervisors WHERE supervisor_id = $1",
-      coordinator: "SELECT is_active, auth_version, must_change_password FROM coordinators WHERE coordinator_id = $1",
+      student: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM students WHERE student_id = $1`,
+      supervisor: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM supervisors WHERE supervisor_id = $1`,
+      coordinator: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM coordinators WHERE coordinator_id = $1`,
     };
     try {
       const account = await pool.query<{
         is_active: boolean;
         auth_version: number;
         must_change_password: boolean;
+        revoked: boolean;
       }>(
         accountQueries[tokenRole],
-        [payload.id]
+        [payload.id, tokenHash(token)]
       );
       if (
         account.rows.length === 0 ||
         account.rows[0].is_active === false ||
+        account.rows[0].revoked ||
         Number(payload.authVersion ?? 0) !== Number(account.rows[0].auth_version)
       ) {
         return res.status(403).json({
@@ -1045,6 +1125,25 @@ async function syncCompletion(studentId: string): Promise<void> {
   }
 }
 
+/**
+ * Stops a deactivated account from hearing anything further: its open live
+ * streams are closed and its devices no longer receive push notifications.
+ */
+async function cutOffAccount(
+  role: "student" | "supervisor",
+  accountId: string
+): Promise<void> {
+  closeNotificationStreams({ role, id: accountId });
+  try {
+    await pool.query(
+      `DELETE FROM web_push_subscriptions WHERE role = $1 AND account_id = $2`,
+      [role, accountId]
+    );
+  } catch (error) {
+    console.error("REMOVE PUSH SUBSCRIPTIONS ERROR:", error);
+  }
+}
+
 /** Sends the same notification to every active coordinator. */
 async function notifyCoordinators(notification: {
   title: string;
@@ -1088,6 +1187,56 @@ app.get(
     response.flushHeaders();
     const disconnect = registerNotificationStream(auth, response);
     request.on("close", disconnect);
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SIGN OUT
+|--------------------------------------------------------------------------
+|
+| Ends this device's session on the server: the token is refused from now
+| on and, when the browser sends its push endpoint, that device stops
+| receiving the account's notifications. Other devices stay signed in.
+|
+*/
+
+app.post(
+  "/api/logout",
+  requireRole(["coordinator", "student", "supervisor"]),
+  async (request, response) => {
+    const auth = (request as AuthedRequest).auth;
+    const token = (request.headers.authorization || "").slice(7);
+    const endpoint = request.body?.endpoint;
+    if (!auth || !token) {
+      return response.status(401).json({ message: "Login is required." });
+    }
+
+    try {
+      const decoded = jwt.decode(token);
+      const expiresAt =
+        typeof decoded === "object" && decoded?.exp
+          ? new Date(decoded.exp * 1000)
+          : new Date(Date.now() + 12 * 3_600_000);
+      await pool.query(
+        `INSERT INTO revoked_tokens(token_hash, expires_at) VALUES ($1, $2)
+         ON CONFLICT (token_hash) DO NOTHING`,
+        [tokenHash(token), expiresAt]
+      );
+      // Expired tokens are refused by their signature; their rows can go.
+      await pool.query(`DELETE FROM revoked_tokens WHERE expires_at < NOW()`);
+      if (typeof endpoint === "string" && endpoint) {
+        await pool.query(
+          `DELETE FROM web_push_subscriptions
+           WHERE role = $1 AND account_id = $2 AND endpoint = $3`,
+          [auth.role, auth.id, endpoint]
+        );
+      }
+      return response.json({ message: "Signed out." });
+    } catch (error) {
+      console.error("LOGOUT ERROR:", error);
+      return response.status(500).json({ message: "Could not sign out." });
+    }
   }
 );
 
@@ -1182,16 +1331,11 @@ const upload = multer({
   },
 
   fileFilter: (_req, file, cb) => {
-    const allowedTypes = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
+    // The file is stored under its own extension, so the extension must be
+    // an allowed one and agree with the declared type.
+    const extension = path.extname(file.originalname).toLowerCase();
 
-    if (allowedTypes.includes(file.mimetype)) {
+    if (documentMimeTypes[extension] === file.mimetype) {
       cb(null, true);
     } else {
       cb(
@@ -1307,8 +1451,8 @@ app.post(
             auth_version,
             must_change_password
           FROM students
-          WHERE email = $1
-          OR student_id::text = $1
+          WHERE LOWER(email) = LOWER(TRIM($1))
+          OR student_id::text = TRIM($1)
           `,
           [
             email,
@@ -1421,7 +1565,7 @@ app.post(
             auth_version,
             must_change_password
           FROM supervisors
-          WHERE email = $1
+          WHERE LOWER(email) = LOWER(TRIM($1))
           `,
           [
             email,
@@ -2219,6 +2363,9 @@ app.put(
           AND student_id = $2
           AND time_out IS NULL
           AND time_in IS NOT NULL
+          -- A log left open from an earlier day is closed through the
+          -- missed time-out route, which asks for the real time and a reason.
+          AND time_in > NOW() - make_interval(hours => $3)
 
           RETURNING
             id,
@@ -2236,12 +2383,22 @@ app.put(
             status,
             image_url
           `,
-          [id, auth?.id]
+          [id, auth?.id, MAX_SHIFT_HOURS]
         );
 
       if (
         result.rows.length === 0
       ) {
+        const stale = await pool.query(
+          `SELECT 1 FROM attendance
+           WHERE id = $1 AND student_id = $2 AND time_out IS NULL`,
+          [id, auth?.id]
+        );
+        if (stale.rows.length > 0) {
+          return res.status(409).json({
+            message: `This log was left open for more than ${MAX_SHIFT_HOURS} hours. Enter the time you actually left as a missed time-out instead.`,
+          });
+        }
         return res.status(404).json({
           message:
             "Attendance record not found or time-out was already recorded.",
@@ -2908,6 +3065,10 @@ app.patch(
         reason,
       } = req.body;
 
+      if (!/^\d{1,15}$/.test(String(id))) {
+        return res.status(404).json({ message: "Attendance record not found." });
+      }
+
       // The status the reviewer was looking at. When it is sent, the decision
       // is saved only if the log is still in that state, so two reviewers
       // cannot silently overwrite each other.
@@ -2944,21 +3105,26 @@ app.patch(
       // A log with no time-out has no rendered hours yet, so it cannot be
       // confirmed. Rejecting an unfinished log is still allowed.
       if (status === "Verified") {
-        const openLog = await pool.query(
+        const log = await pool.query<{ time_out: Date | null; hours: string | null }>(
           `
-          SELECT 1
+          SELECT a.time_out, a.hours
           FROM attendance a
           JOIN students s ON s.student_id = a.student_id
           WHERE a.id = $1
-          AND a.time_out IS NULL
           AND ($2 = 'coordinator' OR s.supervisor_id = $3)
           `,
           [id, auth?.role, auth?.id]
         );
-        if (openLog.rows.length > 0) {
+        if (log.rows.length > 0 && !log.rows[0].time_out) {
           return res.status(409).json({
             message:
               "This log has no time-out yet. It can be verified after the student times out.",
+          });
+        }
+        // No single day can add more than one shift to a student's total.
+        if (log.rows.length > 0 && Number(log.rows[0].hours) > MAX_SHIFT_HOURS) {
+          return res.status(409).json({
+            message: `This log records ${log.rows[0].hours} hours, more than the ${MAX_SHIFT_HOURS}-hour limit for one day. Reject it so the student can correct the time-out.`,
           });
         }
       }
@@ -4170,7 +4336,7 @@ app.post("/api/login/coordinator", loginGuard("coordinator"), async (req, res) =
       SELECT id, coordinator_id, email, password, name, department, is_active,
              auth_version, must_change_password
       FROM coordinators
-      WHERE email = $1
+      WHERE LOWER(email) = LOWER(TRIM($1))
       `,
       [email]
     );
@@ -4604,6 +4770,7 @@ app.patch(
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Student not found." });
       }
+      if (!is_active) await cutOffAccount("student", String(result.rows[0].student_id));
 
       if (result.rows[0].supervisor_id) {
         await createNotification({
@@ -4924,6 +5091,7 @@ app.patch(
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Supervisor not found." });
       }
+      if (!is_active) await cutOffAccount("supervisor", String(result.rows[0].supervisor_id));
 
       return res.json({
         message: `Supervisor ${is_active ? "activated" : "deactivated"}.`,
@@ -5074,7 +5242,9 @@ app.get(
           `
         ),
         pool.query(
-          `SELECT COALESCE(SUM(hours), 0) AS total_hours FROM attendance WHERE status = 'Verified'`
+          `SELECT COALESCE(SUM(a.hours), 0) AS total_hours FROM attendance a
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           WHERE a.status = 'Verified'`
         ),
       ]);
 

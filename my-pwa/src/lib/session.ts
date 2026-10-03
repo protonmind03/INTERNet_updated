@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { API_URL } from "./api";
 
 /*
 |--------------------------------------------------------------------------
@@ -65,6 +66,45 @@ export function clearSession(role: SessionRole): void {
     localStorage.removeItem("active_role");
   }
   window.dispatchEvent(new Event("internet-auth-changed"));
+}
+
+/**
+ * Signs the role out here and on the server. The local session is cleared
+ * straight away; the server is then told to refuse the token and to stop
+ * sending this device the account's push notifications. That part is best
+ * effort, so signing out still works with no connection.
+ */
+export function signOut(role: SessionRole): void {
+  const token = localStorage.getItem(`${role}_token`);
+  clearSession(role);
+  if (!token) return;
+
+  void (async () => {
+    let endpoint: string | undefined;
+    try {
+      const registration = await navigator.serviceWorker?.getRegistration();
+      const subscription = await registration?.pushManager?.getSubscription();
+      if (subscription) {
+        endpoint = subscription.endpoint;
+        await subscription.unsubscribe();
+      }
+    } catch (error) {
+      console.error("PUSH UNSUBSCRIBE ERROR:", error);
+    }
+    try {
+      await fetch(`${API_URL}/api/logout`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ endpoint }),
+        keepalive: true,
+      });
+    } catch (error) {
+      console.error("SIGN OUT ERROR:", error);
+    }
+  })();
 }
 
 /** Saves an edited account record and tells open layouts to refresh. */

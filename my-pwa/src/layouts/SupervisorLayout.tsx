@@ -6,7 +6,7 @@ import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
-import { clearSession, useAccount } from "../lib/session";
+import { signOut as endSession, useAccount } from "../lib/session";
 
 /*
 |--------------------------------------------------------------------------
@@ -83,7 +83,7 @@ export default function SupervisorLayout({
   if (!supervisor) return <Navigate to="/" replace />;
 
   const signOut = () => {
-    clearSession("supervisor");
+    endSession("supervisor");
     navigate("/", { replace: true });
   };
 

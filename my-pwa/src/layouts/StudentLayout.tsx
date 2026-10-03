@@ -6,7 +6,7 @@ import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts, type NavCounts } from "../lib/navCounts";
-import { clearSession, useAccount } from "../lib/session";
+import { signOut as endSession, useAccount } from "../lib/session";
 
 /*
 |--------------------------------------------------------------------------
@@ -78,7 +78,7 @@ export default function StudentLayout({
   if (!student) return <Navigate to="/" replace />;
 
   const signOut = () => {
-    clearSession("student");
+    endSession("student");
     navigate("/", { replace: true });
   };
 
