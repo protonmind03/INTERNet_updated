@@ -1,5 +1,6 @@
-import { useEffect, type ButtonHTMLAttributes, type ReactNode } from "react";
+import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
 import Icon, { type IconName } from "./Icon";
+import { BrandLoader, CheckGlyph, type LoadProcess } from "../brand";
 
 /*
 |--------------------------------------------------------------------------
@@ -37,6 +38,14 @@ type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   size?: keyof typeof BUTTON_SIZES;
   icon?: IconName;
   busy?: boolean;
+  /** What the button is doing while busy; read out to screen readers. */
+  busyProcess?: LoadProcess;
+  /** Replaces the label while busy, e.g. "Saving". */
+  busyLabel?: string;
+  /** Shown with a check for a moment after the work succeeds, e.g. "Saved". */
+  doneLabel?: string;
+  /** True when the work just ended in an error; the button shakes once. */
+  failed?: boolean;
   block?: boolean;
 };
 
@@ -45,6 +54,10 @@ export function Button({
   size = "md",
   icon,
   busy = false,
+  busyProcess = "save",
+  busyLabel,
+  doneLabel,
+  failed = false,
   block = false,
   className = "",
   children,
@@ -52,34 +65,46 @@ export function Button({
   type = "button",
   ...rest
 }: ButtonProps) {
+  // When the work ends, the button reports how it went: a check and the
+  // done label, or a shake when the caller says it failed.
+  const [wasBusy, setWasBusy] = useState(busy);
+  const [outcome, setOutcome] = useState<"done" | "failed" | null>(null);
+  if (busy !== wasBusy) {
+    setWasBusy(busy);
+    setOutcome(busy ? null : failed ? "failed" : doneLabel ? "done" : null);
+  }
+
+  useEffect(() => {
+    if (!outcome) return;
+    const timer = window.setTimeout(() => setOutcome(null), outcome === "done" ? 1800 : 400);
+    return () => window.clearTimeout(timer);
+  }, [outcome]);
+
+  const done = outcome === "done";
+
   return (
     <button
       type={type}
       disabled={disabled || busy}
-      className={`inline-flex shrink-0 items-center justify-center rounded-lg font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+      aria-busy={busy || undefined}
+      className={`inb-press inline-flex shrink-0 items-center justify-center rounded-lg font-semibold transition-colors disabled:cursor-not-allowed ${
+        done ? "" : "disabled:opacity-50"
+      } ${
         BUTTON_VARIANTS[variant]
-      } ${BUTTON_SIZES[size]} ${block ? "w-full" : ""} ${className}`}
+      } ${BUTTON_SIZES[size]} ${block ? "w-full" : ""} ${
+        outcome === "failed" ? "inb-shake" : ""
+      } ${className}`}
       {...rest}
     >
-      {busy ? <Spinner size={size === "lg" ? 18 : 15} /> : icon && <Icon name={icon} size={size === "lg" ? 19 : 16} />}
-      {children}
+      {busy ? (
+        <BrandLoader variant="button" process={busyProcess} />
+      ) : done ? (
+        <CheckGlyph size={size === "lg" ? 19 : 16} />
+      ) : (
+        icon && <Icon name={icon} size={size === "lg" ? 19 : 16} />
+      )}
+      {busy && busyLabel ? busyLabel : done ? doneLabel : children}
     </button>
-  );
-}
-
-export function Spinner({ size = 16 }: { size?: number }) {
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      className="animate-spin"
-      aria-hidden="true"
-    >
-      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeOpacity="0.25" strokeWidth="3" />
-      <path d="M21 12a9 9 0 0 0-9-9" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
-    </svg>
   );
 }
 
@@ -520,6 +545,7 @@ export function ConfirmDialog({
   cancelLabel = "Cancel",
   tone = "primary",
   busy = false,
+  busyProcess = "save",
   onConfirm,
   onCancel,
   children,
@@ -531,6 +557,8 @@ export function ConfirmDialog({
   cancelLabel?: string;
   tone?: "primary" | "danger" | "gold";
   busy?: boolean;
+  /** What the button is doing while busy; read out to screen readers. */
+  busyProcess?: LoadProcess;
   onConfirm: () => void;
   onCancel: () => void;
   children?: ReactNode;
@@ -548,7 +576,7 @@ export function ConfirmDialog({
           <Button variant="secondary" onClick={onCancel} disabled={busy}>
             {cancelLabel}
           </Button>
-          <Button variant={tone} onClick={onConfirm} busy={busy}>
+          <Button variant={tone} onClick={onConfirm} busy={busy} busyProcess={busyProcess}>
             {confirmLabel}
           </Button>
         </>

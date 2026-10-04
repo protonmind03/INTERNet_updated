@@ -529,7 +529,7 @@ function StudentDialog({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="student-form" busy={saving}>
+          <Button type="submit" form="student-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Saving" : existing ? "Save changes" : "Register student"}
           </Button>
         </>

@@ -154,7 +154,7 @@ export default function ForgotPassword() {
 
           <FormError message={error} />
 
-          <Button type="submit" size="lg" block busy={submitting}>
+          <Button type="submit" size="lg" block busy={submitting} failed={Boolean(error)}>
             {submitting ? "Please wait" : token ? "Save new password" : "Send reset link"}
           </Button>
 

@@ -146,7 +146,7 @@ export default function SupervisorEvaluation() {
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The evaluation could not be saved.");
-      toast.success(
+      toast.celebrate(
         `Evaluation ${editingId === null ? "saved" : "updated"}. ${
           chosenIntern?.name || "The intern"
         } has been notified.`
@@ -298,7 +298,7 @@ export default function SupervisorEvaluation() {
             )}
 
             <div className="flex flex-wrap gap-2">
-              <Button type="submit" busy={submitting} disabled={interns.length === 0}>
+              <Button type="submit" busy={submitting} doneLabel="Saved" failed={Boolean(error)} disabled={interns.length === 0}>
                 {submitting ? "Saving" : editingId === null ? "Save evaluation" : "Save changes"}
               </Button>
               {editingId !== null && (

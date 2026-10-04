@@ -10,10 +10,10 @@ import {
   FilterChips,
   Modal,
   SkeletonRows,
-  Spinner,
   StatTile,
   StatusBadge,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { getProtectedUploadUrl } from "../../lib/api";
 import { isWithinDateRange } from "../../lib/dateRange";
@@ -440,9 +440,7 @@ function PhotoDialog({ log, onClose }: { log: AttendanceLog | null; onClose: () 
             className="max-h-[60dvh] w-full rounded-xl object-contain"
           />
         ) : (
-          <span className="text-slate-400">
-            <Spinner size={22} />
-          </span>
+          <BrandLoader variant="inline" role="student" process="attendance" message="Loading your time-in photo…" />
         )}
       </div>
     </Modal>

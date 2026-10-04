@@ -5,9 +5,9 @@ import {
   CardHeader,
   EmptyState,
   ErrorNotice,
-  Skeleton,
   Stars,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
 import { formatDate, formatDateTime, formatHours } from "../../lib/format";
@@ -131,6 +131,7 @@ export default function CoordinatorAnalytics() {
       buildAnalyticsPdf(reportSections(data), new Date().toLocaleString()).save(
         reportFileName("pdf")
       );
+      toast.success("Analytics PDF ready.");
     } catch (pdfError) {
       console.error("ANALYTICS PDF ERROR:", pdfError);
       toast.error("The PDF could not be generated. Please try again.");
@@ -180,7 +181,7 @@ export default function CoordinatorAnalytics() {
             <Button variant="secondary" icon="download" onClick={downloadCsv}>
               CSV
             </Button>
-            <Button icon="download" busy={buildingPdf} onClick={() => void downloadPdf()}>
+            <Button icon="download" busy={buildingPdf} doneLabel="Ready" busyProcess="export" onClick={() => void downloadPdf()}>
               {buildingPdf ? "Preparing" : "PDF report"}
             </Button>
           </>
@@ -200,11 +201,7 @@ export default function CoordinatorAnalytics() {
       )}
 
       {loading ? (
-        <div className="grid gap-5 lg:grid-cols-2">
-          {[0, 1, 2, 3].map((card) => (
-            <Skeleton key={card} className="h-64 rounded-xl" />
-          ))}
-        </div>
+        <BrandLoader variant="page" role="coordinator" process="analytics" />
       ) : (
         data && (
           <div className="grid items-start gap-5 lg:grid-cols-2">

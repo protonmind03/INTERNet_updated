@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
-import { BrandMark } from "../components/Brand";
+import { PortalBrand, ROLE_THEMES } from "../brand";
 import Icon from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
@@ -89,13 +89,17 @@ export default function SupervisorLayout({
 
   return (
     <div className="flex min-h-dvh flex-col bg-slate-50 print:bg-white">
-      <header className="sticky top-0 z-30 bg-psu-950 text-white print:hidden">
+      <header
+        className="sticky top-0 z-30 text-white print:hidden"
+        style={{ background: ROLE_THEMES.supervisor.colors.surface }}
+      >
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
-          <NavLink to="/supervisor/dashboard" className="flex shrink-0 items-center gap-2.5">
-            <BrandMark size={32} />
-            <span className="leading-tight">
-              <span className="block text-sm font-bold tracking-tight">INTERNet</span>
-              <span className="block text-xs text-psu-200">Supervisor</span>
+          <NavLink to="/supervisor/dashboard" aria-label="INTERNet Supervisor Portal, dashboard" className="flex shrink-0 items-center gap-2.5">
+            <span className="hidden lg:block">
+              <PortalBrand role="supervisor" showTag />
+            </span>
+            <span className="lg:hidden">
+              <PortalBrand role="supervisor" />
             </span>
           </NavLink>
 
@@ -180,7 +184,10 @@ export default function SupervisorLayout({
           {/* A fading edge shows that the row scrolls to more pages. */}
           <span
             aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-0 w-10 bg-linear-to-l from-psu-950 to-transparent"
+            className="pointer-events-none absolute inset-y-0 right-0 w-10"
+            style={{
+              background: `linear-gradient(to left, ${ROLE_THEMES.supervisor.colors.surface}, transparent)`,
+            }}
           />
         </div>
       </header>

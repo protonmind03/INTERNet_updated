@@ -12,6 +12,7 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import {
@@ -352,14 +353,7 @@ function ProgressCard({
   if (loading || !summary) {
     return (
       <Card className="p-5">
-        <div className="flex items-center gap-6">
-          <Skeleton className="h-32 w-32 rounded-full" />
-          <div className="flex-1 space-y-3">
-            <Skeleton className="h-4 w-1/3" />
-            <Skeleton className="h-4 w-2/3" />
-            <Skeleton className="h-4 w-1/2" />
-          </div>
-        </div>
+        <BrandLoader role="student" process="dashboard" />
       </Card>
     );
   }

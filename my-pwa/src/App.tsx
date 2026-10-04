@@ -1,4 +1,6 @@
-import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
+import { lazy, Suspense } from "react";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
+import { RouteProgress } from "./brand";
 import OfflineBanner from "./components/OfflineBanner";
 import PushNotificationSettings from "./components/PushNotificationSettings";
 import RealtimeNotificationBridge from "./components/RealtimeNotificationBridge";
@@ -61,9 +63,19 @@ import CoordinatorDocuments from "./pages/coordinator/Documents";
 import CoordinatorAnnouncements from "./pages/coordinator/Announcements";
 import CoordinatorStudentRecord from "./pages/coordinator/StudentRecord";
 
+// The brand kit preview only exists in development builds.
+const BrandPreview = import.meta.env.DEV ? lazy(() => import("./brand/BrandPreview")) : null;
+
+/** The thin line at the top of the screen that runs on every page change. */
+function RouteLine() {
+  const { pathname } = useLocation();
+  return <RouteProgress trigger={pathname} />;
+}
+
 function App() {
   return (
     <BrowserRouter>
+      <RouteLine />
       <Routes>
 
         {/* 
@@ -265,6 +277,13 @@ function App() {
           path="/coordinator/announcements"
           element={<CoordinatorAnnouncements />}
         />
+
+        {BrandPreview && (
+          <Route
+            path="/brand-preview"
+            element={<Suspense fallback={null}><BrandPreview /></Suspense>}
+          />
+        )}
 
         {/* Unknown URLs go back to the login page instead of a blank screen. */}
         <Route path="*" element={<Navigate to="/" replace />} />

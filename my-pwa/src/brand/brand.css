@@ -1,0 +1,130 @@
+/* INTERNet brand kit — tokens and motion. Import once, e.g. in src/index.css:
+   @import "./brand/brand.css";  */
+
+:root {
+  --inb-navy: #1a237e;
+  --inb-navy-deep: #121a5e;
+  --inb-navy-raised: #283593;
+  --inb-amber: #facc15;
+  --inb-indigo: #4f46e5;
+  --inb-ink: #0f172a;
+  --inb-periwinkle: #c7cdf0;
+}
+
+/* ---------- Loader: cursor clicks → road is paved → cap lands → lanes move ---------- */
+.inb-road {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: inb-road 2.6s ease-in-out infinite;
+}
+@keyframes inb-road {
+  0%, 12% { stroke-dashoffset: 100; opacity: 1; }
+  55%, 88% { stroke-dashoffset: 0; opacity: 1; }
+  100% { stroke-dashoffset: 0; opacity: 0; }
+}
+
+.inb-lane {
+  opacity: 0;
+  animation: inb-lane-show 2.6s ease-in-out infinite, inb-lane-move 0.7s linear infinite;
+}
+@keyframes inb-lane-show {
+  0%, 50% { opacity: 0; }
+  58%, 88% { opacity: 1; }
+  100% { opacity: 0; }
+}
+@keyframes inb-lane-move { to { stroke-dashoffset: -4.8; } }
+
+.inb-click {
+  transform-box: fill-box;
+  transform-origin: 0 0;
+  animation: inb-click 2.6s ease-in-out infinite;
+}
+@keyframes inb-click {
+  0% { transform: scale(1); }
+  5% { transform: scale(0.78); }
+  11%, 100% { transform: scale(1); }
+}
+
+.inb-cap {
+  opacity: 0;
+  animation: inb-cap 2.6s cubic-bezier(0.3, 1.5, 0.5, 1) infinite;
+}
+@keyframes inb-cap {
+  0%, 55% { opacity: 0; transform: translateY(-9px); }
+  66%, 88% { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(0); }
+}
+
+/* Small spinner version (buttons, inline chips): just the road being paved, looping fast. */
+.inb-road-fast {
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: inb-road-fast 1.4s ease-in-out infinite;
+}
+@keyframes inb-road-fast {
+  0% { stroke-dashoffset: 100; }
+  60% { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: -100; }
+}
+
+/* Splash entrance */
+.inb-fade-up { animation: inb-fade-up 0.5s ease-out both; }
+@keyframes inb-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+.inb-fade-out { animation: inb-fade-out 0.35s ease-in both; }
+@keyframes inb-fade-out { to { opacity: 0; } }
+
+/* Indeterminate progress bar for loaders without a known percentage */
+.inb-indeterminate {
+  position: relative;
+  overflow: hidden;
+}
+.inb-indeterminate::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 40%;
+  border-radius: 9999px;
+  background: currentColor;
+  animation: inb-indet 1.3s ease-in-out infinite;
+}
+@keyframes inb-indet { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
+
+/* ---------- Action feedback ---------- */
+/* success: a check is drawn, then the button settles */
+.inb-check { stroke-dasharray: 24; stroke-dashoffset: 24; animation: inb-check 0.35s ease-out 0.05s forwards; }
+@keyframes inb-check { to { stroke-dashoffset: 0; } }
+/* success on brand moments (time-in, task submitted): a small cap drops in */
+.inb-cap-pop { animation: inb-cap-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+@keyframes inb-cap-pop { from { opacity: 0; transform: translateY(-6px) rotate(-12deg); } to { opacity: 1; transform: none; } }
+/* error: short horizontal shake */
+.inb-shake { animation: inb-shake 0.36s ease-in-out; }
+@keyframes inb-shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
+/* toasts */
+.inb-toast-in { animation: inb-toast-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
+@keyframes inb-toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
+.inb-toast-out { animation: inb-toast-out 0.2s ease-in both; }
+@keyframes inb-toast-out { to { opacity: 0; transform: translateY(8px); } }
+/* toast countdown bar */
+.inb-countdown { transform-origin: left; animation: inb-countdown linear forwards; }
+@keyframes inb-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+/* route change progress (top of the page) */
+.inb-route { transform-origin: left; animation: inb-route 0.7s ease-out forwards; }
+@keyframes inb-route { 0% { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(0.85); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+/* pressed feedback for any brand button */
+.inb-press { transition: transform 0.08s ease, filter 0.15s ease, background-color 0.15s ease; }
+.inb-press:active:not(:disabled) { transform: scale(0.97); }
+.inb-press:hover:not(:disabled) { filter: brightness(1.05); }
+.inb-press:disabled { cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  .inb-check { animation: none; stroke-dashoffset: 0; }
+  .inb-cap-pop, .inb-shake, .inb-toast-in, .inb-toast-out, .inb-route { animation: none; }
+  .inb-countdown { animation: none; }
+  .inb-press:active:not(:disabled) { transform: none; }
+  .inb-road, .inb-road-fast { animation: none; stroke-dashoffset: 0; }
+  .inb-lane { animation: none; opacity: 1; }
+  .inb-click { animation: none; }
+  .inb-cap { animation: none; opacity: 1; transform: none; }
+  .inb-fade-up, .inb-fade-out { animation: none; }
+  .inb-indeterminate::after { animation: none; width: 100%; opacity: 0.4; }
+}

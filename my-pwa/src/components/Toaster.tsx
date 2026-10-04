@@ -1,12 +1,7 @@
 import { useEffect, useState } from "react";
+import { CapGlyph, CheckGlyph, RoadGlyph, ROLE_THEMES, getActiveRole } from "../brand";
 import Icon from "./Icon";
 import { dismissToast, subscribeToToasts, type ToastMessage } from "../lib/toast";
-
-const TONES = {
-  success: { icon: "check-circle", accent: "text-emerald-600", bar: "bg-emerald-500" },
-  error: { icon: "alert", accent: "text-red-600", bar: "bg-red-500" },
-  info: { icon: "info", accent: "text-psu-600", bar: "bg-psu-600" },
-} as const;
 
 /** Renders the messages raised through `toast.*`. Mounted once in App. */
 export default function Toaster() {
@@ -16,42 +11,93 @@ export default function Toaster() {
 
   if (messages.length === 0) return null;
 
+  // Toasts take the signed-in portal's surface: navy for students and
+  // supervisors, white for the coordinator and the sign-in pages.
+  const role = getActiveRole();
+  const theme = ROLE_THEMES[role];
+  const navy = role === "student" || role === "supervisor";
+
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-20 z-[70] flex flex-col items-center gap-2 px-4 md:bottom-6 print:hidden"
+      className="pointer-events-none fixed inset-x-0 bottom-20 z-[70] flex flex-col items-center gap-2 px-4 md:inset-x-auto md:bottom-6 md:right-6 md:items-end md:px-0 print:hidden"
       aria-live="polite"
     >
       {messages.map((message) => {
-        const tone = TONES[message.tone];
+        const isError = message.tone === "error";
+        const dark = navy && !isError;
+        const accent = isError ? "#DC2626" : dark ? theme.colors.accent : "#152bb0";
         return (
           <div
             key={message.id}
-            role={message.tone === "error" ? "alert" : "status"}
-            className="pointer-events-auto flex w-full max-w-md animate-toast-in items-start gap-3 overflow-hidden rounded-xl border border-slate-200 bg-white py-3 pl-0 pr-3 shadow-lg"
+            role={isError ? "alert" : "status"}
+            className={`inb-toast-in pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-xl shadow-xl md:w-96 ${
+              dark ? "text-white" : "border border-slate-200 bg-white text-slate-900"
+            }`}
+            style={{
+              background: dark ? theme.colors.surface : undefined,
+              boxShadow: isError
+                ? "inset 3px 0 0 #DC2626, 0 20px 25px -5px rgba(0,0,0,.15)"
+                : undefined,
+            }}
           >
-            <span className={`w-1 self-stretch rounded-r ${tone.bar}`} />
-            <Icon name={tone.icon} className={`mt-0.5 shrink-0 ${tone.accent}`} />
-            <p className="min-w-0 flex-1 text-sm text-slate-700">{message.text}</p>
-            {message.action && (
-              <button
-                type="button"
-                onClick={() => {
-                  message.action?.onClick();
-                  dismissToast(message.id);
+            <div className="flex items-start gap-3 p-3.5 pr-2">
+              <span
+                className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
+                style={{
+                  background: isError ? "#FEF2F2" : dark ? "rgba(250,204,21,.16)" : "#eef2ff",
+                  color: accent,
                 }}
-                className="shrink-0 rounded-md px-2 py-0.5 text-sm font-semibold text-psu-700 hover:bg-psu-50"
               >
-                {message.action.label}
-              </button>
+                {message.tone === "working" && <RoadGlyph size={16} color={accent} />}
+                {message.tone === "success" &&
+                  (message.celebrate ? (
+                    <CapGlyph size={18} color={dark ? "#FFFFFF" : "#1A237E"} />
+                  ) : (
+                    <CheckGlyph size={16} color={accent} />
+                  ))}
+                {isError && <Icon name="alert" size={16} />}
+                {message.tone === "info" && <Icon name="info" size={16} />}
+              </span>
+              <div className="min-w-0 flex-1 py-0.5">
+                <p className="text-sm font-medium leading-snug">{message.text}</p>
+                {message.action && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      message.action?.onClick();
+                      dismissToast(message.id);
+                    }}
+                    className="mt-1.5 rounded text-sm font-semibold underline-offset-2 hover:underline"
+                    style={{ color: accent }}
+                  >
+                    {message.action.label}
+                  </button>
+                )}
+              </div>
+              {message.tone !== "working" && (
+                <button
+                  type="button"
+                  aria-label="Dismiss message"
+                  onClick={() => dismissToast(message.id)}
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                    dark
+                      ? "text-white/70 hover:bg-white/10 hover:text-white"
+                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                  }`}
+                >
+                  <Icon name="close" size={15} />
+                </button>
+              )}
+            </div>
+            {message.lifetime > 0 && (
+              <span
+                // Re-keyed so the bar restarts when a working toast becomes its outcome.
+                key={`${message.tone}-${message.lifetime}`}
+                aria-hidden="true"
+                className="inb-countdown absolute bottom-0 left-0 h-0.5 w-full opacity-60"
+                style={{ background: accent, animationDuration: `${message.lifetime}ms` }}
+              />
             )}
-            <button
-              type="button"
-              aria-label="Dismiss message"
-              onClick={() => dismissToast(message.id)}
-              className="shrink-0 rounded p-0.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            >
-              <Icon name="close" size={15} />
-            </button>
           </div>
         );
       })}

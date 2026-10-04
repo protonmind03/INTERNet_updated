@@ -3,12 +3,15 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { installSessionGuard } from './lib/sessionGuard'
+import { LaunchGate } from './brand'
 
 installSessionGuard()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <LaunchGate>
+      <App />
+    </LaunchGate>
   </StrictMode>,
 )
 

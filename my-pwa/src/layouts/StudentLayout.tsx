@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { BrandLockup, BrandMark } from "../components/Brand";
+import { PortalBrand, PortalHeader, ROLE_THEMES } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts, type NavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { useMediaQuery } from "../lib/useMediaQuery";
 
 /*
 |--------------------------------------------------------------------------
@@ -54,6 +55,7 @@ export default function StudentLayout({
   const location = useLocation();
   const student = useAccount("student");
   const counts = useNavCounts("student");
+  const desktop = useMediaQuery("(min-width: 768px)");
 
   const [moreOpen, setMoreOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -89,9 +91,12 @@ export default function StudentLayout({
   return (
     <div className="flex h-dvh bg-slate-50 print:block print:h-auto print:bg-white">
       {/* SIDEBAR (desktop) */}
-      <aside className="hidden w-64 shrink-0 flex-col bg-psu-900 md:flex print:hidden">
+      <aside
+        className="hidden w-64 shrink-0 flex-col md:flex print:hidden"
+        style={{ background: ROLE_THEMES.student.colors.surface }}
+      >
         <div className="px-5 py-5">
-          <BrandLockup portal="Student Portal" />
+          <PortalBrand role="student" showTag />
         </div>
 
         <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 pb-4">
@@ -134,67 +139,75 @@ export default function StudentLayout({
 
       {/* MAIN COLUMN */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 md:h-16 md:px-8 print:hidden">
-          <div className="flex min-w-0 items-center gap-3 md:hidden">
-            <BrandMark size={32} />
-            <p className="truncate text-base font-semibold text-slate-900">{title}</p>
-          </div>
-          <p className="hidden truncate text-sm text-slate-500 md:block">
-            {[student.program, student.company].filter(Boolean).join(" · ") ||
-              "Pangasinan State University"}
-          </p>
-
-          <div className="flex items-center gap-1.5">
-            <NotificationBell
-              role="student"
-              viewAllPath="/notifications"
-              buttonClassName="relative flex h-10 w-10 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
-            />
-            <div className="relative md:hidden" ref={menuRef}>
-              <button
-                type="button"
-                aria-label="Account menu"
-                aria-expanded={menuOpen}
-                onClick={() => setMenuOpen((open) => !open)}
-                className="flex h-10 w-10 items-center justify-center rounded-lg hover:bg-slate-100"
-              >
-                <Avatar name={student.name} tone="light" />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 top-full z-40 mt-2 w-60 origin-top-right animate-pop-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
-                  <div className="border-b border-slate-100 px-4 py-3">
-                    <p className="truncate text-sm font-semibold text-slate-900">
-                      {student.name}
-                    </p>
-                    <p className="truncate text-xs text-slate-500">{student.email}</p>
+        <div className="shrink-0 print:hidden">
+          <PortalHeader
+            role="student"
+            variant={desktop ? "desktop" : "mobile"}
+            pageTitle={title}
+            context={
+              desktop
+                ? [student.program, student.company].filter(Boolean).join(" · ") ||
+                  "Pangasinan State University"
+                : student.company || undefined
+            }
+            right={
+              <>
+                <NotificationBell
+                  role="student"
+                  viewAllPath="/notifications"
+                  buttonClassName={`relative flex h-11 w-11 items-center justify-center rounded-lg ${
+                    desktop ? "text-slate-600 hover:bg-slate-100" : "text-white hover:bg-white/10"
+                  }`}
+                />
+                {!desktop && (
+                  <div className="relative" ref={menuRef}>
+                    <button
+                      type="button"
+                      aria-label="Account menu"
+                      aria-expanded={menuOpen}
+                      onClick={() => setMenuOpen((open) => !open)}
+                      className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10"
+                    >
+                      <Avatar name={student.name} />
+                    </button>
+                    {menuOpen && (
+                      <div className="absolute right-0 top-full z-40 mt-2 w-60 origin-top-right animate-pop-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">
+                        <div className="border-b border-slate-100 px-4 py-3">
+                          <p className="truncate text-sm font-semibold text-slate-900">
+                            {student.name}
+                          </p>
+                          <p className="truncate text-xs text-slate-500">{student.email}</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            navigate("/profile");
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          <Icon name="user" className="text-slate-400" />
+                          Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            setConfirmSignOut(true);
+                          }}
+                          className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50"
+                        >
+                          <Icon name="logout" />
+                          Sign out
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      navigate("/profile");
-                    }}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <Icon name="user" className="text-slate-400" />
-                    Profile
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      setConfirmSignOut(true);
-                    }}
-                    className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50"
-                  >
-                    <Icon name="logout" />
-                    Sign out
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </header>
+                )}
+              </>
+            }
+          />
+        </div>
 
         <main className="flex-1 overflow-y-auto print:overflow-visible">
           <div className="mx-auto w-full max-w-6xl animate-page-in px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8 print:max-w-none print:p-0">

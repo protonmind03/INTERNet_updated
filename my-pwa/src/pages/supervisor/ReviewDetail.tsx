@@ -12,7 +12,7 @@ import {
   formatLongDate,
   formatTime,
 } from "../../lib/format";
-import { errorText, toast } from "../../lib/toast";
+import { errorText, toast, withWorkingToast } from "../../lib/toast";
 import {
   downloadDocument,
   type AbsenceEntry,
@@ -73,7 +73,7 @@ function undoAction(undo: () => Promise<void>, done: string) {
   return {
     label: "Undo",
     onClick: () => {
-      undo()
+      withWorkingToast("Withdrawing the decision…", undo)
         .then(() => toast.info(done))
         .catch((error: unknown) =>
           toast.error(errorText(error, "The decision could not be undone."))
@@ -600,6 +600,9 @@ function Decision({
             variant="secondary"
             onClick={() => void run("reject")}
             busy={busy === "reject"}
+            busyLabel="Saving"
+            failed={Boolean(error)}
+            busyProcess="verify"
             disabled={busy !== null}
             className="text-red-700"
           >
@@ -611,6 +614,9 @@ function Decision({
             icon="check"
             onClick={() => void run("approve")}
             busy={busy === "approve"}
+            busyLabel="Saving"
+            failed={Boolean(error)}
+            busyProcess="verify"
             disabled={busy !== null || Boolean(approveBlocked)}
           >
             {approveLabel}

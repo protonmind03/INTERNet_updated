@@ -263,7 +263,7 @@ function FileDialog({
           <Button variant="secondary" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="incident-form" busy={saving}>
+          <Button type="submit" form="incident-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Sending" : "Send report"}
           </Button>
         </>

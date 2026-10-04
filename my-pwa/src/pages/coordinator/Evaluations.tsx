@@ -317,7 +317,7 @@ function EvaluateDialog({
           <Button variant="secondary" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="evaluation-form" busy={saving}>
+          <Button type="submit" form="evaluation-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Saving" : editing ? "Save changes" : "Save evaluation"}
           </Button>
         </>

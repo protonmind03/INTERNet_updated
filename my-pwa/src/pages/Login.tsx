@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { BrandLockup } from "../components/Brand";
+import { BrandLockup, ROLE_THEMES, SplashScreen } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import { Button } from "../components/ui";
 import { API_URL } from "../lib/api";
@@ -76,6 +76,8 @@ export default function Login() {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  // After a successful sign-in the role's launch screen shows briefly, then the portal opens.
+  const [launch, setLaunch] = useState<{ role: Role; to: string } | null>(null);
   // Set by the session guard when it sends an expired session back here.
   const [notice, setNotice] = useState(
     () => sessionStorage.getItem("session_notice") || ""
@@ -85,6 +87,12 @@ export default function Login() {
     sessionStorage.removeItem("session_notice");
     document.title = "Sign in · INTERNet";
   }, []);
+
+  useEffect(() => {
+    if (!launch) return;
+    const timer = window.setTimeout(() => navigate(launch.to), 1200);
+    return () => window.clearTimeout(timer);
+  }, [launch, navigate]);
 
   const current = ROLES.find((item) => item.role === role)!;
 
@@ -125,9 +133,15 @@ export default function Login() {
       localStorage.setItem("active_role", role);
       window.dispatchEvent(new Event("internet-auth-changed"));
 
-      navigate(
-        data.must_change_password ? `/change-password?role=${role}` : current.home
-      );
+      try {
+        sessionStorage.removeItem("inb_splash_seen");
+      } catch {
+        /* private mode: nothing to clear */
+      }
+      setLaunch({
+        role,
+        to: data.must_change_password ? `/change-password?role=${role}` : current.home,
+      });
     } catch {
       setError("Can't reach the server. Check your connection and try again.");
     } finally {
@@ -137,8 +151,12 @@ export default function Login() {
 
   return (
     <div className="flex min-h-dvh bg-white">
+      {launch && <SplashScreen role={launch.role} />}
       {/* BRAND PANEL */}
-      <div className="relative hidden w-[46%] flex-col justify-between overflow-hidden bg-psu-900 p-10 text-white lg:flex">
+      <div
+        className="relative hidden w-[46%] flex-col justify-between overflow-hidden p-10 text-white lg:flex"
+        style={{ background: ROLE_THEMES.guest.colors.surface }}
+      >
         {/* Concentric rings, after the university seal. */}
         <svg
           aria-hidden="true"
@@ -152,7 +170,7 @@ export default function Login() {
           <circle cx="300" cy="300" r="170" strokeWidth="2" />
         </svg>
 
-        <BrandLockup portal="OJT Monitoring System" />
+        <BrandLockup tone="onDark" size={28} tagline={null} />
 
         <div className="relative max-w-md">
           <p className="text-sm font-semibold uppercase tracking-widest text-gold-300">
@@ -183,7 +201,7 @@ export default function Login() {
       <div className="flex flex-1 flex-col items-center justify-center px-5 py-10">
         <div className="w-full max-w-sm">
           <div className="mb-8 lg:hidden">
-            <BrandLockup portal="OJT Monitoring System" tone="light" />
+            <BrandLockup size={22} tagline={null} />
           </div>
 
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">Sign in</h1>
@@ -287,7 +305,7 @@ export default function Login() {
               </div>
             </div>
 
-            <Button type="submit" size="lg" block busy={submitting}>
+            <Button type="submit" size="lg" block busy={submitting} failed={Boolean(error)} busyProcess="signIn">
               {submitting ? "Signing in" : `Sign in as ${current.label.toLowerCase()}`}
             </Button>
           </form>

@@ -356,7 +356,7 @@ export default function ReportComplaint() {
               <p className="text-sm text-slate-500">
                 In an emergency, contact your coordinator directly.
               </p>
-              <Button type="submit" busy={submitting}>
+              <Button type="submit" busy={submitting} doneLabel="Sent" failed={Boolean(error)} busyProcess="report">
                 {submitting ? "Submitting" : "Submit report"}
               </Button>
             </div>

@@ -19,4 +19,9 @@ export default defineConfig([
       globals: globals.browser,
     },
   },
+  {
+    // The brand kit's feedback file exports its hooks beside its components.
+    files: ['src/brand/feedback.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
 ])

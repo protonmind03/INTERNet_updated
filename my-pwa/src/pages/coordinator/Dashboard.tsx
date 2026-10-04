@@ -11,6 +11,7 @@ import {
   SkeletonRows,
   StatTile,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatHours, greetingFor } from "../../lib/format";
 import { errorText } from "../../lib/toast";
@@ -174,7 +175,11 @@ export default function CoordinatorDashboard() {
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {loading || !data ? (
+          {loading ? (
+            <div className="col-span-full">
+              <BrandLoader role="coordinator" process="dashboard" />
+            </div>
+          ) : !data ? (
             [0, 1, 2, 3].map((tile) => <Skeleton key={tile} className="h-[104px] rounded-xl" />)
           ) : (
             <>

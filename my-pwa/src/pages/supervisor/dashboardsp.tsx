@@ -10,8 +10,8 @@ import {
   FilterChips,
   Modal,
   ProgressBar,
-  SkeletonRows,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { formatDate, formatDayDate, formatHours, greetingFor } from "../../lib/format";
 import { useAccount } from "../../lib/session";
@@ -243,7 +243,7 @@ export default function SupervisorDashboard() {
           {/* QUEUE */}
           <Card className="overflow-hidden">
             {loading ? (
-              <SkeletonRows rows={5} />
+              <BrandLoader role="supervisor" process="dashboard" />
             ) : visible.length === 0 ? (
               <EmptyState
                 icon="check-circle"
@@ -354,6 +354,7 @@ export default function SupervisorDashboard() {
         message="Every pending log that has a time-out will be marked verified. Logs you want to reject should be reviewed one by one first."
         confirmLabel="Verify all"
         busy={bulkBusy}
+        busyProcess="verify"
         onConfirm={() => void verifyAll()}
         onCancel={() => setConfirmBulk(false)}
       >

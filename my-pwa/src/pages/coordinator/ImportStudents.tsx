@@ -232,7 +232,7 @@ export default function ImportStudents({
             <Button variant="secondary" onClick={close} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={() => void runImport()} busy={busy} disabled={rows.length === 0}>
+            <Button onClick={() => void runImport()} busy={busy} failed={Boolean(error)} disabled={rows.length === 0}>
               {busy
                 ? "Importing"
                 : rows.length > 0

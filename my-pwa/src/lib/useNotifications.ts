@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
+import { toast } from "./toast";
 
 export type NotificationRole = "student" | "supervisor" | "coordinator";
 
@@ -93,9 +94,11 @@ export function useNotifications(role: NotificationRole) {
         `${API_URL}/api/notifications/read-all`,
         withRoleAuth(role, { method: "PUT" })
       );
-      if (!response.ok) await load();
-      else window.dispatchEvent(new Event(READ_STATE_CHANGED));
+      if (!response.ok) throw new Error("not saved");
+      window.dispatchEvent(new Event(READ_STATE_CHANGED));
     } catch {
+      // The optimistic change is undone by reloading what the server has.
+      toast.error("Your notifications could not be marked as read. Please try again.");
       await load();
     }
   }, [role, load]);

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { notifyDataChanged } from "../../lib/navCounts";
-import { errorText } from "../../lib/toast";
+import { errorText, withWorkingToast } from "../../lib/toast";
 
 /*
 |--------------------------------------------------------------------------
@@ -399,9 +399,8 @@ export type SupervisorWork = ReturnType<typeof useSupervisorWork>;
 
 /** Downloads a submitted document through the supervisor's session. */
 export async function downloadDocument(entry: DocumentEntry): Promise<void> {
-  const response = await fetch(
-    `${API_URL}/api/documents/${entry.id}/file`,
-    withSupervisorAuth()
+  const response = await withWorkingToast("Preparing the file…", () =>
+    fetch(`${API_URL}/api/documents/${entry.id}/file`, withSupervisorAuth())
   );
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));

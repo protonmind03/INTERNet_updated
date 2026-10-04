@@ -224,7 +224,7 @@ export default function StudentFeedback() {
                   </p>
                 )}
 
-                <Button type="submit" busy={submitting} className="mt-4">
+                <Button type="submit" busy={submitting} doneLabel="Sent" failed={Boolean(formError)} className="mt-4">
                   {submitting ? "Sending" : "Send feedback"}
                 </Button>
               </form>

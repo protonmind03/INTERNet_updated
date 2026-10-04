@@ -138,7 +138,7 @@ export default function ComplaintThread({
             className="field resize-none"
           />
         </label>
-        <Button type="submit" busy={sending} disabled={draft.trim().length < 2}>
+        <Button type="submit" busy={sending} doneLabel="Sent" failed={Boolean(error)} disabled={draft.trim().length < 2}>
           Send
         </Button>
       </form>

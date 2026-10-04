@@ -397,7 +397,7 @@ function MoveInternsDialog({
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={() => void move()} busy={busy} disabled={others.length === 0}>
+          <Button onClick={() => void move()} busy={busy} failed={Boolean(error)} disabled={others.length === 0}>
             {busy ? "Moving" : `Move ${count} ${count === 1 ? "intern" : "interns"}`}
           </Button>
         </>
@@ -519,7 +519,7 @@ function SupervisorDialog({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="supervisor-form" busy={saving}>
+          <Button type="submit" form="supervisor-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Saving" : existing ? "Save changes" : "Register supervisor"}
           </Button>
         </>

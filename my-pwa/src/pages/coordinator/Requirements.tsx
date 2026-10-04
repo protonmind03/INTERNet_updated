@@ -12,6 +12,7 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
@@ -217,6 +218,7 @@ function RequiredDocuments() {
                     <Button
                       size="sm"
                       busy={savingId === item.id}
+                      doneLabel="Saved"
                       disabled={!editing.name.trim()}
                       onClick={() =>
                         void update(
@@ -271,10 +273,13 @@ function RequiredDocuments() {
                             : `"${item.name}" restored to the checklist.`
                         )
                       }
-                      className={`rounded-md px-2 py-1 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 ${
+                      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 ${
                         item.is_active ? "text-red-600" : "text-emerald-700"
                       }`}
                     >
+                      {savingId === item.id && (
+                        <BrandLoader variant="button" role="coordinator" process="save" />
+                      )}
                       {item.is_active ? "Retire" : "Restore"}
                     </button>
                   </div>
@@ -313,7 +318,7 @@ function RequiredDocuments() {
             />
           </FormField>
           <FormError message={addError} />
-          <Button type="submit" icon="plus" busy={adding}>
+          <Button type="submit" icon="plus" busy={adding} doneLabel="Added" failed={Boolean(addError)}>
             Add requirement
           </Button>
         </form>
@@ -553,7 +558,7 @@ function StudentSchedule() {
               >
                 Add a day
               </Button>
-              <Button onClick={() => void save()} busy={saving} disabled={!dirty}>
+              <Button onClick={() => void save()} busy={saving} doneLabel="Saved" failed={Boolean(error)} disabled={!dirty}>
                 {saving ? "Saving" : "Save schedule"}
               </Button>
               {dirty && !saving && (

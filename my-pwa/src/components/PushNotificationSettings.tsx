@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API_URL, withRoleAuth } from "../lib/api";
+import { BrandLoader } from "../brand";
+import { toast } from "../lib/toast";
 
 type Role = "coordinator" | "student" | "supervisor";
 
@@ -160,6 +162,7 @@ export default function PushNotificationSettings() {
         throw new Error(data.message || "Could not enable browser notifications.");
       }
       setEnabled(true);
+      toast.success("Notifications are on for this device.");
     } catch (enableError) {
       console.error("ENABLE PUSH NOTIFICATIONS ERROR:", enableError);
       setError(
@@ -200,6 +203,7 @@ export default function PushNotificationSettings() {
         throw new Error("The browser could not remove this device's subscription.");
       }
       setEnabled(false);
+      toast.success("Notifications are off for this device.");
     } catch (disableError) {
       console.error("DISABLE PUSH NOTIFICATIONS ERROR:", disableError);
       setError(
@@ -261,18 +265,20 @@ export default function PushNotificationSettings() {
           type="button"
           disabled={busy}
           onClick={disable}
-          className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
-          {busy ? "Disabling..." : "Disable on this device"}
+          {busy && <BrandLoader variant="button" process="save" />}
+          {busy ? "Disabling" : "Disable on this device"}
         </button>
       ) : (
         <button
           type="button"
           disabled={busy}
           onClick={enable}
-          className="mt-3 rounded-lg bg-psu-700 px-3 py-2 text-sm font-semibold text-white hover:bg-psu-800 disabled:opacity-60"
+          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-psu-700 px-3 py-2 text-sm font-semibold text-white hover:bg-psu-800 disabled:opacity-60"
         >
-          {busy ? "Enabling..." : "Enable on this device"}
+          {busy && <BrandLoader variant="button" process="save" />}
+          {busy ? "Enabling" : "Enable on this device"}
         </button>
       )}
     </aside>

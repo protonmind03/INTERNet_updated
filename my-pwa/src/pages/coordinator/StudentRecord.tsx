@@ -13,10 +13,10 @@ import {
   FormError,
   Modal,
   ProgressBar,
-  SkeletonRows,
   Stars,
   StatusBadge,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatFileSize } from "../../lib/files";
 import {
@@ -195,11 +195,10 @@ export default function StudentRecord() {
     await load();
   };
 
-  const approve = (item: Pending) => {
-    decide(item, true).catch((decisionError: unknown) =>
-      toast.error(errorText(decisionError, "That could not be saved."))
-    );
-  };
+  const approve = (item: Pending) =>
+    decide(item, true).catch((decisionError: unknown) => {
+      toast.error(errorText(decisionError, "That could not be saved."));
+    });
 
   const completion =
     student && student.required_hours > 0
@@ -230,9 +229,12 @@ export default function StudentRecord() {
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         {loading ? (
-          <Card>
-            <SkeletonRows rows={6} />
-          </Card>
+          <BrandLoader
+            variant="page"
+            role="coordinator"
+            process="students"
+            message="Loading this student’s record…"
+          />
         ) : !data || !student ? null : (
           <>
             <div className="print:hidden">
@@ -577,15 +579,26 @@ function DecideButtons({
 }: {
   approveLabel: string;
   rejectLabel: string;
-  onApprove: () => void;
+  onApprove: () => Promise<void>;
   onReject: () => void;
 }) {
+  // Busy while the approval is saved, so a second click cannot send it twice.
+  const [busy, setBusy] = useState(false);
+  const approve = () => {
+    setBusy(true);
+    void onApprove().finally(() => setBusy(false));
+  };
   return (
     <>
-      <Button variant="secondary" onClick={onReject} className="h-8 px-2.5 text-red-700">
+      <Button
+        variant="secondary"
+        onClick={onReject}
+        disabled={busy}
+        className="h-8 px-2.5 text-red-700"
+      >
         {rejectLabel}
       </Button>
-      <Button onClick={onApprove} className="h-8 px-2.5">
+      <Button onClick={approve} busy={busy} busyProcess="verify" className="h-8 px-2.5">
         {approveLabel}
       </Button>
     </>
@@ -687,7 +700,7 @@ function ReasonDialog({
           <Button variant="secondary" onClick={onClose} disabled={busy}>
             Cancel
           </Button>
-          <Button onClick={() => void submit()} busy={busy}>
+          <Button onClick={() => void submit()} busy={busy} failed={Boolean(error)}>
             {item.kind === "document" ? "Reject document" : "Mark unexcused"}
           </Button>
         </>

@@ -114,7 +114,7 @@ export default function PasswordForm({
             {error}
           </p>
         )}
-        <Button type="submit" variant="secondary" busy={saving} className="mt-4">
+        <Button type="submit" variant="secondary" busy={saving} doneLabel="Updated" failed={Boolean(error)} className="mt-4">
           {saving ? "Updating" : "Update password"}
         </Button>
       </form>

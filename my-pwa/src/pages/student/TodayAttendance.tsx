@@ -60,7 +60,7 @@ export default function TodayAttendance({
         toast.success("Welcome back. Your break has ended.");
       } else {
         await attendance.timeOut();
-        toast.success("Time-out recorded. Your supervisor will verify today's log.");
+        toast.celebrate("Time-out recorded. Your supervisor will verify today's log.");
       }
       setPending(null);
     } catch (error) {
@@ -210,6 +210,7 @@ export default function TodayAttendance({
         message={`Your break will start at ${formatTime(now)}. It is not counted in your rendered hours.`}
         confirmLabel="Start break"
         busy={busy}
+        busyProcess="timeIn"
         onConfirm={confirm}
         onCancel={() => setPending(null)}
       />
@@ -219,6 +220,7 @@ export default function TodayAttendance({
         message={`Your break will end at ${formatTime(now)}.`}
         confirmLabel="Back to work"
         busy={busy}
+        busyProcess="timeIn"
         onConfirm={confirm}
         onCancel={() => setPending(null)}
       />
@@ -232,6 +234,7 @@ export default function TodayAttendance({
         cancelLabel="Keep working"
         tone="danger"
         busy={busy}
+        busyProcess="timeIn"
         onConfirm={confirm}
         onCancel={() => setPending(null)}
       />
@@ -328,7 +331,7 @@ function TimeInDialog({
     setError("");
     try {
       await onSubmit(photo, note);
-      toast.success("Time-in recorded. Have a good day at work.");
+      toast.celebrate("Time-in recorded. Have a good day at work.");
       reset();
       onClose();
     } catch (submitError) {
@@ -350,7 +353,7 @@ function TimeInDialog({
           <Button variant="secondary" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="time-in-form" busy={saving} icon="check">
+          <Button type="submit" form="time-in-form" busy={saving} failed={Boolean(error)} busyProcess="timeIn" icon="check">
             {saving ? "Recording" : "Confirm time-in"}
           </Button>
         </>

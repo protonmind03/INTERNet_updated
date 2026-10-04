@@ -446,7 +446,7 @@ function SubmitDialog({
       if (!response.ok) {
         throw new Error(data.message || "Your work could not be submitted.");
       }
-      toast.success("Work submitted. Your supervisor has been notified.");
+      toast.celebrate("Work submitted. Your supervisor has been notified.");
       reset();
       onSubmitted();
     } catch (submitError) {
@@ -468,7 +468,7 @@ function SubmitDialog({
           <Button variant="secondary" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="submit-task-form" busy={saving} icon="upload">
+          <Button type="submit" form="submit-task-form" busy={saving} failed={Boolean(error)} busyProcess="taskSubmit" icon="upload">
             {saving ? "Submitting" : "Submit"}
           </Button>
         </>

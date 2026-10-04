@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice, FormError, FormField } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { updateStoredAccount, useAccount, type CoordinatorAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
@@ -85,6 +86,11 @@ export default function CoordinatorProfilePage() {
         <Card>
           <form onSubmit={save} className="p-4 sm:p-5" noValidate>
             <h2 className="text-sm font-semibold text-slate-900">Account details</h2>
+            {loading && (
+              <div className="mt-3">
+                <BrandLoader variant="inline" role="coordinator" process="profile" />
+              </div>
+            )}
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <FormField label="Full name" htmlFor="profile-name">
                 <input
@@ -130,7 +136,7 @@ export default function CoordinatorProfilePage() {
             <div className="mt-3">
               <FormError message={formError} />
             </div>
-            <Button type="submit" busy={saving} disabled={!changed} className="mt-4">
+            <Button type="submit" busy={saving} doneLabel="Saved" failed={Boolean(formError)} disabled={!changed} className="mt-4">
               {saving ? "Saving" : "Save changes"}
             </Button>
           </form>

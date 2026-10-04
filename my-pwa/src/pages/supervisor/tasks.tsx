@@ -461,7 +461,7 @@ function TaskDialog({
           <Button variant="secondary" onClick={close} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="task-form" busy={saving}>
+          <Button type="submit" form="task-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Saving" : editing ? "Save changes" : "Assign task"}
           </Button>
         </>

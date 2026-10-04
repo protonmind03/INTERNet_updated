@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Spinner } from "./ui";
+import { BrandLoader } from "../brand";
 import { getProtectedUploadUrl } from "../lib/api";
 
 /**
@@ -54,9 +54,7 @@ export default function AttendancePhoto({
             />
           </a>
         ) : (
-          <span className="text-slate-400">
-            <Spinner size={22} />
-          </span>
+          <BrandLoader variant="inline" process="attendance" message="Loading the time-in photo…" />
         )}
       </div>
     </div>

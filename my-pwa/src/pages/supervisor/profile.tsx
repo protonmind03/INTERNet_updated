@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../components/Icon";
 import PasswordForm from "../../components/PasswordForm";
-import { Button, Card, ErrorNotice, Skeleton } from "../../components/ui";
+import { Button, Card, ErrorNotice } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { getInitials } from "../../lib/format";
@@ -115,11 +116,7 @@ export default function SupervisorProfilePage() {
       <div className="grid items-start gap-5 lg:grid-cols-3">
         <Card className="p-5">
           {loading || !profile ? (
-            <div className="space-y-3">
-              <Skeleton className="h-16 w-16 rounded-full" />
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-4 w-1/2" />
-            </div>
+            <BrandLoader role="supervisor" process="profile" />
           ) : (
             <>
               <div className="flex items-center gap-4">
@@ -219,7 +216,7 @@ export default function SupervisorProfilePage() {
                   {formError}
                 </p>
               )}
-              <Button type="submit" busy={saving} disabled={!changed} className="mt-4">
+              <Button type="submit" busy={saving} doneLabel="Saved" failed={Boolean(formError)} disabled={!changed} className="mt-4">
                 {saving ? "Saving" : "Save changes"}
               </Button>
             </form>

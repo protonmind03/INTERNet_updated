@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../components/Icon";
 import PasswordForm from "../../components/PasswordForm";
-import { Button, Card, ErrorNotice, Skeleton } from "../../components/ui";
+import { Button, Card, ErrorNotice } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { getInitials } from "../../lib/format";
@@ -105,11 +106,7 @@ export default function StudentProfilePage() {
       <div className="grid gap-5 lg:grid-cols-3">
         <Card className="p-5 lg:self-start">
           {loading || !profile ? (
-            <div className="space-y-3">
-              <Skeleton className="h-16 w-16 rounded-full" />
-              <Skeleton className="h-4 w-2/3" />
-              <Skeleton className="h-4 w-1/2" />
-            </div>
+            <BrandLoader role="student" process="profile" />
           ) : (
             <>
               <div className="flex items-center gap-4">
@@ -185,7 +182,7 @@ export default function StudentProfilePage() {
               )}
               <Button
                 type="submit"
-                busy={savingProfile}
+                busy={savingProfile} doneLabel="Saved" failed={Boolean(profileError)}
                 disabled={!profileChanged}
                 className="mt-4"
               >

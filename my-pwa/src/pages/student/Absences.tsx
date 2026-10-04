@@ -227,7 +227,7 @@ function FileAbsenceDialog({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="absence-form" busy={saving}>
+          <Button type="submit" form="absence-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Filing" : "File absence"}
           </Button>
         </>

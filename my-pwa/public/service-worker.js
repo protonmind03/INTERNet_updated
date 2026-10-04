@@ -34,7 +34,7 @@ self.addEventListener("push", (event) => {
   const options = {
     body: typeof payload.body === "string" ? payload.body : "",
     icon: "/icon-192.png",
-    badge: "/favicon-32.png",
+    badge: "/badge-72.png",
     data: {
       url: typeof payload.url === "string" ? payload.url : "/",
     },

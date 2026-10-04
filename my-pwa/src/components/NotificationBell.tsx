@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { BrandLoader } from "../brand";
 import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import {
@@ -93,13 +94,8 @@ export default function NotificationBell({
 
           <div className="max-h-[min(24rem,60dvh)] overflow-y-auto">
             {loading && (
-              <div className="space-y-3 px-4 py-4" aria-hidden="true">
-                {[0, 1, 2].map((row) => (
-                  <div key={row} className="space-y-1.5">
-                    <div className="h-3 w-2/5 animate-pulse rounded bg-slate-200" />
-                    <div className="h-3 w-4/5 animate-pulse rounded bg-slate-100" />
-                  </div>
-                ))}
+              <div className="px-4 py-4">
+                <BrandLoader variant="inline" role={role} process="notifications" />
               </div>
             )}
             {!loading && error && (

@@ -1,5 +1,5 @@
 import { useEffect, type ReactNode } from "react";
-import { BrandLockup } from "../components/Brand";
+import { BrandLockup } from "../brand";
 
 /** The centred card used by the password pages that sit outside the portals. */
 export default function AuthShell({
@@ -19,7 +19,7 @@ export default function AuthShell({
     <main className="flex min-h-dvh flex-col items-center justify-center bg-slate-50 px-4 py-10">
       <div className="w-full max-w-md animate-page-in">
         <div className="mb-6">
-          <BrandLockup portal="OJT Monitoring System" tone="light" />
+          <BrandLockup size={24} tagline={null} />
         </div>
         <section className="rounded-2xl border border-slate-200 bg-white p-6 sm:p-7">
           <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>

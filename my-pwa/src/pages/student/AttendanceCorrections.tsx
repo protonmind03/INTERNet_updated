@@ -137,7 +137,7 @@ export function LateTimeOutDialog({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="late-time-out-form" busy={saving}>
+          <Button type="submit" form="late-time-out-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Saving" : "Save time-out"}
           </Button>
         </>
@@ -249,7 +249,7 @@ export function ResubmitDialog({
           <Button variant="secondary" onClick={onClose} disabled={saving}>
             Cancel
           </Button>
-          <Button type="submit" form="resubmit-form" busy={saving}>
+          <Button type="submit" form="resubmit-form" busy={saving} failed={Boolean(error)}>
             {saving ? "Sending" : "Send for review"}
           </Button>
         </>

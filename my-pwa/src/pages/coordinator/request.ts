@@ -1,4 +1,5 @@
 import { API_URL, withCoordinatorAuth } from "../../lib/api";
+import { withWorkingToast } from "../../lib/toast";
 
 /**
  * Calls a coordinator endpoint and returns its JSON. A failed request
@@ -34,7 +35,9 @@ export async function coordinatorRequest<T = Record<string, unknown>>(
 
 /** Downloads a submitted document through the coordinator's session. */
 export async function downloadSubmittedDocument(id: number, filename: string): Promise<void> {
-  const response = await fetch(`${API_URL}/api/documents/${id}/file`, withCoordinatorAuth());
+  const response = await withWorkingToast("Preparing the file…", () =>
+    fetch(`${API_URL}/api/documents/${id}/file`, withCoordinatorAuth())
+  );
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.message || "The document could not be downloaded.");

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
-import { BrandLockup } from "../components/Brand";
+import { BrandIcon, BrandLoader, PortalBrand, ROLE_THEMES } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
@@ -103,7 +103,7 @@ export default function CoordinatorLayout({
   const sidebar = (
     <>
       <div className="px-5 py-5">
-        <BrandLockup portal="Coordinator" tone="light" />
+        <PortalBrand role="coordinator" />
       </div>
       <nav aria-label="Main" className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
         {NAV_GROUPS.map((group) => (
@@ -215,6 +215,23 @@ export default function CoordinatorLayout({
           >
             <Icon name="menu" size={20} />
           </button>
+          <span className="shrink-0 lg:hidden">
+            <BrandIcon size={38} tile={ROLE_THEMES.coordinator.colors.surfaceRaised} title="INTERNet" />
+          </span>
+          <div className="hidden min-w-0 shrink items-center gap-3 lg:flex">
+            <span
+              className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold"
+              style={{
+                background: ROLE_THEMES.coordinator.colors.tagBg,
+                color: ROLE_THEMES.coordinator.colors.tagText,
+              }}
+            >
+              {ROLE_THEMES.coordinator.tag}
+            </span>
+            <p className="hidden truncate text-sm text-slate-600 xl:block">
+              {coordinator.department || "Pangasinan State University · Lingayen Campus"}
+            </p>
+          </div>
           <GlobalSearch />
           <div className="ml-auto">
             <NotificationBell
@@ -394,7 +411,11 @@ function GlobalSearch() {
           aria-label="Search results"
           className="absolute inset-x-0 top-full z-40 mt-2 max-h-96 origin-top animate-pop-in overflow-y-auto rounded-xl border border-slate-200 bg-white py-1 shadow-xl"
         >
-          {loading && <p className="px-4 py-3 text-sm text-slate-500">Searching</p>}
+          {loading && (
+            <div className="px-4 py-3">
+              <BrandLoader variant="inline" role="coordinator" process="search" />
+            </div>
+          )}
           {!loading && error && (
             <p role="alert" className="px-4 py-3 text-sm text-red-600">
               {error}

@@ -1,3 +1,4 @@
+import { toast } from "../lib/toast";
 import { useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { Button, FormError, FormField } from "../components/ui";
@@ -75,6 +76,7 @@ export default function ChangePassword() {
         return;
       }
       storeRotatedToken(role, data.token);
+      toast.success("Password changed.");
       navigate(roles[role].home, { replace: true });
     } catch {
       setError("Can't reach the server. Check your connection and try again.");
@@ -139,7 +141,7 @@ export default function ChangePassword() {
 
         <FormError message={error} />
 
-        <Button type="submit" size="lg" block busy={submitting}>
+        <Button type="submit" size="lg" block busy={submitting} failed={Boolean(error)}>
           {submitting ? "Saving" : "Save and continue"}
         </Button>
         <button

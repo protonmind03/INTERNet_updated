@@ -8,14 +8,14 @@ import {
   ErrorNotice,
   ProgressBar,
   SkeletonRows,
-  Spinner,
   StatusBadge,
 } from "../../components/ui";
+import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { formatDate } from "../../lib/format";
-import { errorText, toast } from "../../lib/toast";
+import { errorText, toast, withWorkingToast } from "../../lib/toast";
 
 type DocumentStatus = "Pending" | "Approved" | "Rejected";
 
@@ -145,9 +145,8 @@ export default function Documents() {
 
   const download = async (item: StudentDocument) => {
     try {
-      const response = await fetch(
-        `${API_URL}/api/documents/${item.id}/file`,
-        withStudentAuth()
+      const response = await withWorkingToast("Preparing the file…", () =>
+        fetch(`${API_URL}/api/documents/${item.id}/file`, withStudentAuth())
       );
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
@@ -368,7 +367,7 @@ function RequirementRow({
               : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
           }`}
         >
-          {uploading ? <Spinner size={15} /> : <Icon name="upload" size={16} />}
+          {uploading ? <BrandLoader variant="button" role="student" process="upload" /> : <Icon name="upload" size={16} />}
           {uploading ? "Uploading" : state === "rejected" ? "Upload again" : "Upload"}
         </button>
       )}
