@@ -95,10 +95,10 @@ export default function SupervisorLayout({
       >
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
           <NavLink to="/supervisor/dashboard" aria-label="INTERNet Supervisor Portal, dashboard" className="flex shrink-0 items-center gap-2.5">
-            <span className="hidden lg:block">
+            <span className="hidden xl:block">
               <PortalBrand role="supervisor" showTag />
             </span>
-            <span className="lg:hidden">
+            <span className="xl:hidden">
               <PortalBrand role="supervisor" />
             </span>
           </NavLink>
@@ -126,7 +126,7 @@ export default function SupervisorLayout({
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gold-400 text-xs font-bold text-psu-950">
                   {getInitials(supervisor.name, "SV")}
                 </span>
-                <span className="hidden max-w-40 truncate text-sm font-medium sm:block">
+                <span className="hidden max-w-40 truncate text-sm font-medium sm:block lg:hidden xl:block">
                   {supervisor.name}
                 </span>
                 <Icon name="chevron-down" size={15} className="text-psu-200" />
