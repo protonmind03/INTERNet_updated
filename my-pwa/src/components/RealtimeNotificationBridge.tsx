@@ -11,6 +11,9 @@ type LiveNotification = {
   type: string;
 };
 
+const RETRY_MIN_MS = 5_000;
+const RETRY_MAX_MS = 60_000;
+
 function activeRoleForPath(path: string): Role | null {
   if (path === "/" || path.startsWith("/forgot-password") || path.startsWith("/reset-password")) {
     return null;
@@ -35,13 +38,34 @@ export default function RealtimeNotificationBridge() {
   const navigate = useNavigate();
   const [notification, setNotification] = useState<LiveNotification | null>(null);
 
+  // The stream belongs to the signed-in role, not to the page: moving between
+  // pages of the same portal keeps the one connection open.
+  const streamRole = activeRoleForPath(location.pathname);
+  const signedIn = Boolean(streamRole && localStorage.getItem(`${streamRole}_token`));
+
   useEffect(() => {
-    const role = activeRoleForPath(location.pathname);
-    const token = role && localStorage.getItem(`${role}_token`);
-    if (!role || !token) return;
+    const role = streamRole;
+    if (!role || !signedIn) return;
 
     const controller = new AbortController();
     let reconnectTimer: number | undefined;
+    // Wait longer after each failed attempt, so a server that is down is
+    // not asked again every few seconds by every open tab.
+    let retryDelay = RETRY_MIN_MS;
+    const scheduleReconnect = () => {
+      if (controller.signal.aborted) return;
+      if (!navigator.onLine) {
+        // No connection: wait for it to return instead of retrying blind.
+        window.addEventListener("online", () => void connect(), {
+          once: true,
+          signal: controller.signal,
+        });
+        return;
+      }
+      const jitter = Math.random() * 1000;
+      reconnectTimer = window.setTimeout(connect, retryDelay + jitter);
+      retryDelay = Math.min(retryDelay * 2, RETRY_MAX_MS);
+    };
     const connect = async () => {
       // Read the token on every attempt: a password change replaces it, and
       // reconnecting with the old one would be refused forever.
@@ -55,6 +79,7 @@ export default function RealtimeNotificationBridge() {
         if (!response.ok || !response.body) {
           throw new Error(`Live notification connection failed (${response.status}).`);
         }
+        retryDelay = RETRY_MIN_MS;
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -82,9 +107,7 @@ export default function RealtimeNotificationBridge() {
           console.error("LIVE NOTIFICATION STREAM ERROR:", error);
         }
       }
-      if (!controller.signal.aborted) {
-        reconnectTimer = window.setTimeout(connect, 5000);
-      }
+      scheduleReconnect();
     };
 
     void connect();
@@ -92,7 +115,7 @@ export default function RealtimeNotificationBridge() {
       controller.abort();
       if (reconnectTimer !== undefined) window.clearTimeout(reconnectTimer);
     };
-  }, [location.pathname]);
+  }, [streamRole, signedIn]);
 
   useEffect(() => {
     if (!notification) return;
@@ -113,7 +136,7 @@ export default function RealtimeNotificationBridge() {
     <aside
       role="status"
       aria-live="polite"
-      className="fixed right-4 top-4 z-[60] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-indigo-200 bg-white p-4 shadow-xl"
+      className="fixed right-4 top-4 z-[60] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-slate-200 border-l-4 border-l-gold-400 bg-white p-4 shadow-xl"
     >
       <button
         type="button"

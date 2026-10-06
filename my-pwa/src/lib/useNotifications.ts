@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
+import { toast } from "./toast";
 
-export type NotificationRole = "supervisor" | "coordinator";
+export type NotificationRole = "student" | "supervisor" | "coordinator";
+
+const READ_STATE_CHANGED = "internet-notifications-read";
 
 export type NotificationItem = {
   id: number;
@@ -13,8 +16,8 @@ export type NotificationItem = {
 };
 
 /**
- * Loads the signed-in supervisor's or coordinator's notifications, keeps
- * them current when a live notification arrives, and exposes read actions.
+ * Loads the signed-in account's notifications, keeps them current when a
+ * live notification arrives, and exposes read actions.
  */
 export function useNotifications(role: NotificationRole) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
@@ -52,7 +55,13 @@ export function useNotifications(role: NotificationRole) {
     };
     refresh();
     window.addEventListener("internet-notification", refresh);
-    return () => window.removeEventListener("internet-notification", refresh);
+    // The header bell and the notifications page each use this hook; when
+    // one marks something read, the other reloads.
+    window.addEventListener(READ_STATE_CHANGED, refresh);
+    return () => {
+      window.removeEventListener("internet-notification", refresh);
+      window.removeEventListener(READ_STATE_CHANGED, refresh);
+    };
   }, [load]);
 
   const markRead = useCallback(
@@ -68,6 +77,7 @@ export function useNotifications(role: NotificationRole) {
           withRoleAuth(role, { method: "PUT" })
         );
         if (!response.ok) await load();
+        else window.dispatchEvent(new Event(READ_STATE_CHANGED));
       } catch {
         await load();
       }
@@ -84,8 +94,11 @@ export function useNotifications(role: NotificationRole) {
         `${API_URL}/api/notifications/read-all`,
         withRoleAuth(role, { method: "PUT" })
       );
-      if (!response.ok) await load();
+      if (!response.ok) throw new Error("not saved");
+      window.dispatchEvent(new Event(READ_STATE_CHANGED));
     } catch {
+      // The optimistic change is undone by reloading what the server has.
+      toast.error("Your notifications could not be marked as read. Please try again.");
       await load();
     }
   }, [role, load]);

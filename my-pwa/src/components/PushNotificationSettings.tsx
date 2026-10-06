@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API_URL, withRoleAuth } from "../lib/api";
+import { BrandLoader } from "../brand";
+import { toast } from "../lib/toast";
 
 type Role = "coordinator" | "student" | "supervisor";
 
@@ -38,6 +40,8 @@ function currentRole(path: string): { role: Role; token: string } | null {
   return null;
 }
 
+const DISMISSED_KEY = "push_prompt_dismissed";
+
 function decodeVapidKey(value: string): ArrayBuffer {
   const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
   const raw = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
@@ -51,15 +55,39 @@ function decodeVapidKey(value: string): ArrayBuffer {
 export default function PushNotificationSettings() {
   const location = useLocation();
   const [identity, setIdentity] = useState<ReturnType<typeof currentRole>>(null);
-  const [dismissed, setDismissed] = useState(false);
+  // Dismissing the prompt is remembered on this device, so it does not
+  // come back on every page.
+  const [dismissed, setDismissed] = useState(
+    () => localStorage.getItem(DISMISSED_KEY) === "1"
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [enabled, setEnabled] = useState(false);
+  // Null until the server says whether push is set up at all.
+  const [available, setAvailable] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_URL}/api/push/vapid-public-key`)
+      .then((response) => {
+        if (active) setAvailable(response.ok);
+      })
+      .catch(() => {
+        if (active) setAvailable(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const dismiss = () => {
+    localStorage.setItem(DISMISSED_KEY, "1");
+    setDismissed(true);
+  };
 
   useEffect(() => {
     const updateIdentity = () => {
       setIdentity(currentRole(location.pathname));
-      setDismissed(false);
     };
     updateIdentity();
     window.addEventListener("storage", updateIdentity);
@@ -134,6 +162,7 @@ export default function PushNotificationSettings() {
         throw new Error(data.message || "Could not enable browser notifications.");
       }
       setEnabled(true);
+      toast.success("Notifications are on for this device.");
     } catch (enableError) {
       console.error("ENABLE PUSH NOTIFICATIONS ERROR:", enableError);
       setError(
@@ -174,6 +203,7 @@ export default function PushNotificationSettings() {
         throw new Error("The browser could not remove this device's subscription.");
       }
       setEnabled(false);
+      toast.success("Notifications are off for this device.");
     } catch (disableError) {
       console.error("DISABLE PUSH NOTIFICATIONS ERROR:", disableError);
       setError(
@@ -186,9 +216,13 @@ export default function PushNotificationSettings() {
     }
   };
 
+  // The prompt is an invitation, so it only appears when push can actually
+  // be turned on and this device has not answered yet.
   if (
     !identity ||
     dismissed ||
+    !available ||
+    (enabled && !error) ||
     !("serviceWorker" in navigator) ||
     !("PushManager" in window) ||
     !("Notification" in window)
@@ -199,7 +233,7 @@ export default function PushNotificationSettings() {
   return (
     <aside
       aria-label="Browser notification settings"
-      className="print:hidden fixed bottom-4 right-4 z-50 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-indigo-200 bg-white p-4 shadow-xl"
+      className="print:hidden fixed bottom-24 right-4 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-xl md:bottom-4"
     >
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -215,7 +249,7 @@ export default function PushNotificationSettings() {
         <button
           type="button"
           aria-label="Dismiss browser notification prompt"
-          onClick={() => setDismissed(true)}
+          onClick={dismiss}
           className="text-slate-400 hover:text-slate-700"
         >
           ×
@@ -231,18 +265,20 @@ export default function PushNotificationSettings() {
           type="button"
           disabled={busy}
           onClick={disable}
-          className="mt-3 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+          className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
         >
-          {busy ? "Disabling..." : "Disable on this device"}
+          {busy && <BrandLoader variant="button" process="save" />}
+          {busy ? "Disabling" : "Disable on this device"}
         </button>
       ) : (
         <button
           type="button"
           disabled={busy}
           onClick={enable}
-          className="mt-3 rounded-lg bg-indigo-600 px-3 py-2 text-xs font-semibold text-white hover:bg-indigo-500 disabled:opacity-60"
+          className="mt-3 inline-flex items-center gap-2 rounded-lg bg-psu-700 px-3 py-2 text-sm font-semibold text-white hover:bg-psu-800 disabled:opacity-60"
         >
-          {busy ? "Enabling..." : "Enable on this device"}
+          {busy && <BrandLoader variant="button" process="save" />}
+          {busy ? "Enabling" : "Enable on this device"}
         </button>
       )}
     </aside>

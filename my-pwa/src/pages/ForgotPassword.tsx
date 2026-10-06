@@ -1,60 +1,63 @@
-import { useState, type FormEvent } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { API_URL } from "../lib/api";
+import Icon from "../components/Icon";
+import { Button, FormError, FormField } from "../components/ui";
+import AuthShell from "../layouts/AuthShell";
+import { API_URL, PASSWORD_POLICY_HINT, passwordPolicyError } from "../lib/api";
 
 type Role = "student" | "supervisor" | "coordinator";
 
+/**
+ * Two steps on one route: asking for a reset link (no token in the URL),
+ * and choosing the new password (the emailed link carries a token).
+ */
 export default function ForgotPassword() {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
   const initialRole = searchParams.get("role");
+
   const [role, setRole] = useState<Role>(
-    initialRole === "supervisor" || initialRole === "coordinator"
-      ? initialRole
-      : "student"
+    initialRole === "supervisor" || initialRole === "coordinator" ? initialRole : "student"
   );
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [message, setMessage] = useState("");
+  const [showPasswords, setShowPasswords] = useState(false);
+  const [done, setDone] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError("");
-    setMessage("");
-    if (token && password !== confirmation) {
-      setError("The passwords do not match.");
-      return;
+    if (token) {
+      const policy = passwordPolicyError(password);
+      if (policy) return setError(policy);
+      if (password !== confirmation) return setError("The two passwords don't match.");
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      return setError("Enter the email address on your account.");
     }
 
     setSubmitting(true);
+    setError("");
     try {
       const response = await fetch(
         `${API_URL}/api/auth/password-reset/${token ? "confirm" : "request"}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(
-            token ? { token, password } : { role, email }
-          ),
+          body: JSON.stringify(token ? { token, password } : { role, email: email.trim() }),
         }
       );
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || "Password recovery failed.");
-      }
-      setMessage(data.message);
-      if (token) {
-        setPassword("");
-        setConfirmation("");
-      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Password recovery failed.");
+      setDone(data.message || "Done.");
     } catch (requestError) {
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to complete password recovery."
+        requestError instanceof TypeError
+          ? "Can't reach the server. Check your connection and try again."
+          : requestError instanceof Error
+            ? requestError.message
+            : "Password recovery failed."
       );
     } finally {
       setSubmitting(false);
@@ -62,111 +65,107 @@ export default function ForgotPassword() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
-      <section className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-7 shadow-sm">
-        <h1 className="text-xl font-semibold text-slate-900">
-          {token ? "Set a new password" : "Reset your password"}
-        </h1>
-        <p className="mt-2 text-sm text-slate-500">
-          {token
-            ? "Choose a strong password to restore access to your account."
-            : "Enter the email address associated with your account. If it matches an active account, we will email a secure reset link."}
-        </p>
-
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
-          {!token && (
+    <AuthShell
+      title={token ? "Choose a new password" : "Reset your password"}
+      description={
+        token
+          ? PASSWORD_POLICY_HINT
+          : "Enter the email on your account. If it matches an active account, a reset link is sent to it."
+      }
+    >
+      {done ? (
+        <div className="mt-6">
+          <p
+            role="status"
+            className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-900"
+          >
+            <Icon name="check-circle" size={16} className="mt-0.5 shrink-0" />
+            {done}
+          </p>
+          <Link
+            to="/"
+            className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-lg bg-psu-700 text-sm font-semibold text-white hover:bg-psu-800"
+          >
+            Back to sign in
+          </Link>
+        </div>
+      ) : (
+        <form className="mt-6 space-y-4" onSubmit={submit} noValidate>
+          {token ? (
             <>
-              <label className="block text-sm font-medium text-slate-700">
-                Account type
+              <FormField label="New password" htmlFor="reset-password">
+                <input
+                  id="reset-password"
+                  type={showPasswords ? "text" : "password"}
+                  autoComplete="new-password"
+                  maxLength={128}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  className="field h-11"
+                />
+              </FormField>
+              <FormField label="Confirm new password" htmlFor="reset-confirmation">
+                <input
+                  id="reset-confirmation"
+                  type={showPasswords ? "text" : "password"}
+                  autoComplete="new-password"
+                  maxLength={128}
+                  value={confirmation}
+                  onChange={(event) => setConfirmation(event.target.value)}
+                  className="field h-11"
+                />
+              </FormField>
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={showPasswords}
+                  onChange={(event) => setShowPasswords(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 accent-psu-700"
+                />
+                Show passwords
+              </label>
+            </>
+          ) : (
+            <>
+              <FormField label="I am a" htmlFor="reset-role">
                 <select
+                  id="reset-role"
                   value={role}
                   onChange={(event) => setRole(event.target.value as Role)}
-                  className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="field h-11"
                 >
                   <option value="student">Student</option>
                   <option value="supervisor">Supervisor</option>
                   <option value="coordinator">Coordinator</option>
                 </select>
-              </label>
-              <label className="block text-sm font-medium text-slate-700">
-                Email address
+              </FormField>
+              <FormField label="Email address" htmlFor="reset-email">
                 <input
+                  id="reset-email"
                   type="email"
                   autoComplete="email"
-                  required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2"
+                  className="field h-11"
                 />
-              </label>
+              </FormField>
             </>
           )}
 
-          {token && (
-            <>
-              <label className="block text-sm font-medium text-slate-700">
-                New password
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  minLength={12}
-                  maxLength={128}
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
-              <label className="block text-sm font-medium text-slate-700">
-                Confirm password
-                <input
-                  type="password"
-                  autoComplete="new-password"
-                  required
-                  minLength={12}
-                  maxLength={128}
-                  value={confirmation}
-                  onChange={(event) => setConfirmation(event.target.value)}
-                  className="mt-1 block w-full rounded-lg border border-slate-300 px-3 py-2"
-                />
-              </label>
-              <p className="text-xs text-slate-500">
-                Use 12–128 characters, including uppercase, lowercase, and a number.
-              </p>
-            </>
-          )}
+          <FormError message={error} />
 
-          {error && (
-            <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
-              {error}
-            </p>
-          )}
-          {message && (
-            <p role="status" className="rounded-lg bg-emerald-50 p-3 text-sm text-emerald-700">
-              {message}
-            </p>
-          )}
+          <Button type="submit" size="lg" block busy={submitting} failed={Boolean(error)}>
+            {submitting ? "Please wait" : token ? "Save new password" : "Send reset link"}
+          </Button>
 
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+          <Link
+            to="/"
+            className="block text-center text-sm font-semibold text-psu-700 hover:underline"
           >
-            {submitting
-              ? "Please wait..."
-              : token
-                ? "Update password"
-                : "Send reset link"}
-          </button>
+            Back to sign in
+          </Link>
         </form>
-
-        <Link
-          to="/"
-          className="mt-5 inline-block text-sm font-medium text-indigo-700 hover:underline"
-        >
-          Back to sign in
-        </Link>
-      </section>
-    </main>
+      )}
+    </AuthShell>
   );
 }

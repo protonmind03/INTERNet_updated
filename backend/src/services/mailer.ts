@@ -30,6 +30,11 @@ export async function sendEmail(options: {
     port,
     secure: port === 465,
     requireTLS: port !== 465,
+    // A mail server that accepts the connection and then says nothing
+    // would otherwise hold each send for minutes.
+    connectionTimeout: 10_000,
+    greetingTimeout: 10_000,
+    socketTimeout: 20_000,
     auth: {
       user: process.env.SMTP_USER,
       pass: process.env.SMTP_PASSWORD,

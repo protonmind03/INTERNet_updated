@@ -909,11 +909,19 @@ test("coordinator document oversight is read-only and coordinator-only", async (
     );
   }
 
+  // The coordinator may review only for a student with no active supervisor,
+  // so there is nothing here for them to decide; a student never may.
   const review = await jsonRequest(
-    "/api/documents/1/review",
+    "/api/documents/999999999/review",
     jsonBody(coordinatorToken, "PATCH", { status: "Approved" })
   );
-  assert.equal(review.response.status, 403);
+  assert.equal(review.response.status, 404);
+
+  const studentReview = await jsonRequest(
+    "/api/documents/999999999/review",
+    jsonBody(studentToken, "PATCH", { status: "Approved" })
+  );
+  assert.equal(studentReview.response.status, 403);
 
   const unknownFile = await jsonRequest("/api/documents/999999999/file", {
     headers: authHeaders(coordinatorToken),
@@ -935,4 +943,687 @@ test("editing a student without a supervisor field keeps the supervisor", async 
   assert.equal(edit.response.status, 200);
   assert.equal(edit.body.student.supervisor_id, student.supervisor_id);
   assert.ok(edit.body.student.supervisor_id, "demo student should have a supervisor");
+});
+
+test("a missed time-out needs a valid time and a reason, and is student-only", async () => {
+  const supervisor = await supervisorSession();
+  const lateTimeOut = (token, body) =>
+    jsonRequest(
+      "/api/attendance/0/late-time-out",
+      jsonBody(token, "PUT", body)
+    );
+
+  const noTime = await lateTimeOut(studentToken, { reason: "Phone battery died." });
+  assert.equal(noTime.response.status, 400);
+
+  const noReason = await lateTimeOut(studentToken, {
+    time_out: new Date().toISOString(),
+    reason: "  ",
+  });
+  assert.equal(noReason.response.status, 400);
+
+  const unknownLog = await lateTimeOut(studentToken, {
+    time_out: new Date().toISOString(),
+    reason: "Phone battery died.",
+  });
+  assert.equal(unknownLog.response.status, 404);
+
+  const wrongRole = await lateTimeOut(supervisor.token, {
+    time_out: new Date().toISOString(),
+    reason: "Phone battery died.",
+  });
+  assert.equal(wrongRole.response.status, 403);
+});
+
+test("asking for another attendance review needs an explanation and is student-only", async () => {
+  const supervisor = await supervisorSession();
+  const resubmit = (token, explanation) => {
+    const form = new FormData();
+    if (explanation !== undefined) form.append("explanation", explanation);
+    return jsonRequest("/api/attendance/0/resubmit", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: form,
+    });
+  };
+
+  const noExplanation = await resubmit(studentToken, " ");
+  assert.equal(noExplanation.response.status, 400);
+
+  const unknownLog = await resubmit(studentToken, "The photo shows my workstation.");
+  assert.equal(unknownLog.response.status, 404);
+
+  const wrongRole = await resubmit(supervisor.token, "The photo shows my workstation.");
+  assert.equal(wrongRole.response.status, 403);
+});
+
+test("an attendance decision can be withdrawn only by a reviewer", async () => {
+  const supervisor = await supervisorSession();
+
+  const unknownLog = await jsonRequest(
+    "/api/attendance/0/status",
+    jsonBody(supervisor.token, "PATCH", { status: "Pending" })
+  );
+  assert.equal(unknownLog.response.status, 404);
+
+  const unknownStatus = await jsonRequest(
+    "/api/attendance/0/status",
+    jsonBody(supervisor.token, "PATCH", { status: "Approved" })
+  );
+  assert.equal(unknownStatus.response.status, 400);
+
+  const studentAttempt = await jsonRequest(
+    "/api/attendance/0/status",
+    jsonBody(studentToken, "PATCH", { status: "Pending" })
+  );
+  assert.equal(studentAttempt.response.status, 403);
+});
+
+test("absences are validated, self-scoped and reviewed only by staff", async () => {
+  const supervisor = await supervisorSession();
+
+  const noReason = await jsonRequest(
+    "/api/absences",
+    jsonBody(studentToken, "POST", { date: "2026-01-01", reason: "" })
+  );
+  assert.equal(noReason.response.status, 400);
+
+  const badDate = await jsonRequest(
+    "/api/absences",
+    jsonBody(studentToken, "POST", { date: "yesterday", reason: "I had a fever." })
+  );
+  assert.equal(badDate.response.status, 400);
+
+  const tooOld = await jsonRequest(
+    "/api/absences",
+    jsonBody(studentToken, "POST", { date: "2020-01-01", reason: "I had a fever." })
+  );
+  assert.equal(tooOld.response.status, 400);
+
+  const wrongRole = await jsonRequest(
+    "/api/absences",
+    jsonBody(supervisor.token, "POST", { date: "2026-01-01", reason: "I had a fever." })
+  );
+  assert.equal(wrongRole.response.status, 403);
+
+  const own = await jsonRequest(`/api/absences/student/${student.student_id}`, {
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(own.response.status, 200);
+  assert.ok(Array.isArray(own.body.absences));
+
+  const other = await jsonRequest("/api/absences/student/someone-else", {
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(other.response.status, 403);
+
+  const studentReview = await jsonRequest(
+    "/api/absences/0/review",
+    jsonBody(studentToken, "PATCH", { status: "Excused" })
+  );
+  assert.equal(studentReview.response.status, 403);
+
+  const noNote = await jsonRequest(
+    "/api/absences/0/review",
+    jsonBody(supervisor.token, "PATCH", { status: "Unexcused" })
+  );
+  assert.equal(noNote.response.status, 400);
+
+  const unknown = await jsonRequest(
+    "/api/absences/0/review",
+    jsonBody(supervisor.token, "PATCH", { status: "Excused" })
+  );
+  assert.equal(unknown.response.status, 404);
+
+  const coordinatorList = await jsonRequest("/api/coordinator/absences", {
+    headers: authHeaders(coordinatorToken),
+  });
+  assert.equal(coordinatorList.response.status, 200);
+  assert.ok(Array.isArray(coordinatorList.body.absences));
+
+  const studentList = await jsonRequest("/api/coordinator/absences", {
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(studentList.response.status, 403);
+});
+
+test("only the supervisor can edit or cancel a task, with valid details", async () => {
+  const supervisor = await supervisorSession();
+  const valid = { title: "Inventory sheet", priority: "High", due_date: "2099-01-01" };
+
+  const studentEdit = await jsonRequest("/api/tasks/0", jsonBody(studentToken, "PUT", valid));
+  assert.equal(studentEdit.response.status, 403);
+
+  const badPriority = await jsonRequest(
+    "/api/tasks/0",
+    jsonBody(supervisor.token, "PUT", { ...valid, priority: "Urgent" })
+  );
+  assert.equal(badPriority.response.status, 400);
+
+  const pastDue = await jsonRequest(
+    "/api/tasks/0",
+    jsonBody(supervisor.token, "PUT", { ...valid, due_date: "2020-01-01" })
+  );
+  assert.equal(pastDue.response.status, 400);
+
+  const unknown = await jsonRequest("/api/tasks/0", jsonBody(supervisor.token, "PUT", valid));
+  assert.equal(unknown.response.status, 404);
+
+  const notANumber = await jsonRequest("/api/tasks/abc", {
+    method: "DELETE",
+    headers: authHeaders(supervisor.token),
+  });
+  assert.equal(notANumber.response.status, 404);
+
+  const studentCancel = await jsonRequest("/api/tasks/0", {
+    method: "DELETE",
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(studentCancel.response.status, 403);
+});
+
+test("bulk import, announcements and password resets are coordinator-only and validated", async () => {
+  const supervisor = await supervisorSession();
+
+  const emptyImport = await jsonRequest(
+    "/api/coordinator/students/import",
+    jsonBody(coordinatorToken, "POST", { students: [] })
+  );
+  assert.equal(emptyImport.response.status, 400);
+
+  const badRows = await jsonRequest(
+    "/api/coordinator/students/import",
+    jsonBody(coordinatorToken, "POST", {
+      students: [
+        { student_id: "", name: "No Id", email: "no.id@example.com" },
+        { student_id: "T-1", name: "Bad Email", email: "not-an-email" },
+        { student_id: "T-2", name: "Bad Supervisor", email: "t2@example.com", supervisor_id: "nobody" },
+      ],
+    })
+  );
+  assert.equal(badRows.response.status, 400);
+  assert.equal(badRows.body.created, 0);
+  assert.equal(badRows.body.results.length, 3);
+  assert.ok(badRows.body.results.every((row) => row.status === "error" && !row.password));
+
+  const supervisorImport = await jsonRequest(
+    "/api/coordinator/students/import",
+    jsonBody(supervisor.token, "POST", { students: [{}] })
+  );
+  assert.equal(supervisorImport.response.status, 403);
+
+  const badAudience = await jsonRequest(
+    "/api/coordinator/announcements",
+    jsonBody(coordinatorToken, "POST", {
+      title: "Orientation",
+      message: "Orientation is on Monday.",
+      audience: "parents",
+    })
+  );
+  assert.equal(badAudience.response.status, 400);
+
+  const studentAnnouncement = await jsonRequest(
+    "/api/coordinator/announcements",
+    jsonBody(studentToken, "POST", {
+      title: "Orientation",
+      message: "Orientation is on Monday.",
+      audience: "everyone",
+    })
+  );
+  assert.equal(studentAnnouncement.response.status, 403);
+
+  const history = await jsonRequest("/api/coordinator/announcements", {
+    headers: authHeaders(coordinatorToken),
+  });
+  assert.equal(history.response.status, 200);
+  assert.ok(Array.isArray(history.body.announcements));
+
+  const weakReset = await jsonRequest(
+    `/api/coordinator/students/${student.student_id}/reset-password`,
+    jsonBody(coordinatorToken, "POST", { password: "short" })
+  );
+  assert.equal(weakReset.response.status, 400);
+
+  const unknownReset = await jsonRequest(
+    "/api/coordinator/students/no-such-student/reset-password",
+    jsonBody(coordinatorToken, "POST", { password: "TemporaryPass123!" })
+  );
+  assert.equal(unknownReset.response.status, 404);
+
+  const supervisorReset = await jsonRequest(
+    `/api/coordinator/students/${student.student_id}/reset-password`,
+    jsonBody(supervisor.token, "POST", { password: "TemporaryPass123!" })
+  );
+  assert.equal(supervisorReset.response.status, 403);
+});
+
+test("a complaint conversation is hidden from people outside it", async () => {
+  const supervisor = await supervisorSession();
+
+  const anonymous = await jsonRequest("/api/complaints/1/messages");
+  assert.equal(anonymous.response.status, 401);
+
+  const unknown = await jsonRequest("/api/complaints/0/messages", {
+    headers: authHeaders(coordinatorToken),
+  });
+  assert.equal(unknown.response.status, 404);
+
+  const emptyReply = await jsonRequest(
+    "/api/complaints/0/messages",
+    jsonBody(coordinatorToken, "POST", { message: "" })
+  );
+  assert.equal(emptyReply.response.status, 400);
+
+  // A complaint the student filed is not the supervisor's to read.
+  const mine = await jsonRequest(`/api/complaints/student/${student.student_id}`, {
+    headers: authHeaders(studentToken),
+  });
+  const complaints = Array.isArray(mine.body) ? mine.body : mine.body.complaints || [];
+  if (complaints.length > 0) {
+    const id = complaints[0].id;
+    const owner = await jsonRequest(`/api/complaints/${id}/messages`, {
+      headers: authHeaders(studentToken),
+    });
+    assert.equal(owner.response.status, 200);
+    assert.ok(Array.isArray(owner.body.messages));
+
+    const outsider = await jsonRequest(`/api/complaints/${id}/messages`, {
+      headers: authHeaders(supervisor.token),
+    });
+    assert.equal(outsider.response.status, 404);
+  }
+});
+
+test("a task attachment must be an allowed file type and only a supervisor can send one", async () => {
+  const supervisor = await supervisorSession();
+  const form = (name, type) => {
+    const body = new FormData();
+    body.append("student_id", student.student_id);
+    body.append("title", "Attachment check");
+    body.append("due_date", "2099-01-01");
+    body.append("attachment", new Blob(["x"], { type }), name);
+    return body;
+  };
+
+  const executable = await jsonRequest("/api/tasks", {
+    method: "POST",
+    headers: authHeaders(supervisor.token),
+    body: form("tool.exe", "application/x-msdownload"),
+  });
+  assert.equal(executable.response.status, 400);
+
+  const asStudent = await jsonRequest("/api/tasks", {
+    method: "POST",
+    headers: authHeaders(studentToken),
+    body: form("brief.pdf", "application/pdf"),
+  });
+  assert.equal(asStudent.response.status, 403);
+
+  const unknownTask = await jsonRequest("/api/tasks/0", {
+    method: "PUT",
+    headers: authHeaders(supervisor.token),
+    body: (() => {
+      const body = form("brief.pdf", "application/pdf");
+      body.append("priority", "Low");
+      return body;
+    })(),
+  });
+  assert.equal(unknownTask.response.status, 404);
+
+  const mine = await jsonRequest(`/api/tasks/student/${student.student_id}`, {
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(mine.response.status, 200);
+  assert.ok(mine.body.every((task) => "attachment_file" in task && "attachment_name" in task));
+});
+
+test("review undo routes are supervisor-only and refuse what cannot be undone", async () => {
+  const supervisor = await supervisorSession();
+
+  for (const path of ["/api/tasks/0/review/undo", "/api/documents/0/review/undo"]) {
+    const asStudent = await jsonRequest(path, { method: "POST", headers: authHeaders(studentToken) });
+    assert.equal(asStudent.response.status, 403);
+
+    const nothingToUndo = await jsonRequest(path, {
+      method: "POST",
+      headers: authHeaders(supervisor.token),
+    });
+    assert.equal(nothingToUndo.response.status, 409);
+  }
+
+  const notANumber = await jsonRequest("/api/tasks/abc/review/undo", {
+    method: "POST",
+    headers: authHeaders(supervisor.token),
+  });
+  assert.equal(notANumber.response.status, 404);
+
+  const absenceUndo = await jsonRequest(
+    "/api/absences/0/review",
+    jsonBody(supervisor.token, "PATCH", { status: "Pending" })
+  );
+  assert.equal(absenceUndo.response.status, 404);
+});
+
+test("a supervisor only reaches their own interns' schedule, incidents and evaluations", async () => {
+  const supervisor = await supervisorSession();
+
+  const schedule = await jsonRequest(
+    `/api/supervisor/interns/${student.student_id}/schedule`,
+    { headers: authHeaders(supervisor.token) }
+  );
+  assert.equal(schedule.response.status, 200);
+  assert.ok(Array.isArray(schedule.body.schedule));
+
+  const stranger = await jsonRequest("/api/supervisor/interns/no-such-student/schedule", {
+    headers: authHeaders(supervisor.token),
+  });
+  assert.equal(stranger.response.status, 403);
+
+  const asStudent = await jsonRequest(
+    `/api/supervisor/interns/${student.student_id}/schedule`,
+    { headers: authHeaders(studentToken) }
+  );
+  assert.equal(asStudent.response.status, 403);
+
+  const incident = new FormData();
+  incident.append("reported_student_id", "no-such-student");
+  incident.append("category", "Other");
+  incident.append("description", "About a student who is not this supervisor's intern.");
+  const foreignIncident = await jsonRequest("/api/complaints/supervisor", {
+    method: "POST",
+    headers: authHeaders(supervisor.token),
+    body: incident,
+  });
+  assert.equal(foreignIncident.response.status, 403);
+
+  const badRating = await jsonRequest(
+    "/api/evaluations/0",
+    jsonBody(supervisor.token, "PUT", { rating: 9 })
+  );
+  assert.equal(badRating.response.status, 400);
+
+  const notMine = await jsonRequest(
+    "/api/evaluations/0",
+    jsonBody(supervisor.token, "PUT", { rating: 4 })
+  );
+  assert.equal(notMine.response.status, 404);
+
+  const studentEdit = await jsonRequest(
+    "/api/evaluations/0",
+    jsonBody(studentToken, "PUT", { rating: 4 })
+  );
+  assert.equal(studentEdit.response.status, 403);
+
+  const removeMissing = await jsonRequest("/api/evaluations/0", {
+    method: "DELETE",
+    headers: authHeaders(supervisor.token),
+  });
+  assert.equal(removeMissing.response.status, 404);
+});
+
+test("a supervisor who still has active interns cannot be deactivated", async () => {
+  const supervisor = await supervisorSession();
+  const id = supervisor.supervisor.supervisor_id;
+
+  const refused = await jsonRequest(
+    `/api/coordinator/supervisors/${id}/status`,
+    jsonBody(coordinatorToken, "PATCH", { is_active: false })
+  );
+  assert.equal(refused.response.status, 409);
+  assert.match(refused.body.message, /active intern/);
+
+  // The account is untouched: its session still works.
+  const stillActive = await jsonRequest(`/api/supervisor/${id}/interns`, {
+    headers: authHeaders(supervisor.token),
+  });
+  assert.equal(stillActive.response.status, 200);
+});
+
+test("student and supervisor edits validate hours, supervisors and duplicate emails", async () => {
+  const supervisor = await supervisorSession();
+  const path = `/api/coordinator/students/${student.student_id}`;
+
+  for (const required_hours of [-1, "many", 99999]) {
+    const refused = await jsonRequest(path, jsonBody(coordinatorToken, "PUT", { required_hours }));
+    assert.equal(refused.response.status, 400);
+  }
+
+  const unknownSupervisor = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "PUT", { supervisor_id: "no-such-supervisor" })
+  );
+  assert.equal(unknownSupervisor.response.status, 400);
+
+  const duplicateEmail = await jsonRequest(
+    `/api/coordinator/supervisors/${supervisor.supervisor.supervisor_id}`,
+    jsonBody(coordinatorToken, "PUT", { email: supervisor.supervisor.email })
+  );
+  // Saving an account's own email back is not a duplicate.
+  assert.equal(duplicateEmail.response.status, 200);
+
+  const badHoursOnCreate = await jsonRequest(
+    "/api/coordinator/students",
+    jsonBody(coordinatorToken, "POST", {
+      student_id: "T-HOURS",
+      email: "t.hours@example.com",
+      password: "TemporaryPass123!",
+      name: "Bad Hours",
+      required_hours: -20,
+    })
+  );
+  assert.equal(badHoursOnCreate.response.status, 400);
+});
+
+test("the coordinator dashboard count matches the flagged list", async () => {
+  const [dashboard, flagged] = await Promise.all([
+    jsonRequest("/api/coordinator/dashboard", { headers: authHeaders(coordinatorToken) }),
+    jsonRequest("/api/coordinator/discrepancies", { headers: authHeaders(coordinatorToken) }),
+  ]);
+  assert.equal(dashboard.response.status, 200);
+  assert.equal(flagged.response.status, 200);
+  if (flagged.body.discrepancies.length < 300) {
+    assert.equal(dashboard.body.flaggedAttendance, flagged.body.discrepancies.length);
+  }
+});
+
+test("student records, reassignment and settling are coordinator-only and validated", async () => {
+  const supervisor = await supervisorSession();
+  const id = supervisor.supervisor.supervisor_id;
+
+  const overview = await jsonRequest(
+    `/api/coordinator/students/${student.student_id}/overview`,
+    { headers: authHeaders(coordinatorToken) }
+  );
+  assert.equal(overview.response.status, 200);
+  assert.equal(overview.body.student.student_id, student.student_id);
+  assert.ok(!("password" in overview.body.student));
+  for (const key of ["attendance", "tasks", "documents", "evaluations", "absences", "schedule"]) {
+    assert.ok(Array.isArray(overview.body[key]), key);
+  }
+
+  const asSupervisor = await jsonRequest(
+    `/api/coordinator/students/${student.student_id}/overview`,
+    { headers: authHeaders(supervisor.token) }
+  );
+  assert.equal(asSupervisor.response.status, 403);
+
+  const sameSupervisor = await jsonRequest(
+    `/api/coordinator/supervisors/${id}/reassign`,
+    jsonBody(coordinatorToken, "POST", { to: id })
+  );
+  assert.equal(sameSupervisor.response.status, 400);
+
+  const unknownTarget = await jsonRequest(
+    `/api/coordinator/supervisors/${id}/reassign`,
+    jsonBody(coordinatorToken, "POST", { to: "no-such-supervisor" })
+  );
+  assert.equal(unknownTarget.response.status, 400);
+
+  const supervisorMoves = await jsonRequest(
+    `/api/coordinator/supervisors/${id}/reassign`,
+    jsonBody(supervisor.token, "POST", { to: "anyone" })
+  );
+  assert.equal(supervisorMoves.response.status, 403);
+
+  const nothingToSettle = await jsonRequest(
+    "/api/coordinator/attendance/0/acknowledge",
+    jsonBody(coordinatorToken, "POST", {})
+  );
+  assert.equal(nothingToSettle.response.status, 409);
+
+  const supervisorSettles = await jsonRequest(
+    "/api/coordinator/attendance/0/acknowledge",
+    jsonBody(supervisor.token, "POST", {})
+  );
+  assert.equal(supervisorSettles.response.status, 403);
+
+  const withdrawMissing = await jsonRequest("/api/coordinator/announcements/0", {
+    method: "DELETE",
+    headers: authHeaders(coordinatorToken),
+  });
+  assert.equal(withdrawMissing.response.status, 404);
+
+  const companies = await jsonRequest("/api/coordinator/companies", {
+    headers: authHeaders(coordinatorToken),
+  });
+  assert.equal(companies.response.status, 200);
+  assert.ok(Array.isArray(companies.body.companies));
+
+  // The demo student has an active supervisor, so the coordinator does not
+  // review their documents.
+  const coordinatorReview = await jsonRequest(
+    "/api/documents/999999999/review",
+    jsonBody(coordinatorToken, "PATCH", { status: "Approved" })
+  );
+  assert.equal(coordinatorReview.response.status, 404);
+});
+
+test("the account wipe refuses requests it should not act on", async () => {
+  const path = "/api/coordinator/accounts/wipe";
+  const target = { student_ids: ["no-such-student"], supervisor_ids: [] };
+
+  const anonymous = await jsonRequest(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...target, password: coordinatorPassword }),
+  });
+  assert.equal(anonymous.response.status, 401);
+
+  const asStudent = await jsonRequest(
+    path,
+    jsonBody(studentToken, "POST", { ...target, password: studentPassword })
+  );
+  assert.equal(asStudent.response.status, 403);
+
+  const wrongPassword = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "POST", { ...target, password: "not-the-password" })
+  );
+  assert.equal(wrongPassword.response.status, 401);
+
+  const nothingSelected = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "POST", { password: coordinatorPassword })
+  );
+  assert.equal(nothingSelected.response.status, 400);
+
+  const unknownAccount = await jsonRequest(
+    path,
+    jsonBody(coordinatorToken, "POST", { ...target, password: coordinatorPassword })
+  );
+  assert.equal(unknownAccount.response.status, 404);
+});
+
+test("time-in is refused without a passed camera check", async () => {
+  const photo = () => new Blob([Buffer.from("not really a photo")], { type: "image/jpeg" });
+  const timeIn = (extra = {}) => {
+    const form = new FormData();
+    form.set("student_id", student.student_id);
+    form.set("image", photo(), "attendance.jpg");
+    for (const [key, value] of Object.entries(extra)) form.set(key, value);
+    return jsonRequest("/api/attendance", {
+      method: "POST",
+      headers: authHeaders(studentToken),
+      body: form,
+    });
+  };
+
+  // Asked first on purpose: a server too old to know this route would also
+  // accept the photo below and record a real time-in, so stop here instead.
+  const challenge = await jsonRequest("/api/attendance/liveness-challenge", {
+    method: "POST",
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(
+    challenge.response.status,
+    200,
+    "the server under test predates the camera check; restart it with the current code"
+  );
+
+  const noTicket = await timeIn();
+  assert.equal(noTicket.response.status, 400);
+  assert.match(noTicket.body.message, /camera check/i);
+
+  assert.equal(challenge.body.prompts.length, 2);
+  assert.notEqual(challenge.body.prompts[0], challenge.body.prompts[1]);
+  assert.equal(challenge.body.prompts.includes(challenge.body.spare), false);
+
+  // A ticket alone is not enough: the report must cover every prompt on it.
+  const onePrompt = await timeIn({
+    liveness_ticket: challenge.body.ticket,
+    liveness_report: JSON.stringify({ completed: [challenge.body.prompts[0]], flash: "passed" }),
+  });
+  assert.equal(onePrompt.response.status, 400);
+
+  // When the light check was not conclusive, the spare prompt is required too.
+  const noSpare = await timeIn({
+    liveness_ticket: challenge.body.ticket,
+    liveness_report: JSON.stringify({ completed: challenge.body.prompts, flash: "inconclusive" }),
+  });
+  assert.equal(noSpare.response.status, 400);
+
+  // A sign-in token is not a camera-check ticket.
+  const wrongTicket = await timeIn({
+    liveness_ticket: studentToken,
+    liveness_report: JSON.stringify({ completed: challenge.body.prompts, flash: "passed" }),
+  });
+  assert.equal(wrongTicket.response.status, 400);
+});
+
+test("only a supervisor can record a time-in in person, and only for their own intern", async () => {
+  const supervisor = await supervisorSession();
+  const record = (token, fields, withPhoto = true) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.set(key, value);
+    if (withPhoto) {
+      form.set("image", new Blob([Buffer.from("photo")], { type: "image/jpeg" }), "intern.jpg");
+    }
+    return jsonRequest("/api/supervisor/attendance/record", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: form,
+    });
+  };
+
+  const asStudent = await record(studentToken, {
+    student_id: student.student_id,
+    reason: "Camera not working",
+  });
+  assert.equal(asStudent.response.status, 403);
+
+  const foreign = await record(supervisor.token, {
+    student_id: "no-such-student",
+    reason: "Camera not working",
+  });
+  assert.equal(foreign.response.status, 403);
+
+  const noReason = await record(supervisor.token, { student_id: student.student_id, reason: "" });
+  assert.equal(noReason.response.status, 400);
+
+  const noPhoto = await record(
+    supervisor.token,
+    { student_id: student.student_id, reason: "Camera not working" },
+    false
+  );
+  assert.equal(noPhoto.response.status, 400);
 });

@@ -5,7 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { Pool } from "pg";
 import multer from "multer";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import path from "path";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -24,13 +24,14 @@ import {
   startPostgresNotificationListener,
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
+import { registerExtensionRoutes } from "./routes/extensions";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
 // displayed time by eight hours.
-if (!process.env.TZ) {
-  process.env.TZ = "Asia/Manila";
-}
+// Set unconditionally: a host that presets TZ (for example to UTC) would
+// otherwise shift them just the same.
+process.env.TZ = "Asia/Manila";
 
 const app = express();
 
@@ -160,12 +161,47 @@ function isWebPushConfigured(): boolean {
   return Boolean(vapidPublicKey && vapidPrivateKey && vapidSubject);
 }
 
+// The page a tapped push notification opens, by recipient and subject, so
+// the tap lands on the thing the notification is about.
+const pushTargets: Record<
+  "coordinator" | "student" | "supervisor",
+  { fallback: string; byType: Record<string, string> }
+> = {
+  student: {
+    fallback: "/notifications",
+    byType: {
+      attendance: "/daily-log",
+      task: "/task",
+      document: "/documents",
+      schedule: "/schedule",
+    },
+  },
+  supervisor: {
+    fallback: "/supervisor/notifications",
+    byType: {
+      attendance: "/supervisor/attendance",
+      task: "/supervisor/tasks",
+      document: "/supervisor/documents",
+      complaint: "/supervisor/complaints",
+    },
+  },
+  coordinator: {
+    fallback: "/coordinator/dashboard",
+    byType: {
+      attendance: "/coordinator/monitoring",
+      document: "/coordinator/documents",
+      complaint: "/coordinator/complaints",
+    },
+  },
+};
+
 async function sendWebPush(
   recipient: { role: "coordinator" | "student" | "supervisor"; id: string },
   notification: {
     title: string;
     message: string;
     id: number;
+    type?: string;
   }
 ): Promise<void> {
   const result = await pool.query<{ id: number; subscription: webpush.PushSubscription }>(
@@ -182,9 +218,8 @@ async function sendWebPush(
             body: notification.message,
             notificationId: notification.id,
             url:
-              recipient.role === "student"
-                ? "/notifications"
-                : `/${recipient.role}/dashboard`,
+              pushTargets[recipient.role].byType[notification.type || ""] ||
+              pushTargets[recipient.role].fallback,
           }),
           { TTL: 86400 }
         );
@@ -363,22 +398,24 @@ app.post("/api/auth/password-reset/request", async (req, res) => {
 
   const resetUrl = new URL("/reset-password", frontendUrl);
   resetUrl.searchParams.set("token", rawToken);
-  try {
-    await sendEmail({
-      to: found.rows[0].email,
-      subject: "Reset your INTERNet account password",
-      text: `Hello ${found.rows[0].name},\n\nUse this link within 30 minutes to set a new password:\n${resetUrl.href}\n\nIf you did not request this, ignore this message.`,
-    });
-  } catch (error) {
-    await pool.query(
-      "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1",
-      [tokenHash]
-    );
+  // The email goes out after the reply. Waiting for the mail server here
+  // made a known address answer slower than (and, on a mail failure,
+  // differently from) an unknown one, which told a caller which emails exist.
+  void sendEmail({
+    to: found.rows[0].email,
+    subject: "Reset your INTERNet account password",
+    text: `Hello ${found.rows[0].name},\n\nUse this link within 30 minutes to set a new password:\n${resetUrl.href}\n\nIf you did not request this, ignore this message.`,
+  }).catch(async (error) => {
     console.error("SEND PASSWORD RESET EMAIL ERROR:", error);
-    return res.status(503).json({
-      message: "Password recovery email could not be sent. Please try again later.",
-    });
-  }
+    await pool
+      .query(
+        "UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1",
+        [tokenHash]
+      )
+      .catch((cleanupError) =>
+        console.error("EXPIRE UNSENT RESET TOKEN ERROR:", cleanupError)
+      );
+  });
 
   return res.json({ message: genericResetMessage });
 });
@@ -480,7 +517,8 @@ function passwordChangeBlocks(
   return (
     ENFORCE_PASSWORD_CHANGE &&
     mustChangePassword === true &&
-    !PASSWORD_CHANGE_PATH.test(req.path)
+    !PASSWORD_CHANGE_PATH.test(req.path) &&
+    req.path !== "/api/logout"
   );
 }
 
@@ -677,21 +715,55 @@ function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
 
     const identifier = req.body?.email;
     if (!identifier || typeof identifier !== "string") return next();
-    const key = loginAttemptKey(role, identifier);
+    const tooMany = (lockedUntil: Date) =>
+      res.status(429).json({
+        message: `Too many failed login attempts. Try again in ${Math.max(
+          1,
+          Math.ceil((new Date(lockedUntil).getTime() - Date.now()) / 60000)
+        )} minute(s) or reset your password.`,
+      });
 
+    let key = loginAttemptKey(role, identifier);
     try {
-      const state = await pool.query<{ locked_until: Date | null }>(
-        `SELECT locked_until FROM login_attempts WHERE key_hash = $1`,
-        [key]
+      // Count against the account, not the text typed: a student's email
+      // and student ID are the same login and share one allowance.
+      const { table, idColumn } = accountTables[role];
+      const account = await pool.query<{ id: string }>(
+        `SELECT ${idColumn} AS id FROM ${table}
+         WHERE LOWER(email) = LOWER(TRIM($1))
+            ${role === "student" ? `OR ${idColumn}::text = TRIM($1)` : ""}
+         LIMIT 1`,
+        [identifier]
+      );
+      if (account.rows[0]) key = loginAttemptKey(role, account.rows[0].id);
+
+      // The attempt is counted before the password is checked, so a burst
+      // of parallel guesses cannot all slip in ahead of the lock.
+      const state = await pool.query<{ failures: number; locked_until: Date | null }>(
+        `
+        INSERT INTO login_attempts (key_hash, window_start, failures)
+        VALUES ($1, NOW(), 1)
+        ON CONFLICT (key_hash) DO UPDATE SET
+          failures = CASE
+            WHEN login_attempts.locked_until > NOW() THEN login_attempts.failures
+            WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
+            THEN 1 ELSE login_attempts.failures + 1 END,
+          window_start = CASE
+            WHEN login_attempts.locked_until > NOW() THEN login_attempts.window_start
+            WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
+            THEN NOW() ELSE login_attempts.window_start END,
+          locked_until = CASE
+            WHEN login_attempts.locked_until > NOW() THEN login_attempts.locked_until
+            WHEN login_attempts.window_start >= NOW() - make_interval(mins => $2)
+             AND login_attempts.failures + 1 > $3
+            THEN NOW() + make_interval(mins => $4) ELSE NULL END
+        RETURNING failures, locked_until
+        `,
+        [key, LOGIN_WINDOW_MINUTES, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
       );
       const lockedUntil = state.rows[0]?.locked_until;
       if (lockedUntil && new Date(lockedUntil).getTime() > Date.now()) {
-        const minutes = Math.ceil(
-          (new Date(lockedUntil).getTime() - Date.now()) / 60000
-        );
-        return res.status(429).json({
-          message: `Too many failed login attempts. Try again in ${minutes} minute(s) or reset your password.`,
-        });
+        return tooMany(lockedUntil);
       }
     } catch (error) {
       console.error("LOGIN THROTTLE CHECK ERROR:", error);
@@ -700,28 +772,23 @@ function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
     res.on("finish", () => {
       const query =
         res.statusCode === 401
-          ? pool.query(
-              `
-              INSERT INTO login_attempts (key_hash, window_start, failures)
-              VALUES ($1, NOW(), 1)
-              ON CONFLICT (key_hash) DO UPDATE SET
-                failures = CASE
-                  WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
-                  THEN 1 ELSE login_attempts.failures + 1 END,
-                window_start = CASE
-                  WHEN login_attempts.window_start < NOW() - make_interval(mins => $2)
-                  THEN NOW() ELSE login_attempts.window_start END,
-                locked_until = CASE
-                  WHEN login_attempts.window_start >= NOW() - make_interval(mins => $2)
-                   AND login_attempts.failures + 1 >= $3
-                  THEN NOW() + make_interval(mins => $4) ELSE NULL END
-              `,
-              [key, LOGIN_WINDOW_MINUTES, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
+          ? // The failure that uses up the allowance starts the lock.
+            pool.query(
+              `UPDATE login_attempts
+               SET locked_until = NOW() + make_interval(mins => $3)
+               WHERE key_hash = $1 AND failures >= $2 AND locked_until IS NULL`,
+              [key, LOGIN_MAX_FAILURES, LOGIN_LOCK_MINUTES]
             )
           : res.statusCode === 200
             ? pool.query(`DELETE FROM login_attempts WHERE key_hash = $1`, [key])
-            : null;
-      query?.catch((error) => {
+            : // Not a wrong password (bad request, deactivated, server
+              // error): give the counted attempt back.
+              pool.query(
+                `UPDATE login_attempts SET failures = GREATEST(failures - 1, 0)
+                 WHERE key_hash = $1 AND locked_until IS NULL`,
+                [key]
+              );
+      query.catch((error) => {
         console.error("LOGIN THROTTLE RECORD ERROR:", error);
       });
     });
@@ -757,6 +824,15 @@ function signToken(
     JWT_SECRET,
     { expiresIn: "12h" }
   );
+}
+
+// A token handed back at sign-out is refused from then on, even though its
+// signature stays valid until it expires.
+const REVOKED_TOKEN_SQL =
+  "EXISTS (SELECT 1 FROM revoked_tokens WHERE token_hash = $2)";
+
+function tokenHash(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
 }
 
 /**
@@ -804,9 +880,11 @@ async function requireCoordinator(
     account = await pool.query<{
       auth_version: number;
       must_change_password: boolean;
+      revoked: boolean;
     }>(
-      "SELECT auth_version, must_change_password FROM coordinators WHERE coordinator_id = $1 AND is_active = TRUE",
-      [payload.id]
+      `SELECT auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked
+       FROM coordinators WHERE coordinator_id = $1 AND is_active = TRUE`,
+      [payload.id, tokenHash(token)]
     );
   } catch (error) {
     console.error("COORDINATOR ACCOUNT CHECK ERROR:", error);
@@ -817,6 +895,7 @@ async function requireCoordinator(
 
   if (
     account.rows.length === 0 ||
+    account.rows[0].revoked ||
     Number(payload.authVersion ?? 0) !== Number(account.rows[0].auth_version)
   ) {
     return res
@@ -879,22 +958,24 @@ function requireRole(
       AuthRole,
       string
     > = {
-      student: "SELECT is_active, auth_version, must_change_password FROM students WHERE student_id = $1",
-      supervisor: "SELECT is_active, auth_version, must_change_password FROM supervisors WHERE supervisor_id = $1",
-      coordinator: "SELECT is_active, auth_version, must_change_password FROM coordinators WHERE coordinator_id = $1",
+      student: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM students WHERE student_id = $1`,
+      supervisor: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM supervisors WHERE supervisor_id = $1`,
+      coordinator: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM coordinators WHERE coordinator_id = $1`,
     };
     try {
       const account = await pool.query<{
         is_active: boolean;
         auth_version: number;
         must_change_password: boolean;
+        revoked: boolean;
       }>(
         accountQueries[tokenRole],
-        [payload.id]
+        [payload.id, tokenHash(token)]
       );
       if (
         account.rows.length === 0 ||
         account.rows[0].is_active === false ||
+        account.rows[0].revoked ||
         Number(payload.authVersion ?? 0) !== Number(account.rows[0].auth_version)
       ) {
         return res.status(403).json({
@@ -988,6 +1069,105 @@ async function createNotification(options: {
   }
 }
 
+/**
+ * Keeps a student's completion date in step with their verified hours.
+ * The first time the hours reach the requirement, the student and the
+ * coordinators are told; if a later correction takes the hours back under
+ * the requirement, the completion date is cleared.
+ */
+async function syncCompletion(studentId: string): Promise<void> {
+  try {
+    const result = await pool.query<{
+      name: string;
+      required_hours: number;
+      completed_at: Date | null;
+      hours: string;
+    }>(
+      `
+      SELECT s.name, s.required_hours, s.completed_at,
+             (
+               SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
+               WHERE a.student_id = s.student_id AND a.status = 'Verified'
+             ) AS hours
+      FROM students s WHERE s.student_id = $1
+      `,
+      [studentId]
+    );
+    const student = result.rows[0];
+    if (!student || !(Number(student.required_hours) > 0)) return;
+
+    const reached = Number(student.hours) >= Number(student.required_hours);
+    if (reached && !student.completed_at) {
+      await pool.query(
+        `UPDATE students SET completed_at = NOW() WHERE student_id = $1`,
+        [studentId]
+      );
+      await createNotification({
+        studentId,
+        title: "Required OJT hours completed",
+        message: `You have completed your ${student.required_hours} required hours. Make sure your documents and tasks are also complete.`,
+        type: "attendance",
+      });
+      await notifyCoordinators({
+        title: "Student completed required hours",
+        message: `${student.name} has completed their ${student.required_hours} required OJT hours.`,
+        type: "attendance",
+      });
+    } else if (!reached && student.completed_at) {
+      await pool.query(
+        `UPDATE students SET completed_at = NULL WHERE student_id = $1`,
+        [studentId]
+      );
+    }
+  } catch (error) {
+    // Bookkeeping must never undo the attendance decision that triggered it.
+    console.error("SYNC COMPLETION ERROR:", error);
+  }
+}
+
+/**
+ * Stops a deactivated account from hearing anything further: its open live
+ * streams are closed and its devices no longer receive push notifications.
+ */
+async function cutOffAccount(
+  role: "student" | "supervisor",
+  accountId: string
+): Promise<void> {
+  closeNotificationStreams({ role, id: accountId });
+  try {
+    await pool.query(
+      `DELETE FROM web_push_subscriptions WHERE role = $1 AND account_id = $2`,
+      [role, accountId]
+    );
+  } catch (error) {
+    console.error("REMOVE PUSH SUBSCRIPTIONS ERROR:", error);
+  }
+}
+
+/** Sends the same notification to every active coordinator. */
+async function notifyCoordinators(notification: {
+  title: string;
+  message: string;
+  type?: string;
+}): Promise<void> {
+  try {
+    const coordinators = await pool.query<{ coordinator_id: string }>(
+      `SELECT coordinator_id FROM coordinators WHERE is_active = TRUE`
+    );
+    await Promise.all(
+      coordinators.rows.map((row) =>
+        createNotification({
+          coordinatorId: String(row.coordinator_id),
+          ...notification,
+        })
+      )
+    );
+  } catch (error) {
+    // A notification failure must never undo the action that caused it.
+    console.error("NOTIFY COORDINATORS ERROR:", error);
+  }
+}
+
 app.get(
   "/api/events",
   requireRole(["coordinator", "student", "supervisor"]),
@@ -1007,6 +1187,56 @@ app.get(
     response.flushHeaders();
     const disconnect = registerNotificationStream(auth, response);
     request.on("close", disconnect);
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SIGN OUT
+|--------------------------------------------------------------------------
+|
+| Ends this device's session on the server: the token is refused from now
+| on and, when the browser sends its push endpoint, that device stops
+| receiving the account's notifications. Other devices stay signed in.
+|
+*/
+
+app.post(
+  "/api/logout",
+  requireRole(["coordinator", "student", "supervisor"]),
+  async (request, response) => {
+    const auth = (request as AuthedRequest).auth;
+    const token = (request.headers.authorization || "").slice(7);
+    const endpoint = request.body?.endpoint;
+    if (!auth || !token) {
+      return response.status(401).json({ message: "Login is required." });
+    }
+
+    try {
+      const decoded = jwt.decode(token);
+      const expiresAt =
+        typeof decoded === "object" && decoded?.exp
+          ? new Date(decoded.exp * 1000)
+          : new Date(Date.now() + 12 * 3_600_000);
+      await pool.query(
+        `INSERT INTO revoked_tokens(token_hash, expires_at) VALUES ($1, $2)
+         ON CONFLICT (token_hash) DO NOTHING`,
+        [tokenHash(token), expiresAt]
+      );
+      // Expired tokens are refused by their signature; their rows can go.
+      await pool.query(`DELETE FROM revoked_tokens WHERE expires_at < NOW()`);
+      if (typeof endpoint === "string" && endpoint) {
+        await pool.query(
+          `DELETE FROM web_push_subscriptions
+           WHERE role = $1 AND account_id = $2 AND endpoint = $3`,
+          [auth.role, auth.id, endpoint]
+        );
+      }
+      return response.json({ message: "Signed out." });
+    } catch (error) {
+      console.error("LOGOUT ERROR:", error);
+      return response.status(500).json({ message: "Could not sign out." });
+    }
   }
 );
 
@@ -1101,16 +1331,11 @@ const upload = multer({
   },
 
   fileFilter: (_req, file, cb) => {
-    const allowedTypes = [
-      "image/jpeg",
-      "image/jpg",
-      "image/png",
-      "application/pdf",
-      "application/msword",
-      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    ];
+    // The file is stored under its own extension, so the extension must be
+    // an allowed one and agree with the declared type.
+    const extension = path.extname(file.originalname).toLowerCase();
 
-    if (allowedTypes.includes(file.mimetype)) {
+    if (documentMimeTypes[extension] === file.mimetype) {
       cb(null, true);
     } else {
       cb(
@@ -1226,8 +1451,8 @@ app.post(
             auth_version,
             must_change_password
           FROM students
-          WHERE email = $1
-          OR student_id::text = $1
+          WHERE LOWER(email) = LOWER(TRIM($1))
+          OR student_id::text = TRIM($1)
           `,
           [
             email,
@@ -1340,7 +1565,7 @@ app.post(
             auth_version,
             must_change_password
           FROM supervisors
-          WHERE email = $1
+          WHERE LOWER(email) = LOWER(TRIM($1))
           `,
           [
             email,
@@ -1544,7 +1769,9 @@ app.get(
             review_notes,
             review_rating,
             reviewed_at,
-            created_at
+            created_at,
+            attachment_file,
+            attachment_name
           FROM tasks
           WHERE student_id = $1
           ORDER BY due_date ASC
@@ -1620,7 +1847,10 @@ app.get(
             image_url,
             review_notes,
             verified_by,
-            verified_at
+            verified_at,
+            correction_note,
+            corrected_at,
+            capture_method
           FROM attendance
           WHERE student_id = $1
           ORDER BY
@@ -1649,6 +1879,131 @@ app.get(
             : String(error),
       });
     }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| CAMERA CHECK (LIVENESS)
+|--------------------------------------------------------------------------
+|
+| A time-in photo used to be any file the student chose. Now the app's
+| camera has to see a live face follow a few prompts before it takes the
+| photo itself. The prompts are picked here, at random, and handed out in a
+| short-lived signed ticket, so a recording made earlier will not match
+| them. The time-in below is refused without a ticket and a report saying
+| every prompt in it was completed.
+|
+| The check itself runs on the student's device, so this is a strong
+| deterrent rather than proof: the supervisor still sees the photo and
+| verifies the day.
+|
+*/
+
+const LIVENESS_PROMPTS = ["blink", "smile", "turn-left", "turn-right"] as const;
+type LivenessPrompt = (typeof LIVENESS_PROMPTS)[number];
+const LIVENESS_TICKET_MINUTES = 10;
+
+function isLivenessPrompt(value: unknown): value is LivenessPrompt {
+  return LIVENESS_PROMPTS.includes(value as LivenessPrompt);
+}
+
+/** Two different prompts, plus a spare used when the light check is unclear. */
+function pickLivenessPrompts(): { prompts: LivenessPrompt[]; spare: LivenessPrompt } {
+  const shuffled = [...LIVENESS_PROMPTS];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const other = randomInt(index + 1);
+    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+  }
+  return { prompts: shuffled.slice(0, 2), spare: shuffled[2] };
+}
+
+type LivenessReport = {
+  completed: LivenessPrompt[];
+  flash: "passed" | "inconclusive" | "skipped";
+  sharpness: number | null;
+  duration_ms: number | null;
+  attempts: number | null;
+};
+
+/**
+ * Checks a time-in's ticket and report. Returns the report to store, or the
+ * reason the time-in is refused.
+ */
+function readLivenessReport(
+  studentId: string,
+  ticket: unknown,
+  rawReport: unknown
+): { report: LivenessReport } | { problem: string } {
+  const refusal = {
+    problem:
+      "Finish the camera check to time in. If it will not work on your device, ask your supervisor to record your time-in.",
+  };
+  if (typeof ticket !== "string" || !ticket) return refusal;
+
+  let claims: jwt.JwtPayload;
+  try {
+    const payload = jwt.verify(ticket, JWT_SECRET);
+    if (typeof payload === "string") return refusal;
+    claims = payload;
+  } catch {
+    return {
+      problem: "The camera check expired. Run it again to time in.",
+    };
+  }
+  if (claims.purpose !== "liveness" || claims.sub !== studentId) return refusal;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(typeof rawReport === "string" ? rawReport : "");
+  } catch {
+    return refusal;
+  }
+  if (!parsed || typeof parsed !== "object") return refusal;
+
+  const completed = Array.isArray(parsed.completed)
+    ? parsed.completed.filter(isLivenessPrompt)
+    : [];
+  const flash =
+    parsed.flash === "passed" || parsed.flash === "skipped" ? parsed.flash : "inconclusive";
+
+  // Every prompt on the ticket must be done; when the light check did not
+  // clearly pass, the spare prompt is required as well.
+  const required: unknown[] = Array.isArray(claims.prompts) ? [...claims.prompts] : [];
+  if (flash !== "passed") required.push(claims.spare);
+  if (required.length < 2 || !required.every((prompt) => completed.includes(prompt as LivenessPrompt))) {
+    return refusal;
+  }
+
+  const number = (value: unknown, max: number) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? Math.min(max, Math.round(value * 100) / 100)
+      : null;
+
+  return {
+    report: {
+      completed: [...new Set(completed)],
+      flash,
+      sharpness: number(parsed.sharpness, 100_000),
+      duration_ms: number(parsed.duration_ms, 600_000),
+      attempts: number(parsed.attempts, 20),
+    },
+  };
+}
+
+app.post(
+  "/api/attendance/liveness-challenge",
+  requireRole("student"),
+  (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth) return res.status(401).json({ message: "Sign in again." });
+
+    const { prompts, spare } = pickLivenessPrompts();
+    const ticket = jwt.sign({ purpose: "liveness", prompts, spare }, JWT_SECRET, {
+      subject: auth.id,
+      expiresIn: `${LIVENESS_TICKET_MINUTES}m`,
+    });
+    return res.json({ ticket, prompts, spare });
   }
 );
 
@@ -1692,6 +2047,16 @@ app.post(
         return res.status(400).json({
           message: "Attendance photo must be a JPG or PNG image.",
         });
+      }
+
+      // The photo must come from the in-app camera check, not a chosen file.
+      const liveness = readLivenessReport(
+        String(student_id),
+        req.body.liveness_ticket,
+        req.body.liveness_report
+      );
+      if ("problem" in liveness) {
+        return res.status(400).json({ message: liveness.problem });
       }
 
       /*
@@ -1817,7 +2182,9 @@ app.post(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            capture_method,
+            liveness_checks
           )
           VALUES
           (
@@ -1830,7 +2197,9 @@ app.post(
             NULL,
             $2,
             'Pending',
-            $3
+            $3,
+            'liveness',
+            $4::jsonb
           )
           RETURNING
             id,
@@ -1846,12 +2215,14 @@ app.post(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            capture_method
           `,
           [
             student_id,
             cleanNote,
             imageUrl,
+            JSON.stringify(liveness.report),
           ]
         );
 
@@ -2128,12 +2499,34 @@ app.put(
                 2
               ),
               0
-            )
+            ),
+
+            -- A time-in the supervisor recorded in person was approved by them
+            -- on the spot, so the finished day needs no second review.
+            status = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN 'Verified' ELSE status
+            END,
+            verified_by = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN recorded_by ELSE verified_by
+            END,
+            verifier_role = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN 'supervisor' ELSE verifier_role
+            END,
+            verified_at = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN NOW() ELSE verified_at
+            END
 
           WHERE id = $1
           AND student_id = $2
           AND time_out IS NULL
           AND time_in IS NOT NULL
+          -- A log left open from an earlier day is closed through the
+          -- missed time-out route, which asks for the real time and a reason.
+          AND time_in > NOW() - make_interval(hours => $3)
 
           RETURNING
             id,
@@ -2149,18 +2542,71 @@ app.put(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            capture_method
           `,
-          [id, auth?.id]
+          [id, auth?.id, MAX_SHIFT_HOURS]
         );
 
       if (
         result.rows.length === 0
       ) {
+        const stale = await pool.query(
+          `SELECT 1 FROM attendance
+           WHERE id = $1 AND student_id = $2 AND time_out IS NULL`,
+          [id, auth?.id]
+        );
+        if (stale.rows.length > 0) {
+          return res.status(409).json({
+            message: `This log was left open for more than ${MAX_SHIFT_HOURS} hours. Enter the time you actually left as a missed time-out instead.`,
+          });
+        }
         return res.status(404).json({
           message:
             "Attendance record not found or time-out was already recorded.",
         });
+      }
+
+      // A day the supervisor recorded in person is already verified: count its
+      // hours and tell the student, instead of asking the supervisor again.
+      if (
+        result.rows[0].capture_method === "supervisor" &&
+        result.rows[0].status === "Verified"
+      ) {
+        try {
+          await syncCompletion(String(result.rows[0].student_id));
+          await createNotification({
+            studentId: result.rows[0].student_id,
+            title: "Attendance verified",
+            message: `Your attendance for ${result.rows[0].date} was verified. Your supervisor recorded your time-in in person.`,
+            type: "attendance",
+          });
+        } catch (notifyError) {
+          console.error("TIME-OUT AUTO-VERIFY FOLLOW-UP ERROR:", notifyError);
+        }
+        return res.json({
+          message: "Time-out recorded successfully.",
+          attendance: result.rows[0],
+        });
+      }
+
+      // The supervisor was told at time-in; the log only becomes verifiable
+      // now, so tell them again. A failure here must not undo the time-out.
+      try {
+        const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+          `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+          [result.rows[0].student_id]
+        );
+        if (owner.rows[0]?.supervisor_id) {
+          await createNotification({
+            supervisorId: owner.rows[0].supervisor_id,
+            title: "Attendance log ready to verify",
+            message: `${owner.rows[0].name} timed out on ${result.rows[0].date} with ${result.rows[0].hours} hours.`,
+            type: "attendance",
+          });
+        }
+      } catch (notifyError) {
+        console.error("TIME-OUT SUPERVISOR NOTIFICATION ERROR:", notifyError);
       }
 
       return res.json({
@@ -2182,6 +2628,307 @@ app.put(
           error instanceof Error
             ? error.message
             : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| ATTENDANCE CORRECTIONS (student)
+|--------------------------------------------------------------------------
+|
+| Two situations used to be dead ends for a student:
+|
+|  - They forgot to time out. The log stays open, can never be verified,
+|    and the ordinary time-out would record "now", days later.
+|  - Their log was rejected. One log is allowed per day, so they could not
+|    submit it again.
+|
+| Both routes put the log back in front of the supervisor as Pending, with
+| the student's explanation attached. The supervisor still decides.
+|
+*/
+
+async function notifyLogOwnerSupervisor(
+  studentId: string,
+  title: string,
+  buildMessage: (studentName: string) => string
+): Promise<void> {
+  try {
+    const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+      `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+      [studentId]
+    );
+    if (owner.rows[0]?.supervisor_id) {
+      await createNotification({
+        supervisorId: owner.rows[0].supervisor_id,
+        title,
+        message: buildMessage(owner.rows[0].name),
+        type: "attendance",
+      });
+    }
+  } catch (error) {
+    console.error("ATTENDANCE CORRECTION NOTIFICATION ERROR:", error);
+  }
+}
+
+const ATTENDANCE_COLUMNS = `
+  id,
+  student_id,
+  TO_CHAR(date, 'YYYY-MM-DD') AS date,
+  time_in,
+  break_time,
+  break_end_time,
+  time_out,
+  hours,
+  note,
+  status,
+  image_url,
+  review_notes,
+  correction_note,
+  corrected_at,
+  capture_method
+`;
+
+// A shift is never longer than this, so a typo cannot record a multi-day log.
+const MAX_SHIFT_HOURS = 16;
+
+app.put(
+  "/api/attendance/:id/late-time-out",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      const timeOut = new Date(String(req.body?.time_out || ""));
+
+      if (Number.isNaN(timeOut.getTime())) {
+        return res.status(400).json({
+          message: "Enter the time you actually left.",
+        });
+      }
+      if (reason.length < 5) {
+        return res.status(400).json({
+          message: "Explain briefly why the time-out was not recorded on the day.",
+        });
+      }
+
+      const current = await pool.query<{
+        time_in: Date;
+        break_time: Date | null;
+        break_end_time: Date | null;
+        time_out: Date | null;
+        is_past: boolean;
+      }>(
+        `SELECT time_in, break_time, break_end_time, time_out,
+                (date < CURRENT_DATE) AS is_past
+         FROM attendance WHERE id = $1 AND student_id = $2`,
+        [req.params.id, auth?.id]
+      );
+      const log = current.rows[0];
+      if (!log) {
+        return res.status(404).json({ message: "Attendance record not found." });
+      }
+      if (log.time_out) {
+        return res.status(409).json({
+          message: "This log already has a time-out.",
+        });
+      }
+      if (!log.is_past) {
+        return res.status(409).json({
+          message: "Today's log is still open. Use Time out instead.",
+        });
+      }
+
+      const lastRecorded = log.break_end_time || log.break_time || log.time_in;
+      if (timeOut.getTime() <= new Date(lastRecorded).getTime()) {
+        return res.status(400).json({
+          message: log.break_time
+            ? "The time-out must be after your break."
+            : "The time-out must be after your time-in.",
+        });
+      }
+      if (timeOut.getTime() > Date.now()) {
+        return res.status(400).json({
+          message: "The time-out cannot be in the future.",
+        });
+      }
+      if (
+        timeOut.getTime() - new Date(log.time_in).getTime() >
+        MAX_SHIFT_HOURS * 3_600_000
+      ) {
+        return res.status(400).json({
+          message: `The time-out must be within ${MAX_SHIFT_HOURS} hours of your time-in.`,
+        });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE attendance
+        SET
+          time_out = $3::timestamp,
+          -- A break still open at time-out ends then.
+          break_end_time = CASE
+            WHEN break_time IS NOT NULL THEN COALESCE(break_end_time, $3::timestamp)
+            ELSE break_end_time
+          END,
+          -- Rendered hours exclude the recorded break.
+          hours = GREATEST(
+            ROUND(
+              (
+                (
+                  EXTRACT(EPOCH FROM ($3::timestamp - time_in))
+                  - CASE
+                      WHEN break_time IS NOT NULL
+                      THEN EXTRACT(
+                        EPOCH FROM (COALESCE(break_end_time, $3::timestamp) - break_time)
+                      )
+                      ELSE 0
+                    END
+                ) / 3600.0
+              )::numeric,
+              2
+            ),
+            0
+          ),
+          status = 'Pending',
+          correction_note = $4,
+          corrected_at = NOW()
+        WHERE id = $1
+        AND student_id = $2
+        AND time_out IS NULL
+        RETURNING ${ATTENDANCE_COLUMNS}
+        `,
+        [req.params.id, auth?.id, timeOut, `Time-out entered late. ${reason}`]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({
+          message: "This log already has a time-out.",
+        });
+      }
+
+      await notifyLogOwnerSupervisor(
+        String(auth?.id),
+        "Late time-out to review",
+        (name) =>
+          `${name} entered a missed time-out for ${result.rows[0].date}. Check the time and their reason before verifying.`
+      );
+
+      return res.json({
+        message: "Time-out saved. Your supervisor will review it.",
+        attendance: result.rows[0],
+      });
+    } catch (error) {
+      console.error("LATE TIME-OUT ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to save the time-out.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+app.post(
+  "/api/attendance/:id/resubmit",
+  requireRole("student"),
+  upload.single("image"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    let saved = false;
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const explanation =
+        typeof req.body?.explanation === "string"
+          ? req.body.explanation.trim()
+          : "";
+      if (explanation.length < 5) {
+        return res.status(400).json({
+          message: "Explain what you corrected or why the log is accurate.",
+        });
+      }
+      if (
+        req.file &&
+        !["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)
+      ) {
+        return res.status(400).json({
+          message: "The replacement photo must be a JPG or PNG image.",
+        });
+      }
+
+      const current = await pool.query<{ status: string; image_url: string | null }>(
+        `SELECT status, image_url FROM attendance WHERE id = $1 AND student_id = $2`,
+        [req.params.id, auth?.id]
+      );
+      if (current.rows.length === 0) {
+        return res.status(404).json({ message: "Attendance record not found." });
+      }
+      if (current.rows[0].status !== "Rejected") {
+        return res.status(409).json({
+          message: "Only a rejected log can be sent for another review.",
+        });
+      }
+
+      let newImageUrl: string | null = null;
+      if (req.file) {
+        uploadedFileName = await savePrivateFile(req.file);
+        newImageUrl = `/uploads/${uploadedFileName}`;
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE attendance
+        SET
+          status = 'Pending',
+          correction_note = $3,
+          corrected_at = NOW(),
+          image_url = COALESCE($4, image_url),
+          -- A replacement photo is one the student chose, so the log no longer
+          -- counts as camera-checked and the reviewer is told so.
+          capture_method = CASE WHEN $4::text IS NULL THEN capture_method ELSE NULL END,
+          liveness_checks = CASE WHEN $4::text IS NULL THEN liveness_checks ELSE NULL END
+        WHERE id = $1
+        AND student_id = $2
+        AND status = 'Rejected'
+        RETURNING ${ATTENDANCE_COLUMNS}
+        `,
+        [req.params.id, auth?.id, explanation, newImageUrl]
+      );
+      if (result.rows.length === 0) {
+        throw new Error("The log changed while it was being resubmitted.");
+      }
+      saved = true;
+
+      // The replaced photo is no longer referenced by anything.
+      const oldFile = current.rows[0].image_url?.split("/").pop();
+      if (newImageUrl && oldFile) {
+        await deletePrivateFile(oldFile).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE REPLACED ATTENDANCE PHOTO:", cleanupError);
+        });
+      }
+
+      await notifyLogOwnerSupervisor(
+        String(auth?.id),
+        "Attendance log awaiting verification",
+        (name) =>
+          `${name} asked for another review of their rejected log for ${result.rows[0].date}.`
+      );
+
+      return res.json({
+        message: "Sent back to your supervisor for another review.",
+        attendance: result.rows[0],
+      });
+    } catch (error) {
+      if (uploadedFileName && !saved) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE UNUSED ATTENDANCE PHOTO:", cleanupError);
+        });
+      }
+      console.error("RESUBMIT ATTENDANCE ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to resubmit the log.",
+        error: error instanceof Error ? error.message : String(error),
       });
     }
   }
@@ -2282,7 +3029,12 @@ app.get(
             a.image_url,
             a.review_notes,
             a.verified_by,
-            a.verified_at
+            a.verified_at,
+            a.correction_note,
+            a.corrected_at,
+            a.capture_method,
+            a.liveness_checks,
+            a.capture_reason
 
           FROM attendance a
 
@@ -2301,10 +3053,12 @@ app.get(
             TRIM(
               $1::text
             )
+            AND s.is_active = TRUE
 
           ORDER BY
             a.date DESC,
             a.id DESC
+          LIMIT 3000
           `,
           [supervisor.supervisor_id]
         );
@@ -2327,6 +3081,173 @@ app.get(
             ? error.message
             : String(error),
       });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUPERVISOR RECORDS A TIME-IN IN PERSON
+|--------------------------------------------------------------------------
+|
+| The way through when the camera check cannot run on an intern's device
+| (no camera, a fault, a check that keeps failing). The supervisor takes
+| the photo themselves, so no camera check is asked of them, and the log
+| is theirs to vouch for: it is verified automatically once the intern
+| times out.
+|
+*/
+
+app.post(
+  "/api/supervisor/attendance/record",
+  requireRole("supervisor"),
+  upload.single("image"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const studentId =
+        typeof req.body?.student_id === "string" ? req.body.student_id.trim() : "";
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 300) : "";
+      const note =
+        typeof req.body?.note === "string" && req.body.note.trim() !== ""
+          ? req.body.note.trim().slice(0, 500)
+          : null;
+
+      if (!studentId) {
+        return res.status(400).json({ message: "Choose the intern to record." });
+      }
+      if (reason.length < 3) {
+        return res.status(400).json({
+          message: "Say why the intern could not use the camera check.",
+        });
+      }
+      if (!req.file) {
+        return res.status(400).json({
+          message: "A photo of the intern is required to record their time-in.",
+        });
+      }
+      if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
+        return res.status(400).json({
+          message: "The photo must be a JPG or PNG image.",
+        });
+      }
+
+      const intern = await pool.query<{ name: string }>(
+        `
+        SELECT name FROM students
+        WHERE student_id = $1 AND supervisor_id = $2 AND is_active = TRUE
+        `,
+        [studentId, auth?.id]
+      );
+      if (intern.rows.length === 0) {
+        return res.status(403).json({
+          message: "You can only record attendance for interns assigned to you.",
+        });
+      }
+
+      const existing = await pool.query(
+        `SELECT 1 FROM attendance WHERE student_id = $1 AND date = CURRENT_DATE`,
+        [studentId]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(409).json({
+          message: `${intern.rows[0].name} already has an attendance log for today.`,
+        });
+      }
+
+      uploadedFileName = await savePrivateFile(req.file);
+
+      const result = await pool.query(
+        `
+        INSERT INTO attendance
+          (student_id, date, time_in, note, status, image_url,
+           capture_method, recorded_by, capture_reason)
+        VALUES
+          ($1, CURRENT_DATE, NOW(), $2, 'Pending', $3, 'supervisor', $4, $5)
+        RETURNING ${ATTENDANCE_COLUMNS}
+        `,
+        [studentId, note, `/uploads/${uploadedFileName}`, auth?.id, reason]
+      );
+
+      try {
+        await createNotification({
+          studentId,
+          title: "Time-in recorded by your supervisor",
+          message: `Your supervisor recorded your time-in for ${result.rows[0].date}. Remember to time out when you finish; the day is verified automatically.`,
+          type: "attendance",
+        });
+      } catch (notifyError) {
+        console.error("SUPERVISOR TIME-IN NOTIFICATION ERROR:", notifyError);
+      }
+
+      return res.status(201).json({
+        message: `Time-in recorded for ${intern.rows[0].name}.`,
+        attendance: result.rows[0],
+      });
+    } catch (error) {
+      if (uploadedFileName) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE UNRECORDED ATTENDANCE PHOTO:", cleanupError);
+        });
+      }
+      if ((error as { code?: string })?.code === "23505") {
+        return res.status(409).json({
+          message: "This intern already has an attendance log for today.",
+        });
+      }
+      console.error("SUPERVISOR RECORD TIME-IN ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to record the time-in.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| HOW MUCH IS WAITING ON A SUPERVISOR
+|--------------------------------------------------------------------------
+|
+| One number for the badge beside "Review", counted the same way the queue
+| is built, so every page does not have to download four lists to show it.
+|
+*/
+
+app.get(
+  "/api/supervisor/review-count",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const result = await pool.query<{ waiting: string }>(
+        `
+        WITH mine AS (
+          SELECT TRIM(student_id::text) AS student_id FROM students
+          WHERE TRIM(supervisor_id::text) = TRIM($1::text) AND is_active = TRUE
+        )
+        SELECT
+          (SELECT COUNT(*) FROM attendance a
+            WHERE TRIM(a.student_id::text) IN (SELECT student_id FROM mine)
+              AND a.status = 'Pending'
+              -- A time-in the supervisor recorded in person needs no review.
+              AND NOT (a.capture_method IS NOT DISTINCT FROM 'supervisor' AND a.time_out IS NULL))
+          + (SELECT COUNT(*) FROM tasks t
+              WHERE TRIM(t.student_id::text) IN (SELECT student_id FROM mine) AND t.status = 'Submitted')
+          + (SELECT COUNT(*) FROM documents d
+              WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending')
+          + (SELECT COUNT(*) FROM absences b
+              WHERE TRIM(b.student_id::text) IN (SELECT student_id FROM mine) AND b.status = 'Pending')
+          AS waiting
+        `,
+        [auth?.id]
+      );
+      return res.json({ waiting: Number(result.rows[0]?.waiting) || 0 });
+    } catch (error) {
+      console.error("SUPERVISOR REVIEW COUNT ERROR:", error);
+      return res.status(500).json({ message: "Failed to count what is waiting." });
     }
   }
 );
@@ -2504,13 +3425,28 @@ app.patch(
         reason,
       } = req.body;
 
+      if (!/^\d{1,15}$/.test(String(id))) {
+        return res.status(404).json({ message: "Attendance record not found." });
+      }
+
+      // The status the reviewer was looking at. When it is sent, the decision
+      // is saved only if the log is still in that state, so two reviewers
+      // cannot silently overwrite each other.
+      const expectedStatus =
+        typeof req.body?.expected_status === "string" && req.body.expected_status.trim() !== ""
+          ? req.body.expected_status.trim()
+          : null;
+
+      // "Pending" reopens a log: it undoes a decision made by mistake and
+      // puts the log back in the review queue.
       if (
         status !== "Verified" &&
-        status !== "Rejected"
+        status !== "Rejected" &&
+        status !== "Pending"
       ) {
         return res.status(400).json({
           message:
-            "Status must be Verified or Rejected.",
+            "Status must be Verified, Rejected, or Pending.",
         });
       }
 
@@ -2529,21 +3465,26 @@ app.patch(
       // A log with no time-out has no rendered hours yet, so it cannot be
       // confirmed. Rejecting an unfinished log is still allowed.
       if (status === "Verified") {
-        const openLog = await pool.query(
+        const log = await pool.query<{ time_out: Date | null; hours: string | null }>(
           `
-          SELECT 1
+          SELECT a.time_out, a.hours
           FROM attendance a
           JOIN students s ON s.student_id = a.student_id
           WHERE a.id = $1
-          AND a.time_out IS NULL
           AND ($2 = 'coordinator' OR s.supervisor_id = $3)
           `,
           [id, auth?.role, auth?.id]
         );
-        if (openLog.rows.length > 0) {
+        if (log.rows.length > 0 && !log.rows[0].time_out) {
           return res.status(409).json({
             message:
               "This log has no time-out yet. It can be verified after the student times out.",
+          });
+        }
+        // No single day can add more than one shift to a student's total.
+        if (log.rows.length > 0 && Number(log.rows[0].hours) > MAX_SHIFT_HOURS) {
+          return res.status(409).json({
+            message: `This log records ${log.rows[0].hours} hours, more than the ${MAX_SHIFT_HOURS}-hour limit for one day. Reject it so the student can correct the time-out.`,
           });
         }
       }
@@ -2554,20 +3495,24 @@ app.patch(
           UPDATE attendance a
 
           SET
-            status = $1,
+            status = $1::text,
             review_notes = $2::text,
-            verified_by = $5,
-            verifier_role = $4,
-            verified_at = NOW()
+            verified_by = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $5::text END,
+            verifier_role = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $4::text END,
+            verified_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END,
+            flag_acknowledged_at = NULL
 
           FROM students s
           WHERE a.id = $3
           AND s.student_id = a.student_id
-          AND ($4 = 'coordinator' OR s.supervisor_id = $5)
+          AND ($4::text = 'coordinator' OR s.supervisor_id = $5::text)
+          AND ($6::text IS NULL OR a.status = $6::text)
 
           RETURNING
             a.id,
             a.student_id,
+            s.name AS student_name,
+            s.supervisor_id,
             TO_CHAR(
               a.date,
               'YYYY-MM-DD'
@@ -2591,15 +3536,62 @@ app.patch(
             id,
             auth?.role,
             auth?.id,
+            expectedStatus,
           ]
         );
 
       if (
         result.rows.length === 0
       ) {
+        const current = await pool.query<{ status: string }>(
+          `
+          SELECT a.status FROM attendance a
+          JOIN students s ON s.student_id = a.student_id
+          WHERE a.id = $1 AND ($2::text = 'coordinator' OR s.supervisor_id = $3::text)
+          `,
+          [id, auth?.role, auth?.id]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message: `This log changed while you had it open: it is now ${current.rows[0].status.toLowerCase()}. Check it again before deciding.`,
+            currentStatus: current.rows[0].status,
+          });
+        }
         return res.status(404).json({
           message:
             "Attendance record not found.",
+        });
+      }
+
+      // The supervisor is the usual reviewer, so a decision the coordinator
+      // makes on one of their interns' logs should not come as a surprise.
+      if (auth?.role === "coordinator" && result.rows[0].supervisor_id) {
+        const outcome =
+          status === "Pending" ? "returned to pending" : status.toLowerCase();
+        await createNotification({
+          supervisorId: String(result.rows[0].supervisor_id),
+          title: "Coordinator decided an attendance log",
+          message: `${result.rows[0].student_name}'s attendance for ${result.rows[0].date} was ${outcome} by the OJT coordinator.${
+            cleanReason ? ` Reason: ${cleanReason}` : ""
+          }`,
+          type: "attendance",
+        });
+      }
+
+      // Verified hours changed, so the student may have just completed (or
+      // dropped back under) their requirement.
+      await syncCompletion(String(result.rows[0].student_id));
+
+      if (status === "Pending") {
+        await createNotification({
+          studentId: result.rows[0].student_id,
+          title: "Attendance back under review",
+          message: `The decision on your attendance for ${result.rows[0].date} was withdrawn. It is waiting to be reviewed again.`,
+          type: "attendance",
+        });
+        return res.json({
+          message: "Attendance returned to pending.",
+          attendance: result.rows[0],
         });
       }
 
@@ -2611,13 +3603,25 @@ app.patch(
             : "Attendance rejected",
         message:
           status === "Verified"
-            ? `Your attendance for ${result.rows[0].date} was verified by your supervisor.`
+            ? `Your attendance for ${result.rows[0].date} was verified by your ${
+                auth?.role === "coordinator" ? "OJT coordinator" : "supervisor"
+              }.`
             : `Your attendance for ${result.rows[0].date} was rejected.${
                 cleanReason ? ` Reason: ${cleanReason}` : ""
-              }`,
-        type:
-          status === "Verified" ? "success" : "warning",
+              } You can ask for it to be reviewed again from your Attendance page.`,
+        type: "attendance",
       });
+
+      // A rejected log is a discrepancy the coordinator is expected to follow.
+      if (status === "Rejected" && auth?.role === "supervisor") {
+        await notifyCoordinators({
+          title: "Attendance log rejected",
+          message: `A supervisor rejected a student's attendance for ${result.rows[0].date}.${
+            cleanReason ? ` Reason: ${cleanReason}` : ""
+          }`,
+          type: "attendance",
+        });
+      }
 
       return res.json({
         message:
@@ -2814,7 +3818,7 @@ app.get(
       const requiredHoursResult =
         await pool.query(
           `
-          SELECT required_hours
+          SELECT required_hours, completed_at
           FROM students
           WHERE student_id = $1
           `,
@@ -2862,6 +3866,7 @@ app.get(
 
         totalTasks,
         completedTasks,
+        completedAt: requiredHoursResult.rows[0]?.completed_at ?? null,
       });
     } catch (error) {
       console.error(
@@ -3691,7 +4696,7 @@ app.post("/api/login/coordinator", loginGuard("coordinator"), async (req, res) =
       SELECT id, coordinator_id, email, password, name, department, is_active,
              auth_version, must_change_password
       FROM coordinators
-      WHERE email = $1
+      WHERE LOWER(email) = LOWER(TRIM($1))
       `,
       [email]
     );
@@ -3798,15 +4803,109 @@ app.get(
   }
 );
 
-async function supervisorIdIsValid(supervisorId: unknown): Promise<boolean> {
-  if (supervisorId === undefined || supervisorId === null || supervisorId === "") {
-    return true;
+/**
+ * Tells everyone affected when a student is given, moved to, or taken from
+ * a supervisor: the student, the new supervisor, and the previous one.
+ */
+async function notifySupervisorAssignment(
+  studentId: string,
+  studentName: string,
+  previousSupervisorId: string | null,
+  currentSupervisorId: string | null
+): Promise<void> {
+  try {
+    if (currentSupervisorId) {
+      const supervisor = await pool.query<{ name: string; company: string | null }>(
+        `SELECT name, company FROM supervisors WHERE supervisor_id = $1`,
+        [currentSupervisorId]
+      );
+      await createNotification({
+        supervisorId: currentSupervisorId,
+        title: "New intern assigned",
+        message: `${studentName} has been assigned to you by the OJT coordinator.`,
+        type: "info",
+      });
+      await createNotification({
+        studentId,
+        title: "Supervisor assigned",
+        message: `${supervisor.rows[0]?.name || "A supervisor"}${
+          supervisor.rows[0]?.company ? ` of ${supervisor.rows[0].company}` : ""
+        } is now your OJT supervisor.`,
+        type: "info",
+      });
+    }
+    if (previousSupervisorId && previousSupervisorId !== currentSupervisorId) {
+      await createNotification({
+        supervisorId: previousSupervisorId,
+        title: "Intern reassigned",
+        message: `${studentName} is no longer assigned to you.`,
+        type: "info",
+      });
+    }
+  } catch (error) {
+    // A notification failure must never undo the assignment itself.
+    console.error("SUPERVISOR ASSIGNMENT NOTIFICATION ERROR:", error);
   }
-  const result = await pool.query(
-    `SELECT 1 FROM supervisors WHERE supervisor_id = $1`,
+}
+
+/**
+ * Why a student cannot be given this supervisor, or null when they can.
+ * A deactivated supervisor is refused, except when they are already the
+ * student's supervisor (so an unrelated edit does not fail).
+ */
+async function supervisorProblem(
+  supervisorId: unknown,
+  currentStudentId?: string
+): Promise<string | null> {
+  if (supervisorId === undefined || supervisorId === null || supervisorId === "") {
+    return null;
+  }
+  const result = await pool.query<{ is_active: boolean }>(
+    `SELECT is_active FROM supervisors WHERE supervisor_id = $1`,
     [String(supervisorId)]
   );
-  return result.rows.length > 0;
+  if (result.rows.length === 0) return "Selected supervisor does not exist.";
+  if (result.rows[0].is_active) return null;
+  if (currentStudentId) {
+    const current = await pool.query(
+      `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+      [currentStudentId, String(supervisorId)]
+    );
+    if (current.rows.length > 0) return null;
+  }
+  return "That supervisor's account is deactivated. Choose an active supervisor.";
+}
+
+/** Why a required-hours value is not acceptable, or null when it is. */
+function requiredHoursProblem(value: unknown): string | null {
+  if (value === undefined || value === null || value === "") return null;
+  const hours = Number(value);
+  if (!Number.isFinite(hours) || hours <= 0 || hours > 5000) {
+    return "Required hours must be a number between 1 and 5000.";
+  }
+  return null;
+}
+
+/** Sends the same notification to every active student and supervisor. */
+async function notifyEveryone(notification: {
+  title: string;
+  message: string;
+  type?: string;
+}): Promise<void> {
+  const [students, supervisors] = await Promise.all([
+    pool.query<{ student_id: string }>(`SELECT student_id FROM students WHERE is_active = TRUE`),
+    pool.query<{ supervisor_id: string }>(
+      `SELECT supervisor_id FROM supervisors WHERE is_active = TRUE`
+    ),
+  ]);
+  await Promise.all([
+    ...students.rows.map((row) =>
+      createNotification({ studentId: String(row.student_id), ...notification })
+    ),
+    ...supervisors.rows.map((row) =>
+      createNotification({ supervisorId: String(row.supervisor_id), ...notification })
+    ),
+  ]);
 }
 
 app.post(
@@ -3836,8 +4935,13 @@ app.post(
         return res.status(400).json({ message: `Starting password: ${policyError}` });
       }
 
-      if (!(await supervisorIdIsValid(supervisor_id))) {
-        return res.status(400).json({ message: "Selected supervisor does not exist." });
+      const supervisorIssue = await supervisorProblem(supervisor_id);
+      if (supervisorIssue) {
+        return res.status(400).json({ message: supervisorIssue });
+      }
+      const hoursIssue = requiredHoursProblem(required_hours);
+      if (hoursIssue) {
+        return res.status(400).json({ message: hoursIssue });
       }
 
       const hashed = await hashPassword(password);
@@ -3869,6 +4973,10 @@ app.post(
         message: `Your OJT account has been created. You can now log in as ${email}.`,
         type: "info",
       });
+
+      if (supervisor_id) {
+        await notifySupervisorAssignment(String(student_id), name, null, String(supervisor_id));
+      }
 
       return res.status(201).json({
         message: "Student account created.",
@@ -3907,17 +5015,32 @@ app.put(
         required_hours,
       } = req.body;
 
-      if (!(await supervisorIdIsValid(supervisor_id))) {
-        return res.status(400).json({ message: "Selected supervisor does not exist." });
+      const supervisorIssue = await supervisorProblem(supervisor_id, String(studentId));
+      if (supervisorIssue) {
+        return res.status(400).json({ message: supervisorIssue });
       }
+      const hoursIssue = requiredHoursProblem(required_hours);
+      if (hoursIssue) {
+        return res.status(400).json({ message: hoursIssue });
+      }
+
+      const before = await pool.query<{ supervisor_id: string | null; required_hours: number }>(
+        `SELECT supervisor_id, required_hours FROM students WHERE student_id = $1`,
+        [studentId]
+      );
+
+      // A field named in the request is saved as sent, so an optional field
+      // can be cleared; a field left out of the request keeps its value.
+      const sent = (field: string) =>
+        Object.prototype.hasOwnProperty.call(req.body ?? {}, field);
 
       const result = await pool.query(
         `
         UPDATE students SET
           name = COALESCE($1, name),
           email = COALESCE($2, email),
-          program = COALESCE($3, program),
-          company = COALESCE($4, company),
+          program = CASE WHEN $9::boolean THEN $3::text ELSE program END,
+          company = CASE WHEN $10::boolean THEN $4::text ELSE company END,
           supervisor_id = CASE WHEN $8::boolean THEN $5 ELSE supervisor_id END,
           required_hours = COALESCE($6, required_hours)
         WHERE student_id = $7
@@ -3929,11 +5052,13 @@ app.put(
           program || null,
           company || null,
           supervisor_id || null,
-          required_hours || null,
+          required_hours ? Math.round(Number(required_hours)) : null,
           studentId,
           // Only reassign (or unassign) when the request names a supervisor
           // field; an edit that omits it keeps the current supervisor.
-          Object.prototype.hasOwnProperty.call(req.body ?? {}, "supervisor_id"),
+          sent("supervisor_id"),
+          sent("program"),
+          sent("company"),
         ]
       );
 
@@ -3941,11 +5066,41 @@ app.put(
         return res.status(404).json({ message: "Student not found." });
       }
 
+      const previousHours = Number(before.rows[0]?.required_hours);
+      const currentHours = Number(result.rows[0].required_hours);
+      if (previousHours !== currentHours) {
+        await createNotification({
+          studentId: String(result.rows[0].student_id),
+          title: "Required hours changed",
+          message: `Your required OJT hours were changed from ${previousHours} to ${currentHours} by the OJT coordinator.`,
+          type: "info",
+        }).catch((error) => console.error("REQUIRED HOURS NOTIFICATION ERROR:", error));
+      }
+
+      const previousSupervisor = before.rows[0]?.supervisor_id ?? null;
+      const currentSupervisor = result.rows[0].supervisor_id ?? null;
+      if (previousSupervisor !== currentSupervisor) {
+        await notifySupervisorAssignment(
+          String(result.rows[0].student_id),
+          result.rows[0].name,
+          previousSupervisor,
+          currentSupervisor
+        );
+      }
+
+      // Changing the requirement can complete, or un-complete, the student.
+      await syncCompletion(String(result.rows[0].student_id));
+
       return res.json({
         message: "Student updated.",
         student: result.rows[0],
       });
     } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({
+          message: "That email address is already used by another student.",
+        });
+      }
       console.error("UPDATE STUDENT ERROR:", error);
       return res.status(500).json({
         message: "Failed to update student.",
@@ -3967,13 +5122,33 @@ app.patch(
         `
         UPDATE students SET is_active = $1
         WHERE student_id = $2
-        RETURNING student_id, name, is_active
+        RETURNING student_id, name, is_active, supervisor_id
         `,
         [Boolean(is_active), studentId]
       );
 
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Student not found." });
+      }
+      if (!is_active) await cutOffAccount("student", String(result.rows[0].student_id));
+
+      if (result.rows[0].supervisor_id) {
+        await createNotification({
+          supervisorId: String(result.rows[0].supervisor_id),
+          title: is_active ? "Intern account reactivated" : "Intern account deactivated",
+          message: is_active
+            ? `${result.rows[0].name}'s account is active again. Their records are back in your lists.`
+            : `${result.rows[0].name}'s account was deactivated by the OJT coordinator. Their records no longer appear in your lists.`,
+          type: "info",
+        }).catch((error) => console.error("STUDENT STATUS NOTIFICATION ERROR:", error));
+      }
+      if (is_active) {
+        await createNotification({
+          studentId: String(result.rows[0].student_id),
+          title: "Account reactivated",
+          message: "Your OJT account is active again. Your records were kept while it was off.",
+          type: "info",
+        }).catch((error) => console.error("STUDENT STATUS NOTIFICATION ERROR:", error));
       }
 
       return res.json({
@@ -4010,6 +5185,7 @@ app.get(
           sup.department, sup.is_active,
           (SELECT COUNT(*) FROM students s
             WHERE TRIM(s.supervisor_id::text) = TRIM(sup.supervisor_id::text)
+              AND s.is_active = TRUE
           ) AS intern_count
         FROM supervisors sup
         WHERE (sup.name ILIKE $1 OR sup.email ILIKE $1 OR sup.company ILIKE $1 OR sup.department ILIKE $1)
@@ -4191,14 +5367,17 @@ app.put(
     try {
       const { supervisorId } = req.params;
       const { name, email, company, department } = req.body;
+      // A field named in the request is saved as sent, so it can be cleared.
+      const sent = (field: string) =>
+        Object.prototype.hasOwnProperty.call(req.body ?? {}, field);
 
       const result = await pool.query(
         `
         UPDATE supervisors SET
           name = COALESCE($1, name),
           email = COALESCE($2, email),
-          company = COALESCE($3, company),
-          department = COALESCE($4, department)
+          company = CASE WHEN $6::boolean THEN $3::text ELSE company END,
+          department = CASE WHEN $7::boolean THEN $4::text ELSE department END
         WHERE supervisor_id = $5
         RETURNING id, supervisor_id, email, name, company, department, is_active
         `,
@@ -4208,6 +5387,8 @@ app.put(
           company || null,
           department || null,
           supervisorId,
+          sent("company"),
+          sent("department"),
         ]
       );
 
@@ -4220,6 +5401,11 @@ app.put(
         supervisor: result.rows[0],
       });
     } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({
+          message: "That email address is already used by another supervisor.",
+        });
+      }
       console.error("UPDATE SUPERVISOR ERROR:", error);
       return res.status(500).json({
         message: "Failed to update supervisor.",
@@ -4237,6 +5423,22 @@ app.patch(
       const { supervisorId } = req.params;
       const { is_active } = req.body;
 
+      if (!is_active) {
+        const assigned = await pool.query<{ count: string }>(
+          `SELECT COUNT(*) AS count FROM students
+           WHERE supervisor_id = $1 AND is_active = TRUE`,
+          [supervisorId]
+        );
+        const interns = Number(assigned.rows[0]?.count || 0);
+        if (interns > 0) {
+          return res.status(409).json({
+            message: `This supervisor still has ${interns} active ${
+              interns === 1 ? "intern" : "interns"
+            }. Assign ${interns === 1 ? "that intern" : "them"} to another supervisor first, so their work is not left without a reviewer.`,
+          });
+        }
+      }
+
       const result = await pool.query(
         `
         UPDATE supervisors SET is_active = $1
@@ -4249,6 +5451,7 @@ app.patch(
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Supervisor not found." });
       }
+      if (!is_active) await cutOffAccount("supervisor", String(result.rows[0].supervisor_id));
 
       return res.json({
         message: `Supervisor ${is_active ? "activated" : "deactivated"}.`,
@@ -4285,6 +5488,11 @@ app.patch(
 
 const STALE_PENDING_DAYS = 2;
 
+// A rejected log stays flagged until the coordinator settles it.
+function openRejectionCondition(alias: string): string {
+  return `(${alias}.status = 'Rejected' AND ${alias}.flag_acknowledged_at IS NULL)`;
+}
+
 function missingTimeoutCondition(alias: string): string {
   return `(${alias}.time_out IS NULL AND ${alias}.date < CURRENT_DATE)`;
 }
@@ -4294,7 +5502,7 @@ function stalePendingCondition(alias: string): string {
 }
 
 function flaggedLogCondition(alias: string): string {
-  return `(${alias}.status = 'Rejected' OR ${missingTimeoutCondition(alias)} OR ${stalePendingCondition(alias)})`;
+  return `(${openRejectionCondition(alias)} OR ${missingTimeoutCondition(alias)} OR ${stalePendingCondition(alias)})`;
 }
 
 app.get(
@@ -4316,12 +5524,17 @@ app.get(
           sup.name AS supervisor_name,
           TO_CHAR(a.date, 'YYYY-MM-DD') AS date,
           a.time_in,
+          a.break_time,
+          a.break_end_time,
           a.time_out,
           a.hours,
+          a.note,
           a.status,
+          a.image_url,
           a.review_notes,
+          a.correction_note,
           ARRAY_REMOVE(ARRAY[
-            CASE WHEN a.status = 'Rejected' THEN 'Rejected by supervisor' END,
+            CASE WHEN ${openRejectionCondition("a")} THEN 'Rejected by supervisor' END,
             CASE WHEN ${missingTimeoutCondition("a")} THEN 'No time-out recorded' END,
             CASE WHEN ${stalePendingCondition("a")}
               THEN 'Unverified for more than ${STALE_PENDING_DAYS} days' END
@@ -4366,10 +5579,14 @@ app.get(
           `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM supervisors`
         ),
         pool.query(
-          `SELECT COUNT(*) AS count FROM attendance WHERE status = 'Pending'`
+          `SELECT COUNT(*) AS count FROM attendance a
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           WHERE a.status = 'Pending'`
         ),
         pool.query(
-          `SELECT COUNT(*) AS count FROM attendance a WHERE ${flaggedLogCondition("a")}`
+          `SELECT COUNT(*) AS count FROM attendance a
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           WHERE ${flaggedLogCondition("a")}`
         ),
         pool.query(
           `SELECT COUNT(*) AS count FROM complaints WHERE status = 'Pending'`
@@ -4380,11 +5597,14 @@ app.get(
             COUNT(*) FILTER (WHERE status = 'Submitted') AS awaiting_review,
             COUNT(*) FILTER (WHERE status = 'Reviewed') AS completed,
             COUNT(*) AS total
-          FROM tasks
+          FROM tasks t
+          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE
           `
         ),
         pool.query(
-          `SELECT COALESCE(SUM(hours), 0) AS total_hours FROM attendance WHERE status = 'Verified'`
+          `SELECT COALESCE(SUM(a.hours), 0) AS total_hours FROM attendance a
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           WHERE a.status = 'Verified'`
         ),
       ]);
 
@@ -4435,6 +5655,7 @@ app.get(
         `
         SELECT
           s.student_id, s.name, s.program, s.company, s.required_hours,
+          s.completed_at,
           sup.name AS supervisor_name,
           att.hours_rendered,
           att.pending_logs,
@@ -4453,7 +5674,7 @@ app.get(
           SELECT
             COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours_rendered,
             COUNT(*) FILTER (WHERE a.status = 'Pending') AS pending_logs,
-            COUNT(*) FILTER (WHERE a.status = 'Rejected') AS rejected_logs,
+            COUNT(*) FILTER (WHERE ${openRejectionCondition("a")}) AS rejected_logs,
             COUNT(*) FILTER (WHERE ${missingTimeoutCondition("a")}) AS missing_timeout_logs,
             COUNT(*) FILTER (WHERE ${stalePendingCondition("a")}) AS stale_pending_logs,
             COUNT(*) FILTER (WHERE ${flaggedLogCondition("a")}) AS flagged_logs,
@@ -4535,7 +5756,7 @@ app.get(
           c.id, c.student_id, c.filed_by_supervisor_id,
           COALESCE(s.name, sup.name) AS filed_by_name,
           CASE WHEN c.filed_by_supervisor_id IS NOT NULL THEN 'supervisor' ELSE 'student' END AS filed_by_role,
-          c.report_type, c.reported_student_name, c.reported_program_section,
+          c.report_type, c.reported_student_name, c.reported_student_id, c.reported_program_section,
           c.supervisor_name, c.company_name, c.category, c.description,
           c.evidence_url, c.status, c.resolved_by, c.resolution_notes,
           c.resolved_at, c.created_at, c.updated_at
@@ -4582,6 +5803,29 @@ app.patch(
           message:
             "Status must be 'In Review', 'Resolved', or 'Dismissed'.",
         });
+      }
+
+      // Re-saving a closed complaint replaces its note; keep the old one in
+      // the conversation so the record of what was decided is not lost.
+      const earlier = await pool.query<{ status: string; resolution_notes: string | null }>(
+        `SELECT status, resolution_notes FROM complaints WHERE id = $1`,
+        [id]
+      );
+      const previousNote = earlier.rows[0]?.resolution_notes?.trim();
+      if (
+        previousNote &&
+        ["Resolved", "Dismissed"].includes(earlier.rows[0].status) &&
+        typeof resolution_notes === "string" &&
+        resolution_notes.trim() &&
+        resolution_notes.trim() !== previousNote
+      ) {
+        await pool
+          .query(
+            `INSERT INTO complaint_messages (complaint_id, author_role, author_id, author_name, message)
+             VALUES ($1, 'coordinator', $2, 'OJT Coordinator', $3)`,
+            [id, req.auth?.id || "coordinator", `Earlier note (${earlier.rows[0].status.toLowerCase()}): ${previousNote}`]
+          )
+          .catch((error) => console.error("KEEP RESOLUTION NOTE ERROR:", error));
       }
 
       const result = await pool.query(
@@ -4740,7 +5984,9 @@ app.get(
 |--------------------------------------------------------------------------
 */
 
-app.post("/api/tasks", requireRole("supervisor"), async (req, res) => {
+app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), async (req, res) => {
+  let attachmentFileName: string | undefined;
+  let taskSaved = false;
   try {
     const auth = (req as AuthedRequest).auth;
     if (!auth || auth.role !== "supervisor") {
@@ -4796,11 +6042,15 @@ app.post("/api/tasks", requireRole("supervisor"), async (req, res) => {
       `SELECT name FROM supervisors WHERE supervisor_id = $1`,
       [auth.id]
     );
+    if (req.file) {
+      attachmentFileName = await savePrivateFile(req.file);
+    }
     const result = await pool.query(
       `
       INSERT INTO tasks
-        (student_id, title, description, assigned_by, assigned_by_id, priority, status, due_date, created_at)
-      VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, NOW())
+        (student_id, title, description, assigned_by, assigned_by_id, priority, status, due_date, created_at,
+         attachment_file, attachment_name)
+      VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, NOW(), $8, $9)
       RETURNING *
       `,
       [
@@ -4811,8 +6061,11 @@ app.post("/api/tasks", requireRole("supervisor"), async (req, res) => {
         auth.id,
         priority || "Medium",
         due_date,
+        attachmentFileName ? `/uploads/${attachmentFileName}` : null,
+        req.file ? req.file.originalname.slice(0, 200) : null,
       ]
     );
+    taskSaved = true;
 
     await createNotification({
       studentId: String(student_id),
@@ -4826,6 +6079,11 @@ app.post("/api/tasks", requireRole("supervisor"), async (req, res) => {
       task: result.rows[0],
     });
   } catch (error) {
+    if (attachmentFileName && !taskSaved) {
+      await deletePrivateFile(attachmentFileName).catch((cleanupError) => {
+        console.error("FAILED TO REMOVE UNRECORDED TASK ATTACHMENT:", cleanupError);
+      });
+    }
     console.error("ASSIGN TASK ERROR:", error);
     return res.status(500).json({
       message: "Failed to assign task.",
@@ -4859,6 +6117,7 @@ app.get(
         INNER JOIN students s
           ON TRIM(s.student_id::text) = TRIM(t.student_id::text)
         WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+          AND s.is_active = TRUE
         ORDER BY
           CASE t.status WHEN 'Submitted' THEN 0 ELSE 1 END,
           t.due_date ASC
@@ -4932,9 +6191,15 @@ app.post(
       const task = result.rows[0];
       taskSaved = true;
 
-      if (task.assigned_by_id) {
+      // The intern may have been reassigned since the task was given.
+      const reviewer = await pool.query<{ supervisor_id: string | null }>(
+        `SELECT supervisor_id FROM students WHERE student_id = $1`,
+        [auth.id]
+      );
+      const reviewerId = reviewer.rows[0]?.supervisor_id || task.assigned_by_id;
+      if (reviewerId) {
         await createNotification({
-          supervisorId: task.assigned_by_id,
+          supervisorId: String(reviewerId),
           title: "Task submitted",
           message: `A student submitted "${task.title}" for your review.`,
           type: "info",
@@ -5014,6 +6279,16 @@ app.patch(
       );
 
       if (result.rows.length === 0) {
+        const current = await pool.query(
+          `SELECT 1 FROM tasks t JOIN students s ON s.student_id = t.student_id
+           WHERE t.id = $1 AND s.supervisor_id = $2`,
+          [id, auth.id]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message: "This task is no longer waiting for review. It was already reviewed, or the intern's submission changed.",
+          });
+        }
         return res.status(404).json({ message: "Submitted task not found for your assigned interns." });
       }
 
@@ -5099,6 +6374,24 @@ app.post(
     if (targetStudent.rows.length === 0) {
       return res.status(404).json({ message: "Student not found." });
     }
+    // A student's rating of their placement feeds the company averages and
+    // alerts every coordinator, so one a day is enough: a double tap or a
+    // run of repeats must not flood either.
+    if (auth.role === "student") {
+      const sentToday = await pool.query(
+        `
+        SELECT 1 FROM evaluations
+        WHERE evaluator_type = 'student' AND evaluator_id = $1 AND eval_date = CURRENT_DATE
+        LIMIT 1
+        `,
+        [auth.id]
+      );
+      if (sentToday.rows.length > 0) {
+        return res.status(409).json({
+          message: "You already sent feedback today. You can send more tomorrow.",
+        });
+      }
+    }
     const { table: evaluatorTable, idColumn: evaluatorIdColumn } =
       accountTables[auth.role];
     const evaluator = await pool.query<{ name: string }>(
@@ -5128,7 +6421,13 @@ app.post(
         studentId: String(student_id),
         title: "New evaluation received",
         message: `You received a new ${category || "performance"} evaluation.`,
-        type: "info",
+        type: "evaluation",
+      });
+    } else {
+      await notifyCoordinators({
+        title: "New company feedback",
+        message: `${evaluator.rows[0]?.name || "A student"} rated their training experience ${rating} out of 5.`,
+        type: "evaluation",
       });
     }
 
@@ -5149,16 +6448,18 @@ app.post(
 app.get(
   "/api/coordinator/evaluations",
   requireCoordinator,
-  async (_req, res) => {
+  async (req, res) => {
     try {
       const result = await pool.query(
         `
-        SELECT e.*, s.name AS student_name, s.company
+        SELECT e.*, s.name AS student_name, s.company,
+               (e.evaluator_type = 'teacher' AND e.evaluator_id = $1) AS mine
         FROM evaluations e
         LEFT JOIN students s ON s.student_id::text = e.student_id::text
         ORDER BY e.created_at DESC
         LIMIT 200
-        `
+        `,
+        [(req as AuthedRequest).auth?.id || ""]
       );
 
       return res.json({ evaluations: result.rows });
@@ -5194,13 +6495,17 @@ app.get(
         return res.status(403).json({ message: "You can only view your assigned interns." });
       }
     }
+    // A student's own feedback about their placement is written for the
+    // coordinator, so it is not shown to the supervisor it may be about.
     const result = await pool.query(
       `
-      SELECT * FROM evaluations
+      SELECT *, (evaluator_type = $2 AND evaluator_id = $3) AS mine
+      FROM evaluations
       WHERE student_id = $1
+        AND ($2 = 'student' OR evaluator_type <> 'student')
       ORDER BY created_at DESC
       `,
-      [studentId]
+      [studentId, auth.role, auth.id]
     );
 
     return res.json({ evaluations: result.rows });
@@ -5785,6 +7090,26 @@ app.post(
       });
     }
 
+    // When the report names one of the supervisor's interns, keep the link
+    // to that student so the coordinator knows exactly who it is about.
+    let reportedStudentId: string | null = null;
+    let reportedStudentName: string | null = reported_student_name || null;
+    const requestedStudentId =
+      typeof req.body?.reported_student_id === "string" ? req.body.reported_student_id.trim() : "";
+    if (requestedStudentId) {
+      const intern = await pool.query<{ student_id: string; name: string }>(
+        `SELECT student_id, name FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+        [requestedStudentId, auth.id]
+      );
+      if (intern.rows.length === 0) {
+        return res.status(403).json({
+          message: "You can only report an incident about one of your own interns.",
+        });
+      }
+      reportedStudentId = intern.rows[0].student_id;
+      reportedStudentName = intern.rows[0].name;
+    }
+
     // "File Complaint" includes "Attach Evidence/File" for every actor.
     let evidenceUrl: string | null = null;
     if (req.file) {
@@ -5795,16 +7120,18 @@ app.post(
     const result = await pool.query(
       `
       INSERT INTO complaints
-        (filed_by_supervisor_id, report_type, reported_student_name, category, description, evidence_url, status)
-      VALUES ($1, 'student', $2, $3, $4, $5, 'Pending')
+        (filed_by_supervisor_id, report_type, reported_student_name, category, description, evidence_url, status,
+         reported_student_id)
+      VALUES ($1, 'student', $2, $3, $4, $5, 'Pending', $6)
       RETURNING *
       `,
       [
         auth.id,
-        reported_student_name || null,
+        reportedStudentName,
         String(category).trim(),
         String(description).trim(),
         evidenceUrl,
+        reportedStudentId,
       ]
     );
     complaintSaved = true;
@@ -5950,6 +7277,37 @@ app.post(
         `,
         [name, description, sortOrder, isActive]
       );
+      if (isActive) {
+        try {
+          const students = await pool.query<{ student_id: string }>(
+            `SELECT student_id FROM students WHERE is_active = TRUE`
+          );
+          const supervisors = await pool.query<{ supervisor_id: string }>(
+            `SELECT supervisor_id FROM supervisors WHERE is_active = TRUE`
+          );
+          await Promise.all([
+            ...students.rows.map((row) =>
+              createNotification({
+                studentId: String(row.student_id),
+                title: "New document required",
+                message: `"${name}" was added to your OJT requirements. Upload it from your Documents page.`,
+                type: "document",
+              })
+            ),
+            ...supervisors.rows.map((row) =>
+              createNotification({
+                supervisorId: String(row.supervisor_id),
+                title: "New document required",
+                message: `"${name}" was added to the OJT requirements. Your interns will upload it for you to review.`,
+                type: "document",
+              })
+            ),
+          ]);
+        } catch (notifyError) {
+          console.error("NEW REQUIREMENT NOTIFICATION ERROR:", notifyError);
+        }
+      }
+
       return res.status(201).json({
         message: "Requirement added.",
         requirement: result.rows[0],
@@ -5979,8 +7337,8 @@ app.put(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const previous = await client.query<{ name: string }>(
-        `SELECT name FROM ojt_requirements WHERE id = $1 FOR UPDATE`,
+      const previous = await client.query<{ name: string; is_active: boolean }>(
+        `SELECT name, is_active FROM ojt_requirements WHERE id = $1 FOR UPDATE`,
         [req.params.id]
       );
       if (previous.rows.length === 0) {
@@ -6005,6 +7363,33 @@ app.put(
         );
       }
       await client.query("COMMIT");
+
+      // A renamed, retired or restored requirement changes what everyone
+      // sees on their Documents pages, so say what happened.
+      const old = previous.rows[0];
+      const change =
+        old.is_active && !isActive
+          ? {
+              title: "Document requirement removed",
+              message: `"${old.name}" is no longer an OJT requirement.`,
+            }
+          : !old.is_active && isActive
+            ? {
+                title: "New document required",
+                message: `"${name}" is an OJT requirement again.`,
+              }
+            : old.name !== name && isActive
+              ? {
+                  title: "Document requirement renamed",
+                  message: `The requirement "${old.name}" is now called "${name}". Files already uploaded were kept.`,
+                }
+              : null;
+      if (change) {
+        await notifyEveryone({ ...change, type: "document" }).catch((error) =>
+          console.error("REQUIREMENT CHANGE NOTIFICATION ERROR:", error)
+        );
+      }
+
       return res.json({
         message: "Requirement updated.",
         requirement: result.rows[0],
@@ -6160,6 +7545,18 @@ app.put(
         message: `Your coordinator updated your OJT schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
         type: "schedule",
       });
+      const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+        `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+        [studentId]
+      );
+      if (owner.rows[0]?.supervisor_id) {
+        await createNotification({
+          supervisorId: String(owner.rows[0].supervisor_id),
+          title: "Intern schedule updated",
+          message: `The OJT coordinator updated ${owner.rows[0].name}'s weekly schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
+          type: "schedule",
+        });
+      }
     } catch (error) {
       console.error("SCHEDULE NOTIFICATION ERROR:", error);
     }
@@ -6308,9 +7705,10 @@ app.get(
         FROM documents d
         INNER JOIN students s ON s.student_id = d.student_id
         WHERE s.supervisor_id = $1
+          AND s.is_active = TRUE
         ORDER BY CASE WHEN d.status = 'Pending' THEN 0 ELSE 1 END,
                  d.uploaded_at DESC, d.id DESC
-        LIMIT 100
+        LIMIT 1000
         `,
         [auth.id]
       );
@@ -6412,10 +7810,12 @@ app.get(
 
 app.patch(
   "/api/documents/:documentId/review",
-  requireRole("supervisor"),
+  // The supervisor reviews their interns' documents. The coordinator may
+  // review only for a student who has no active supervisor to do it.
+  requireRole(["supervisor", "coordinator"]),
   async (req, res) => {
     const auth = (req as AuthedRequest).auth;
-    if (!auth || auth.role !== "supervisor") {
+    if (!auth || (auth.role !== "supervisor" && auth.role !== "coordinator")) {
       return res.status(401).json({ message: "Supervisor login is required." });
     }
 
@@ -6441,13 +7841,22 @@ app.patch(
         UPDATE documents d
         SET status = $1,
             review_notes = $2,
-            reviewed_by_supervisor_id = $3,
+            reviewed_by_supervisor_id = CASE WHEN $5::text = 'supervisor' THEN $3 ELSE NULL END,
             reviewed_at = NOW()
         FROM students s
         WHERE d.id = $4
           AND s.student_id = d.student_id
-          AND s.supervisor_id = $3
           AND d.status = 'Pending'
+          AND (
+            ($5::text = 'supervisor' AND s.supervisor_id = $3)
+            OR (
+              $5::text = 'coordinator'
+              AND NOT EXISTS (
+                SELECT 1 FROM supervisors sup
+                WHERE sup.supervisor_id = s.supervisor_id AND sup.is_active = TRUE
+              )
+            )
+          )
         RETURNING d.id, d.student_id, d.doc_type, d.status, d.review_notes,
                   d.reviewed_at
         `,
@@ -6456,10 +7865,24 @@ app.patch(
           reviewNotes || null,
           auth.id,
           documentId,
+          auth.role,
         ]
       );
 
       if (result.rows.length === 0) {
+        const current = await pool.query<{ status: string }>(
+          `SELECT d.status FROM documents d JOIN students s ON s.student_id = d.student_id
+           WHERE d.id = $1 AND ($3::text = 'coordinator' OR s.supervisor_id = $2)`,
+          [documentId, auth.id, auth.role]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message:
+              current.rows[0].status !== "Pending"
+                ? "This document is no longer waiting for review. It was already reviewed."
+                : "This student has an active supervisor, who reviews their documents.",
+          });
+        }
         return res.status(404).json({
           message: "Pending document not found for your assigned interns.",
         });
@@ -6592,12 +8015,18 @@ app.get(
             OR EXISTS (
               SELECT 1
               FROM tasks t
-              WHERE t.submission_file = $2
+              WHERE (t.submission_file = $2 OR t.attachment_file = $2)
                 AND (
                   $1 = 'coordinator'
                   OR
                   ($1 = 'student' AND t.student_id = $3)
-                  OR ($1 = 'supervisor' AND t.assigned_by_id = $3)
+                  OR (
+                    $1 = 'supervisor'
+                    AND EXISTS (
+                      SELECT 1 FROM students s
+                      WHERE s.student_id = t.student_id AND s.supervisor_id = $3
+                    )
+                  )
                 )
             )
             OR EXISTS (
@@ -6652,6 +8081,33 @@ app.get(
 |
 */
 
+/*
+|--------------------------------------------------------------------------
+| EXTENSION ROUTES
+|--------------------------------------------------------------------------
+|
+| Absences, task editing, bulk import, announcements, coordinator password
+| resets and complaint replies live in routes/extensions.ts.
+|
+*/
+
+registerExtensionRoutes(app, {
+  pool,
+  requireRole,
+  requireCoordinator,
+  createNotification,
+  notifyCoordinators,
+  hashPassword,
+  verifyPassword,
+  passwordPolicyError,
+  loginAttemptKey,
+  closeNotificationStreams,
+  syncCompletion,
+  upload,
+  savePrivateFile,
+  deletePrivateFile,
+});
+
 app.use(
   "/api",
   (
@@ -6688,7 +8144,9 @@ app.use(
     ) {
       return res.status(400).json({
         message:
-          "File upload error.",
+          error.code === "LIMIT_FILE_SIZE"
+            ? "That file is too large. Choose a smaller file and try again."
+            : "The file could not be uploaded. Please try again.",
         error:
           error.message,
       });
@@ -6719,7 +8177,18 @@ if (!isAzureBlobStorageConfigured()) {
 
 app.listen(
   PORT,
-  () => {
+  // Express also calls this when the server could not start, with the error.
+  (error?: Error) => {
+    if (error) {
+      const inUse = (error as NodeJS.ErrnoException).code === "EADDRINUSE";
+      console.error(
+        inUse
+          ? `Port ${PORT} is already in use, so this server did not start. Another copy of the backend is probably still running; stop it (or end its "node" process) and start again.`
+          : `The backend could not start: ${error.message}`
+      );
+      process.exit(1);
+    }
+
     console.log(
       `Backend running on port ${PORT}`
     );

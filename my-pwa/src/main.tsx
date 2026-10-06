@@ -3,14 +3,29 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { installSessionGuard } from './lib/sessionGuard'
+// Loaded here so the browser's install offer is caught before any page mounts.
+import './lib/install'
+import { LaunchGate } from './brand'
 
 installSessionGuard()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <LaunchGate>
+      <App />
+    </LaunchGate>
   </StrictMode>,
 )
+
+// Opening the app clears the unread dot a push notification put on its icon.
+const clearAppBadge = () => {
+  if (document.visibilityState !== "visible" || !("clearAppBadge" in navigator)) return;
+  void (navigator as Navigator & { clearAppBadge: () => Promise<void> })
+    .clearAppBadge()
+    .catch(() => {});
+};
+clearAppBadge();
+document.addEventListener("visibilitychange", clearAppBadge);
 
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {

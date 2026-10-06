@@ -1,90 +1,92 @@
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import Icon from "../../components/Icon";
+import {
+  Button,
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorNotice,
+  SkeletonRows,
+} from "../../components/ui";
+import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
+import { formatDate } from "../../lib/format";
+import { useAccount } from "../../lib/session";
+import { errorText, toast } from "../../lib/toast";
 
 type Evaluation = {
   id: number;
-  student_id: string;
   evaluator_type: "student" | "supervisor" | "teacher";
+  evaluator_name?: string | null;
   category: string;
   rating: number;
   comments: string | null;
-  eval_date: string;
+  eval_date?: string | null;
+  created_at?: string | null;
 };
 
-const NAV_ITEMS = [
-  { label: "Dashboard", path: "/student/dashboard" },
-  { label: "Daily Log", path: "/daily-log" },
-  { label: "My Tasks", path: "/task" },
-  { label: "OJT Schedule", path: "/schedule" },
-  { label: "Documents", path: "/documents" },
-  { label: "Report Complaint", path: "/report" },
-  { label: "Company Feedback", path: "/student/feedback" },
-];
+const RATING_WORDS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
 
 export default function StudentFeedback() {
-  const navigate = useNavigate();
-  const [studentId, setStudentId] = useState("");
+  const student = useAccount("student");
+  const studentId = student?.student_id;
+
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
-  const [rating, setRating] = useState(0);
-  const [comments, setComments] = useState("");
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState("");
+
+  const [rating, setRating] = useState(0);
+  const [hovered, setHovered] = useState(0);
+  const [comments, setComments] = useState("");
+  const [formError, setFormError] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
-  const [historyError, setHistoryError] = useState("");
-  const [message, setMessage] = useState("");
+
+  const load = useCallback(async () => {
+    if (!studentId) return;
+    try {
+      const response = await fetch(
+        `${API_URL}/api/evaluations/student/${encodeURIComponent(studentId)}`,
+        withStudentAuth()
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Could not load evaluations.");
+      setEvaluations(Array.isArray(data.evaluations) ? data.evaluations : []);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(errorText(error, "Could not load evaluations."));
+    } finally {
+      setLoading(false);
+    }
+  }, [studentId]);
 
   useEffect(() => {
-    const id = localStorage.getItem("student_id");
-    if (!id) {
-      navigate("/");
-      return;
-    }
-
-    setStudentId(id);
-    const loadEvaluations = async () => {
-      try {
-        const response = await fetch(
-          `${API_URL}/api/evaluations/student/${encodeURIComponent(id)}`,
-          withStudentAuth()
-        );
-        const data = await response.json();
-        if (response.status === 401) {
-          navigate("/");
-          return;
-        }
-        if (!response.ok) {
-          throw new Error(data.message || "Unable to load feedback history.");
-        }
-        setEvaluations(
-          Array.isArray(data.evaluations) ? data.evaluations : []
-        );
-      } catch (loadError) {
-        setHistoryError(
-          loadError instanceof Error
-            ? loadError.message
-            : "Unable to connect to the server."
-        );
-      } finally {
-        setLoading(false);
-      }
+    const refresh = () => {
+      void load();
     };
+    refresh();
+    window.addEventListener("internet-notification", refresh);
+    return () => window.removeEventListener("internet-notification", refresh);
+  }, [load]);
 
-    void loadEvaluations();
-  }, [navigate]);
+  // The same list holds both directions: evaluations written about the
+  // student, and the student's own feedback about the company.
+  const received = evaluations.filter((item) => item.evaluator_type !== "student");
+  const given = evaluations.filter((item) => item.evaluator_type === "student");
+  const average =
+    received.length > 0
+      ? received.reduce((sum, item) => sum + Number(item.rating), 0) / received.length
+      : null;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    setError("");
-    setMessage("");
+    if (!studentId) return;
     if (!rating) {
-      setError("Choose a rating from 1 to 5 stars.");
+      setFormError("Choose a rating from 1 to 5 stars.");
       return;
     }
-
+    setSubmitting(true);
+    setFormError("");
     try {
-      setSubmitting(true);
       const response = await fetch(
         `${API_URL}/api/evaluations`,
         withStudentAuth({
@@ -98,187 +100,192 @@ export default function StudentFeedback() {
           }),
         })
       );
-      const data = await response.json();
-      if (response.status === 401) {
-        navigate("/");
-        return;
-      }
-      if (!response.ok) {
-        throw new Error(data.message || "Unable to submit your feedback.");
-      }
-
-      setEvaluations((previous) => [data.evaluation, ...previous]);
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Your feedback could not be sent.");
+      toast.success("Thank you. Your feedback was sent to your coordinator.");
       setRating(0);
       setComments("");
-      setMessage("Your feedback was submitted.");
-    } catch (submitError) {
-      setError(
-        submitError instanceof Error
-          ? submitError.message
-          : "Unable to connect to the server."
-      );
+      await load();
+    } catch (error) {
+      setFormError(errorText(error, "Your feedback could not be sent."));
     } finally {
       setSubmitting(false);
     }
   };
 
+  const shown = hovered || rating;
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800">
-      <div className="flex min-h-screen">
-        <aside className="hidden w-60 shrink-0 flex-col bg-slate-900 text-white md:flex">
-          <div className="border-b border-white/10 px-5 py-5">
-            <p className="text-lg font-bold">INTERNet</p>
-            <p className="mt-1 text-xs text-slate-400">OJT Monitoring System</p>
-          </div>
-          <nav className="flex-1 space-y-1 px-3 py-4" aria-label="Student navigation">
-            {NAV_ITEMS.map((item) => (
-              <button
-                key={item.path}
-                type="button"
-                onClick={() => navigate(item.path)}
-                aria-current={item.path === "/student/feedback" ? "page" : undefined}
-                className={`w-full rounded-lg px-3 py-2 text-left text-sm ${
-                  item.path === "/student/feedback"
-                    ? "bg-white/10 font-medium text-amber-400"
-                    : "text-slate-300 hover:bg-white/5 hover:text-white"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </nav>
-          <button
-            type="button"
-            onClick={() => {
-              localStorage.removeItem("student");
-              localStorage.removeItem("student_id");
-              localStorage.removeItem("student_token");
-              navigate("/");
-            }}
-            className="border-t border-white/10 px-5 py-4 text-left text-sm text-slate-300 hover:text-white"
-          >
-            Sign out
-          </button>
-        </aside>
+    <StudentLayout
+      title="Feedback"
+      subtitle="See how you were evaluated, and rate your training experience."
+    >
+      <div className="space-y-5">
+        {loadError && <ErrorNotice message={loadError} onRetry={() => void load()} />}
 
-        <main className="mx-auto w-full max-w-4xl px-4 py-8 sm:px-6 lg:px-8">
-          <button
-            type="button"
-            onClick={() => navigate("/student/dashboard")}
-            className="mb-5 text-sm font-medium text-indigo-600 hover:text-indigo-800"
-          >
-            ← Back to dashboard
-          </button>
-          <header className="mb-6">
-            <h1 className="text-2xl font-bold text-slate-900">Company Feedback</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Share your rating and experience from your OJT placement.
-            </p>
-          </header>
-
-          <form
-            onSubmit={handleSubmit}
-            className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"
-          >
-            <h2 className="text-base font-semibold">Overall training experience</h2>
-            <fieldset className="mt-4">
-              <legend className="text-sm font-medium text-slate-700">
-                Your rating <span className="text-red-600">*</span>
-              </legend>
-              <div className="mt-2 flex gap-2" aria-label="Rating from 1 to 5 stars">
-                {[1, 2, 3, 4, 5].map((value) => (
-                  <button
-                    key={value}
-                    type="button"
-                    onClick={() => setRating(value)}
-                    aria-label={`${value} star${value === 1 ? "" : "s"}`}
-                    aria-pressed={rating === value}
-                    className={`text-3xl leading-none ${
-                      value <= rating ? "text-amber-400" : "text-slate-300"
-                    }`}
-                  >
-                    ★
-                  </button>
-                ))}
-                <span className="sr-only">{rating} out of 5 stars selected</span>
-              </div>
-            </fieldset>
-            <label className="mt-5 block text-sm font-medium text-slate-700">
-              Comments (optional)
-              <textarea
-                value={comments}
-                onChange={(event) => setComments(event.target.value)}
-                maxLength={2000}
-                rows={4}
-                className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-100"
-                placeholder="What went well, and what could improve?"
-              />
-            </label>
-            {error && (
-              <p role="alert" className="mt-3 text-sm text-red-600">
-                {error}
-              </p>
-            )}
-            {message && (
-              <p role="status" className="mt-3 text-sm text-emerald-700">
-                {message}
-              </p>
-            )}
-            <button
-              type="submit"
-              disabled={submitting}
-              className="mt-4 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {submitting ? "Submitting..." : "Submit feedback"}
-            </button>
-          </form>
-
-          <section className="mt-8" aria-labelledby="feedback-history-heading">
-            <h2 id="feedback-history-heading" className="text-lg font-semibold">
-              Feedback history
-            </h2>
-            {loading && (
-              <p className="mt-3 text-sm text-slate-500">Loading feedback...</p>
-            )}
-            {!loading && historyError && evaluations.length === 0 && (
-              <p className="mt-3 text-sm text-slate-500">
-                {historyError} Refresh the page to retry.
-              </p>
-            )}
-            {!loading && !historyError && evaluations.length === 0 && (
-              <p className="mt-3 rounded-lg border border-slate-200 bg-white p-4 text-sm text-slate-500">
-                You have not submitted feedback yet.
-              </p>
-            )}
-            <div className="mt-3 space-y-3">
-              {evaluations.map((evaluation) => (
-                <article
-                  key={evaluation.id}
-                  className="rounded-lg border border-slate-200 bg-white p-4"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <h3 className="text-sm font-semibold">{evaluation.category}</h3>
-                    <span className="text-amber-500" aria-label={`${evaluation.rating} out of 5 stars`}>
-                      {"★".repeat(evaluation.rating)}
-                      <span className="text-slate-300">
-                        {"★".repeat(Math.max(0, 5 - evaluation.rating))}
-                      </span>
+        <div className="grid gap-5 lg:grid-cols-5">
+          <Card className="lg:col-span-3">
+            <CardHeader
+              title="Evaluations of your performance"
+              description="From your supervisor and OJT coordinator"
+              action={
+                average !== null ? (
+                  <p className="flex items-center gap-1.5 text-sm text-slate-600">
+                    <Icon name="star" size={16} className="fill-gold-400 text-gold-500" />
+                    <span className="font-semibold text-slate-900">
+                      {average.toFixed(1)}
                     </span>
-                  </div>
-                  {evaluation.comments && (
-                    <p className="mt-2 whitespace-pre-wrap text-sm text-slate-600">
-                      {evaluation.comments}
-                    </p>
-                  )}
-                  <p className="mt-2 text-xs text-slate-400">
-                    {new Date(evaluation.eval_date).toLocaleDateString()}
+                    average
                   </p>
-                </article>
-              ))}
+                ) : undefined
+              }
+            />
+            <div className="mt-3">
+              {loading ? (
+                <SkeletonRows rows={3} />
+              ) : received.length === 0 ? (
+                <EmptyState
+                  icon="star"
+                  title="No evaluations yet"
+                  description="Evaluations from your supervisor will appear here."
+                />
+              ) : (
+                <ul className="divide-y divide-slate-100 border-t border-slate-100">
+                  {received.map((item) => (
+                    <EvaluationRow key={item.id} evaluation={item} showEvaluator />
+                  ))}
+                </ul>
+              )}
             </div>
-          </section>
-        </main>
+          </Card>
+
+          <div className="space-y-5 lg:col-span-2">
+            <Card>
+              <form onSubmit={submit} className="p-4 sm:p-5">
+                <h2 className="text-sm font-semibold text-slate-900">
+                  Rate your training experience
+                </h2>
+                <p className="mt-0.5 text-sm text-slate-500">
+                  Your coordinator uses this to assess partner companies.
+                </p>
+
+                <div
+                  className="mt-4 flex items-center gap-1"
+                  role="radiogroup"
+                  aria-label="Rating from 1 to 5 stars"
+                  onMouseLeave={() => setHovered(0)}
+                >
+                  {[1, 2, 3, 4, 5].map((value) => (
+                    <button
+                      key={value}
+                      type="button"
+                      role="radio"
+                      aria-checked={rating === value}
+                      aria-label={`${value} ${value === 1 ? "star" : "stars"}, ${RATING_WORDS[value]}`}
+                      onClick={() => setRating(value)}
+                      onMouseEnter={() => setHovered(value)}
+                      className="rounded-md p-1"
+                    >
+                      <Icon
+                        name="star"
+                        size={30}
+                        className={
+                          value <= shown
+                            ? "fill-gold-400 text-gold-500"
+                            : "text-slate-300"
+                        }
+                      />
+                    </button>
+                  ))}
+                  <span className="ml-2 text-sm font-medium text-slate-700">
+                    {RATING_WORDS[shown]}
+                  </span>
+                </div>
+
+                <label
+                  htmlFor="feedback-comments"
+                  className="mb-1.5 mt-4 block text-sm font-medium text-slate-700"
+                >
+                  Comments <span className="font-normal text-slate-400">(optional)</span>
+                </label>
+                <textarea
+                  id="feedback-comments"
+                  rows={4}
+                  maxLength={2000}
+                  value={comments}
+                  onChange={(event) => setComments(event.target.value)}
+                  placeholder="What went well, and what could be better?"
+                  className="field resize-none"
+                />
+
+                {formError && (
+                  <p role="alert" className="mt-3 text-sm text-red-600">
+                    {formError}
+                  </p>
+                )}
+
+                <Button type="submit" busy={submitting} doneLabel="Sent" failed={Boolean(formError)} className="mt-4">
+                  {submitting ? "Sending" : "Send feedback"}
+                </Button>
+              </form>
+            </Card>
+
+            {!loading && given.length > 0 && (
+              <Card>
+                <CardHeader title="Feedback you sent" />
+                <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+                  {given.map((item) => (
+                    <EvaluationRow key={item.id} evaluation={item} />
+                  ))}
+                </ul>
+              </Card>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </StudentLayout>
+  );
+}
+
+function EvaluationRow({
+  evaluation,
+  showEvaluator = false,
+}: {
+  evaluation: Evaluation;
+  showEvaluator?: boolean;
+}) {
+  const stars = Math.max(0, Math.min(5, Math.round(Number(evaluation.rating))));
+  const who =
+    evaluation.evaluator_name ||
+    (evaluation.evaluator_type === "teacher" ? "OJT coordinator" : "Supervisor");
+  return (
+    <li className="px-4 py-3.5 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-semibold text-slate-900">{evaluation.category}</p>
+        <span
+          className="flex items-center gap-0.5"
+          role="img"
+          aria-label={`${stars} out of 5 stars`}
+        >
+          {[1, 2, 3, 4, 5].map((value) => (
+            <Icon
+              key={value}
+              name="star"
+              size={15}
+              className={value <= stars ? "fill-gold-400 text-gold-500" : "text-slate-300"}
+            />
+          ))}
+        </span>
+      </div>
+      <p className="mt-0.5 text-xs text-slate-500">
+        {showEvaluator && `${who} · `}
+        {formatDate(evaluation.eval_date || evaluation.created_at)}
+      </p>
+      {evaluation.comments && (
+        <p className="mt-1.5 whitespace-pre-line text-sm text-slate-600">
+          {evaluation.comments}
+        </p>
+      )}
+    </li>
   );
 }

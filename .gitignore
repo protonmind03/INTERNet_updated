@@ -13,3 +13,6 @@ backend/private-uploads/
 # Paper drafts stay local; they carry the group members' names
 CC106 GROUP 9*.docx
 CC106 GROUP 9*.pdf
+
+# Brand kit drop folders; the integrated copy lives in my-pwa/src/brand
+internet-brand-kit*/

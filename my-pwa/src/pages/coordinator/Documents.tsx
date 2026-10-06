@@ -1,9 +1,25 @@
-import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import CoordinatorLayout from "./CoordinatorLayout";
-import { API_URL, withCoordinatorAuth } from "../../lib/api";
-import { isWithinDateRange } from "../../lib/dateRange";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DateRangeFilter from "../../components/DateRangeFilter";
+import Icon from "../../components/Icon";
+import Pagination from "../../components/Pagination";
+import {
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorNotice,
+  FilterChips,
+  ProgressBar,
+  SearchField,
+  SkeletonRows,
+  StatusBadge,
+} from "../../components/ui";
+import CoordinatorLayout from "../../layouts/CoordinatorLayout";
+import { isWithinDateRange } from "../../lib/dateRange";
+import { formatFileSize } from "../../lib/files";
+import { formatDate, localDateKey } from "../../lib/format";
+import { errorText, toast } from "../../lib/toast";
+import { usePagination } from "../../lib/usePagination";
+import { coordinatorRequest, downloadSubmittedDocument } from "./request";
 
 type DocumentStatus = "Pending" | "Approved" | "Rejected";
 
@@ -11,7 +27,6 @@ type SubmittedDocument = {
   id: number;
   student_id: string;
   student_name: string | null;
-  program: string | null;
   company: string | null;
   supervisor_name: string | null;
   doc_type: string;
@@ -20,7 +35,6 @@ type SubmittedDocument = {
   status: DocumentStatus;
   review_notes: string | null;
   uploaded_at: string;
-  reviewed_at: string | null;
 };
 
 type StudentProgress = {
@@ -35,341 +49,281 @@ type StudentProgress = {
   missing: string[];
 };
 
-const statusStyles: Record<DocumentStatus, string> = {
-  Pending: "bg-amber-50 text-amber-600",
-  Approved: "bg-emerald-50 text-emerald-600",
-  Rejected: "bg-red-50 text-red-500",
-};
-
-function formatSize(size: number): string {
-  if (size < 1024) return `${size} B`;
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(0)} KB`;
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function formatDate(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString("en-PH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
-
-/** Local YYYY-MM-DD of a timestamp, for comparing with date inputs. */
-function localDay(value: string): string {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${date.getFullYear()}-${month}-${day}`;
-}
+type Scope = "all" | "incomplete";
+type StatusFilter = "all" | DocumentStatus;
 
 export default function CoordinatorDocuments() {
-  const navigate = useNavigate();
   const [documents, setDocuments] = useState<SubmittedDocument[]>([]);
   const [students, setStudents] = useState<StudentProgress[]>([]);
   const [requirements, setRequirements] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+
   const [query, setQuery] = useState("");
-  const [status, setStatus] = useState<"" | DocumentStatus>("");
+  const [scope, setScope] = useState<Scope>("all");
+  const [status, setStatus] = useState<StatusFilter>("all");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
-  const [onlyIncomplete, setOnlyIncomplete] = useState(false);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await coordinatorRequest<{
+        documents: SubmittedDocument[];
+        students: StudentProgress[];
+        requirements: string[];
+      }>("/api/coordinator/documents");
+      setDocuments(data.documents || []);
+      setStudents(data.students || []);
+      setRequirements(data.requirements || []);
+      setError("");
+    } catch (loadError) {
+      setError(errorText(loadError, "Could not load submitted documents."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch(
-          `${API_URL}/api/coordinator/documents`,
-          withCoordinatorAuth()
-        );
-        if (response.status === 401) {
-          navigate("/");
-          return;
-        }
-        const data = await response.json();
-        if (!response.ok) {
-          setError(data.message || "Failed to load submitted documents.");
-          return;
-        }
-        setDocuments(data.documents || []);
-        setStudents(data.students || []);
-        setRequirements(data.requirements || []);
-      } catch {
-        setError("Unable to connect to the server.");
-      } finally {
-        setLoading(false);
-      }
+    const refresh = () => {
+      void load();
     };
+    refresh();
+    window.addEventListener("internet-notification", refresh);
+    return () => window.removeEventListener("internet-notification", refresh);
+  }, [load]);
 
-    load();
-  }, [navigate]);
+  const text = query.trim().toLowerCase();
+  const matches = useCallback(
+    (values: (string | null)[]) =>
+      !text ||
+      values.filter(Boolean).some((value) => String(value).toLowerCase().includes(text)),
+    [text]
+  );
 
-  const handleDownload = async (item: SubmittedDocument) => {
-    setError("");
+  const visibleStudents = useMemo(
+    () =>
+      students.filter(
+        (student) =>
+          (scope === "all" || student.missing.length > 0) &&
+          matches([
+            student.name,
+            student.student_id,
+            student.company,
+            student.program,
+            student.supervisor_name,
+          ])
+      ),
+    [students, scope, matches]
+  );
+
+  const visibleDocuments = useMemo(
+    () =>
+      documents.filter(
+        (item) =>
+          (status === "all" || item.status === status) &&
+          isWithinDateRange(localDateKey(item.uploaded_at), dateFrom, dateTo) &&
+          matches([
+            item.student_name,
+            item.student_id,
+            item.company,
+            item.supervisor_name,
+            item.doc_type,
+            item.original_filename,
+          ])
+      ),
+    [documents, status, dateFrom, dateTo, matches]
+  );
+
+  const studentPager = usePagination(visibleStudents, 20);
+  const filePager = usePagination(visibleDocuments, 15);
+  const total = requirements.length;
+  const incomplete = students.filter((student) => student.missing.length > 0).length;
+
+  const download = async (item: SubmittedDocument) => {
     try {
-      const response = await fetch(
-        `${API_URL}/api/documents/${item.id}/file`,
-        withCoordinatorAuth()
-      );
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || "Failed to download document.");
-      }
-      const objectUrl = URL.createObjectURL(await response.blob());
-      const link = window.document.createElement("a");
-      link.href = objectUrl;
-      link.download = item.original_filename;
-      link.click();
-      URL.revokeObjectURL(objectUrl);
+      await downloadSubmittedDocument(item.id, item.original_filename);
     } catch (downloadError) {
-      setError(
-        downloadError instanceof Error
-          ? downloadError.message
-          : "Failed to download document."
-      );
+      toast.error(errorText(downloadError, "The document could not be downloaded."));
     }
   };
 
-  const needle = query.trim().toLowerCase();
-  const matches = (values: (string | null)[]) =>
-    !needle ||
-    values
-      .filter(Boolean)
-      .some((value) => String(value).toLowerCase().includes(needle));
-
-  const visibleStudents = students.filter(
-    (s) =>
-      (!onlyIncomplete || s.missing.length > 0) &&
-      matches([s.name, s.student_id, s.company, s.program, s.supervisor_name])
-  );
-
-  const visibleDocuments = documents.filter(
-    (d) =>
-      (!status || d.status === status) &&
-      isWithinDateRange(localDay(d.uploaded_at), dateFrom, dateTo) &&
-      matches([
-        d.student_name,
-        d.student_id,
-        d.company,
-        d.supervisor_name,
-        d.doc_type,
-        d.original_filename,
-      ])
-  );
-
-  const total = requirements.length;
-
   return (
     <CoordinatorLayout
-      title="Student Documents"
-      subtitle="See which OJT requirements each student has submitted and open the files"
-      breadcrumb={["Coordinator", "Oversight", "Documents"]}
+      title="Documents"
+      subtitle="Which OJT requirements each student has completed, and every file submitted. Supervisors do the reviewing."
     >
-      <div className="space-y-4">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <input
-            type="search"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Filter by student, ID, company, supervisor, or document"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 sm:max-w-sm"
+      <div className="space-y-6">
+        {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+
+        <SearchField
+          value={query}
+          onChange={setQuery}
+          label="Search documents"
+          placeholder="Search by student, company, supervisor or document"
+          className="max-w-md"
+        />
+
+        <Card>
+          <CardHeader
+            title="Requirement progress"
+            description={`A requirement is complete once the supervisor approves the student's file. ${total} active ${
+              total === 1 ? "requirement" : "requirements"
+            }.`}
           />
-          <label className="flex items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={onlyIncomplete}
-              onChange={(e) => setOnlyIncomplete(e.target.checked)}
-              className="rounded border-slate-300"
+          <div className="border-b border-slate-100 px-4 pb-4 pt-3 sm:px-5">
+            <FilterChips
+              label="Which students"
+              value={scope}
+              onChange={setScope}
+              options={[
+                { value: "all", label: "All students", count: students.length },
+                { value: "incomplete", label: "Incomplete", count: incomplete },
+              ]}
             />
-            Only students with missing requirements
-          </label>
-        </div>
-
-        {error && (
-          <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
-            {error}
-          </p>
-        )}
-
-        {/* REQUIREMENT PROGRESS PER STUDENT */}
-        <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
-          <div className="border-b border-slate-100 px-4 py-3">
-            <h2 className="text-sm font-semibold text-slate-800">
-              Requirement progress
-            </h2>
-            <p className="text-xs text-slate-400">
-              A requirement counts as complete once the supervisor approves
-              the student's document for it. {total} active requirement
-              {total === 1 ? "" : "s"}.
-            </p>
           </div>
-          <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-              <tr>
-                <th className="px-4 py-3 font-medium">Student</th>
-                <th className="px-4 py-3 font-medium">Supervisor</th>
-                <th className="px-4 py-3 font-medium">Approved</th>
-                <th className="px-4 py-3 font-medium">In review</th>
-                <th className="px-4 py-3 font-medium">Still missing</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                    Loading documents...
-                  </td>
-                </tr>
-              )}
-              {!loading && visibleStudents.length === 0 && (
-                <tr>
-                  <td colSpan={5} className="px-4 py-8 text-center text-slate-400">
-                    No students match this filter.
-                  </td>
-                </tr>
-              )}
-              {!loading &&
-                visibleStudents.map((s) => (
-                  <tr key={s.student_id} className="hover:bg-slate-50/60">
-                    <td className="px-4 py-3">
-                      <p className="font-medium text-slate-800">{s.name}</p>
-                      <p className="text-xs text-slate-400">
-                        {s.program || "—"} · {s.company || "—"}
-                      </p>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {s.supervisor_name || "Unassigned"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-1.5 w-20 overflow-hidden rounded-full bg-slate-100">
-                          <div
-                            className="h-full rounded-full bg-emerald-500"
-                            style={{
-                              width: `${total ? (s.approved / total) * 100 : 0}%`,
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs text-slate-500">
-                          {s.approved}/{total}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3 text-slate-600">
-                      {s.pending > 0 ? `${s.pending} pending` : "—"}
-                      {s.rejected > 0 && (
-                        <span className="ml-2 rounded-full bg-red-50 px-2 py-0.5 text-xs font-medium text-red-500">
-                          {s.rejected} rejected
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">
-                      {s.missing.length === 0 ? (
-                        <span className="text-sm text-emerald-500">Complete</span>
-                      ) : (
-                        s.missing.join(", ")
-                      )}
-                    </td>
-                  </tr>
-                ))}
-            </tbody>
-          </table>
-        </section>
-
-        {/* SUBMITTED FILES */}
-        <section className="rounded-xl border border-slate-200 bg-white">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-800">
-                Submitted files
-              </h2>
-              <p className="text-xs text-slate-400">
-                {visibleDocuments.length} of {documents.length} shown, newest
-                first.
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <div className="flex gap-1.5">
-                {(["", "Pending", "Approved", "Rejected"] as const).map((s) => (
-                  <button
-                    key={s || "all"}
-                    type="button"
-                    onClick={() => setStatus(s)}
-                    className={`rounded-lg px-3 py-1.5 text-xs font-medium ${
-                      status === s
-                        ? "bg-indigo-600 text-white"
-                        : "border border-slate-200 bg-white text-slate-500 hover:bg-slate-50"
-                    }`}
-                  >
-                    {s || "All"}
-                  </button>
-                ))}
-              </div>
-              <DateRangeFilter
-                from={dateFrom}
-                to={dateTo}
-                onChange={(from, to) => {
-                  setDateFrom(from);
-                  setDateTo(to);
-                }}
-              />
-            </div>
-          </div>
-
-          {!loading && visibleDocuments.length === 0 ? (
-            <p className="px-4 py-6 text-center text-sm text-slate-400">
-              {documents.length === 0
-                ? "No documents have been submitted yet."
-                : "No documents match these filters."}
-            </p>
+          {loading ? (
+            <SkeletonRows rows={5} />
+          ) : visibleStudents.length === 0 ? (
+            <EmptyState
+              icon={students.length === 0 ? "users" : "search"}
+              title={students.length === 0 ? "No active students" : "No students match"}
+            />
           ) : (
+            <>
             <ul className="divide-y divide-slate-100">
-              {visibleDocuments.map((d) => (
+              {studentPager.pageItems.map((student) => (
                 <li
-                  key={d.id}
-                  className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between"
+                  key={student.student_id}
+                  className="grid gap-x-6 gap-y-2 px-4 py-3.5 sm:px-5 lg:grid-cols-[minmax(0,16rem)_12rem_minmax(0,1fr)] lg:items-center"
                 >
-                  <div>
-                    <p className="text-sm font-medium text-slate-800">
-                      {d.doc_type}{" "}
-                      <span className="font-normal text-slate-400">
-                        · {d.student_name || d.student_id}
-                      </span>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-slate-900">{student.name}</p>
+                    <p className="truncate text-xs text-slate-500">
+                      {student.company || "No company"} ·{" "}
+                      {student.supervisor_name || "No supervisor"}
                     </p>
-                    <p className="text-xs text-slate-400">
-                      {d.original_filename} · {formatSize(Number(d.size_bytes))}{" "}
-                      · Uploaded {formatDate(d.uploaded_at)} · Supervisor:{" "}
-                      {d.supervisor_name || "Unassigned"}
-                    </p>
-                    {d.review_notes && (
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <ProgressBar
+                      value={total ? (student.approved / total) * 100 : 0}
+                      label={`${student.approved} of ${total} approved`}
+                    />
+                    <span className="tabular shrink-0 text-sm text-slate-700">
+                      {student.approved}/{total}
+                    </span>
+                  </div>
+                  <div className="min-w-0 text-sm">
+                    {student.missing.length === 0 ? (
+                      <StatusBadge status="Complete" tone="good" />
+                    ) : (
+                      <p className="text-slate-600">
+                        <span className="font-medium text-slate-800">Still needed:</span>{" "}
+                        {student.missing.join(", ")}
+                      </p>
+                    )}
+                    {(student.pending > 0 || student.rejected > 0) && (
                       <p className="mt-0.5 text-xs text-slate-500">
-                        Review note: {d.review_notes}
+                        {[
+                          student.pending > 0 && `${student.pending} with the supervisor`,
+                          student.rejected > 0 && `${student.rejected} rejected`,
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-medium ${statusStyles[d.status]}`}
-                    >
-                      {d.status}
-                    </span>
+                </li>
+              ))}
+            </ul>
+            <Pagination state={studentPager} noun="student" />
+            </>
+          )}
+        </Card>
+
+        <Card>
+          <CardHeader
+            title="Submitted files"
+            description={
+              loading ? undefined : `${visibleDocuments.length} of ${documents.length} shown, newest first`
+            }
+          />
+          <div className="space-y-3 border-b border-slate-100 px-4 pb-4 pt-3 sm:px-5">
+            <FilterChips
+              label="Filter by status"
+              value={status}
+              onChange={setStatus}
+              options={[
+                { value: "all", label: "All" },
+                { value: "Pending", label: "With supervisor" },
+                { value: "Approved", label: "Approved" },
+                { value: "Rejected", label: "Rejected" },
+              ]}
+            />
+            <DateRangeFilter
+              from={dateFrom}
+              to={dateTo}
+              onChange={(from, to) => {
+                setDateFrom(from);
+                setDateTo(to);
+              }}
+            />
+          </div>
+          {loading ? (
+            <SkeletonRows rows={5} />
+          ) : visibleDocuments.length === 0 ? (
+            <EmptyState
+              icon="document"
+              title={documents.length === 0 ? "No documents submitted yet" : "No documents match"}
+            />
+          ) : (
+            <>
+            <ul className="divide-y divide-slate-100">
+              {filePager.pageItems.map((item) => (
+                <li
+                  key={item.id}
+                  className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-slate-900">
+                      {item.doc_type}
+                      <span className="font-normal text-slate-500">
+                        {" "}
+                        · {item.student_name || item.student_id}
+                      </span>
+                    </p>
+                    <p className="truncate text-xs text-slate-500">
+                      {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
+                      {formatDate(item.uploaded_at)} · Supervisor:{" "}
+                      {item.supervisor_name || "unassigned"}
+                    </p>
+                    {item.review_notes && (
+                      <p className="mt-1 text-sm text-slate-600">
+                        <span className="font-medium">Supervisor's note:</span> {item.review_notes}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-3">
+                    <StatusBadge
+                      status={item.status === "Pending" ? "With supervisor" : item.status}
+                      tone={item.status === "Pending" ? "waiting" : undefined}
+                    />
                     <button
                       type="button"
-                      onClick={() => handleDownload(d)}
-                      className="text-xs font-medium text-indigo-600 hover:underline"
+                      onClick={() => void download(item)}
+                      aria-label={`Download ${item.original_filename}`}
+                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
                     >
+                      <Icon name="download" size={15} />
                       Download
                     </button>
                   </div>
                 </li>
               ))}
             </ul>
+            <Pagination state={filePager} noun="file" />
+            </>
           )}
-        </section>
+        </Card>
       </div>
     </CoordinatorLayout>
   );

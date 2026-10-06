@@ -15,6 +15,7 @@ type NotificationPayload = {
 };
 
 const streams = new Map<string, Set<Response>>();
+const MAX_STREAMS_PER_ACCOUNT = 10;
 
 function recipientKey(recipient: Recipient): string {
   return `${recipient.role}:${recipient.id}`;
@@ -26,6 +27,14 @@ export function registerNotificationStream(
 ): () => void {
   const key = recipientKey(recipient);
   const current = streams.get(key) || new Set<Response>();
+  // One account needs a stream per open tab or device, not dozens. The
+  // oldest goes first; a tab that is still open reconnects by itself.
+  while (current.size >= MAX_STREAMS_PER_ACCOUNT) {
+    const oldest = current.values().next().value;
+    if (!oldest) break;
+    current.delete(oldest);
+    oldest.end();
+  }
   current.add(response);
   streams.set(key, current);
   response.write(`event: connected\ndata: {}\n\n`);

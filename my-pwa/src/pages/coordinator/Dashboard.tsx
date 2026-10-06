@@ -1,7 +1,21 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { useNavigate } from "react-router-dom";
-import CoordinatorLayout from "./CoordinatorLayout";
-import { API_URL, withCoordinatorAuth } from "../../lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import Icon, { type IconName } from "../../components/Icon";
+import {
+  Card,
+  CardHeader,
+  EmptyState,
+  ErrorNotice,
+  ProgressBar,
+  Skeleton,
+  SkeletonRows,
+  StatTile,
+} from "../../components/ui";
+import { BrandLoader } from "../../brand";
+import CoordinatorLayout from "../../layouts/CoordinatorLayout";
+import { formatHours, greetingFor } from "../../lib/format";
+import { errorText } from "../../lib/toast";
+import { coordinatorRequest } from "./request";
 
 type DashboardData = {
   students: { active: number; total: number };
@@ -13,238 +27,304 @@ type DashboardData = {
   totalHoursLogged: number;
 };
 
-const CARD_THEMES = {
-  neutral: "border border-slate-200 bg-white",
-  indigo: "bg-gradient-to-br from-indigo-600 to-indigo-500 text-white",
-  amber: "bg-gradient-to-br from-amber-500 to-orange-500 text-white",
-  red: "bg-gradient-to-br from-red-500 to-rose-500 text-white",
-  emerald: "bg-gradient-to-br from-emerald-500 to-teal-500 text-white",
-} as const;
+type MonitorRow = {
+  student_id: string;
+  name: string;
+  company: string | null;
+  supervisor_name: string | null;
+  required_hours: number;
+  hours_rendered: number;
+  flagged_logs: number;
+  overdue_tasks: number;
+  completion: number;
+};
 
-function StatCard({
-  label,
-  value,
-  hint,
-  theme = "neutral",
-  icon,
-}: {
-  label: string;
-  value: string | number;
-  hint?: string;
-  theme?: keyof typeof CARD_THEMES;
-  icon?: ReactNode;
-}) {
-  const colored = theme !== "neutral";
+type AttentionItem = {
+  key: string;
+  count: number;
+  title: string;
+  detail: string;
+  to: string;
+  icon: IconName;
+  urgent: boolean;
+};
 
-  return (
-    <div className={`rounded-xl p-4 ${CARD_THEMES[theme]}`}>
-      <div className="flex items-start justify-between">
-        <p
-          className={`text-xs font-medium ${
-            colored ? "text-white/80" : "text-slate-400"
-          }`}
-        >
-          {label}
-        </p>
-        {icon && (
-          <div
-            className={`flex h-7 w-7 items-center justify-center rounded-lg ${
-              colored ? "bg-white/15" : "bg-slate-100"
-            }`}
-          >
-            {icon}
-          </div>
-        )}
-      </div>
-      <p
-        className={`mt-1.5 text-2xl font-semibold ${
-          colored ? "text-white" : "text-slate-900"
-        }`}
-      >
-        {value}
-      </p>
-      <div className="mt-1 flex items-center gap-1.5">
-        {hint && (
-          <p className={`text-xs ${colored ? "text-white/75" : "text-slate-400"}`}>
-            {hint}
-          </p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function CardIcon({ path }: { path: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-    >
-      <path d={path} />
-    </svg>
-  );
+function accountsText(total: number): string {
+  return `${total} ${total === 1 ? "account" : "accounts"} in total`;
 }
 
 export default function CoordinatorDashboard() {
-  const navigate = useNavigate();
   const [data, setData] = useState<DashboardData | null>(null);
+  const [rows, setRows] = useState<MonitorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const load = useCallback(async () => {
+    try {
+      const [summary, monitoring] = await Promise.all([
+        coordinatorRequest<DashboardData>("/api/coordinator/dashboard"),
+        coordinatorRequest<{ students: MonitorRow[] }>("/api/coordinator/monitoring"),
+      ]);
+      setData(summary);
+      setRows(monitoring.students || []);
+      setError("");
+    } catch (loadError) {
+      setError(errorText(loadError, "Could not load the dashboard."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        setLoading(true);
-        const response = await fetch(
-          `${API_URL}/api/coordinator/dashboard`,
-          withCoordinatorAuth()
-        );
-
-        if (response.status === 401) {
-          navigate("/");
-          return;
-        }
-
-        const result = await response.json();
-
-        if (!response.ok) {
-          setError(result.message || "Failed to load dashboard.");
-          return;
-        }
-
-        setData(result);
-      } catch {
-        setError("Unable to connect to the server.");
-      } finally {
-        setLoading(false);
-      }
+    const refresh = () => {
+      void load();
     };
+    refresh();
+    // Several notifications often arrive together; reload once for the burst.
+    let timer = 0;
+    const later = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(refresh, 400);
+    };
+    window.addEventListener("internet-notification", later);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener("internet-notification", later);
+    };
+  }, [load]);
 
-    load();
-  }, [navigate]);
+  // Students with a flagged log or an overdue task, worst first.
+  const watchList = useMemo(
+    () =>
+      rows
+        .filter((row) => row.flagged_logs > 0 || row.overdue_tasks > 0)
+        .sort(
+          (a, b) =>
+            b.flagged_logs + b.overdue_tasks - (a.flagged_logs + a.overdue_tasks)
+        )
+        .slice(0, 6),
+    [rows]
+  );
+
+  const unassigned = rows.filter((row) => !row.supervisor_name).length;
+  const averageCompletion =
+    rows.length > 0
+      ? Math.round(rows.reduce((sum, row) => sum + row.completion, 0) / rows.length)
+      : 0;
+
+  const candidates: AttentionItem[] = data
+    ? [
+        {
+          key: "complaints",
+          count: data.pendingComplaints,
+          title: data.pendingComplaints === 1 ? "complaint to review" : "complaints to review",
+          detail: "Filed by students or supervisors and not yet looked at.",
+          to: "/coordinator/complaints",
+          icon: "flag",
+          urgent: true,
+        },
+        {
+          key: "flagged",
+          count: data.flaggedAttendance,
+          title:
+            data.flaggedAttendance === 1 ? "flagged attendance log" : "flagged attendance logs",
+          detail: "Rejected, missing a time-out, or left unverified for days.",
+          to: "/coordinator/monitoring?scope=attention",
+          icon: "alert",
+          urgent: true,
+        },
+        {
+          key: "unassigned",
+          count: unassigned,
+          title: unassigned === 1 ? "student without a supervisor" : "students without a supervisor",
+          detail: "They cannot upload documents or have logs verified until assigned.",
+          to: "/coordinator/students?filter=unassigned",
+          icon: "users",
+          urgent: true,
+        },
+        {
+          key: "pending",
+          count: data.pendingAttendance,
+          title:
+            data.pendingAttendance === 1
+              ? "attendance log awaiting a supervisor"
+              : "attendance logs awaiting supervisors",
+          detail: "Waiting for the assigned supervisor to verify.",
+          to: "/coordinator/monitoring",
+          icon: "clock",
+          urgent: false,
+        },
+        {
+          key: "tasks",
+          count: data.tasks.awaitingReview,
+          title:
+            data.tasks.awaitingReview === 1
+              ? "task submission awaiting a supervisor"
+              : "task submissions awaiting supervisors",
+          detail: "Submitted by students and not yet reviewed.",
+          to: "/coordinator/monitoring",
+          icon: "tasks",
+          urgent: false,
+        },
+      ]
+    : [];
+  const attention = candidates.filter((item) => item.count > 0);
 
   return (
     <CoordinatorLayout
       title="Dashboard"
-      subtitle="System-wide overview of every student, supervisor, and OJT activity"
-      breadcrumb={["Coordinator", "Dashboard"]}
+      subtitle={`${greetingFor(new Date())}. Here is where the programme stands.`}
     >
-      {loading && (
-        <div className="rounded-xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-400">
-          Loading dashboard...
+      <div className="space-y-6">
+        {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {loading ? (
+            <div className="col-span-full">
+              <BrandLoader role="coordinator" process="dashboard" />
+            </div>
+          ) : !data ? (
+            [0, 1, 2, 3].map((tile) => <Skeleton key={tile} className="h-[104px] rounded-xl" />)
+          ) : (
+            <>
+              <StatTile
+                label="Active students"
+                value={data.students.active}
+                hint={accountsText(data.students.total)}
+                icon="users"
+              />
+              <StatTile
+                label="Active supervisors"
+                value={data.supervisors.active}
+                hint={accountsText(data.supervisors.total)}
+                icon="briefcase"
+              />
+              <StatTile
+                label="Verified hours"
+                value={formatHours(data.totalHoursLogged)}
+                hint={`${averageCompletion}% average completion`}
+                icon="clock"
+                tone="gold"
+              />
+              <StatTile
+                label="Tasks reviewed"
+                value={`${data.tasks.completed} of ${data.tasks.total}`}
+                hint={
+                  data.tasks.total > 0
+                    ? `${Math.round((data.tasks.completed / data.tasks.total) * 100)}% complete`
+                    : "No tasks assigned yet"
+                }
+                icon="tasks"
+                tone="good"
+              />
+            </>
+          )}
         </div>
-      )}
 
-      {!loading && error && (
-        <div className="rounded-xl border border-red-200 bg-white p-10 text-center text-sm text-red-400">
-          {error}
+        <div className="grid items-start gap-6 lg:grid-cols-5">
+          <Card className="lg:col-span-3">
+            <CardHeader
+              title="Needs attention"
+              description="What is waiting on you, and what is stuck with supervisors"
+            />
+            <div className="mt-3">
+              {loading ? (
+                <SkeletonRows rows={4} />
+              ) : attention.length === 0 ? (
+                <EmptyState
+                  icon="check-circle"
+                  title="Nothing needs attention"
+                  description="No open complaints, flagged logs or waiting reviews."
+                />
+              ) : (
+                <ul className="divide-y divide-slate-100 border-t border-slate-100">
+                  {attention.map((item) => (
+                    <li key={item.key}>
+                      <Link
+                        to={item.to}
+                        className="flex items-center gap-4 px-4 py-3.5 hover:bg-slate-50 sm:px-5"
+                      >
+                        <span
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${
+                            item.urgent
+                              ? "bg-red-50 text-red-600 ring-red-600/15"
+                              : "bg-amber-50 text-amber-700 ring-amber-600/20"
+                          }`}
+                        >
+                          <Icon name={item.icon} />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-slate-900">
+                            {item.count} {item.title}
+                          </span>
+                          <span className="block text-sm text-slate-600">{item.detail}</span>
+                        </span>
+                        <Icon name="chevron-right" size={16} className="shrink-0 text-slate-300" />
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Card>
+
+          <Card className="lg:col-span-2">
+            <CardHeader
+              title="Students to check on"
+              description="Flagged logs or overdue tasks"
+              action={
+                <Link
+                  to="/coordinator/monitoring"
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-psu-700 hover:underline"
+                >
+                  Monitoring
+                  <Icon name="chevron-right" size={14} />
+                </Link>
+              }
+            />
+            <div className="mt-3">
+              {loading ? (
+                <SkeletonRows rows={3} />
+              ) : watchList.length === 0 ? (
+                <EmptyState icon="check-circle" title="No students flagged" />
+              ) : (
+                <ul className="divide-y divide-slate-100 border-t border-slate-100">
+                  {watchList.map((row) => (
+                    <li key={row.student_id} className="px-4 py-3.5 sm:px-5">
+                      <div className="flex items-baseline justify-between gap-3">
+                        <Link
+                          to={`/coordinator/students/${encodeURIComponent(row.student_id)}`}
+                          className="truncate text-sm font-medium text-slate-900 hover:text-psu-700 hover:underline"
+                        >
+                          {row.name}
+                        </Link>
+                        <p className="shrink-0 text-xs font-semibold text-red-600">
+                          {[
+                            row.flagged_logs > 0 &&
+                              `${row.flagged_logs} flagged ${row.flagged_logs === 1 ? "log" : "logs"}`,
+                            row.overdue_tasks > 0 && `${row.overdue_tasks} overdue`,
+                          ]
+                            .filter(Boolean)
+                            .join(" · ")}
+                        </p>
+                      </div>
+                      <p className="truncate text-xs text-slate-500">
+                        {row.company || "No company"} · {row.supervisor_name || "No supervisor"}
+                      </p>
+                      <div className="mt-2 flex items-center gap-3">
+                        <ProgressBar value={row.completion} label={`${row.completion} percent`} />
+                        <span className="tabular shrink-0 text-xs text-slate-600">
+                          {row.completion}%
+                        </span>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </Card>
         </div>
-      )}
-
-      {!loading && !error && data && (
-        <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            <StatCard
-              theme="indigo"
-              label="Active Students"
-              value={data.students.active}
-              hint={`${data.students.total} total accounts`}
-              icon={<CardIcon path="M12 3l2.7 5.8 6.3.6-4.8 4.2 1.4 6.2L12 16.9 6.4 19.8l1.4-6.2L3 9.4l6.3-.6L12 3Z" />}
-            />
-            <StatCard
-              label="Active Supervisors"
-              value={data.supervisors.active}
-              hint={`${data.supervisors.total} total accounts`}
-              icon={<CardIcon path="M3 7h18M3 7v13h18V7M3 7l2-4h14l2 4" />}
-            />
-            <StatCard
-              theme="emerald"
-              label="Hours Logged"
-              value={data.totalHoursLogged.toLocaleString()}
-              hint="Verified attendance hours"
-              icon={<CardIcon path="M12 8v4l3 3M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />}
-            />
-            <StatCard
-              theme="amber"
-              label="Pending Attendance"
-              value={data.pendingAttendance}
-              hint="Awaiting confirmation"
-              icon={<CardIcon path="M12 8v4l3 3M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" />}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <StatCard
-              theme="red"
-              label="Flagged / Rejected Logs"
-              value={data.flaggedAttendance}
-              hint="Discrepancies to review"
-              icon={<CardIcon path="M5 21V4M5 4h13l-3 4 3 4H5" />}
-            />
-            <StatCard
-              theme="red"
-              label="Pending Complaints"
-              value={data.pendingComplaints}
-              hint="Awaiting resolution"
-              icon={<CardIcon path="M10.3 3.9 2.7 17a1.8 1.8 0 0 0 1.5 2.7h15.6a1.8 1.8 0 0 0 1.5-2.7L13.7 3.9a2 2 0 0 0-3.4 0ZM12 9v4M12 16.5h.01" />}
-            />
-            <StatCard
-              label="Tasks Awaiting Review"
-              value={data.tasks.awaitingReview}
-              hint={`${data.tasks.completed} of ${data.tasks.total} completed`}
-              icon={<CardIcon path="M9 11l3 3L22 4M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />}
-            />
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-            <button
-              type="button"
-              onClick={() => navigate("/coordinator/monitoring")}
-              className="rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-indigo-300 hover:bg-indigo-50/40"
-            >
-              <p className="text-sm font-semibold text-slate-800">
-                Monitor OJT progress
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                See every student's hours, tasks, and flagged logs in one
-                table.
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate("/coordinator/complaints")}
-              className="rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-indigo-300 hover:bg-indigo-50/40"
-            >
-              <p className="text-sm font-semibold text-slate-800">
-                Resolve complaints
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Review filed incidents and mark them resolved or dismissed.
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => navigate("/coordinator/students")}
-              className="rounded-xl border border-slate-200 bg-white p-4 text-left hover:border-indigo-300 hover:bg-indigo-50/40"
-            >
-              <p className="text-sm font-semibold text-slate-800">
-                Manage accounts
-              </p>
-              <p className="mt-1 text-xs text-slate-400">
-                Register, edit, or deactivate student and supervisor
-                accounts.
-              </p>
-            </button>
-          </div>
-        </div>
-      )}
+      </div>
     </CoordinatorLayout>
   );
 }

@@ -1,309 +1,381 @@
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import CoordinatorLayout from "./CoordinatorLayout";
-import { API_URL, withCoordinatorAuth } from "../../lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Pagination from "../../components/Pagination";
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  ErrorNotice,
+  FilterChips,
+  FormError,
+  FormField,
+  Modal,
+  SkeletonRows,
+  StarInput,
+  Stars,
+} from "../../components/ui";
+import CoordinatorLayout from "../../layouts/CoordinatorLayout";
+import { EVALUATION_CATEGORIES } from "../../lib/evaluation";
+import { formatDate } from "../../lib/format";
+import { errorText, toast } from "../../lib/toast";
+import { usePagination } from "../../lib/usePagination";
+import { coordinatorRequest } from "./request";
+
+type EvaluatorType = "supervisor" | "student" | "teacher";
 
 type EvaluationRow = {
   id: number;
   student_id: string;
   student_name: string | null;
   company: string | null;
-  evaluator_type: "supervisor" | "student" | "teacher";
+  evaluator_type: EvaluatorType;
   evaluator_name: string | null;
   category: string;
   rating: number;
   comments: string | null;
-  eval_date: string;
+  eval_date: string | null;
   created_at: string;
+  /** True for an evaluation this coordinator wrote, which they may change. */
+  mine?: boolean;
 };
-
-function Stars({ rating }: { rating: number }) {
-  return (
-    <span className="text-amber-400">
-      {"★".repeat(rating)}
-      <span className="text-slate-200">{"★".repeat(5 - rating)}</span>
-    </span>
-  );
-}
-
-const EVALUATION_CATEGORIES = [
-  "Overall OJT Performance",
-  "Professionalism & Conduct",
-  "Technical Competence",
-  "Attendance & Punctuality",
-  "Documentation & Reports",
-];
 
 type StudentOption = { student_id: string; name: string; company: string | null };
 
+type Filter = "all" | EvaluatorType;
+
+// The same list the supervisor portal uses, so ratings group together.
+const CATEGORIES: readonly string[] = EVALUATION_CATEGORIES;
+
+/** Who rated whom, in a sentence. */
+function summaryOf(row: EvaluationRow): string {
+  const student = row.student_name || row.student_id;
+  if (row.evaluator_type === "supervisor") {
+    return `${row.evaluator_name || "Supervisor"} rated ${student}`;
+  }
+  if (row.evaluator_type === "teacher") {
+    return `${row.evaluator_name || "Coordinator"} (coordinator) rated ${student}`;
+  }
+  return `${student} rated their training at ${row.company || "their company"}`;
+}
+
 export default function CoordinatorEvaluations() {
-  const navigate = useNavigate();
   const [rows, setRows] = useState<EvaluationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<
-    "all" | "supervisor" | "student" | "teacher"
-  >("all");
-  const [reloadKey, setReloadKey] = useState(0);
+  const [filter, setFilter] = useState<Filter>("all");
+  const [evaluating, setEvaluating] = useState(false);
+  const [editing, setEditing] = useState<EvaluationRow | null>(null);
+  const [removing, setRemoving] = useState<EvaluationRow | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
 
-  // "Evaluate OJT Performance" (coordinator side of Feature 10)
-  const [students, setStudents] = useState<StudentOption[]>([]);
-  const [showForm, setShowForm] = useState(false);
-  const [formStudent, setFormStudent] = useState("");
-  const [formCategory, setFormCategory] = useState(EVALUATION_CATEGORIES[0]);
-  const [formRating, setFormRating] = useState(0);
-  const [formComments, setFormComments] = useState("");
-  const [formError, setFormError] = useState("");
-  const [formSaving, setFormSaving] = useState(false);
-
-  const loadStudents = useCallback(async () => {
+  const remove = async () => {
+    if (!removing) return;
+    setRemoveBusy(true);
     try {
-      const response = await fetch(
-        `${API_URL}/api/coordinator/students?status=active`,
-        withCoordinatorAuth()
-      );
-      const data = await response.json();
-      if (response.ok) setStudents(data.students || []);
-    } catch {
-      /* the form shows an empty list */
-    }
-  }, []);
-
-
-  const submitEvaluation = async () => {
-    setFormError("");
-    if (!formStudent) {
-      setFormError("Select a student.");
-      return;
-    }
-    if (formRating < 1) {
-      setFormError("Choose a rating from 1 to 5 stars.");
-      return;
-    }
-    setFormSaving(true);
-    try {
-      const response = await fetch(
-        `${API_URL}/api/evaluations`,
-        withCoordinatorAuth({
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            student_id: formStudent,
-            category: formCategory,
-            rating: formRating,
-            comments: formComments.trim() || null,
-          }),
-        })
-      );
-      const data = await response.json();
-      if (!response.ok) {
-        setFormError(data.message || "Failed to submit evaluation.");
-        return;
-      }
-      setFormStudent("");
-      setFormRating(0);
-      setFormComments("");
-      setShowForm(false);
-      setReloadKey((key) => key + 1);
-    } catch {
-      setFormError("Unable to connect to the server.");
+      await coordinatorRequest(`/api/evaluations/${removing.id}`, { method: "DELETE" });
+      toast.success("Evaluation removed.");
+      setRemoving(null);
+      await load();
+    } catch (removeError) {
+      toast.error(errorText(removeError, "The evaluation could not be removed."));
     } finally {
-      setFormSaving(false);
+      setRemoveBusy(false);
     }
   };
 
+  const load = useCallback(async () => {
+    try {
+      const data = await coordinatorRequest<{ evaluations: EvaluationRow[] }>(
+        "/api/coordinator/evaluations"
+      );
+      setRows(data.evaluations || []);
+      setError("");
+    } catch (loadError) {
+      setError(errorText(loadError, "Could not load evaluations."));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    const load = async () => {
-      try {
-        const response = await fetch(
-          `${API_URL}/api/coordinator/evaluations`,
-          withCoordinatorAuth()
-        );
+    void Promise.resolve().then(load);
+  }, [load]);
 
-        if (response.status === 401) {
-          navigate("/");
-          return;
-        }
+  const counts = useMemo(
+    () => ({
+      all: rows.length,
+      supervisor: rows.filter((row) => row.evaluator_type === "supervisor").length,
+      teacher: rows.filter((row) => row.evaluator_type === "teacher").length,
+      student: rows.filter((row) => row.evaluator_type === "student").length,
+    }),
+    [rows]
+  );
 
-        const data = await response.json();
-
-        if (!response.ok) {
-          setError(data.message || "Failed to load evaluations.");
-          return;
-        }
-
-        setRows(data.evaluations || []);
-      } catch {
-        setError("Unable to connect to the server.");
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    load();
-  }, [navigate, reloadKey]);
-
-  const visible =
-    filter === "all" ? rows : rows.filter((r) => r.evaluator_type === filter);
+  const visible = useMemo(
+    () => (filter === "all" ? rows : rows.filter((row) => row.evaluator_type === filter)),
+    [rows, filter]
+  );
+  const pager = usePagination(visible, 15);
 
   return (
     <CoordinatorLayout
-      title="Evaluations & Feedback"
-      subtitle="Supervisor ratings, student feedback, and coordinator evaluations"
-      breadcrumb={["Coordinator", "Oversight", "Evaluations"]}
+      title="Evaluations"
+      subtitle="Ratings of students by supervisors and by you, and students' feedback on their companies."
+      actions={
+        <Button icon="plus" onClick={() => setEvaluating(true)}>
+          Evaluate a student
+        </Button>
+      }
     >
-      <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1 w-fit">
-          {(
-            [
-              { key: "all", label: "All" },
-              { key: "supervisor", label: "Supervisor → Student" },
-              { key: "student", label: "Student → Company" },
-              { key: "teacher", label: "Coordinator → Student" },
-            ] as const
-          ).map((f) => (
-            <button
-              key={f.key}
-              type="button"
-              onClick={() => setFilter(f.key)}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium ${
-                filter === f.key
-                  ? "bg-white text-slate-900 shadow-sm"
-                  : "text-slate-500 hover:text-slate-700"
-              }`}
-            >
-              {f.label}
-            </button>
-          ))}
-        </div>
-          <button
-            type="button"
-            onClick={() => {
-              if (!showForm && students.length === 0) void loadStudents();
-              setShowForm((open) => !open);
-            }}
-            className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700"
-          >
-            {showForm ? "Close form" : "Evaluate a student"}
-          </button>
-        </div>
+      <div className="space-y-5">
+        {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-        {showForm && (
-          <div className="space-y-3 rounded-xl border border-indigo-100 bg-white p-4">
-            <p className="text-sm font-semibold text-slate-800">
-              Evaluate overall OJT performance
-            </p>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <select
-                value={formStudent}
-                onChange={(e) => setFormStudent(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                <option value="">Select a student…</option>
-                {students.map((s) => (
-                  <option key={s.student_id} value={s.student_id}>
-                    {s.name} ({s.student_id})
-                  </option>
-                ))}
-              </select>
-              <select
-                value={formCategory}
-                onChange={(e) => setFormCategory(e.target.value)}
-                className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
-              >
-                {EVALUATION_CATEGORIES.map((c) => (
-                  <option key={c}>{c}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-1" aria-label="Rating">
-              {[1, 2, 3, 4, 5].map((value) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setFormRating(value)}
-                  aria-label={`${value} star${value > 1 ? "s" : ""}`}
-                  className={`text-2xl ${
-                    value <= formRating ? "text-amber-400" : "text-slate-200"
-                  }`}
-                >
-                  ★
-                </button>
-              ))}
-            </div>
-            <textarea
-              value={formComments}
-              onChange={(e) => setFormComments(e.target.value)}
-              rows={3}
-              placeholder="Comments (optional)"
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        <FilterChips
+          label="Filter evaluations"
+          value={filter}
+          onChange={setFilter}
+          options={[
+            { value: "all", label: "All", count: counts.all },
+            { value: "supervisor", label: "By supervisors", count: counts.supervisor },
+            { value: "teacher", label: "By coordinator", count: counts.teacher },
+            { value: "student", label: "Company feedback", count: counts.student },
+          ]}
+        />
+
+        <Card>
+          {loading ? (
+            <SkeletonRows rows={5} />
+          ) : visible.length === 0 ? (
+            <EmptyState
+              icon="star"
+              title={rows.length === 0 ? "No evaluations yet" : "No evaluations of this kind"}
+              description={
+                rows.length === 0
+                  ? "Evaluations from supervisors, students and you will be listed here."
+                  : undefined
+              }
             />
-            {formError && <p className="text-sm text-red-500">{formError}</p>}
-            <button
-              type="button"
-              onClick={submitEvaluation}
-              disabled={formSaving}
-              className="rounded-lg bg-indigo-600 px-3 py-2 text-xs font-medium text-white hover:bg-indigo-700 disabled:opacity-60"
-            >
-              {formSaving ? "Submitting…" : "Submit evaluation"}
-            </button>
-          </div>
-        )}
-
-        <div className="space-y-2.5">
-          {loading && (
-            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-              Loading evaluations...
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="rounded-xl border border-red-200 bg-white p-8 text-center text-sm text-red-400">
-              {error}
-            </div>
-          )}
-
-          {!loading && !error && visible.length === 0 && (
-            <div className="rounded-xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-400">
-              No evaluations submitted yet.
-            </div>
-          )}
-
-          {!loading &&
-            !error &&
-            visible.map((r) => (
-              <div
-                key={r.id}
-                className="rounded-xl border border-slate-200 bg-white p-4"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-800">
-                      {r.category}
-                    </p>
-                    <p className="text-xs text-slate-400">
-                      {r.evaluator_type === "supervisor"
-                        ? `${r.evaluator_name || "Supervisor"} rated ${r.student_name || r.student_id}`
-                        : r.evaluator_type === "teacher"
-                          ? `${r.evaluator_name || "Coordinator"} (coordinator) evaluated ${r.student_name || r.student_id}`
-                          : `${r.student_name || r.student_id} rated their training at ${r.company || "their company"}`}
-                    </p>
+          ) : (
+            <>
+            <ul className="divide-y divide-slate-100">
+              {pager.pageItems.map((row) => (
+                <li key={row.id} className="px-4 py-4 sm:px-5">
+                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-slate-900">{row.category}</p>
+                      <p className="text-sm text-slate-600">{summaryOf(row)}</p>
+                    </div>
+                    <Stars value={row.rating} size={16} />
                   </div>
-                  <Stars rating={r.rating} />
-                </div>
-
-                {r.comments && (
-                  <p className="mt-2 text-sm text-slate-600">{r.comments}</p>
-                )}
-
-                <p className="mt-2 text-xs text-slate-400">
-                  {new Date(r.eval_date).toLocaleDateString()}
-                </p>
-              </div>
-            ))}
-        </div>
+                  {row.comments && (
+                    <p className="mt-2 whitespace-pre-line border-l-2 border-slate-200 pl-3 text-sm text-slate-700">
+                      {row.comments}
+                    </p>
+                  )}
+                  <p className="mt-2 text-xs text-slate-500">
+                    {formatDate(row.eval_date || row.created_at)}
+                  </p>
+                  {row.mine && (
+                    <div className="mt-1.5 flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setEditing(row)}
+                        className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRemoving(row)}
+                        className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-slate-100"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <Pagination state={pager} noun="evaluation" />
+            </>
+          )}
+        </Card>
       </div>
+
+      <EvaluateDialog
+        key={editing ? `edit-${editing.id}` : "new"}
+        open={evaluating || editing !== null}
+        editing={editing}
+        onClose={() => {
+          setEvaluating(false);
+          setEditing(null);
+        }}
+        onSaved={() => {
+          setEvaluating(false);
+          setEditing(null);
+          setFilter("all");
+          void load();
+        }}
+      />
+
+      <ConfirmDialog
+        open={removing !== null}
+        title="Remove this evaluation?"
+        message={
+          removing
+            ? `Your ${removing.category} rating for ${
+                removing.student_name || removing.student_id
+              } will be deleted for them too. This cannot be undone.`
+            : undefined
+        }
+        confirmLabel="Remove"
+        cancelLabel="Keep it"
+        tone="danger"
+        busy={removeBusy}
+        onConfirm={() => void remove()}
+        onCancel={() => setRemoving(null)}
+      />
     </CoordinatorLayout>
+  );
+}
+
+function EvaluateDialog({
+  open,
+  editing,
+  onClose,
+  onSaved,
+}: {
+  open: boolean;
+  /** The evaluation being changed, or null when adding a new one. */
+  editing: EvaluationRow | null;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [students, setStudents] = useState<StudentOption[]>([]);
+  const [studentId, setStudentId] = useState(editing?.student_id ?? "");
+  const [category, setCategory] = useState(editing?.category ?? CATEGORIES[0]);
+  const [rating, setRating] = useState(editing ? Number(editing.rating) : 0);
+  const [comments, setComments] = useState(editing?.comments ?? "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!open || students.length > 0) return;
+    coordinatorRequest<{ students: StudentOption[] }>("/api/coordinator/students?status=active")
+      .then((data) => setStudents(data.students || []))
+      .catch(() => setError("The student list could not be loaded."));
+  }, [open, students.length]);
+
+  const reset = () => {
+    setStudentId("");
+    setCategory(CATEGORIES[0]);
+    setRating(0);
+    setComments("");
+    setError("");
+  };
+
+  const close = () => {
+    if (saving) return;
+    reset();
+    onClose();
+  };
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!studentId) return setError("Choose the student you are evaluating.");
+    if (!rating) return setError("Choose a rating from 1 to 5 stars.");
+    setSaving(true);
+    setError("");
+    try {
+      await coordinatorRequest(editing ? `/api/evaluations/${editing.id}` : "/api/evaluations", {
+        method: editing ? "PUT" : "POST",
+        body: { student_id: studentId, category, rating, comments: comments.trim() || null },
+      });
+      const name =
+        students.find((item) => item.student_id === studentId)?.name ||
+        editing?.student_name ||
+        "The student";
+      toast.success(`Evaluation ${editing ? "updated" : "saved"}. ${name} has been notified.`);
+      reset();
+      onSaved();
+    } catch (saveError) {
+      setError(errorText(saveError, "The evaluation could not be saved."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal
+      open={open}
+      onClose={close}
+      title={editing ? "Edit evaluation" : "Evaluate a student"}
+      description="The student sees this evaluation on their Feedback page."
+      locked={saving}
+      footer={
+        <>
+          <Button variant="secondary" onClick={close} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" form="evaluation-form" busy={saving} failed={Boolean(error)}>
+            {saving ? "Saving" : editing ? "Save changes" : "Save evaluation"}
+          </Button>
+        </>
+      }
+    >
+      <form id="evaluation-form" onSubmit={submit} className="space-y-4" noValidate>
+        <FormField label="Student" htmlFor="evaluation-student">
+          <select
+            id="evaluation-student"
+            value={studentId}
+            disabled={editing !== null}
+            onChange={(event) => setStudentId(event.target.value)}
+            className="field"
+          >
+            <option value="">Choose a student</option>
+            {/* Keeps the name showing for a student who is no longer active. */}
+            {editing && !students.some((item) => item.student_id === editing.student_id) && (
+              <option value={editing.student_id}>
+                {editing.student_name || editing.student_id}
+              </option>
+            )}
+            {students.map((item) => (
+              <option key={item.student_id} value={item.student_id}>
+                {item.name}
+                {item.company ? ` · ${item.company}` : ""}
+              </option>
+            ))}
+          </select>
+        </FormField>
+        <FormField label="What are you rating?" htmlFor="evaluation-category">
+          <select
+            id="evaluation-category"
+            value={category}
+            onChange={(event) => setCategory(event.target.value)}
+            className="field"
+          >
+            {!CATEGORIES.includes(category) && <option>{category}</option>}
+            {CATEGORIES.map((option) => (
+              <option key={option}>{option}</option>
+            ))}
+          </select>
+        </FormField>
+        <div>
+          <p className="mb-1 text-sm font-medium text-slate-700">Rating</p>
+          <StarInput value={rating} onChange={setRating} label="Rating from 1 to 5 stars" />
+        </div>
+        <FormField label="Comments" htmlFor="evaluation-comments" optional>
+          <textarea
+            id="evaluation-comments"
+            rows={4}
+            maxLength={2000}
+            value={comments}
+            onChange={(event) => setComments(event.target.value)}
+            className="field resize-none"
+          />
+        </FormField>
+        <FormError message={error} />
+      </form>
+    </Modal>
   );
 }

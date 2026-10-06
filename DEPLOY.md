@@ -85,3 +85,6 @@ the script refuses to run against a hosted database.
 - Refreshing a page such as `/student/dashboard` reloads it, not a 404.
 - A time-in shows the correct Philippine time.
 - Upload a document, redeploy the backend, and confirm it still downloads.
+- On a phone, tap Time in: the camera opens, the prompts appear, and the
+  photo is taken by itself. (The camera needs https, which both hosts
+  provide. The Vercel build copies the face-tracking files itself.)

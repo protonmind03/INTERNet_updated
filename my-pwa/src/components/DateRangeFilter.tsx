@@ -7,10 +7,10 @@ type Props = {
 /** "From" and "To" date inputs with a clear button, for filtering lists by date. */
 export default function DateRangeFilter({ from, to, onChange }: Props) {
   const inputClass =
-    "rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-sm text-slate-700 focus:border-slate-400 focus:outline-none";
+    "h-9 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-700 focus:border-psu-500 focus:outline-none";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 text-sm text-slate-600">
       <label className="flex items-center gap-1.5">
         From
         <input
@@ -35,7 +35,7 @@ export default function DateRangeFilter({ from, to, onChange }: Props) {
         <button
           type="button"
           onClick={() => onChange("", "")}
-          className="font-medium text-indigo-600 hover:underline"
+          className="font-semibold text-psu-700 hover:underline"
         >
           Clear dates
         </button>
