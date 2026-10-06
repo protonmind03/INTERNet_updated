@@ -41,13 +41,61 @@
   --color-gold-800: #844b0d;
   --color-gold-900: #703e10;
 
-  --animate-toast-in: toast-in 0.18s ease-out;
-  --animate-sheet-in: sheet-in 0.2s ease-out;
+  /* Elevation, tinted with the brand blue so shadows never look grey. */
+  --shadow-card: 0 1px 2px rgb(15 30 110 / 0.04), 0 1px 3px rgb(15 30 110 / 0.05);
+  --shadow-raised: 0 10px 24px -8px rgb(15 30 110 / 0.14),
+    0 2px 6px -2px rgb(15 30 110 / 0.06);
+
+  /*
+   * Motion. One easing curve everywhere: things arrive quickly and settle
+   * without bouncing, so movement explains a change and then gets out of
+   * the way.
+   */
+  --ease-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  --animate-toast-in: toast-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  --animate-sheet-in: sheet-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
   --animate-fade-in: fade-in 0.15s ease-out;
   /* A page's content easing in when it is opened. */
-  --animate-page-in: page-in 0.22s ease-out;
+  --animate-page-in: page-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
   /* Menus and panels opening from their trigger. */
-  --animate-pop-in: pop-in 0.14s ease-out;
+  --animate-pop-in: pop-in 0.14s cubic-bezier(0.22, 1, 0.36, 1);
+  /* A centred dialog on larger screens. */
+  --animate-dialog-in: dialog-in 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+  /* The navigation drawer sliding in from the left edge. */
+  --animate-drawer-in: drawer-in 0.24s cubic-bezier(0.22, 1, 0.36, 1);
+  /* Placeholders breathe slowly instead of blinking. */
+  --animate-skeleton: skeleton 1.8s ease-in-out infinite;
+}
+
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes drawer-in {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: none;
+  }
+}
+
+@keyframes skeleton {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
 @keyframes toast-in {
@@ -73,7 +121,7 @@
 @keyframes page-in {
   from {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
@@ -171,5 +219,81 @@
   .field:disabled {
     background: var(--color-slate-50);
     color: var(--color-slate-500);
+  }
+
+  /*
+  |--------------------------------------------------------------------------
+  | SURFACES
+  |--------------------------------------------------------------------------
+  |
+  | The same blue and gold, given depth. Brand surfaces run from the navy to
+  | its deeper shade with a soft light in one corner; the page canvas carries
+  | a faint blue wash at the top so white cards sit on something.
+  |
+  */
+
+  /* Sidebars, the login panel, the phone header and the "today" card. */
+  .surface-brand {
+    background-color: var(--inb-navy);
+    background-image:
+      radial-gradient(120% 80% at 0% 0%, rgb(58 82 230 / 0.34), transparent 62%),
+      radial-gradient(90% 70% at 100% 100%, rgb(10 20 71 / 0.55), transparent 70%),
+      linear-gradient(165deg, var(--inb-navy) 0%, var(--inb-navy-deep) 100%);
+  }
+
+  /* A horizontal bar: lighter where the logo sits, deep where the links run. */
+  .surface-brand-bar {
+    background-color: var(--inb-navy-deep);
+    background-image: linear-gradient(
+      90deg,
+      var(--inb-navy) 0%,
+      var(--inb-navy-deep) 42%,
+      var(--inb-navy-deep) 100%
+    );
+  }
+
+  /* The area behind a portal's pages. */
+  .app-canvas {
+    background-color: var(--color-slate-50);
+    background-image:
+      radial-gradient(60rem 18rem at 100% 0%, rgb(221 229 255 / 0.55), transparent 70%),
+      linear-gradient(180deg, var(--color-psu-50) 0, var(--color-slate-50) 16rem);
+    background-repeat: no-repeat;
+  }
+
+  /* The light sidebar of the coordinator console. */
+  .surface-console {
+    background-color: white;
+    background-image: linear-gradient(180deg, white 0%, white 40%, rgb(238 242 255 / 0.7) 100%);
+  }
+
+  /* The sign-in side of the login page: a sheet on phones, a canvas on desktops. */
+  @media (min-width: 1024px) {
+    .login-stage {
+      background-color: var(--color-slate-50);
+      background-image:
+        radial-gradient(40rem 26rem at 100% 0%, rgb(221 229 255 / 0.7), transparent 70%),
+        radial-gradient(36rem 24rem at 0% 100%, rgb(255 241 198 / 0.45), transparent 70%);
+    }
+  }
+
+  /* Column headings of a data table. */
+  .table-head th {
+    background: color-mix(in srgb, var(--color-psu-50) 55%, white);
+    color: var(--color-slate-600);
+    letter-spacing: 0.01em;
+  }
+
+  @media print {
+    .surface-brand,
+    .surface-brand-bar,
+    .app-canvas,
+    .surface-console {
+      background: none;
+    }
+
+    .table-head th {
+      background: none;
+    }
   }
 }

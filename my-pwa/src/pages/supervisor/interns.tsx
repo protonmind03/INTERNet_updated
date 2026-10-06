@@ -104,7 +104,7 @@ export default function SupervisorInterns() {
                   <button
                     type="button"
                     onClick={() => setOpenId(intern.student_id)}
-                    className="block h-full w-full rounded-xl border border-slate-200 bg-white p-5 text-left transition-colors hover:border-psu-300 hover:bg-psu-50/40"
+                    className="block h-full w-full rounded-xl border border-slate-200/80 bg-white p-5 text-left shadow-card transition-[border-color,box-shadow] duration-200 hover:border-psu-300 hover:shadow-raised"
                   >
                     <div className="flex items-center gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-psu-700 text-sm font-bold text-white">

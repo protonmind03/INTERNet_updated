@@ -1,16 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { BrandLoader } from "../../brand";
 import Icon, { type IconName } from "../../components/Icon";
-import { Button, ConfirmDialog, Modal, Skeleton, StatusBadge } from "../../components/ui";
+import LivenessCamera, { type LivenessReport } from "../../components/LivenessCamera";
 import {
-  formatClock,
-  formatDuration,
-  formatHours,
-  formatLongDate,
-  formatTime,
-} from "../../lib/format";
-import { ATTENDANCE_PHOTO_MAX_MB, shrinkPhoto, uploadProblem } from "../../lib/files";
+  Button,
+  ConfirmDialog,
+  FormError,
+  Modal,
+  Skeleton,
+  StatusBadge,
+} from "../../components/ui";
+import { formatDuration, formatHours, formatLongDate, formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
-import { workedMinutes, type AttendanceController } from "./useAttendance";
+import {
+  workedMinutes,
+  type AttendanceController,
+  type LivenessChallenge,
+} from "./useAttendance";
 
 /*
 |--------------------------------------------------------------------------
@@ -43,8 +49,11 @@ export default function TodayAttendance({
   const [timeInOpen, setTimeInOpen] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
 
+  // The clock shows hours and minutes, so it only needs to move when the
+  // minute does; a seconds counter was the one thing on this page that
+  // never stopped moving.
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    const timer = window.setInterval(() => setNow(new Date()), 5000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -79,8 +88,20 @@ export default function TodayAttendance({
   const worked = todayLog ? workedMinutes(todayLog, now) : 0;
 
   return (
-    <section className="overflow-hidden rounded-2xl bg-psu-900 text-white">
-      <div className="px-5 pb-5 pt-5 sm:px-6 sm:pt-6">
+    <section className="surface-brand relative overflow-hidden rounded-2xl text-white shadow-raised">
+      {/* Concentric rings, after the university seal. */}
+      <svg
+        aria-hidden="true"
+        viewBox="0 0 600 600"
+        className="pointer-events-none absolute -right-28 -top-36 w-[26rem] text-white/[0.05]"
+        fill="none"
+        stroke="currentColor"
+      >
+        <circle cx="300" cy="300" r="296" strokeWidth="2" />
+        <circle cx="300" cy="300" r="236" strokeWidth="28" />
+        <circle cx="300" cy="300" r="170" strokeWidth="2" />
+      </svg>
+      <div className="relative px-5 pb-5 pt-5 sm:px-6 sm:pt-6">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="text-sm text-psu-200">{formatLongDate(now)}</p>
@@ -92,8 +113,8 @@ export default function TodayAttendance({
               </h2>
             )}
           </div>
-          <p className="tabular shrink-0 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold">
-            {formatClock(now)}
+          <p className="tabular shrink-0 rounded-lg bg-white/10 px-3 py-1.5 text-sm font-semibold ring-1 ring-inset ring-white/15">
+            {formatTime(now)}
           </p>
         </div>
 
@@ -113,8 +134,8 @@ export default function TodayAttendance({
 
         {!loading && stage === "not-started" && (
           <p className="mt-2 max-w-md text-sm text-psu-100">
-            Take a photo at your workplace to record your time-in. Your
-            supervisor uses it to verify the day.
+            Time in from your workplace. A quick camera check takes your photo,
+            and your supervisor uses it to verify the day.
           </p>
         )}
 
@@ -179,12 +200,21 @@ export default function TodayAttendance({
       </div>
 
       {/* STEP TIMES */}
-      <ol className="grid grid-cols-4 divide-x divide-white/10 border-t border-white/10 bg-psu-950/40">
+      <ol className="relative grid grid-cols-4 divide-x divide-white/10 border-t border-white/10 bg-psu-950/40">
         {STEPS.map((step) => {
           const value = todayLog?.[step.key] ?? null;
           return (
             <li key={step.key} className="px-2 py-3 text-center sm:px-4">
-              <p className="text-xs text-psu-200">{step.label}</p>
+              <p className="flex items-center justify-center gap-1.5 text-xs text-psu-200">
+                {/* A gold dot marks each step already recorded today. */}
+                <span
+                  aria-hidden="true"
+                  className={`h-1.5 w-1.5 rounded-full transition-colors duration-300 ${
+                    value ? "bg-gold-400" : "bg-white/20"
+                  }`}
+                />
+                {step.label}
+              </p>
               <p
                 className={`tabular mt-0.5 text-sm font-semibold ${
                   value ? "text-white" : "text-psu-300"
@@ -201,6 +231,7 @@ export default function TodayAttendance({
         open={timeInOpen}
         now={now}
         onClose={() => setTimeInOpen(false)}
+        loadChallenge={attendance.livenessChallenge}
         onSubmit={attendance.timeIn}
       />
 
@@ -261,27 +292,59 @@ function OutlineButton({
 |--------------------------------------------------------------------------
 | TIME-IN DIALOG
 |--------------------------------------------------------------------------
+|
+| Two steps. First the camera check, which takes the photo by itself once
+| it has seen a live person. Then the student sees the photo, may add a
+| note, and confirms.
+|
 */
+
+type Capture = { photo: File; preview: string; report: LivenessReport };
 
 function TimeInDialog({
   open,
   now,
   onClose,
+  loadChallenge,
   onSubmit,
 }: {
   open: boolean;
   now: Date;
   onClose: () => void;
-  onSubmit: (photo: File, note: string) => Promise<void>;
+  loadChallenge: () => Promise<LivenessChallenge>;
+  onSubmit: (
+    photo: File,
+    note: string,
+    check: { ticket: string; report: LivenessReport }
+  ) => Promise<void>;
 }) {
-  const [photo, setPhoto] = useState<File | null>(null);
-  const [preview, setPreview] = useState<string | null>(null);
+  const [challenge, setChallenge] = useState<LivenessChallenge | null>(null);
+  const [capture, setCapture] = useState<Capture | null>(null);
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  // Raised to ask the server for a fresh set of prompts.
+  const [round, setRound] = useState(0);
+
+  // Each time the dialog opens (or the photo is retaken) the server picks
+  // new prompts, so no two checks ask for the same thing in the same order.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    loadChallenge()
+      .then((next) => {
+        if (!cancelled) setChallenge(next);
+      })
+      .catch((loadError) => {
+        if (!cancelled) setError(errorText(loadError, "Could not start the camera check."));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, round, loadChallenge]);
 
   // Release the preview image when it changes or the dialog goes away.
+  const preview = capture?.preview;
   useEffect(() => {
     return () => {
       if (preview) URL.revokeObjectURL(preview);
@@ -289,8 +352,8 @@ function TimeInDialog({
   }, [preview]);
 
   const reset = () => {
-    setPhoto(null);
-    setPreview(null);
+    setChallenge(null);
+    setCapture(null);
     setNote("");
     setError("");
   };
@@ -301,36 +364,20 @@ function TimeInDialog({
     onClose();
   };
 
-  const choosePhoto = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const chosen = event.target.files?.[0];
-    event.target.value = "";
-    if (!chosen) return;
-    if (!["image/jpeg", "image/png"].includes(chosen.type)) {
-      setError("Use a JPG or PNG photo.");
-      return;
-    }
-    const file = await shrinkPhoto(chosen);
-    const problem = uploadProblem(file, ATTENDANCE_PHOTO_MAX_MB);
-    if (problem) {
-      setError(problem);
-      return;
-    }
+  const retake = () => {
+    setCapture(null);
+    setChallenge(null);
     setError("");
-    setPhoto(file);
-    setPreview(URL.createObjectURL(file));
+    setRound((count) => count + 1);
   };
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (saving) return;
-    if (!photo) {
-      setError("Take a photo first. It is required to record your time-in.");
-      return;
-    }
+    if (saving || !capture || !challenge) return;
     setSaving(true);
     setError("");
     try {
-      await onSubmit(photo, note);
+      await onSubmit(capture.photo, note, { ticket: challenge.ticket, report: capture.report });
       toast.celebrate("Time-in recorded. Have a good day at work.");
       reset();
       onClose();
@@ -346,43 +393,63 @@ function TimeInDialog({
       open={open}
       onClose={close}
       title="Time in"
-      description={`Recorded at ${formatTime(now)} when you confirm.`}
+      description={
+        capture
+          ? `Recorded at ${formatTime(now)} when you confirm.`
+          : "A quick camera check, then your photo is taken for you."
+      }
       locked={saving}
       footer={
-        <>
-          <Button variant="secondary" onClick={close} disabled={saving}>
-            Cancel
-          </Button>
-          <Button type="submit" form="time-in-form" busy={saving} failed={Boolean(error)} busyProcess="timeIn" icon="check">
-            {saving ? "Recording" : "Confirm time-in"}
-          </Button>
-        </>
+        capture ? (
+          <>
+            <Button variant="secondary" onClick={close} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="time-in-form" busy={saving} failed={Boolean(error)} busyProcess="timeIn" icon="check">
+              {saving ? "Recording" : "Confirm time-in"}
+            </Button>
+          </>
+        ) : undefined
       }
     >
-      <form id="time-in-form" onSubmit={submit} className="space-y-4">
-        <div>
-          <p className="mb-1.5 text-sm font-medium text-slate-700">
-            Attendance photo
-          </p>
-          <input
-            ref={inputRef}
-            type="file"
-            accept="image/png,image/jpeg"
-            capture="environment"
-            onChange={choosePhoto}
-            className="sr-only"
-            aria-label="Attendance photo"
-          />
-          {preview ? (
+      {!capture ? (
+        <div className="space-y-4">
+          {challenge ? (
+            <LivenessCamera
+              key={challenge.ticket}
+              prompts={challenge.prompts}
+              spare={challenge.spare}
+              onPassed={(photo, report) =>
+                setCapture({ photo, report, preview: URL.createObjectURL(photo) })
+              }
+            />
+          ) : error ? (
+            <>
+              <FormError message={error} />
+              <Button block variant="secondary" icon="refresh" onClick={retake}>
+                Try again
+              </Button>
+            </>
+          ) : (
+            <BrandLoader role="student" process="timeIn" message="Getting the camera check ready…" />
+          )}
+        </div>
+      ) : (
+        <form id="time-in-form" onSubmit={submit} className="space-y-4">
+          <div>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <p className="text-sm font-medium text-slate-700">Attendance photo</p>
+              <StatusBadge status="Camera check passed" tone="good" />
+            </div>
             <div className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
               <img
-                src={preview}
+                src={capture.preview}
                 alt="Your attendance photo"
                 className="max-h-64 w-full object-contain"
               />
               <button
                 type="button"
-                onClick={() => inputRef.current?.click()}
+                onClick={retake}
                 disabled={saving}
                 className="absolute bottom-2 right-2 inline-flex items-center gap-1.5 rounded-lg bg-white/95 px-3 py-1.5 text-sm font-semibold text-slate-700 shadow hover:bg-white"
               >
@@ -390,53 +457,29 @@ function TimeInDialog({
                 Retake
               </button>
             </div>
-          ) : (
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="flex w-full flex-col items-center rounded-xl border-2 border-dashed border-slate-300 bg-slate-50 px-4 py-8 text-center transition-colors hover:border-psu-400 hover:bg-psu-50"
+          </div>
+
+          <div>
+            <label
+              htmlFor="time-in-note"
+              className="mb-1.5 block text-sm font-medium text-slate-700"
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-psu-100 text-psu-700">
-                <Icon name="camera" size={22} />
-              </span>
-              <span className="mt-3 text-sm font-semibold text-slate-800">
-                Take a photo
-              </span>
-              <span className="mt-0.5 text-sm text-slate-500">
-                On a phone this opens your camera.
-              </span>
-            </button>
-          )}
-        </div>
+              Note <span className="font-normal text-slate-400">(optional)</span>
+            </label>
+            <textarea
+              id="time-in-note"
+              rows={3}
+              maxLength={500}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="What will you be working on today?"
+              className="field resize-none"
+            />
+          </div>
 
-        <div>
-          <label
-            htmlFor="time-in-note"
-            className="mb-1.5 block text-sm font-medium text-slate-700"
-          >
-            Note <span className="font-normal text-slate-400">(optional)</span>
-          </label>
-          <textarea
-            id="time-in-note"
-            rows={3}
-            maxLength={500}
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="What will you be working on today?"
-            className="field resize-none"
-          />
-        </div>
-
-        {error && (
-          <p
-            role="alert"
-            className="flex items-start gap-2 rounded-lg bg-red-50 px-3 py-2.5 text-sm text-red-700"
-          >
-            <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
-            {error}
-          </p>
-        )}
-      </form>
+          <FormError message={error} />
+        </form>
+      )}
     </Modal>
   );
 }

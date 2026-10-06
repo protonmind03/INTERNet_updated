@@ -140,13 +140,20 @@ export default function DailyLog() {
             label="Verified hours"
             value={loading ? "–" : formatHours(verifiedHours)}
             icon="check-circle"
+            tone="good"
           />
           <StatTile
             label="Awaiting verification"
             value={loading ? "–" : counts.Pending}
             icon="clock"
+            tone={!loading && counts.Pending > 0 ? "waiting" : "neutral"}
           />
-          <StatTile label="Rejected" value={loading ? "–" : counts.Rejected} icon="alert" />
+          <StatTile
+            label="Rejected"
+            value={loading ? "–" : counts.Rejected}
+            icon="alert"
+            tone={!loading && counts.Rejected > 0 ? "bad" : "neutral"}
+          />
         </div>
 
         <Card>
@@ -262,7 +269,7 @@ export default function DailyLog() {
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 text-xs font-medium text-slate-500">
+                    <tr className="table-head border-b border-slate-100 text-xs font-medium text-slate-500">
                       <th scope="col" className="px-5 py-3 font-medium">Date</th>
                       <th scope="col" className="px-3 py-3 font-medium">Time in</th>
                       <th scope="col" className="px-3 py-3 font-medium">Break</th>
@@ -371,12 +378,19 @@ function PhotoButton({ onClick }: { onClick: () => void }) {
 }
 
 function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolean }) {
-  if (!log.note && !log.review_notes && !log.correction_note) {
+  const bySupervisor = log.capture_method === "supervisor";
+  if (!log.note && !log.review_notes && !log.correction_note && !bySupervisor) {
     return inline ? <span className="text-slate-400">—</span> : null;
   }
   const rejected = log.status === "Rejected" || log.status === "Flagged";
   return (
     <div className={inline ? "space-y-1.5" : "mt-3 space-y-1.5"}>
+      {bySupervisor && (
+        <p className="flex items-center gap-1.5 text-sm text-slate-600">
+          <Icon name="camera" size={14} className="shrink-0 text-slate-400" />
+          Time-in recorded by your supervisor
+        </p>
+      )}
       {log.note && <p className="text-sm text-slate-600">{log.note}</p>}
       {log.correction_note && (
         <p className="rounded-md bg-psu-50 px-2.5 py-1.5 text-sm text-psu-900">

@@ -8,6 +8,7 @@
   },
   "scripts": {
     "start": "npm run db:migrate && tsx src/server.ts",
+    "predev": "npm run db:migrate",
     "dev": "tsx src/server.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:seed-demo": "tsx src/scripts/seed-demo.ts",

@@ -473,3 +473,82 @@ changes, run `npm install` in `backend` and `my-pwa`, then
 - List endpoints other than notifications and documents are not paginated.
 - The frontend has 25 lint errors that predate this round (mostly
   `react-hooks/set-state-in-effect`); they do not affect the build.
+
+## 14. Camera check at time-in, and this round's interface work (October 2026)
+
+**Setup after pulling this round**
+- `cd my-pwa && npm install` (adds `@mediapipe/tasks-vision` for face
+  tracking and `@vitejs/plugin-basic-ssl` for phone testing).
+- `cd backend && npm run dev` now applies pending database migrations
+  before it starts, so migration `016_attendance_capture.sql` is picked up
+  without a separate step. Railway already does this on deploy.
+- If time-in answers "API route not found", an older copy of the backend
+  is still running; stop it and start it again.
+
+**Camera check (liveness)**
+- A student's time-in photo is no longer a file they choose. The app opens
+  the front camera, asks for two quick prompts picked at random by the
+  server (blink, smile, turn the head), lights the face with three screen
+  colours once, and takes the photo itself on a sharp, steady frame.
+- `POST /api/attendance/liveness-challenge` hands out the prompts in a
+  signed ticket valid for 10 minutes; `POST /api/attendance` refuses a
+  photo without that ticket and a report covering every prompt on it.
+- The rules live in `my-pwa/src/lib/liveness/engine.ts` (no browser code,
+  so they can be tested alone), the face reading in `detector.ts`, and the
+  screen in `my-pwa/src/components/LivenessCamera.tsx`.
+- Eyes and mouth are judged against the person's own resting face, not
+  fixed numbers, because faces differ. A clear head turn either way counts.
+- The colour flash never refuses anyone: when it is inconclusive (bright
+  rooms) one extra prompt is asked instead. It is skipped for people who
+  have "reduce motion" turned on.
+- The face-tracking runtime is copied from `node_modules` into
+  `my-pwa/public/mediapipe` by `scripts/copy-mediapipe.mjs` before
+  `npm run dev` and `npm run build` (that folder is gitignored). The model
+  itself is committed at `my-pwa/public/models/face_landmarker.task`.
+  Nothing is fetched from a third-party CDN at time-in.
+- Limit to know: the check runs on the student's device, so it is a strong
+  deterrent, not proof. The supervisor still sees the photo and verifies
+  the day, and is told how each photo was taken.
+
+**When the camera check cannot work**
+- The student is told why (no camera, permission blocked, three failed
+  attempts) and to ask their supervisor.
+- Supervisors have "Record time-in" on Review and Attendance: pick the
+  intern, take an ordinary photo, give a reason
+  (`POST /api/supervisor/attendance/record`). That log skips the review
+  queue and is verified automatically when the intern times out.
+- A photo a student replaces while asking for another review loses its
+  "camera-checked" mark, and the supervisor is warned.
+
+**Testing on a real phone**
+- A phone only allows the camera over https, and `localhost` on a phone is
+  the phone. Run `npm run dev:phone` in `my-pwa` (with the backend running
+  as usual), then open the `Network` address Vite prints, for example
+  `https://192.168.x.x:5173`, on a phone on the same Wi-Fi. The phone shows
+  a certificate warning once; choose to proceed. API calls go through the
+  same address, so nothing else needs configuring.
+- Windows may ask to allow Node through the firewall the first time.
+
+**Also in this round**
+- Depth and calmer motion across the login page and all three portals
+  (same PSU blue and gold); see `my-pwa/src/index.css`.
+- Supervisor Review has a summary row; supervisor pages load only the
+  lists they show; the "Review" badge uses one count
+  (`GET /api/supervisor/review-count`).
+- Coordinator Students and Supervisors rows keep "Edit" and move the other
+  actions into a menu.
+- Login shows a Caps Lock warning and, where the browser supports it, an
+  "Install INTERNet" button.
+- A student can send company feedback once a day (it used to be unlimited,
+  and every one alerted all coordinators).
+
+**Tests**
+- 52 API tests. The camera-check test asks for the challenge first, so it
+  stops instead of recording a real time-in if it is ever run against an
+  older backend.
+
+**Still to do**
+- Try the camera check on two or three real phones in different lighting.
+  It has been run against recorded clips of a real person blinking and
+  smiling, and against a still photo (refused), but not yet live, and the
+  head-turn prompt has not been tried on a real face at all.

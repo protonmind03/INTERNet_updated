@@ -1,4 +1,12 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
 import Icon, { type IconName } from "./Icon";
 import { BrandLoader, CheckGlyph, type LoadProcess } from "../brand";
 
@@ -19,12 +27,14 @@ import { BrandLoader, CheckGlyph, type LoadProcess } from "../brand";
 */
 
 const BUTTON_VARIANTS = {
-  primary: "bg-psu-700 text-white hover:bg-psu-800 active:bg-psu-900",
-  gold: "bg-gold-400 text-psu-950 hover:bg-gold-300 active:bg-gold-500",
+  primary:
+    "bg-linear-to-b from-psu-600 to-psu-700 text-white shadow-sm shadow-psu-900/20 hover:from-psu-700 hover:to-psu-800 active:from-psu-800 active:to-psu-900",
+  gold: "bg-linear-to-b from-gold-300 to-gold-400 text-psu-950 shadow-sm shadow-psu-950/20 hover:from-gold-200 hover:to-gold-300 active:from-gold-400 active:to-gold-500",
   secondary:
-    "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 active:bg-slate-100",
+    "border border-slate-300 bg-white text-slate-700 shadow-xs hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
   ghost: "text-slate-600 hover:bg-slate-100 active:bg-slate-200",
-  danger: "bg-red-600 text-white hover:bg-red-700 active:bg-red-800",
+  danger:
+    "bg-linear-to-b from-red-500 to-red-600 text-white shadow-sm shadow-red-900/20 hover:from-red-600 hover:to-red-700 active:from-red-700 active:to-red-800",
 } as const;
 
 const BUTTON_SIZES = {
@@ -225,7 +235,9 @@ export function Card({
   className?: string;
 }) {
   return (
-    <section className={`rounded-xl border border-slate-200 bg-white ${className}`}>
+    <section
+      className={`rounded-xl border border-slate-200/80 bg-white shadow-card ${className}`}
+    >
       {children}
     </section>
   );
@@ -257,24 +269,43 @@ export function CardHeader({
 |--------------------------------------------------------------------------
 */
 
+// The icon chip takes the brand blue or gold for plain figures. The status
+// tones are only for tiles that report a status, so colour keeps its meaning.
+const TILE_TONES = {
+  brand: "bg-psu-50 text-psu-700 ring-psu-600/10",
+  gold: "bg-gold-50 text-gold-700 ring-gold-600/20",
+  good: "bg-emerald-50 text-emerald-700 ring-emerald-600/15",
+  waiting: "bg-amber-50 text-amber-700 ring-amber-600/20",
+  bad: "bg-red-50 text-red-600 ring-red-600/15",
+  neutral: "bg-slate-100 text-slate-500 ring-slate-500/10",
+} as const;
+
 export function StatTile({
   label,
   value,
   hint,
   icon,
+  tone = "brand",
 }: {
   label: string;
   value: ReactNode;
   hint?: string;
   icon?: IconName;
+  tone?: keyof typeof TILE_TONES;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
+    <div className="rounded-xl border border-slate-200/80 bg-linear-to-br from-white to-psu-50/50 p-4 shadow-card">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-slate-500">{label}</p>
-        {icon && <Icon name={icon} size={16} className="text-slate-400" />}
+        {icon && (
+          <span
+            className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${TILE_TONES[tone]}`}
+          >
+            <Icon name={icon} size={16} />
+          </span>
+        )}
       </div>
-      <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+      <p className="tabular mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
         {value}
       </p>
       {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
@@ -309,7 +340,7 @@ export function ProgressBar({
       className={`h-2 w-full overflow-hidden rounded-full bg-slate-100 ${className}`}
     >
       <div
-        className="h-full rounded-full bg-psu-600 transition-[width] duration-500"
+        className="h-full rounded-full bg-linear-to-r from-psu-500 to-psu-700 transition-[width] duration-500 ease-soft"
         style={{ width: `${clamped}%` }}
       />
     </div>
@@ -333,6 +364,7 @@ export function ProgressRing({
   const clamped = Math.max(0, Math.min(100, value));
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
+  const gradientId = useId();
   return (
     <div
       className="relative shrink-0"
@@ -341,6 +373,12 @@ export function ProgressRing({
       aria-label={label ?? `${Math.round(clamped)} percent`}
     >
       <svg width={size} height={size} className="-rotate-90">
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="var(--color-psu-400)" />
+            <stop offset="100%" stopColor="var(--color-psu-700)" />
+          </linearGradient>
+        </defs>
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -358,7 +396,8 @@ export function ProgressRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - clamped / 100)}
-          className="stroke-psu-600 transition-[stroke-dashoffset] duration-700"
+          stroke={`url(#${gradientId})`}
+          className="transition-[stroke-dashoffset] duration-700 ease-soft"
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
@@ -375,7 +414,7 @@ export function ProgressRing({
 */
 
 export function Skeleton({ className = "" }: { className?: string }) {
-  return <div className={`animate-pulse rounded-md bg-slate-200/70 ${className}`} />;
+  return <div className={`animate-skeleton rounded-md bg-slate-200/70 ${className}`} />;
 }
 
 export function SkeletonRows({ rows = 4 }: { rows?: number }) {
@@ -408,7 +447,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full bg-slate-100 text-slate-400">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-b from-psu-50 to-psu-100 text-psu-500 ring-1 ring-inset ring-psu-600/10">
         <Icon name={icon} size={20} />
       </div>
       <p className="mt-3 text-sm font-medium text-slate-800">{title}</p>
@@ -507,9 +546,9 @@ export function Modal({
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className={`flex max-h-[92dvh] w-full animate-sheet-in flex-col rounded-t-2xl bg-white shadow-2xl sm:animate-none sm:rounded-2xl ${width}`}
+        className={`flex max-h-[92dvh] w-full animate-sheet-in flex-col rounded-t-2xl bg-white shadow-2xl sm:animate-dialog-in sm:rounded-2xl ${width}`}
       >
-        <div className="flex items-start justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div className="flex items-start justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-linear-to-b from-psu-50/70 to-white px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-slate-900">{title}</h2>
             {description && (
@@ -681,13 +720,134 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md"
       .toUpperCase() || "?";
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-full bg-psu-100 font-semibold text-psu-800 ${
+      className={`flex shrink-0 items-center justify-center rounded-full bg-linear-to-br from-psu-100 to-psu-200 font-semibold text-psu-800 ring-1 ring-inset ring-psu-600/10 ${
         size === "sm" ? "h-8 w-8 text-xs" : "h-9 w-9 text-xs"
       }`}
       aria-hidden="true"
     >
       {initials}
     </span>
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| ROW MENU
+|--------------------------------------------------------------------------
+|
+| The less common actions on a table row, behind one "more" button. It
+| keeps a long table from repeating the same links on every line, and
+| keeps an action like "Deactivate" a deliberate step away from "Edit".
+|
+*/
+
+export type RowMenuItem = {
+  label: string;
+  icon?: IconName;
+  tone?: "danger" | "good";
+  onSelect: () => void;
+};
+
+export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] }) {
+  const [place, setPlace] = useState<{ top: number; right: number; up: boolean } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
+  const open = place !== null;
+
+  useEffect(() => {
+    if (!open) return;
+    menuRef.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    const close = () => setPlace(null);
+    const onPointer = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (!menuRef.current?.contains(target) && !buttonRef.current?.contains(target)) close();
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        close();
+        buttonRef.current?.focus();
+      }
+    };
+    document.addEventListener("mousedown", onPointer);
+    document.addEventListener("keydown", onKey);
+    // The menu is placed against the button, so it closes if the page moves.
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onPointer);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  if (items.length === 0) return null;
+
+  const toggle = () => {
+    if (open || !buttonRef.current) return setPlace(null);
+    const box = buttonRef.current.getBoundingClientRect();
+    // Opens upward when there is not enough room underneath.
+    const up = window.innerHeight - box.bottom < items.length * 44 + 24;
+    setPlace({
+      top: up ? box.top - 6 : box.bottom + 6,
+      right: Math.max(8, window.innerWidth - box.right),
+      up,
+    });
+  };
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={toggle}
+        className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 ${
+          open ? "bg-slate-100 text-slate-800" : ""
+        }`}
+      >
+        <Icon name="more" size={18} />
+      </button>
+      {place &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label={label}
+            style={{
+              top: place.top,
+              right: place.right,
+              transform: place.up ? "translateY(-100%)" : undefined,
+            }}
+            className="fixed z-[55] w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-raised"
+          >
+            {items.map((item) => (
+              <button
+                key={item.label}
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setPlace(null);
+                  item.onSelect();
+                }}
+                className={`flex w-full items-center gap-2.5 px-3.5 py-2.5 text-left text-sm font-medium ${
+                  item.tone === "danger"
+                    ? "text-red-600 hover:bg-red-50"
+                    : item.tone === "good"
+                      ? "text-emerald-700 hover:bg-emerald-50"
+                      : "text-slate-700 hover:bg-slate-50"
+                }`}
+              >
+                {item.icon && <Icon name={item.icon} size={16} className="shrink-0 opacity-80" />}
+                {item.label}
+              </button>
+            ))}
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -792,8 +952,8 @@ export function FilterChips<T extends string>({
             onClick={() => onChange(option.value)}
             className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
               active
-                ? "bg-psu-700 text-white"
-                : "border border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                ? "bg-linear-to-b from-psu-600 to-psu-700 text-white shadow-sm shadow-psu-900/20"
+                : "border border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
             }`}
           >
             {option.label}

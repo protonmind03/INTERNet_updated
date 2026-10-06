@@ -49,6 +49,10 @@ type AttentionItem = {
   urgent: boolean;
 };
 
+function accountsText(total: number): string {
+  return `${total} ${total === 1 ? "account" : "accounts"} in total`;
+}
+
 export default function CoordinatorDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [rows, setRows] = useState<MonitorRow[]>([]);
@@ -186,13 +190,13 @@ export default function CoordinatorDashboard() {
               <StatTile
                 label="Active students"
                 value={data.students.active}
-                hint={`${data.students.total} accounts in total`}
+                hint={accountsText(data.students.total)}
                 icon="users"
               />
               <StatTile
                 label="Active supervisors"
                 value={data.supervisors.active}
-                hint={`${data.supervisors.total} accounts in total`}
+                hint={accountsText(data.supervisors.total)}
                 icon="briefcase"
               />
               <StatTile
@@ -200,6 +204,7 @@ export default function CoordinatorDashboard() {
                 value={formatHours(data.totalHoursLogged)}
                 hint={`${averageCompletion}% average completion`}
                 icon="clock"
+                tone="gold"
               />
               <StatTile
                 label="Tasks reviewed"
@@ -210,6 +215,7 @@ export default function CoordinatorDashboard() {
                     : "No tasks assigned yet"
                 }
                 icon="tasks"
+                tone="good"
               />
             </>
           )}
@@ -239,8 +245,10 @@ export default function CoordinatorDashboard() {
                         className="flex items-center gap-4 px-4 py-3.5 hover:bg-slate-50 sm:px-5"
                       >
                         <span
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${
-                            item.urgent ? "bg-red-50 text-red-600" : "bg-amber-50 text-amber-700"
+                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${
+                            item.urgent
+                              ? "bg-red-50 text-red-600 ring-red-600/15"
+                              : "bg-amber-50 text-amber-700 ring-amber-600/20"
                           }`}
                         >
                           <Icon name={item.icon} />

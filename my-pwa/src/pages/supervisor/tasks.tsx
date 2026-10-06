@@ -45,7 +45,7 @@ async function downloadAttachment(task: TaskEntry) {
 
 export default function SupervisorTasks() {
   const supervisor = useAccount("supervisor");
-  const work = useSupervisorWork(supervisor?.supervisor_id);
+  const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "tasks"]);
   const { tasks, interns, loading } = work;
 
   const [filter, setFilter] = useState<Filter>("all");

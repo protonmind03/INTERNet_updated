@@ -9,7 +9,7 @@ import { useSupervisorWork } from "./useSupervisorWork";
 /** An intern's printable Daily Time Record, for the supervisor to sign. */
 export default function SupervisorTimeRecord() {
   const supervisor = useAccount("supervisor");
-  const work = useSupervisorWork(supervisor?.supervisor_id);
+  const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "attendance", "absences"]);
   const [params, setParams] = useSearchParams();
   const studentId = params.get("student") || "";
   const intern = work.interns.find((item) => item.student_id === studentId);

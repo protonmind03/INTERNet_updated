@@ -1533,3 +1533,97 @@ test("the account wipe refuses requests it should not act on", async () => {
   );
   assert.equal(unknownAccount.response.status, 404);
 });
+
+test("time-in is refused without a passed camera check", async () => {
+  const photo = () => new Blob([Buffer.from("not really a photo")], { type: "image/jpeg" });
+  const timeIn = (extra = {}) => {
+    const form = new FormData();
+    form.set("student_id", student.student_id);
+    form.set("image", photo(), "attendance.jpg");
+    for (const [key, value] of Object.entries(extra)) form.set(key, value);
+    return jsonRequest("/api/attendance", {
+      method: "POST",
+      headers: authHeaders(studentToken),
+      body: form,
+    });
+  };
+
+  // Asked first on purpose: a server too old to know this route would also
+  // accept the photo below and record a real time-in, so stop here instead.
+  const challenge = await jsonRequest("/api/attendance/liveness-challenge", {
+    method: "POST",
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(
+    challenge.response.status,
+    200,
+    "the server under test predates the camera check; restart it with the current code"
+  );
+
+  const noTicket = await timeIn();
+  assert.equal(noTicket.response.status, 400);
+  assert.match(noTicket.body.message, /camera check/i);
+
+  assert.equal(challenge.body.prompts.length, 2);
+  assert.notEqual(challenge.body.prompts[0], challenge.body.prompts[1]);
+  assert.equal(challenge.body.prompts.includes(challenge.body.spare), false);
+
+  // A ticket alone is not enough: the report must cover every prompt on it.
+  const onePrompt = await timeIn({
+    liveness_ticket: challenge.body.ticket,
+    liveness_report: JSON.stringify({ completed: [challenge.body.prompts[0]], flash: "passed" }),
+  });
+  assert.equal(onePrompt.response.status, 400);
+
+  // When the light check was not conclusive, the spare prompt is required too.
+  const noSpare = await timeIn({
+    liveness_ticket: challenge.body.ticket,
+    liveness_report: JSON.stringify({ completed: challenge.body.prompts, flash: "inconclusive" }),
+  });
+  assert.equal(noSpare.response.status, 400);
+
+  // A sign-in token is not a camera-check ticket.
+  const wrongTicket = await timeIn({
+    liveness_ticket: studentToken,
+    liveness_report: JSON.stringify({ completed: challenge.body.prompts, flash: "passed" }),
+  });
+  assert.equal(wrongTicket.response.status, 400);
+});
+
+test("only a supervisor can record a time-in in person, and only for their own intern", async () => {
+  const supervisor = await supervisorSession();
+  const record = (token, fields, withPhoto = true) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.set(key, value);
+    if (withPhoto) {
+      form.set("image", new Blob([Buffer.from("photo")], { type: "image/jpeg" }), "intern.jpg");
+    }
+    return jsonRequest("/api/supervisor/attendance/record", {
+      method: "POST",
+      headers: authHeaders(token),
+      body: form,
+    });
+  };
+
+  const asStudent = await record(studentToken, {
+    student_id: student.student_id,
+    reason: "Camera not working",
+  });
+  assert.equal(asStudent.response.status, 403);
+
+  const foreign = await record(supervisor.token, {
+    student_id: "no-such-student",
+    reason: "Camera not working",
+  });
+  assert.equal(foreign.response.status, 403);
+
+  const noReason = await record(supervisor.token, { student_id: student.student_id, reason: "" });
+  assert.equal(noReason.response.status, 400);
+
+  const noPhoto = await record(
+    supervisor.token,
+    { student_id: student.student_id, reason: "Camera not working" },
+    false
+  );
+  assert.equal(noPhoto.response.status, 400);
+});

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
+import { compressPhoto } from "../../lib/image";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, withWorkingToast } from "../../lib/toast";
 
@@ -47,7 +48,21 @@ export type AttendanceEntry = {
   /** What the intern wrote when correcting or resubmitting this log. */
   correction_note: string | null;
   corrected_at: string | null;
+  /**
+   * How the photo was taken: by the intern's camera check, or by the
+   * supervisor in person. Empty for older logs and for a photo the intern
+   * replaced afterwards, neither of which was camera-checked.
+   */
+  capture_method: "liveness" | "supervisor" | null;
+  liveness_checks: { flash?: string; attempts?: number | null } | null;
+  /** Why the supervisor recorded the time-in instead of the camera check. */
+  capture_reason: string | null;
 };
+
+/** The lists a supervisor page can ask for. */
+export type WorkList = "interns" | "attendance" | "tasks" | "documents" | "absences";
+
+const ALL_LISTS: readonly WorkList[] = ["interns", "attendance", "tasks", "documents", "absences"];
 
 export type TaskStatus = "Pending" | "In Progress" | "Submitted" | "Reviewed";
 
@@ -133,7 +148,17 @@ async function sendJson(
   }
 }
 
-export function useSupervisorWork(supervisorId: string | undefined) {
+/**
+ * `lists` names what the page actually shows. The Review queue needs all
+ * five; a page such as Evaluations only needs the interns, and asking for
+ * just that keeps it from downloading every log, task and document first.
+ */
+export function useSupervisorWork(
+  supervisorId: string | undefined,
+  lists: readonly WorkList[] = ALL_LISTS
+) {
+  // The same lists in a fixed order, so the page can pass a new array each render.
+  const wanted = ALL_LISTS.filter((list) => lists.includes(list)).join(",");
   const [interns, setInterns] = useState<Intern[]>([]);
   const [attendance, setAttendance] = useState<AttendanceEntry[]>([]);
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
@@ -150,27 +175,30 @@ export function useSupervisorWork(supervisorId: string | undefined) {
   const fetchAll = useCallback(async () => {
     if (!supervisorId) return;
     const id = encodeURIComponent(supervisorId);
+    const want = (list: WorkList) => wanted.split(",").includes(list);
+    const get = (list: WorkList, path: string) =>
+      want(list) ? getJson(path) : Promise.resolve(null);
     try {
       const [internData, attendanceData, taskData, documentData, absenceData] =
         await Promise.all([
-          getJson(`/api/supervisor/${id}/interns`),
-          getJson(`/api/supervisor/attendance/${id}`),
-          getJson(`/api/tasks/supervisor/${id}`),
-          getJson(`/api/documents/supervisor`),
-          getJson(`/api/absences/supervisor`),
+          get("interns", `/api/supervisor/${id}/interns`),
+          get("attendance", `/api/supervisor/attendance/${id}`),
+          get("tasks", `/api/tasks/supervisor/${id}`),
+          get("documents", `/api/documents/supervisor`),
+          get("absences", `/api/absences/supervisor`),
         ]);
-      setInterns((internData.interns as Intern[]) || []);
-      setAttendance((attendanceData.attendance as AttendanceEntry[]) || []);
-      setTasks((taskData.tasks as TaskEntry[]) || []);
-      setDocuments((documentData.documents as DocumentEntry[]) || []);
-      setAbsences((absenceData.absences as AbsenceEntry[]) || []);
+      if (internData) setInterns((internData.interns as Intern[]) || []);
+      if (attendanceData) setAttendance((attendanceData.attendance as AttendanceEntry[]) || []);
+      if (taskData) setTasks((taskData.tasks as TaskEntry[]) || []);
+      if (documentData) setDocuments((documentData.documents as DocumentEntry[]) || []);
+      if (absenceData) setAbsences((absenceData.absences as AbsenceEntry[]) || []);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your interns' records."));
     } finally {
       setLoading(false);
     }
-  }, [supervisorId]);
+  }, [supervisorId, wanted]);
 
   const load = useCallback((): Promise<void> => {
     if (inFlight.current) {
@@ -210,7 +238,13 @@ export function useSupervisorWork(supervisorId: string | undefined) {
   const queue = useMemo<QueueItem[]>(() => {
     const items: QueueItem[] = [
       ...attendance
-        .filter((entry) => entry.status === "Pending")
+        // A time-in the supervisor recorded in person is already approved by
+        // them; it is verified by itself when the intern times out.
+        .filter(
+          (entry) =>
+            entry.status === "Pending" &&
+            !(entry.capture_method === "supervisor" && !entry.time_out)
+        )
         .map((entry) => ({
           kind: "attendance" as const,
           key: `attendance-${entry.id}`,
@@ -285,6 +319,32 @@ export function useSupervisorWork(supervisorId: string | undefined) {
           "The attendance log could not be updated."
         )
       ),
+    [change]
+  );
+
+  /**
+   * Records an intern's time-in with a photo the supervisor took, for when
+   * the camera check cannot run on the intern's device.
+   */
+  const recordTimeIn = useCallback(
+    (studentId: string, photo: File, reason: string, note: string) =>
+      change(async () => {
+        const form = new FormData();
+        form.append("student_id", studentId);
+        form.append("reason", reason.trim());
+        if (note.trim()) form.append("note", note.trim());
+        form.append("image", await compressPhoto(photo));
+        const response = await fetch(
+          `${API_URL}/api/supervisor/attendance/record`,
+          withSupervisorAuth({ method: "POST", body: form })
+        );
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!response.ok) {
+          throw new Error(
+            typeof data.message === "string" ? data.message : "The time-in could not be recorded."
+          );
+        }
+      }),
     [change]
   );
 
@@ -386,6 +446,7 @@ export function useSupervisorWork(supervisorId: string | undefined) {
     error,
     reload: load,
     decideAttendance,
+    recordTimeIn,
     verifyMany,
     decideTask,
     undoTask,

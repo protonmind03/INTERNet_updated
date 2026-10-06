@@ -233,7 +233,7 @@ export default function Dashboard() {
                           to="/task"
                           className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 sm:px-5"
                         >
-                          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-psu-50 text-psu-700">
+                          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-psu-50 text-psu-700 ring-1 ring-inset ring-psu-600/10">
                             <Icon name="tasks" size={16} />
                           </span>
                           <span className="min-w-0 flex-1">
@@ -388,7 +388,7 @@ function ProgressCard({
         </ProgressRing>
 
         <div className="w-full min-w-0 flex-1">
-          <dl className="grid grid-cols-3 gap-3 text-center sm:text-left">
+          <dl className="grid grid-cols-3 gap-2 text-center sm:gap-3 sm:text-left">
             <Figure label="Rendered" value={formatHours(rendered)} />
             <Figure label="Remaining" value={formatHours(remaining)} />
             <Figure label="Days verified" value={String(summary.daysLogged)} />
@@ -409,9 +409,9 @@ function ProgressCard({
 
 function Figure({ label, value }: { label: string; value: string }) {
   return (
-    <div>
+    <div className="rounded-lg bg-linear-to-br from-psu-50/80 to-slate-50 px-2 py-2.5 ring-1 ring-inset ring-psu-600/10 sm:px-3">
       <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="mt-0.5 text-lg font-semibold text-slate-900">{value}</dd>
+      <dd className="tabular mt-0.5 text-lg font-semibold text-slate-900">{value}</dd>
     </div>
   );
 }
@@ -483,7 +483,7 @@ function WeekCard({ logs, loading }: { logs: AttendanceLog[]; loading: boolean }
                   {day.hours > 0 ? Number(day.hours.toFixed(1)) : "–"}
                 </span>
                 <div
-                  className="w-full max-w-6 rounded-t bg-psu-600 transition-[height,background-color] duration-500 group-hover/tip:bg-psu-800"
+                  className="w-full max-w-7 rounded-t-md bg-linear-to-t from-psu-700 to-psu-500 transition-[height,filter] duration-500 ease-soft group-hover/tip:brightness-90"
                   style={{ height: `${Math.round((day.hours / scaleMax) * 120)}px` }}
                 />
               </Tooltip>

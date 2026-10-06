@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
 import { PortalBrand, ROLE_THEMES } from "../brand";
 import Icon from "../components/Icon";
@@ -88,11 +88,8 @@ export default function SupervisorLayout({
   };
 
   return (
-    <div className="flex min-h-dvh flex-col bg-slate-50 print:bg-white">
-      <header
-        className="sticky top-0 z-30 text-white print:hidden"
-        style={{ background: ROLE_THEMES.supervisor.colors.surface }}
-      >
+    <div className="app-canvas flex min-h-dvh flex-col print:bg-white">
+      <header className="surface-brand-bar sticky top-0 z-30 text-white shadow-raised print:hidden">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
           <NavLink to="/supervisor/dashboard" aria-label="INTERNet Supervisor Portal, dashboard" className="flex shrink-0 items-center gap-2.5">
             <span className="hidden xl:block">
@@ -103,9 +100,15 @@ export default function SupervisorLayout({
             </span>
           </NavLink>
 
+          {/* The queue comes first and stands apart; the record pages follow it. */}
           <nav aria-label="Main" className="hidden h-full flex-1 items-stretch gap-1 lg:flex">
-            {NAV.map((item) => (
-              <TopLink key={item.path} {...item} count={counts[item.path]} />
+            {NAV.map((item, index) => (
+              <Fragment key={item.path}>
+                {index === 1 && (
+                  <span aria-hidden="true" className="mx-1 my-4 w-px shrink-0 bg-white/15" />
+                )}
+                <TopLink {...item} count={counts[item.path]} />
+              </Fragment>
             ))}
           </nav>
 
@@ -223,7 +226,9 @@ function TopLink({ label, path, count }: { label: string; path: string; count?: 
       to={path}
       className={({ isActive }) =>
         `relative flex shrink-0 items-center px-3 text-sm font-medium transition-colors ${
-          isActive ? "text-white" : "text-psu-200 hover:text-white"
+          isActive
+            ? "bg-linear-to-b from-transparent to-white/10 text-white"
+            : "text-psu-200 hover:text-white"
         }`
       }
     >

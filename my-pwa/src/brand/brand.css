@@ -11,48 +11,41 @@
   --inb-periwinkle: #c7cdf0;
 }
 
-/* ---------- Loader: cursor clicks → road is paved → cap lands → lanes move ---------- */
+/* ---------- Loader: cursor clicks → road is paved → cap lands → lanes move ----------
+   The story plays once and then holds: the finished mark stays on screen and only
+   the lane markings keep travelling. Nothing blinks out and restarts, so a loader
+   left running for a few seconds reads as one calm, steady signal. */
 .inb-road {
   stroke-dasharray: 100;
   stroke-dashoffset: 100;
-  animation: inb-road 2.6s ease-in-out infinite;
+  animation: inb-road 1s cubic-bezier(0.45, 0, 0.25, 1) 0.15s forwards;
 }
-@keyframes inb-road {
-  0%, 12% { stroke-dashoffset: 100; opacity: 1; }
-  55%, 88% { stroke-dashoffset: 0; opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0; }
-}
+@keyframes inb-road { to { stroke-dashoffset: 0; } }
 
 .inb-lane {
   opacity: 0;
-  animation: inb-lane-show 2.6s ease-in-out infinite, inb-lane-move 0.7s linear infinite;
+  animation: inb-lane-show 0.3s ease-out 1.05s forwards, inb-lane-move 1.1s linear infinite;
 }
-@keyframes inb-lane-show {
-  0%, 50% { opacity: 0; }
-  58%, 88% { opacity: 1; }
-  100% { opacity: 0; }
-}
+@keyframes inb-lane-show { to { opacity: 1; } }
 @keyframes inb-lane-move { to { stroke-dashoffset: -4.8; } }
 
 .inb-click {
   transform-box: fill-box;
   transform-origin: 0 0;
-  animation: inb-click 2.6s ease-in-out infinite;
+  animation: inb-click 0.3s ease-in-out;
 }
 @keyframes inb-click {
-  0% { transform: scale(1); }
-  5% { transform: scale(0.78); }
-  11%, 100% { transform: scale(1); }
+  0%, 100% { transform: scale(1); }
+  45% { transform: scale(0.78); }
 }
 
 .inb-cap {
   opacity: 0;
-  animation: inb-cap 2.6s cubic-bezier(0.3, 1.5, 0.5, 1) infinite;
+  animation: inb-cap 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.95s forwards;
 }
 @keyframes inb-cap {
-  0%, 55% { opacity: 0; transform: translateY(-9px); }
-  66%, 88% { opacity: 1; transform: translateY(0); }
-  100% { opacity: 0; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(-9px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 /* Small spinner version (buttons, inline chips): just the road being paved, looping fast. */
@@ -94,13 +87,13 @@
 .inb-check { stroke-dasharray: 24; stroke-dashoffset: 24; animation: inb-check 0.35s ease-out 0.05s forwards; }
 @keyframes inb-check { to { stroke-dashoffset: 0; } }
 /* success on brand moments (time-in, task submitted): a small cap drops in */
-.inb-cap-pop { animation: inb-cap-pop 0.5s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.inb-cap-pop { animation: inb-cap-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes inb-cap-pop { from { opacity: 0; transform: translateY(-6px) rotate(-12deg); } to { opacity: 1; transform: none; } }
 /* error: short horizontal shake */
 .inb-shake { animation: inb-shake 0.36s ease-in-out; }
 @keyframes inb-shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
 /* toasts */
-.inb-toast-in { animation: inb-toast-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.1) both; }
+.inb-toast-in { animation: inb-toast-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
 @keyframes inb-toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
 .inb-toast-out { animation: inb-toast-out 0.2s ease-in both; }
 @keyframes inb-toast-out { to { opacity: 0; transform: translateY(8px); } }

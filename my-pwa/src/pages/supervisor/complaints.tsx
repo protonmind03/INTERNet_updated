@@ -42,7 +42,7 @@ const MAX_EVIDENCE_MB = 5;
 export default function SupervisorComplaints() {
   const supervisor = useAccount("supervisor");
   const supervisorId = supervisor?.supervisor_id;
-  const { interns } = useSupervisorWork(supervisorId);
+  const { interns } = useSupervisorWork(supervisorId, ["interns"]);
 
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [loading, setLoading] = useState(true);

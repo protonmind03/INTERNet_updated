@@ -320,7 +320,8 @@ export function ResubmitDialog({
               <span className="text-sm">
                 <span className="font-semibold text-psu-700">Add a different photo</span>
                 <span className="block text-xs text-slate-500">
-                  Only if the original photo was the problem
+                  Only if the original photo was the problem. A replacement is not
+                  camera-checked, and your supervisor is told so.
                 </span>
               </span>
             </button>

@@ -12,6 +12,7 @@ import {
   FormError,
   FormField,
   Modal,
+  RowMenu,
   SearchField,
   SkeletonRows,
   StatusBadge,
@@ -186,7 +187,7 @@ export default function CoordinatorSupervisors() {
               <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 text-xs text-slate-500">
+                    <tr className="table-head border-b border-slate-100 text-xs text-slate-500">
                       <th scope="col" className="px-5 py-3 font-medium">Supervisor</th>
                       <th scope="col" className="px-3 py-3 font-medium">Company</th>
                       <th scope="col" className="px-3 py-3 font-medium">Department</th>
@@ -333,19 +334,27 @@ function RowActions({
         <Icon name="edit" size={15} />
         Edit
       </button>
-      {Number(supervisor.intern_count) > 0 && (
-        <button type="button" onClick={onMove} className={`${base} text-psu-700`}>
-          <Icon name="users" size={15} />
-          Move interns
-        </button>
-      )}
-      <button
-        type="button"
-        onClick={onToggle}
-        className={`${base} ${supervisor.is_active ? "text-red-600" : "text-emerald-700"}`}
-      >
-        {supervisor.is_active ? "Deactivate" : "Reactivate"}
-      </button>
+      <RowMenu
+        label={`More actions for ${supervisor.name}`}
+        items={[
+          ...(Number(supervisor.intern_count) > 0
+            ? [{ label: "Move interns", icon: "users" as const, onSelect: onMove }]
+            : []),
+          supervisor.is_active
+            ? {
+                label: "Deactivate account",
+                icon: "close" as const,
+                tone: "danger" as const,
+                onSelect: onToggle,
+              }
+            : {
+                label: "Reactivate account",
+                icon: "refresh" as const,
+                tone: "good" as const,
+                onSelect: onToggle,
+              },
+        ]}
+      />
     </div>
   );
 }

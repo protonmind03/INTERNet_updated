@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { PortalBrand, PortalHeader, ROLE_THEMES } from "../brand";
+import { PortalBrand, PortalHeader } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
@@ -91,15 +91,15 @@ export default function StudentLayout({
   return (
     <div className="flex h-dvh bg-slate-50 print:block print:h-auto print:bg-white">
       {/* SIDEBAR (desktop) */}
-      <aside
-        className="hidden w-64 shrink-0 flex-col md:flex print:hidden"
-        style={{ background: ROLE_THEMES.student.colors.surface }}
-      >
-        <div className="px-5 py-5">
+      <aside className="surface-brand hidden w-64 shrink-0 flex-col md:flex print:hidden">
+        <div className="border-b border-white/10 px-5 py-5">
           <PortalBrand role="student" showTag />
         </div>
 
-        <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 pb-4">
+        <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 pb-4 pt-4">
+          <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-psu-300">
+            Every day
+          </p>
           <SidebarGroup items={PRIMARY_NAV} counts={counts} />
           <p className="mb-1.5 mt-6 px-3 text-xs font-semibold uppercase tracking-wider text-psu-300">
             More
@@ -209,7 +209,7 @@ export default function StudentLayout({
           />
         </div>
 
-        <main className="flex-1 overflow-y-auto print:overflow-visible">
+        <main className="app-canvas flex-1 overflow-y-auto print:overflow-visible">
           <div className="mx-auto w-full max-w-6xl animate-page-in px-4 pb-28 pt-5 md:px-8 md:pb-10 md:pt-8 print:max-w-none print:p-0">
             <div className="mb-5 flex flex-wrap items-end justify-between gap-3 md:mb-6">
               <div className="min-w-0">
@@ -229,7 +229,7 @@ export default function StudentLayout({
         {/* BOTTOM TAB BAR (phones) */}
         <nav
           aria-label="Main"
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] md:hidden print:hidden"
+          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_-10px_rgb(15_30_110/0.22)] backdrop-blur md:hidden print:hidden"
         >
           {PRIMARY_NAV.map((item) => (
             <NavLink
@@ -244,8 +244,8 @@ export default function StudentLayout({
               {({ isActive }) => (
                 <>
                   <span
-                    className={`relative flex h-7 w-14 items-center justify-center rounded-full transition-colors ${
-                      isActive ? "bg-psu-100" : ""
+                    className={`relative flex h-7 w-14 items-center justify-center rounded-full transition-colors duration-200 ${
+                      isActive ? "bg-linear-to-b from-psu-100 to-psu-200/70" : ""
                     }`}
                   >
                     <Icon name={item.icon} size={20} />
@@ -269,7 +269,7 @@ export default function StudentLayout({
           >
             <span
               className={`flex h-7 w-14 items-center justify-center rounded-full ${
-                moreActive ? "bg-psu-100" : ""
+                moreActive ? "bg-linear-to-b from-psu-100 to-psu-200/70" : ""
               }`}
             >
               <Icon name="more" size={20} />
@@ -300,14 +300,25 @@ export default function StudentLayout({
                   to={item.path}
                   onClick={() => setMoreOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3.5 rounded-xl px-4 py-3.5 text-[15px] font-medium ${
-                      isActive ? "bg-psu-50 text-psu-700" : "text-slate-700"
+                    `flex items-center gap-3.5 rounded-xl px-3 py-2.5 text-[15px] font-medium ${
+                      isActive ? "bg-psu-50 text-psu-800" : "text-slate-700"
                     }`
                   }
                 >
-                  <Icon name={item.icon} size={20} />
-                  <span className="flex-1">{item.label}</span>
-                  <Icon name="chevron-right" size={16} className="text-slate-300" />
+                  {({ isActive }) => (
+                    <>
+                      <span
+                        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
+                          isActive ? "bg-psu-100 text-psu-700" : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        <Icon name={item.icon} size={19} />
+                      </span>
+                      <span className="flex-1">{item.label}</span>
+                      <CountBadge count={counts[item.path]} />
+                      <Icon name="chevron-right" size={16} className="text-slate-300" />
+                    </>
+                  )}
                 </NavLink>
               ))}
               <button
@@ -350,7 +361,7 @@ function SidebarGroup({ items, counts }: { items: NavItem[]; counts: NavCounts }
           className={({ isActive }) =>
             `relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
               isActive
-                ? "bg-white/10 text-white"
+                ? "bg-linear-to-r from-white/15 to-white/5 text-white ring-1 ring-inset ring-white/10"
                 : "text-psu-100 hover:bg-white/5 hover:text-white"
             }`
           }

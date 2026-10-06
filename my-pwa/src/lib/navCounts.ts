@@ -62,19 +62,9 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
   }
 
   if (role === "supervisor") {
-    const [attendance, tasks, documents, absences] = await Promise.all([
-      getJson(role, `/api/supervisor/attendance/${id}`),
-      getJson(role, `/api/tasks/supervisor/${id}`),
-      getJson(role, `/api/documents/supervisor`),
-      getJson(role, `/api/absences/supervisor`),
-    ]);
-    return {
-      "/supervisor/dashboard":
-        rows(attendance.attendance).filter((log) => log.status === "Pending").length +
-        rows(tasks.tasks).filter((task) => task.status === "Submitted").length +
-        rows(documents.documents).filter((item) => item.status === "Pending").length +
-        rows(absences.absences).filter((item) => item.status === "Pending").length,
-    };
+    // One small count from the server, not the four lists it is counted from.
+    const summary = await getJson(role, "/api/supervisor/review-count");
+    return { "/supervisor/dashboard": Number(summary.waiting) || 0 };
   }
 
   const summary = await getJson(role, "/api/coordinator/dashboard");

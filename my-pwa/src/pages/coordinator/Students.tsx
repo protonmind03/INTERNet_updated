@@ -13,6 +13,7 @@ import {
   FormError,
   FormField,
   Modal,
+  RowMenu,
   SearchField,
   SkeletonRows,
   StatusBadge,
@@ -269,7 +270,7 @@ export default function CoordinatorStudents() {
               <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 text-xs text-slate-500">
+                    <tr className="table-head border-b border-slate-100 text-xs text-slate-500">
                       <th scope="col" className="px-5 py-3 font-medium">Student</th>
                       <th scope="col" className="px-3 py-3 font-medium">Program</th>
                       <th scope="col" className="px-3 py-3 font-medium">Company</th>
@@ -405,17 +406,15 @@ function RowActions({
         <Icon name="edit" size={15} />
         Edit
       </button>
-      <button type="button" onClick={onSchedule} className={`${base} text-psu-700`}>
-        <Icon name="calendar" size={15} />
-        Schedule
-      </button>
-      <button
-        type="button"
-        onClick={onToggle}
-        className={`${base} ${student.is_active ? "text-red-600" : "text-emerald-700"}`}
-      >
-        {student.is_active ? "Deactivate" : "Reactivate"}
-      </button>
+      <RowMenu
+        label={`More actions for ${student.name}`}
+        items={[
+          { label: "Schedule", icon: "calendar", onSelect: onSchedule },
+          student.is_active
+            ? { label: "Deactivate account", icon: "close", tone: "danger", onSelect: onToggle }
+            : { label: "Reactivate account", icon: "refresh", tone: "good", onSelect: onToggle },
+        ]}
+      />
     </div>
   );
 }

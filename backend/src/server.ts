@@ -5,7 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { Pool } from "pg";
 import multer from "multer";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomInt } from "node:crypto";
 import path from "path";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -1849,7 +1849,8 @@ app.get(
             verified_by,
             verified_at,
             correction_note,
-            corrected_at
+            corrected_at,
+            capture_method
           FROM attendance
           WHERE student_id = $1
           ORDER BY
@@ -1878,6 +1879,131 @@ app.get(
             : String(error),
       });
     }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| CAMERA CHECK (LIVENESS)
+|--------------------------------------------------------------------------
+|
+| A time-in photo used to be any file the student chose. Now the app's
+| camera has to see a live face follow a few prompts before it takes the
+| photo itself. The prompts are picked here, at random, and handed out in a
+| short-lived signed ticket, so a recording made earlier will not match
+| them. The time-in below is refused without a ticket and a report saying
+| every prompt in it was completed.
+|
+| The check itself runs on the student's device, so this is a strong
+| deterrent rather than proof: the supervisor still sees the photo and
+| verifies the day.
+|
+*/
+
+const LIVENESS_PROMPTS = ["blink", "smile", "turn-left", "turn-right"] as const;
+type LivenessPrompt = (typeof LIVENESS_PROMPTS)[number];
+const LIVENESS_TICKET_MINUTES = 10;
+
+function isLivenessPrompt(value: unknown): value is LivenessPrompt {
+  return LIVENESS_PROMPTS.includes(value as LivenessPrompt);
+}
+
+/** Two different prompts, plus a spare used when the light check is unclear. */
+function pickLivenessPrompts(): { prompts: LivenessPrompt[]; spare: LivenessPrompt } {
+  const shuffled = [...LIVENESS_PROMPTS];
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const other = randomInt(index + 1);
+    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
+  }
+  return { prompts: shuffled.slice(0, 2), spare: shuffled[2] };
+}
+
+type LivenessReport = {
+  completed: LivenessPrompt[];
+  flash: "passed" | "inconclusive" | "skipped";
+  sharpness: number | null;
+  duration_ms: number | null;
+  attempts: number | null;
+};
+
+/**
+ * Checks a time-in's ticket and report. Returns the report to store, or the
+ * reason the time-in is refused.
+ */
+function readLivenessReport(
+  studentId: string,
+  ticket: unknown,
+  rawReport: unknown
+): { report: LivenessReport } | { problem: string } {
+  const refusal = {
+    problem:
+      "Finish the camera check to time in. If it will not work on your device, ask your supervisor to record your time-in.",
+  };
+  if (typeof ticket !== "string" || !ticket) return refusal;
+
+  let claims: jwt.JwtPayload;
+  try {
+    const payload = jwt.verify(ticket, JWT_SECRET);
+    if (typeof payload === "string") return refusal;
+    claims = payload;
+  } catch {
+    return {
+      problem: "The camera check expired. Run it again to time in.",
+    };
+  }
+  if (claims.purpose !== "liveness" || claims.sub !== studentId) return refusal;
+
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = JSON.parse(typeof rawReport === "string" ? rawReport : "");
+  } catch {
+    return refusal;
+  }
+  if (!parsed || typeof parsed !== "object") return refusal;
+
+  const completed = Array.isArray(parsed.completed)
+    ? parsed.completed.filter(isLivenessPrompt)
+    : [];
+  const flash =
+    parsed.flash === "passed" || parsed.flash === "skipped" ? parsed.flash : "inconclusive";
+
+  // Every prompt on the ticket must be done; when the light check did not
+  // clearly pass, the spare prompt is required as well.
+  const required: unknown[] = Array.isArray(claims.prompts) ? [...claims.prompts] : [];
+  if (flash !== "passed") required.push(claims.spare);
+  if (required.length < 2 || !required.every((prompt) => completed.includes(prompt as LivenessPrompt))) {
+    return refusal;
+  }
+
+  const number = (value: unknown, max: number) =>
+    typeof value === "number" && Number.isFinite(value) && value >= 0
+      ? Math.min(max, Math.round(value * 100) / 100)
+      : null;
+
+  return {
+    report: {
+      completed: [...new Set(completed)],
+      flash,
+      sharpness: number(parsed.sharpness, 100_000),
+      duration_ms: number(parsed.duration_ms, 600_000),
+      attempts: number(parsed.attempts, 20),
+    },
+  };
+}
+
+app.post(
+  "/api/attendance/liveness-challenge",
+  requireRole("student"),
+  (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth) return res.status(401).json({ message: "Sign in again." });
+
+    const { prompts, spare } = pickLivenessPrompts();
+    const ticket = jwt.sign({ purpose: "liveness", prompts, spare }, JWT_SECRET, {
+      subject: auth.id,
+      expiresIn: `${LIVENESS_TICKET_MINUTES}m`,
+    });
+    return res.json({ ticket, prompts, spare });
   }
 );
 
@@ -1921,6 +2047,16 @@ app.post(
         return res.status(400).json({
           message: "Attendance photo must be a JPG or PNG image.",
         });
+      }
+
+      // The photo must come from the in-app camera check, not a chosen file.
+      const liveness = readLivenessReport(
+        String(student_id),
+        req.body.liveness_ticket,
+        req.body.liveness_report
+      );
+      if ("problem" in liveness) {
+        return res.status(400).json({ message: liveness.problem });
       }
 
       /*
@@ -2046,7 +2182,9 @@ app.post(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            capture_method,
+            liveness_checks
           )
           VALUES
           (
@@ -2059,7 +2197,9 @@ app.post(
             NULL,
             $2,
             'Pending',
-            $3
+            $3,
+            'liveness',
+            $4::jsonb
           )
           RETURNING
             id,
@@ -2075,12 +2215,14 @@ app.post(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            capture_method
           `,
           [
             student_id,
             cleanNote,
             imageUrl,
+            JSON.stringify(liveness.report),
           ]
         );
 
@@ -2357,7 +2499,26 @@ app.put(
                 2
               ),
               0
-            )
+            ),
+
+            -- A time-in the supervisor recorded in person was approved by them
+            -- on the spot, so the finished day needs no second review.
+            status = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN 'Verified' ELSE status
+            END,
+            verified_by = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN recorded_by ELSE verified_by
+            END,
+            verifier_role = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN 'supervisor' ELSE verifier_role
+            END,
+            verified_at = CASE
+              WHEN capture_method = 'supervisor' AND status = 'Pending'
+              THEN NOW() ELSE verified_at
+            END
 
           WHERE id = $1
           AND student_id = $2
@@ -2381,7 +2542,8 @@ app.put(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            capture_method
           `,
           [id, auth?.id, MAX_SHIFT_HOURS]
         );
@@ -2402,6 +2564,29 @@ app.put(
         return res.status(404).json({
           message:
             "Attendance record not found or time-out was already recorded.",
+        });
+      }
+
+      // A day the supervisor recorded in person is already verified: count its
+      // hours and tell the student, instead of asking the supervisor again.
+      if (
+        result.rows[0].capture_method === "supervisor" &&
+        result.rows[0].status === "Verified"
+      ) {
+        try {
+          await syncCompletion(String(result.rows[0].student_id));
+          await createNotification({
+            studentId: result.rows[0].student_id,
+            title: "Attendance verified",
+            message: `Your attendance for ${result.rows[0].date} was verified. Your supervisor recorded your time-in in person.`,
+            type: "attendance",
+          });
+        } catch (notifyError) {
+          console.error("TIME-OUT AUTO-VERIFY FOLLOW-UP ERROR:", notifyError);
+        }
+        return res.json({
+          message: "Time-out recorded successfully.",
+          attendance: result.rows[0],
         });
       }
 
@@ -2502,7 +2687,8 @@ const ATTENDANCE_COLUMNS = `
   image_url,
   review_notes,
   correction_note,
-  corrected_at
+  corrected_at,
+  capture_method
 `;
 
 // A shift is never longer than this, so a typo cannot record a multi-day log.
@@ -2697,7 +2883,11 @@ app.post(
           status = 'Pending',
           correction_note = $3,
           corrected_at = NOW(),
-          image_url = COALESCE($4, image_url)
+          image_url = COALESCE($4, image_url),
+          -- A replacement photo is one the student chose, so the log no longer
+          -- counts as camera-checked and the reviewer is told so.
+          capture_method = CASE WHEN $4::text IS NULL THEN capture_method ELSE NULL END,
+          liveness_checks = CASE WHEN $4::text IS NULL THEN liveness_checks ELSE NULL END
         WHERE id = $1
         AND student_id = $2
         AND status = 'Rejected'
@@ -2841,7 +3031,10 @@ app.get(
             a.verified_by,
             a.verified_at,
             a.correction_note,
-            a.corrected_at
+            a.corrected_at,
+            a.capture_method,
+            a.liveness_checks,
+            a.capture_reason
 
           FROM attendance a
 
@@ -2888,6 +3081,173 @@ app.get(
             ? error.message
             : String(error),
       });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| SUPERVISOR RECORDS A TIME-IN IN PERSON
+|--------------------------------------------------------------------------
+|
+| The way through when the camera check cannot run on an intern's device
+| (no camera, a fault, a check that keeps failing). The supervisor takes
+| the photo themselves, so no camera check is asked of them, and the log
+| is theirs to vouch for: it is verified automatically once the intern
+| times out.
+|
+*/
+
+app.post(
+  "/api/supervisor/attendance/record",
+  requireRole("supervisor"),
+  upload.single("image"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const studentId =
+        typeof req.body?.student_id === "string" ? req.body.student_id.trim() : "";
+      const reason =
+        typeof req.body?.reason === "string" ? req.body.reason.trim().slice(0, 300) : "";
+      const note =
+        typeof req.body?.note === "string" && req.body.note.trim() !== ""
+          ? req.body.note.trim().slice(0, 500)
+          : null;
+
+      if (!studentId) {
+        return res.status(400).json({ message: "Choose the intern to record." });
+      }
+      if (reason.length < 3) {
+        return res.status(400).json({
+          message: "Say why the intern could not use the camera check.",
+        });
+      }
+      if (!req.file) {
+        return res.status(400).json({
+          message: "A photo of the intern is required to record their time-in.",
+        });
+      }
+      if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
+        return res.status(400).json({
+          message: "The photo must be a JPG or PNG image.",
+        });
+      }
+
+      const intern = await pool.query<{ name: string }>(
+        `
+        SELECT name FROM students
+        WHERE student_id = $1 AND supervisor_id = $2 AND is_active = TRUE
+        `,
+        [studentId, auth?.id]
+      );
+      if (intern.rows.length === 0) {
+        return res.status(403).json({
+          message: "You can only record attendance for interns assigned to you.",
+        });
+      }
+
+      const existing = await pool.query(
+        `SELECT 1 FROM attendance WHERE student_id = $1 AND date = CURRENT_DATE`,
+        [studentId]
+      );
+      if (existing.rows.length > 0) {
+        return res.status(409).json({
+          message: `${intern.rows[0].name} already has an attendance log for today.`,
+        });
+      }
+
+      uploadedFileName = await savePrivateFile(req.file);
+
+      const result = await pool.query(
+        `
+        INSERT INTO attendance
+          (student_id, date, time_in, note, status, image_url,
+           capture_method, recorded_by, capture_reason)
+        VALUES
+          ($1, CURRENT_DATE, NOW(), $2, 'Pending', $3, 'supervisor', $4, $5)
+        RETURNING ${ATTENDANCE_COLUMNS}
+        `,
+        [studentId, note, `/uploads/${uploadedFileName}`, auth?.id, reason]
+      );
+
+      try {
+        await createNotification({
+          studentId,
+          title: "Time-in recorded by your supervisor",
+          message: `Your supervisor recorded your time-in for ${result.rows[0].date}. Remember to time out when you finish; the day is verified automatically.`,
+          type: "attendance",
+        });
+      } catch (notifyError) {
+        console.error("SUPERVISOR TIME-IN NOTIFICATION ERROR:", notifyError);
+      }
+
+      return res.status(201).json({
+        message: `Time-in recorded for ${intern.rows[0].name}.`,
+        attendance: result.rows[0],
+      });
+    } catch (error) {
+      if (uploadedFileName) {
+        await deletePrivateFile(uploadedFileName).catch((cleanupError) => {
+          console.error("FAILED TO REMOVE UNRECORDED ATTENDANCE PHOTO:", cleanupError);
+        });
+      }
+      if ((error as { code?: string })?.code === "23505") {
+        return res.status(409).json({
+          message: "This intern already has an attendance log for today.",
+        });
+      }
+      console.error("SUPERVISOR RECORD TIME-IN ERROR:", error);
+      return res.status(500).json({
+        message: "Failed to record the time-in.",
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| HOW MUCH IS WAITING ON A SUPERVISOR
+|--------------------------------------------------------------------------
+|
+| One number for the badge beside "Review", counted the same way the queue
+| is built, so every page does not have to download four lists to show it.
+|
+*/
+
+app.get(
+  "/api/supervisor/review-count",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const result = await pool.query<{ waiting: string }>(
+        `
+        WITH mine AS (
+          SELECT TRIM(student_id::text) AS student_id FROM students
+          WHERE TRIM(supervisor_id::text) = TRIM($1::text) AND is_active = TRUE
+        )
+        SELECT
+          (SELECT COUNT(*) FROM attendance a
+            WHERE TRIM(a.student_id::text) IN (SELECT student_id FROM mine)
+              AND a.status = 'Pending'
+              -- A time-in the supervisor recorded in person needs no review.
+              AND NOT (a.capture_method IS NOT DISTINCT FROM 'supervisor' AND a.time_out IS NULL))
+          + (SELECT COUNT(*) FROM tasks t
+              WHERE TRIM(t.student_id::text) IN (SELECT student_id FROM mine) AND t.status = 'Submitted')
+          + (SELECT COUNT(*) FROM documents d
+              WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending')
+          + (SELECT COUNT(*) FROM absences b
+              WHERE TRIM(b.student_id::text) IN (SELECT student_id FROM mine) AND b.status = 'Pending')
+          AS waiting
+        `,
+        [auth?.id]
+      );
+      return res.json({ waiting: Number(result.rows[0]?.waiting) || 0 });
+    } catch (error) {
+      console.error("SUPERVISOR REVIEW COUNT ERROR:", error);
+      return res.status(500).json({ message: "Failed to count what is waiting." });
     }
   }
 );
@@ -6013,6 +6373,24 @@ app.post(
     );
     if (targetStudent.rows.length === 0) {
       return res.status(404).json({ message: "Student not found." });
+    }
+    // A student's rating of their placement feeds the company averages and
+    // alerts every coordinator, so one a day is enough: a double tap or a
+    // run of repeats must not flood either.
+    if (auth.role === "student") {
+      const sentToday = await pool.query(
+        `
+        SELECT 1 FROM evaluations
+        WHERE evaluator_type = 'student' AND evaluator_id = $1 AND eval_date = CURRENT_DATE
+        LIMIT 1
+        `,
+        [auth.id]
+      );
+      if (sentToday.rows.length > 0) {
+        return res.status(409).json({
+          message: "You already sent feedback today. You can send more tomorrow.",
+        });
+      }
     }
     const { table: evaluatorTable, idColumn: evaluatorIdColumn } =
       accountTables[auth.role];

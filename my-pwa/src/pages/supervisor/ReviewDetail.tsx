@@ -143,6 +143,8 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         </Quote>
       )}
 
+      <CaptureNote entry={entry} />
+
       <AttendancePhoto path={entry.image_url} role="supervisor" />
 
       <Decision
@@ -155,7 +157,9 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         notePlaceholder="Tell the intern what is wrong with this log."
         approveBlocked={
           open
-            ? "This intern has not timed out yet. You can verify the log once they do."
+            ? entry.capture_method === "supervisor"
+              ? "You recorded this time-in yourself, so it is verified automatically when the intern times out."
+              : "This intern has not timed out yet. You can verify the log once they do."
             : undefined
         }
         shortcut={shortcuts}
@@ -177,6 +181,48 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         }}
       />
     </DetailShell>
+  );
+}
+
+/** How the photo below was taken, so the reviewer knows how far to trust it. */
+function CaptureNote({ entry }: { entry: AttendanceEntry }) {
+  if (!entry.image_url) return null;
+
+  if (entry.capture_method === "supervisor") {
+    return (
+      <p className="flex items-start gap-2 rounded-lg bg-psu-50 px-3 py-2.5 text-sm text-psu-950 ring-1 ring-inset ring-psu-600/10">
+        <Icon name="camera" size={16} className="mt-0.5 shrink-0 text-psu-600" />
+        <span>
+          You took this photo in person
+          {entry.capture_reason ? ` (${entry.capture_reason.replace(/\.$/, "")})` : ""}.
+        </span>
+      </p>
+    );
+  }
+
+  if (entry.capture_method === "liveness") {
+    const lightUnclear = entry.liveness_checks?.flash !== "passed";
+    return (
+      <p className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-950 ring-1 ring-inset ring-emerald-600/15">
+        <Icon name="check-circle" size={16} className="mt-0.5 shrink-0 text-emerald-600" />
+        <span>
+          Taken by the camera check: a live face followed the prompts before this photo was
+          taken.
+          {lightUnclear && " The light check was not conclusive, so an extra prompt was asked."}
+        </span>
+      </p>
+    );
+  }
+
+  return (
+    <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+      <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-amber-600" />
+      <span>
+        This photo was not taken by the camera check
+        {entry.corrected_at ? "; the intern replaced it when asking for another review" : ""}.
+        Look at it closely before deciding.
+      </span>
+    </p>
   );
 }
 

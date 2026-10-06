@@ -29,12 +29,13 @@ export function SplashScreen({ role, progress, leaving = false }: SplashScreenPr
 
   const pct = Math.round(progress ?? auto);
   const stage = pct >= 100 ? steps.length : Math.floor((pct / 100) * steps.length);
-  const msg = stage >= steps.length ? "You’re all set." : steps[stage].message;
+  // One steady line while the steps fill in below it; a sentence that changed
+  // with every step was gone before anyone could read it.
+  const msg = stage >= steps.length ? "You’re all set." : `Opening your ${t.portal.toLowerCase()}…`;
 
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col justify-between px-7 pb-9 pt-16 ${leaving ? "inb-fade-out" : ""}`}
-      style={{ background: dark ? t.colors.surface : "#F8FAFC" }}
+      className={`fixed inset-0 z-[100] flex flex-col justify-between px-7 pb-9 pt-16 ${dark ? "surface-brand" : "app-canvas"} ${leaving ? "inb-fade-out" : ""}`}
       role="status"
       aria-live="polite"
       aria-label={`Loading INTERNet ${t.portal}`}
@@ -63,7 +64,7 @@ export function SplashScreen({ role, progress, leaving = false }: SplashScreenPr
                 ? { background: t.colors.tagBg, color: dark ? BRAND.amber : t.colors.tagText, boxShadow: `inset 0 0 0 1.5px ${dark ? BRAND.amber : t.colors.accent}` }
                 : { background: dark ? "rgba(255,255,255,.08)" : "#E2E8F0", color: dark ? "#9AA3E0" : "#64748B" };
             return (
-              <li key={s.label} className="rounded-full px-3 py-1.5 text-xs font-semibold" style={style}>
+              <li key={s.label} className="rounded-full px-3 py-1.5 text-xs font-semibold transition-colors duration-300" style={style}>
                 {s.label}
               </li>
             );
@@ -72,10 +73,9 @@ export function SplashScreen({ role, progress, leaving = false }: SplashScreenPr
         <div className="h-1.5 overflow-hidden rounded-full" style={{ background: dark ? "rgba(255,255,255,.14)" : "#E2E8F0" }}>
           <div className="h-full rounded-full transition-[width] duration-150" style={{ width: `${pct}%`, background: dark ? BRAND.amber : t.colors.accent }} />
         </div>
-        <div className="flex justify-between font-mono text-xs font-medium" style={{ color: t.colors.muted }}>
-          <span>{msg}</span>
-          <span>{pct}%</span>
-        </div>
+        <p className="text-center text-xs font-medium" style={{ color: t.colors.muted }}>
+          {msg}
+        </p>
         <p className="pt-2 text-center text-xs" style={{ color: dark ? "#9AA3E0" : "#64748B" }}>
           Pangasinan State University · Lingayen Campus
         </p>

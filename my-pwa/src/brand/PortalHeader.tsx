@@ -28,7 +28,7 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
 
   if (variant === "desktop") {
     return (
-      <header className="flex items-center justify-between gap-4 border-b border-slate-200 bg-white px-6 py-4">
+      <header className="relative z-10 flex items-center justify-between gap-4 border-b border-slate-200/80 bg-white px-6 py-4 shadow-card md:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: role === "coordinator" ? t.colors.tagBg : "#EEF0FA", color: role === "coordinator" ? t.colors.tagText : "#1A237E" }}>
             {t.tag}
@@ -47,7 +47,10 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
   }
 
   return (
-    <header className="sticky top-0 z-30" style={{ background: t.colors.surface, borderBottom: dark ? "none" : "1px solid #E2E8F0" }}>
+    <header
+      className={`sticky top-0 z-30 ${dark ? "surface-brand shadow-raised" : ""}`}
+      style={dark ? undefined : { background: t.colors.surface, borderBottom: "1px solid #E2E8F0" }}
+    >
       <div className="flex items-center gap-2 px-3 py-2.5">
         {onMenu && (
           <button

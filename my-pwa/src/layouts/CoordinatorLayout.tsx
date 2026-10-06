@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Navigate, NavLink, useNavigate } from "react-router-dom";
+import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { BrandIcon, BrandLoader, PortalBrand, ROLE_THEMES } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
@@ -84,9 +84,17 @@ export default function CoordinatorLayout({
   children: ReactNode;
 }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const coordinator = useAccount("coordinator");
   const counts = useNavCounts("coordinator");
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // With this many pages, the title also says which area of the console it
+  // belongs to, so the coordinator always knows where they are.
+  const area =
+    NAV_GROUPS.find((group) =>
+      group.items.some((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))
+    )?.label ?? (pathname.startsWith("/coordinator/profile") ? "Account" : "");
   const [confirmSignOut, setConfirmSignOut] = useState(false);
 
   useEffect(() => {
@@ -102,14 +110,15 @@ export default function CoordinatorLayout({
 
   const sidebar = (
     <>
-      <div className="px-5 py-5">
+      <div className="border-b border-slate-200/70 px-5 py-5">
         <PortalBrand role="coordinator" />
       </div>
-      <nav aria-label="Main" className="flex-1 space-y-6 overflow-y-auto px-3 pb-4">
+      <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 pb-4 pt-4">
         {NAV_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <p className="mb-1.5 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
               {group.label}
+              <span aria-hidden="true" className="h-px flex-1 bg-slate-200/80" />
             </p>
             <div className="space-y-0.5">
               {group.items.map((item) => (
@@ -118,15 +127,18 @@ export default function CoordinatorLayout({
                   to={item.path}
                   onClick={() => setDrawerOpen(false)}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+                    `relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
                       isActive
-                        ? "bg-psu-50 text-psu-800"
+                        ? "bg-linear-to-r from-psu-100 to-psu-50 text-psu-900 ring-1 ring-inset ring-psu-600/10"
                         : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
                     }`
                   }
                 >
                   {({ isActive }) => (
                     <>
+                      {isActive && (
+                        <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-psu-600" />
+                      )}
                       <Icon
                         name={item.icon}
                         className={isActive ? "text-psu-700" : "text-slate-400"}
@@ -151,7 +163,7 @@ export default function CoordinatorLayout({
             }`
           }
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-psu-700 text-xs font-bold text-white">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-psu-600 to-psu-800 text-xs font-bold text-white">
             {getInitials(coordinator.name, "OC")}
           </span>
           <span className="min-w-0 leading-tight">
@@ -180,7 +192,7 @@ export default function CoordinatorLayout({
 
   return (
     <div className="flex h-dvh bg-slate-50 print:block print:h-auto print:bg-white">
-      <aside className="hidden w-64 shrink-0 flex-col border-r border-slate-200 bg-white lg:flex print:hidden">
+      <aside className="surface-console hidden w-64 shrink-0 flex-col border-r border-slate-200 lg:flex print:hidden">
         {sidebar}
       </aside>
 
@@ -191,7 +203,7 @@ export default function CoordinatorLayout({
             className="absolute inset-0 animate-fade-in bg-psu-950/50"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="relative flex w-72 max-w-[85vw] flex-col bg-white shadow-2xl">
+          <aside className="surface-console relative flex w-72 max-w-[85vw] animate-drawer-in flex-col shadow-2xl">
             <button
               type="button"
               aria-label="Close menu"
@@ -206,7 +218,7 @@ export default function CoordinatorLayout({
       )}
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 md:px-6 print:hidden">
+        <header className="relative z-10 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200/80 bg-white px-4 shadow-card md:px-8 print:hidden">
           <button
             type="button"
             aria-label="Open menu"
@@ -242,10 +254,15 @@ export default function CoordinatorLayout({
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto print:overflow-visible">
+        <main className="app-canvas flex-1 overflow-y-auto print:overflow-visible">
           <div className="mx-auto w-full max-w-7xl animate-page-in px-4 pb-12 pt-6 md:px-8 md:pt-8 print:max-w-none print:p-0">
             <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
+                {area && (
+                  <p className="mb-1 text-xs font-semibold uppercase tracking-wider text-psu-600 print:hidden">
+                    {area}
+                  </p>
+                )}
                 <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
                 {subtitle && <p className="mt-1 text-sm text-slate-600">{subtitle}</p>}
               </div>

@@ -619,7 +619,7 @@ function AttendanceTab({ logs }: { logs: Log[] }) {
       <div className="overflow-x-auto">
         <table className="w-full text-left text-sm">
           <thead>
-            <tr className="border-b border-slate-100 text-xs text-slate-500">
+            <tr className="table-head border-b border-slate-100 text-xs text-slate-500">
               <th scope="col" className="px-5 py-3 font-medium">Date</th>
               <th scope="col" className="px-3 py-3 font-medium">Time in</th>
               <th scope="col" className="px-3 py-3 font-medium">Time out</th>

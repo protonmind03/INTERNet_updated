@@ -250,7 +250,7 @@ export default function CoordinatorMonitoring() {
               <div className="hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 text-xs text-slate-500">
+                    <tr className="table-head border-b border-slate-100 text-xs text-slate-500">
                       <th scope="col" className="px-5 py-3 font-medium">Student</th>
                       <th scope="col" className="px-3 py-3 font-medium">Supervisor</th>
                       <th scope="col" className="px-3 py-3 font-medium">Hours</th>

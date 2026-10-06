@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { LivenessReport } from "../../components/LivenessCamera";
+import type { Prompt } from "../../lib/liveness/engine";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { localDateKey } from "../../lib/format";
 import { compressPhoto } from "../../lib/image";
@@ -24,7 +26,12 @@ export type AttendanceLog = {
   /** What the student wrote when correcting or resubmitting this log. */
   correction_note?: string | null;
   corrected_at?: string | null;
+  /** How the photo was taken: the camera check, or by the supervisor in person. */
+  capture_method?: "liveness" | "supervisor" | null;
 };
+
+/** The prompts the server picked for one time-in, and the ticket that proves it. */
+export type LivenessChallenge = { ticket: string; prompts: Prompt[]; spare: Prompt };
 
 /** Where the student is in today's attendance. */
 export type DayStage = "not-started" | "working" | "on-break" | "back" | "done";
@@ -143,13 +150,28 @@ export function useAttendance(studentId: string | undefined) {
     [load]
   );
 
+  /** Asks the server which prompts this time-in's camera check must show. */
+  const livenessChallenge = useCallback(async (): Promise<LivenessChallenge> => {
+    const response = await fetch(
+      `${API_URL}/api/attendance/liveness-challenge`,
+      withStudentAuth({ method: "POST" })
+    );
+    const data = await readJson(response);
+    if (!response.ok || typeof data.ticket !== "string") {
+      throw new Error(messageFrom(data, "Could not start the camera check."));
+    }
+    return data as unknown as LivenessChallenge;
+  }, []);
+
   const timeIn = useCallback(
-    async (photo: File, note: string) => {
+    async (photo: File, note: string, check: { ticket: string; report: LivenessReport }) => {
       if (!studentId) throw new Error("Your session has ended. Please sign in again.");
       const image = await compressPhoto(photo);
       const form = new FormData();
       form.append("student_id", studentId);
       if (note.trim()) form.append("notes", note.trim());
+      form.append("liveness_ticket", check.ticket);
+      form.append("liveness_report", JSON.stringify(check.report));
       form.append("image", image);
       await run(
         () =>
@@ -229,6 +251,7 @@ export function useAttendance(studentId: string | undefined) {
     lateTimeOut,
     resubmit,
     stage: stageOf(todayLog),
+    livenessChallenge,
     timeIn,
     startBreak: () => step("break", "Could not record your break."),
     endBreak: () => step("break-end", "Could not record your return from break."),

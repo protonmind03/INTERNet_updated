@@ -33,7 +33,7 @@ type Evaluation = {
 
 export default function SupervisorEvaluation() {
   const supervisor = useAccount("supervisor");
-  const { interns, loading: internsLoading } = useSupervisorWork(supervisor?.supervisor_id);
+  const { interns, loading: internsLoading } = useSupervisorWork(supervisor?.supervisor_id, ["interns"]);
 
   const [studentId, setStudentId] = useState("");
   const [category, setCategory] = useState<string>(EVALUATION_CATEGORIES[0]);

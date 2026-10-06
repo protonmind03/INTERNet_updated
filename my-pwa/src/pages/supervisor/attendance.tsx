@@ -3,6 +3,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
+  Button,
   Card,
   CardHeader,
   EmptyState,
@@ -17,6 +18,7 @@ import { isWithinDateRange } from "../../lib/dateRange";
 import { formatDayDate, formatHours, formatTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { usePagination } from "../../lib/usePagination";
+import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { useSupervisorWork, type AttendanceEntry } from "./useSupervisorWork";
 
@@ -37,7 +39,7 @@ function breakText(entry: AttendanceEntry): string {
 
 export default function SupervisorAttendanceApproval() {
   const supervisor = useAccount("supervisor");
-  const work = useSupervisorWork(supervisor?.supervisor_id);
+  const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "attendance", "absences"]);
   const { attendance, interns, loading } = work;
 
   const [filter, setFilter] = useState<Filter>("all");
@@ -46,6 +48,7 @@ export default function SupervisorAttendanceApproval() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
+  const [recording, setRecording] = useState(false);
 
   const scoped = useMemo(
     () => (internId ? attendance.filter((entry) => entry.student_id === internId) : attendance),
@@ -103,6 +106,11 @@ export default function SupervisorAttendanceApproval() {
     <SupervisorLayout
       title="Attendance"
       subtitle="Every attendance log from your interns. Pending logs can also be cleared from Review."
+      actions={
+        <Button variant="secondary" icon="camera" onClick={() => setRecording(true)}>
+          Record time-in
+        </Button>
+      }
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
@@ -205,7 +213,7 @@ export default function SupervisorAttendanceApproval() {
               <div className="hidden overflow-x-auto md:block">
                 <table className="w-full text-left text-sm">
                   <thead>
-                    <tr className="border-b border-slate-100 text-xs text-slate-500">
+                    <tr className="table-head border-b border-slate-100 text-xs text-slate-500">
                       <th scope="col" className="px-5 py-3 font-medium">Intern</th>
                       <th scope="col" className="px-3 py-3 font-medium">Date</th>
                       <th scope="col" className="px-3 py-3 font-medium">Time in</th>
@@ -240,7 +248,11 @@ export default function SupervisorAttendanceApproval() {
                           {formatHours(entry.hours)}
                         </td>
                         <td className="px-3 py-3">
-                          <StatusBadge status={entry.status} />
+                          {entry.capture_method === "supervisor" && !entry.time_out ? (
+                            <StatusBadge status="Recorded by you" tone="info" />
+                          ) : (
+                            <StatusBadge status={entry.status} />
+                          )}
                         </td>
                         <td className="px-5 py-3 text-right">
                           <button
@@ -248,7 +260,10 @@ export default function SupervisorAttendanceApproval() {
                             onClick={() => setOpenId(entry.id)}
                             className="rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
                           >
-                            {entry.status === "Pending" ? "Review" : "View"}
+                            {entry.status === "Pending" &&
+                            !(entry.capture_method === "supervisor" && !entry.time_out)
+                              ? "Review"
+                              : "View"}
                           </button>
                         </td>
                       </tr>
@@ -344,6 +359,8 @@ export default function SupervisorAttendanceApproval() {
           />
         )}
       </Modal>
+
+      <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />
     </SupervisorLayout>
   );
 }

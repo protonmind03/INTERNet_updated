@@ -10,12 +10,21 @@ import {
   FilterChips,
   Modal,
   ProgressBar,
+  StatTile,
 } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { formatDate, formatDayDate, formatHours, greetingFor } from "../../lib/format";
+import {
+  daysUntil,
+  formatDate,
+  formatDayDate,
+  formatHours,
+  greetingFor,
+  localDateKey,
+} from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 
@@ -81,6 +90,28 @@ export default function SupervisorDashboard() {
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [confirmBulk, setConfirmBulk] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [recording, setRecording] = useState(false);
+
+  // The figures for the summary row, all from lists already loaded.
+  const summary = useMemo(() => {
+    const now = new Date();
+    const today = localDateKey(now);
+    // Monday of this week.
+    const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+    const weekStart = localDateKey(monday);
+    const open = work.tasks.filter(
+      (task) => task.status === "Pending" || task.status === "In Progress"
+    );
+    return {
+      onTheClock: work.attendance.filter((entry) => entry.date === today && !entry.time_out)
+        .length,
+      weekHours: work.attendance
+        .filter((entry) => entry.status === "Verified" && entry.date >= weekStart)
+        .reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0),
+      openTasks: open.length,
+      overdueTasks: open.filter((task) => (daysUntil(task.due_date) ?? 0) < 0).length,
+    };
+  }, [work.attendance, work.tasks]);
 
   // The queue narrowed to one intern, when one is chosen.
   const scoped = useMemo(
@@ -189,15 +220,63 @@ export default function SupervisorDashboard() {
               } your decision.`
       }
       actions={
-        verifiable.length > 1 ? (
-          <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk(true)}>
-            Verify {verifiable.length} completed logs
-          </Button>
-        ) : undefined
+        <>
+          {verifiable.length > 1 && (
+            <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk(true)}>
+              Verify {verifiable.length} completed logs
+            </Button>
+          )}
+          {interns.length > 0 && (
+            <Button variant="secondary" icon="camera" onClick={() => setRecording(true)}>
+              Record time-in
+            </Button>
+          )}
+        </>
       }
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
+
+        {/* Where things stand, so the page says something even with an empty queue. */}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <StatTile
+            label="Waiting on you"
+            value={loading ? "–" : queue.length}
+            hint={queue.length === 0 ? "Nothing to review" : "Across all your interns"}
+            icon="clipboard"
+            tone={!loading && queue.length > 0 ? "waiting" : "neutral"}
+          />
+          <StatTile
+            label="Interns"
+            value={loading ? "–" : interns.length}
+            hint={
+              loading
+                ? undefined
+                : `${summary.onTheClock} on the clock today`
+            }
+            icon="users"
+          />
+          <StatTile
+            label="Hours verified this week"
+            value={loading ? "–" : formatHours(summary.weekHours)}
+            hint="Since Monday"
+            icon="clock"
+            tone="gold"
+          />
+          <StatTile
+            label="Tasks with interns"
+            value={loading ? "–" : summary.openTasks}
+            hint={
+              loading
+                ? undefined
+                : summary.overdueTasks > 0
+                  ? `${summary.overdueTasks} past due`
+                  : "None past due"
+            }
+            icon="tasks"
+            tone={!loading && summary.overdueTasks > 0 ? "bad" : "brand"}
+          />
+        </div>
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
@@ -255,7 +334,7 @@ export default function SupervisorDashboard() {
                 }
               />
             ) : (
-              <ul className="max-h-[calc(100dvh-17rem)] divide-y divide-slate-100 overflow-y-auto">
+              <ul className="max-h-[max(20rem,calc(100dvh-24rem))] divide-y divide-slate-100 overflow-y-auto">
                 {visible.map((item) => {
                   const active = wide && item.key === selected?.key;
                   return (
@@ -265,7 +344,9 @@ export default function SupervisorDashboard() {
                         onClick={() => setSelectedKey(item.key)}
                         aria-current={active ? "true" : undefined}
                         className={`relative flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
-                          active ? "bg-psu-50" : "hover:bg-slate-50"
+                          active
+                            ? "bg-linear-to-r from-psu-100/80 to-psu-50/60"
+                            : "hover:bg-slate-50"
                         }`}
                       >
                         {active && (
@@ -347,6 +428,8 @@ export default function SupervisorDashboard() {
       >
         {selected && <ReviewDetail item={selected} work={work} onDecided={moveOn} />}
       </Modal>
+
+      <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />
 
       <ConfirmDialog
         open={confirmBulk}

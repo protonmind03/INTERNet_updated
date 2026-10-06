@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { installSessionGuard } from './lib/sessionGuard'
+// Loaded here so the browser's install offer is caught before any page mounts.
+import './lib/install'
 import { LaunchGate } from './brand'
 
 installSessionGuard()

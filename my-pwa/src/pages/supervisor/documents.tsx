@@ -23,7 +23,7 @@ type Filter = "all" | "Pending" | "Approved" | "Rejected";
 
 export default function SupervisorDocuments() {
   const supervisor = useAccount("supervisor");
-  const work = useSupervisorWork(supervisor?.supervisor_id);
+  const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "documents"]);
   const { documents, interns, loading } = work;
 
   const [filter, setFilter] = useState<Filter>("all");
