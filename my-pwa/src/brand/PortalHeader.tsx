@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import BrandIcon from "./BrandIcon";
 import Wordmark from "./Wordmark";
 import { ROLE_THEMES } from "./roles";
+import { LOGO_SIZES } from "./tokens";
 import type { BrandRole } from "./roles";
 
 type PortalHeaderProps = {
@@ -30,13 +31,13 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
     return (
       <header className="relative z-10 flex items-center justify-between gap-4 border-b border-slate-200/80 bg-white px-6 py-4 shadow-card md:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <span className="shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold" style={{ background: role === "coordinator" ? t.colors.tagBg : "#EEF0FA", color: role === "coordinator" ? t.colors.tagText : "#1A237E" }}>
+          <span className="inline-flex h-7 shrink-0 items-center rounded-full px-3 text-xs font-semibold" style={{ background: role === "coordinator" ? t.colors.tagBg : "#EEF0FA", color: role === "coordinator" ? t.colors.tagText : "#1A237E" }}>
             {t.tag}
           </span>
           {context && <p className="truncate text-sm text-slate-600">{context}</p>}
           {status && (
-            <span className="hidden shrink-0 items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-800 sm:inline-flex">
-              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+            <span className="hidden h-7 shrink-0 items-center gap-2 rounded-full bg-amber-50 px-3 text-xs font-medium text-amber-800 ring-1 ring-amber-200/70 sm:inline-flex">
+              <span className="inb-live h-1.5 w-1.5 rounded-full bg-amber-500 text-amber-500" aria-hidden="true" />
               {status}
             </span>
           )}
@@ -47,17 +48,18 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
   }
 
   return (
+    // Local edit: dark headers use the app's shared brand gradient.
     <header
       className={`sticky top-0 z-30 ${dark ? "surface-brand shadow-raised" : ""}`}
       style={dark ? undefined : { background: t.colors.surface, borderBottom: "1px solid #E2E8F0" }}
     >
-      <div className="flex items-center gap-2 px-3 py-2.5">
+      <div className="flex items-center gap-2.5 px-3 py-2.5">
         {onMenu && (
           <button
             type="button"
             onClick={onMenu}
             aria-label="Open menu"
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg"
+            className="inb-press flex h-11 w-11 shrink-0 items-center justify-center rounded-[10px]"
             style={{ color: t.colors.text, background: dark ? "rgba(255,255,255,.08)" : "#F1F5F9" }}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
@@ -65,15 +67,15 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
             </svg>
           </button>
         )}
-        <BrandIcon size={38} tile={t.colors.surfaceRaised} />
-        <div className="min-w-0 flex-1">
+        <BrandIcon size={LOGO_SIZES.bar.icon} tile={t.colors.surfaceRaised} />
+        <div className="inb-mark min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <Wordmark height={17} tone={dark ? "onDark" : "onLight"} />
-            <span className="rounded-full px-1.5 py-0.5 text-[10px] font-semibold leading-none" style={{ background: t.colors.tagBg, color: t.colors.tagText }}>
+            <Wordmark height={LOGO_SIZES.bar.cap} tone={dark ? "onDark" : "onLight"} />
+            <span className="inline-flex h-[18px] items-center rounded-full px-2 text-[10px] font-semibold leading-none" style={{ background: t.colors.tagBg, color: t.colors.tagText }}>
               {t.tag}
             </span>
           </div>
-          <p className="mt-1 truncate text-[11px] leading-tight" style={{ color: t.colors.muted }}>
+          <p className="mt-1 truncate text-[11px] font-medium leading-none" style={{ color: t.colors.muted }}>
             {pageTitle ? `${pageTitle}${context ? ` · ${context}` : ""}` : context ?? t.portal}
           </p>
         </div>
@@ -81,8 +83,8 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
       </div>
       {status && (
         <div className="px-3 pb-2">
-          <span className="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium" style={{ background: t.colors.tagBg, color: t.colors.tagText }}>
-            <span className="h-1.5 w-1.5 rounded-full" style={{ background: t.colors.accent }} aria-hidden="true" />
+          <span className="inline-flex h-6 items-center gap-2 rounded-full px-2.5 text-[11px] font-medium" style={{ background: t.colors.tagBg, color: t.colors.tagText }}>
+            <span className="inb-live h-1.5 w-1.5 rounded-full" style={{ background: t.colors.accent, color: t.colors.accent }} aria-hidden="true" />
             {status}
           </span>
         </div>

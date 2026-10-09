@@ -20,8 +20,9 @@ export default defineConfig([
     },
   },
   {
-    // The brand kit's feedback file exports its hooks beside its components.
-    files: ['src/brand/feedback.tsx'],
+    // The brand kit's feedback file exports its hooks beside its components,
+    // and its sign-in screen exports its role wording beside the component.
+    files: ['src/brand/feedback.tsx', 'src/brand/LoginScreen.tsx'],
     rules: { 'react-refresh/only-export-components': 'off' },
   },
 ])

@@ -267,16 +267,6 @@
     background-image: linear-gradient(180deg, white 0%, white 40%, rgb(238 242 255 / 0.7) 100%);
   }
 
-  /* The sign-in side of the login page: a sheet on phones, a canvas on desktops. */
-  @media (min-width: 1024px) {
-    .login-stage {
-      background-color: var(--color-slate-50);
-      background-image:
-        radial-gradient(40rem 26rem at 100% 0%, rgb(221 229 255 / 0.7), transparent 70%),
-        radial-gradient(36rem 24rem at 0% 100%, rgb(255 241 198 / 0.45), transparent 70%);
-    }
-  }
-
   /* Column headings of a data table. */
   .table-head th {
     background: color-mix(in srgb, var(--color-psu-50) 55%, white);

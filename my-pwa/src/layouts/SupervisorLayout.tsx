@@ -93,10 +93,10 @@ export default function SupervisorLayout({
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
           <NavLink to="/supervisor/dashboard" aria-label="INTERNet Supervisor Portal, dashboard" className="flex shrink-0 items-center gap-2.5">
             <span className="hidden xl:block">
-              <PortalBrand role="supervisor" showTag />
+              <PortalBrand role="supervisor" showTag size="bar" />
             </span>
             <span className="xl:hidden">
-              <PortalBrand role="supervisor" />
+              <PortalBrand role="supervisor" size="bar" />
             </span>
           </NavLink>
 

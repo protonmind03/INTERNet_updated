@@ -1,123 +1,224 @@
-/* INTERNet brand kit — tokens and motion. Import once, e.g. in src/index.css:
-   @import "./brand/brand.css";  */
+/* INTERNet brand kit v3 — tokens, motion and states. Import once (src/index.css):
+   @import "./brand/brand.css";
+   Every animation below is switched off under prefers-reduced-motion. */
 
 :root {
+  /* colour */
   --inb-navy: #1a237e;
   --inb-navy-deep: #121a5e;
   --inb-navy-raised: #283593;
   --inb-amber: #facc15;
+  --inb-amber-on-light: #eab308;
   --inb-indigo: #4f46e5;
   --inb-ink: #0f172a;
   --inb-periwinkle: #c7cdf0;
+  /* shape — the same ratios everywhere */
+  --inb-r-tile: 22.5%;   /* app icon corner */
+  --inb-r-control: 10px; /* buttons, inputs */
+  --inb-r-card: 14px;    /* cards, toasts */
+  --inb-r-chip: 9999px;
+  /* motion */
+  --inb-ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --inb-ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --inb-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --inb-dur-1: 120ms; /* press */
+  --inb-dur-2: 200ms; /* hover, small state */
+  --inb-dur-3: 320ms; /* enter / exit */
+  --inb-dur-4: 480ms; /* emphasis */
+  --inb-loop: 3.2s;   /* the loader story */
+  /* elevation */
+  --inb-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.06), 0 1px 3px rgba(15, 23, 42, 0.08);
+  --inb-shadow-3: 0 12px 28px -8px rgba(15, 23, 42, 0.28), 0 4px 10px -4px rgba(15, 23, 42, 0.12);
+  --inb-glow-amber: 0 0 0 1px rgba(250, 204, 21, 0.35), 0 6px 18px -4px rgba(250, 204, 21, 0.45);
 }
 
-/* ---------- Loader: cursor clicks → road is paved → cap lands → lanes move ----------
-   The story plays once and then holds: the finished mark stays on screen and only
-   the lane markings keep travelling. Nothing blinks out and restarts, so a loader
-   left running for a few seconds reads as one calm, steady signal. */
-.inb-road {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  animation: inb-road 1s cubic-bezier(0.45, 0, 0.25, 1) 0.15s forwards;
-}
-@keyframes inb-road { to { stroke-dashoffset: 0; } }
-
-.inb-lane {
-  opacity: 0;
-  animation: inb-lane-show 0.3s ease-out 1.05s forwards, inb-lane-move 1.1s linear infinite;
-}
-@keyframes inb-lane-show { to { opacity: 1; } }
-@keyframes inb-lane-move { to { stroke-dashoffset: -4.8; } }
-
-.inb-click {
-  transform-box: fill-box;
-  transform-origin: 0 0;
-  animation: inb-click 0.3s ease-in-out;
-}
+/* =====================================================================
+   1. Loader story — told once, 3.2 s (local edit: it used to loop)
+      click (cursor taps, ripple) → the road is paved from the cursor →
+      lanes appear and flow → the cap drops onto the road's end, tassel swings → hold.
+   ===================================================================== */
+.inb-click { transform-box: fill-box; transform-origin: 0 0; animation: inb-click var(--inb-loop) var(--inb-ease-out) forwards; }
 @keyframes inb-click {
-  0%, 100% { transform: scale(1); }
-  45% { transform: scale(0.78); }
+  0% { transform: scale(0.55); opacity: 0; }
+  6% { transform: scale(1.08); opacity: 1; }
+  10% { transform: scale(1); }
+  13% { transform: scale(0.78); }
+  17%, 100% { transform: scale(1); opacity: 1; }
 }
-
-.inb-cap {
-  opacity: 0;
-  animation: inb-cap 0.4s cubic-bezier(0.22, 1, 0.36, 1) 0.95s forwards;
+.inb-ripple { transform-box: fill-box; transform-origin: center; animation: inb-ripple var(--inb-loop) var(--inb-ease-out) forwards; }
+@keyframes inb-ripple {
+  0%, 12% { transform: scale(0.2); opacity: 0; }
+  13% { transform: scale(0.35); opacity: 0.5; }
+  32%, 100% { transform: scale(2.6); opacity: 0; }
 }
+.inb-road { stroke-dasharray: 100; stroke-dashoffset: 100; animation: inb-road var(--inb-loop) var(--inb-ease-in-out) forwards; }
+@keyframes inb-road {
+  0%, 15% { stroke-dashoffset: 100; opacity: 1; }
+  52%, 100% { stroke-dashoffset: 0; opacity: 1; }
+}
+.inb-lane { opacity: 0; animation: inb-lane-show var(--inb-loop) ease-in-out forwards, inb-lane-flow 1.1s linear infinite; }
+@keyframes inb-lane-show { 0%, 46% { opacity: 0; } 56%, 100% { opacity: 1; } }
+@keyframes inb-lane-flow { to { stroke-dashoffset: var(--inb-lp, -116); } }
+.inb-cap { opacity: 0; animation: inb-cap var(--inb-loop) var(--inb-ease-out) forwards; }
 @keyframes inb-cap {
-  from { opacity: 0; transform: translateY(-9px); }
-  to { opacity: 1; transform: translateY(0); }
+  0%, 52% { opacity: 0; transform: translateY(-150px); }
+  58% { opacity: 1; transform: translateY(0); }
+  62% { transform: translateY(-22px); }
+  66%, 100% { opacity: 1; transform: translateY(0); }
+}
+.inb-tassel { transform-box: fill-box; transform-origin: 0 0; animation: inb-tassel var(--inb-loop) ease-in-out forwards; }
+@keyframes inb-tassel {
+  0%, 58% { transform: rotate(0); }
+  64% { transform: rotate(11deg); }
+  71% { transform: rotate(-7deg); }
+  78% { transform: rotate(3deg); }
+  84%, 100% { transform: rotate(0); }
 }
 
-/* Small spinner version (buttons, inline chips): just the road being paved, looping fast. */
-.inb-road-fast {
-  stroke-dasharray: 100;
-  stroke-dashoffset: 100;
-  animation: inb-road-fast 1.4s ease-in-out infinite;
-}
-@keyframes inb-road-fast {
-  0% { stroke-dashoffset: 100; }
-  60% { stroke-dashoffset: 0; }
-  100% { stroke-dashoffset: -100; }
-}
+/* Hover micro-interaction on any static mark (logo in headers): the lanes start to flow. */
+.inb-mark .inb-l { transition: opacity var(--inb-dur-2); }
+.inb-mark:hover .inb-l, a:hover > .inb-mark .inb-l, a:focus-visible .inb-mark .inb-l { animation: inb-lane-flow-c 0.9s linear infinite; }
+@keyframes inb-lane-flow-c { to { stroke-dashoffset: var(--inb-lp, -150); } }
 
-/* Splash entrance */
-.inb-fade-up { animation: inb-fade-up 0.5s ease-out both; }
-@keyframes inb-fade-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
-.inb-fade-out { animation: inb-fade-out 0.35s ease-in both; }
-@keyframes inb-fade-out { to { opacity: 0; } }
+/* =====================================================================
+   2. Small UI glyphs
+   ===================================================================== */
+/* working: the road is paved, then runs off, on a loop */
+.inb-road-fast { stroke-dasharray: 100; stroke-dashoffset: 100; animation: inb-road-fast 1.3s var(--inb-ease-in-out) infinite; }
+@keyframes inb-road-fast { 0% { stroke-dashoffset: 100; } 55% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -100; } }
+.inb-lane-flow { animation: inb-lane-flow-g 0.8s linear infinite; }
+@keyframes inb-lane-flow-g { to { stroke-dashoffset: var(--inb-lp, -154); } }
 
-/* Indeterminate progress bar for loaders without a known percentage */
-.inb-indeterminate {
-  position: relative;
-  overflow: hidden;
-}
-.inb-indeterminate::after {
-  content: "";
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 40%;
-  border-radius: 9999px;
-  background: currentColor;
-  animation: inb-indet 1.3s ease-in-out infinite;
-}
-@keyframes inb-indet { from { transform: translateX(-100%); } to { transform: translateX(250%); } }
-
-/* ---------- Action feedback ---------- */
-/* success: a check is drawn, then the button settles */
-.inb-check { stroke-dasharray: 24; stroke-dashoffset: 24; animation: inb-check 0.35s ease-out 0.05s forwards; }
+/* success: check draws itself inside a ring that pulses once */
+.inb-check { stroke-dasharray: 24; stroke-dashoffset: 24; animation: inb-check var(--inb-dur-3) var(--inb-ease-out) 60ms forwards; }
 @keyframes inb-check { to { stroke-dashoffset: 0; } }
-/* success on brand moments (time-in, task submitted): a small cap drops in */
-.inb-cap-pop { animation: inb-cap-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both; }
-@keyframes inb-cap-pop { from { opacity: 0; transform: translateY(-6px) rotate(-12deg); } to { opacity: 1; transform: none; } }
-/* error: short horizontal shake */
+.inb-ring { transform-box: fill-box; transform-origin: center; animation: inb-ring var(--inb-dur-4) var(--inb-ease-out) both; }
+@keyframes inb-ring { from { transform: scale(0.4); opacity: 0.9; } to { transform: scale(1.5); opacity: 0; } }
+
+/* milestone: the cap is tossed and lands, sparks burst */
+.inb-cap-toss { transform-box: fill-box; transform-origin: center; animation: inb-cap-toss 0.7s var(--inb-ease-out) both; }
+@keyframes inb-cap-toss {
+  0% { transform: translateY(40%) rotate(-24deg) scale(0.5); opacity: 0; }
+  45% { transform: translateY(-38%) rotate(10deg) scale(1.06); opacity: 1; }
+  75% { transform: translateY(4%) rotate(-3deg) scale(1); }
+  100% { transform: none; }
+}
+.inb-cap-toss .inb-tassel { animation: inb-tassel-once 0.9s ease-in-out 0.45s both; }
+@keyframes inb-tassel-once { 0% { transform: rotate(0); } 30% { transform: rotate(14deg); } 60% { transform: rotate(-8deg); } 100% { transform: rotate(0); } }
+.inb-spark { transform-box: fill-box; transform-origin: center; animation: inb-spark 0.7s var(--inb-ease-out) 0.25s both; }
+@keyframes inb-spark { from { transform: translate(0, 0) scale(1); opacity: 1; } to { transform: translate(var(--dx), var(--dy)) scale(0.2); opacity: 0; } }
+
+/* error: short shake */
 .inb-shake { animation: inb-shake 0.36s ease-in-out; }
 @keyframes inb-shake { 20%, 60% { transform: translateX(-4px); } 40%, 80% { transform: translateX(4px); } }
-/* toasts */
-.inb-toast-in { animation: inb-toast-in 0.24s cubic-bezier(0.22, 1, 0.36, 1) both; }
-@keyframes inb-toast-in { from { opacity: 0; transform: translateY(12px) scale(0.98); } to { opacity: 1; transform: none; } }
-.inb-toast-out { animation: inb-toast-out 0.2s ease-in both; }
-@keyframes inb-toast-out { to { opacity: 0; transform: translateY(8px); } }
-/* toast countdown bar */
+
+/* =====================================================================
+   3. Controls
+   ===================================================================== */
+.inb-press { transition: transform var(--inb-dur-1) var(--inb-ease-out), filter var(--inb-dur-2), box-shadow var(--inb-dur-2), background-color var(--inb-dur-2); }
+.inb-press:hover:not(:disabled) { filter: brightness(1.05); box-shadow: var(--inb-shadow-1); }
+.inb-press:active:not(:disabled) { transform: scale(0.97); }
+.inb-press:focus-visible { outline: 2px solid var(--inb-amber); outline-offset: 2px; }
+.inb-press:disabled { cursor: not-allowed; }
+.inb-press[data-state="working"] { cursor: progress; }
+.inb-press[data-state="success"] { animation: inb-pulse 0.6s var(--inb-ease-out); }
+@keyframes inb-pulse { from { box-shadow: 0 0 0 0 rgba(250, 204, 21, 0.55); } to { box-shadow: 0 0 0 10px rgba(250, 204, 21, 0); } }
+
+/* =====================================================================
+   4. Surfaces: toasts, route progress, loaders, splash
+   ===================================================================== */
+.inb-toast-in { animation: inb-toast-in var(--inb-dur-3) var(--inb-ease-spring) both; }
+@keyframes inb-toast-in { from { opacity: 0; transform: translateY(14px) scale(0.97); } to { opacity: 1; transform: none; } }
+.inb-toast-out { animation: inb-toast-out var(--inb-dur-2) ease-in both; }
+@keyframes inb-toast-out { to { opacity: 0; transform: translateY(8px) scale(0.98); } }
 .inb-countdown { transform-origin: left; animation: inb-countdown linear forwards; }
 @keyframes inb-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
-/* route change progress (top of the page) */
-.inb-route { transform-origin: left; animation: inb-route 0.7s ease-out forwards; }
-@keyframes inb-route { 0% { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(0.85); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
-/* pressed feedback for any brand button */
-.inb-press { transition: transform 0.08s ease, filter 0.15s ease, background-color 0.15s ease; }
-.inb-press:active:not(:disabled) { transform: scale(0.97); }
-.inb-press:hover:not(:disabled) { filter: brightness(1.05); }
-.inb-press:disabled { cursor: not-allowed; }
+
+/* route change: an amber road with a bright head */
+.inb-route { transform-origin: left; animation: inb-route 0.75s var(--inb-ease-out) forwards; box-shadow: 0 0 10px rgba(250, 204, 21, 0.7); }
+@keyframes inb-route { 0% { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(0.86); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
+
+/* loader progress "road": a track with flowing lane dashes */
+.inb-roadbar {
+  position: relative; overflow: hidden; border-radius: 9999px;
+  background: var(--inb-track, #e2e8f0);
+}
+.inb-roadbar::before {
+  content: ""; position: absolute; inset: 0; width: 45%; border-radius: inherit;
+  background: var(--inb-fill, var(--inb-navy));
+  animation: inb-roadbar 1.6s var(--inb-ease-in-out) infinite;
+}
+.inb-roadbar::after {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px;
+  background: repeating-linear-gradient(90deg, var(--inb-amber) 0 8px, transparent 8px 14px);
+  opacity: 0.9; animation: inb-roadbar-lane 0.7s linear infinite;
+  -webkit-mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+          mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
+}
+@keyframes inb-roadbar { 0% { transform: translateX(-110%); } 100% { transform: translateX(240%); } }
+@keyframes inb-roadbar-lane { to { background-position: -14px 0; } }
+
+/* determinate progress: a moving sheen */
+.inb-sheen { position: relative; overflow: hidden; }
+.inb-sheen::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
+  transform: translateX(-100%); animation: inb-sheen 1.4s ease-in-out infinite;
+}
+@keyframes inb-sheen { to { transform: translateX(100%); } }
+
+/* entrances */
+.inb-fade-up { animation: inb-fade-up var(--inb-dur-4) var(--inb-ease-out) both; }
+@keyframes inb-fade-up { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.inb-pop { animation: inb-pop 0.6s var(--inb-ease-spring) both; }
+@keyframes inb-pop { from { opacity: 0; transform: scale(0.72); } to { opacity: 1; transform: none; } }
+.inb-fade-out { animation: inb-fade-out var(--inb-dur-3) ease-in both; }
+@keyframes inb-fade-out { to { opacity: 0; transform: scale(1.02); } }
+
+/* wordmark reveal (splash): person → NTER → road N → et */
+.inb-reveal .inb-wm-i, .inb-reveal .inb-wm-nter, .inb-reveal .inb-wm-n, .inb-reveal .inb-wm-et {
+  transform-box: fill-box; animation: inb-wm 0.5s var(--inb-ease-out) both;
+}
+.inb-reveal .inb-wm-i { animation-delay: 0.25s; }
+.inb-reveal .inb-wm-nter { animation-delay: 0.33s; }
+.inb-reveal .inb-wm-n { animation-delay: 0.42s; }
+.inb-reveal .inb-wm-et { animation-delay: 0.55s; }
+@keyframes inb-wm { from { opacity: 0; transform: translateY(18%); } to { opacity: 1; transform: none; } }
+
+/* tile sheen that passes once after the cap lands (splash, about screen) */
+.inb-tile-sheen { position: relative; overflow: hidden; border-radius: var(--inb-r-tile); }
+.inb-tile-sheen::after {
+  content: ""; position: absolute; inset: -20%;
+  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.28) 50%, transparent 60%);
+  transform: translateX(-120%); animation: inb-tile-sheen 1.1s var(--inb-ease-out) 1.95s both;
+  pointer-events: none;
+}
+@keyframes inb-tile-sheen { to { transform: translateX(120%); } }
+
+/* splash background road (decorative) */
+.inb-bg-lane { animation: inb-bg-lane 1.6s linear infinite; }
+@keyframes inb-bg-lane { to { stroke-dashoffset: -220; } }
+
+/* "live" dot used in chips (active step, status) */
+.inb-live { position: relative; }
+.inb-live::after {
+  content: ""; position: absolute; inset: -3px; border-radius: 9999px; border: 2px solid currentColor;
+  animation: inb-live 1.4s var(--inb-ease-out) infinite; opacity: 0;
+}
+@keyframes inb-live { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(1.8); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
+  .inb-click, .inb-ripple, .inb-tassel, .inb-cap-toss, .inb-cap-toss .inb-tassel, .inb-spark, .inb-ring,
+  .inb-shake, .inb-toast-in, .inb-toast-out, .inb-route, .inb-fade-up, .inb-pop, .inb-fade-out,
+  .inb-reveal .inb-wm-i, .inb-reveal .inb-wm-nter, .inb-reveal .inb-wm-n, .inb-reveal .inb-wm-et,
+  .inb-bg-lane, .inb-lane-flow, .inb-press[data-state="success"] { animation: none !important; }
+  .inb-road, .inb-road-fast { animation: none; stroke-dashoffset: 0; }
+  .inb-lane, .inb-cap { animation: none; opacity: 1; transform: none; }
   .inb-check { animation: none; stroke-dashoffset: 0; }
-  .inb-cap-pop, .inb-shake, .inb-toast-in, .inb-toast-out, .inb-route { animation: none; }
+  .inb-spark, .inb-ring { opacity: 0; }
+  .inb-mark:hover .inb-l, a:hover > .inb-mark .inb-l, a:focus-visible .inb-mark .inb-l { animation: none; }
+  .inb-roadbar::before { animation: none; width: 100%; opacity: 0.35; }
+  .inb-roadbar::after, .inb-sheen::after, .inb-tile-sheen::after, .inb-live::after { animation: none; display: none; }
   .inb-countdown { animation: none; }
   .inb-press:active:not(:disabled) { transform: none; }
-  .inb-road, .inb-road-fast { animation: none; stroke-dashoffset: 0; }
-  .inb-lane { animation: none; opacity: 1; }
-  .inb-click { animation: none; }
-  .inb-cap { animation: none; opacity: 1; transform: none; }
-  .inb-fade-up, .inb-fade-out { animation: none; }
-  .inb-indeterminate::after { animation: none; width: 100%; opacity: 0.4; }
 }
