@@ -5571,6 +5571,8 @@ app.get(
         pendingComplaints,
         taskStats,
         hoursStats,
+        todayStats,
+        hoursTrend,
       ] = await Promise.all([
         pool.query(
           `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM students`
@@ -5606,9 +5608,55 @@ app.get(
            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
            WHERE a.status = 'Verified'`
         ),
+        // Today at a glance: who has timed in, who is still on the clock,
+        // who filed an absence, and the hours verified over the past week.
+        pool.query(
+          `
+          SELECT
+            (SELECT COUNT(DISTINCT a.student_id) FROM attendance a
+              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+              WHERE a.date = CURRENT_DATE) AS timed_in,
+            (SELECT COUNT(*) FROM attendance a
+              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+              WHERE a.date = CURRENT_DATE AND a.time_out IS NULL) AS on_the_clock,
+            (SELECT COUNT(*) FROM absences b
+              JOIN students s ON s.student_id = b.student_id AND s.is_active = TRUE
+              WHERE b.date = CURRENT_DATE) AS absent,
+            (SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
+              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+              WHERE a.status = 'Verified' AND a.date > CURRENT_DATE - 7) AS week_hours
+          `
+        ),
+        // Verified hours for each of the last 14 days, quiet days included.
+        pool.query(
+          `
+          SELECT
+            TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours,
+            COUNT(a.id) AS logs
+          FROM generate_series(CURRENT_DATE - 13, CURRENT_DATE, INTERVAL '1 day') AS d(day)
+          LEFT JOIN (
+            attendance a
+            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+          ) ON a.date = d.day::date
+          GROUP BY d.day
+          ORDER BY d.day
+          `
+        ),
       ]);
 
       return res.json({
+        today: {
+          timedIn: Number(todayStats.rows[0].timed_in),
+          onTheClock: Number(todayStats.rows[0].on_the_clock),
+          absent: Number(todayStats.rows[0].absent),
+        },
+        weekHours: Number(todayStats.rows[0].week_hours),
+        hoursTrend: hoursTrend.rows.map((row) => ({
+          day: row.day,
+          hours: Number(row.hours),
+          logs: Number(row.logs),
+        })),
         students: {
           active: Number(studentCount.rows[0].active),
           total: Number(studentCount.rows[0].total),
@@ -5888,79 +5936,267 @@ app.patch(
 |--------------------------------------------------------------------------
 | COORDINATOR ANALYTICS
 |--------------------------------------------------------------------------
+|
+| Every figure here counts active students only, the same rule the
+| dashboard and Monitoring use, so the three pages never disagree.
+|
+| `?days=14|30|90` sets the period for the attendance figures. Progress,
+| tasks, companies, complaints and evaluations are totals to date.
+|
 */
+
+const ANALYTICS_PERIODS = [14, 30, 90];
+
+// Each active student's verified hours and how far that is toward their
+// requirement (0 to 100).
+const STUDENT_PROGRESS_CTE = `
+  progress AS (
+    SELECT
+      s.student_id,
+      NULLIF(TRIM(s.company), '') AS company,
+      hrs.hours,
+      CASE
+        WHEN COALESCE(s.required_hours, 0) > 0
+        THEN LEAST(100, hrs.hours / s.required_hours * 100)
+        ELSE 0
+      END AS percent
+    FROM students s
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(SUM(a.hours), 0)::numeric AS hours
+      FROM attendance a
+      WHERE a.student_id = s.student_id AND a.status = 'Verified'
+    ) hrs
+    WHERE s.is_active = TRUE
+  )
+`;
 
 app.get(
   "/api/coordinator/analytics",
   requireCoordinator,
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      const requested = Number(req.query.days);
+      const days = ANALYTICS_PERIODS.includes(requested) ? requested : 14;
+
       const [
-        byCompany,
+        trend,
+        period,
+        progress,
+        companies,
+        companyRatings,
+        companyComplaints,
         complaintsByCategory,
         taskFunnel,
-        attendanceTrend,
         evaluationSummary,
-      ] =
-        await Promise.all([
-          pool.query(
-            `
-            SELECT company, COUNT(*) AS student_count
-            FROM students
-            WHERE company IS NOT NULL AND is_active = TRUE
-            GROUP BY company
-            ORDER BY student_count DESC
-            LIMIT 10
-            `
-          ),
-          pool.query(
-            `
-            SELECT category, COUNT(*) AS count
-            FROM complaints
-            GROUP BY category
-            ORDER BY count DESC
-            `
-          ),
-          pool.query(
-            `
-            SELECT status, COUNT(*) AS count
-            FROM tasks
-            GROUP BY status
-            `
-          ),
-          pool.query(
-            `
-            SELECT TO_CHAR(date, 'YYYY-MM-DD') AS day, COUNT(*) AS logs,
-              COALESCE(SUM(hours) FILTER (WHERE status = 'Verified'), 0) AS hours
-            FROM attendance
-            WHERE date >= CURRENT_DATE - INTERVAL '13 days'
-            GROUP BY date
-            ORDER BY date ASC
-            `
-          ),
-          pool.query(
-            `
-            SELECT
-              evaluator_type,
-              category,
-              COUNT(*) AS count,
-              ROUND(AVG(rating)::numeric, 2) AS average_rating
-            FROM evaluations
-            GROUP BY evaluator_type, category
-            ORDER BY evaluator_type, category
-            `
-          ),
-        ]);
+      ] = await Promise.all([
+        // One row for every day of the period, including days with no logs,
+        // so the chart's spacing is true to the calendar.
+        pool.query(
+          `
+          SELECT
+            TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
+            COUNT(a.id) AS logs,
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours,
+            COUNT(DISTINCT a.student_id) AS students
+          FROM generate_series(
+            CURRENT_DATE - ($1::int - 1), CURRENT_DATE, INTERVAL '1 day'
+          ) AS d(day)
+          LEFT JOIN (
+            attendance a
+            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+          ) ON a.date = d.day::date
+          GROUP BY d.day
+          ORDER BY d.day
+          `,
+          [days]
+        ),
+        // This period beside the one before it, for the change figures.
+        pool.query(
+          `
+          SELECT
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date > CURRENT_DATE - $1::int), 0) AS hours,
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date <= CURRENT_DATE - $1::int), 0) AS previous_hours,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int) AS logs,
+            COUNT(*) FILTER (WHERE a.date <= CURRENT_DATE - $1::int) AS previous_logs,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.status = 'Verified') AS verified,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.status = 'Pending') AS pending,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.status IN ('Rejected', 'Flagged')) AS rejected,
+            COUNT(DISTINCT a.student_id) FILTER (WHERE a.date > CURRENT_DATE - $1::int) AS students_logged,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method = 'liveness') AS camera_checked,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method = 'supervisor') AS by_supervisor,
+            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method IS NULL) AS unchecked
+          FROM attendance a
+          JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+          WHERE a.date > CURRENT_DATE - ($1::int * 2)
+          `,
+          [days]
+        ),
+        pool.query(
+          `
+          WITH ${STUDENT_PROGRESS_CTE}
+          SELECT
+            COUNT(*) AS students,
+            COALESCE(AVG(percent), 0) AS average,
+            COALESCE(SUM(hours), 0) AS hours,
+            COUNT(*) FILTER (WHERE percent <= 0) AS not_started,
+            COUNT(*) FILTER (WHERE percent > 0 AND percent < 25) AS under_25,
+            COUNT(*) FILTER (WHERE percent >= 25 AND percent < 50) AS under_50,
+            COUNT(*) FILTER (WHERE percent >= 50 AND percent < 75) AS under_75,
+            COUNT(*) FILTER (WHERE percent >= 75 AND percent < 100) AS under_100,
+            COUNT(*) FILTER (WHERE percent >= 100) AS completed
+          FROM progress
+          `
+        ),
+        pool.query(
+          `
+          WITH ${STUDENT_PROGRESS_CTE}
+          SELECT
+            company,
+            COUNT(*) AS students,
+            COALESCE(SUM(hours), 0) AS hours,
+            COALESCE(AVG(percent), 0) AS average
+          FROM progress
+          GROUP BY company
+          ORDER BY COUNT(*) DESC, company ASC NULLS LAST
+          `
+        ),
+        // What students said about the company they trained at.
+        pool.query(
+          `
+          SELECT
+            LOWER(TRIM(s.company)) AS company_key,
+            COUNT(*) AS ratings,
+            ROUND(AVG(e.rating)::numeric, 2) AS average_rating
+          FROM evaluations e
+          JOIN students s ON s.student_id = e.student_id
+          WHERE e.evaluator_type = 'student' AND NULLIF(TRIM(s.company), '') IS NOT NULL
+          GROUP BY LOWER(TRIM(s.company))
+          `
+        ),
+        pool.query(
+          `
+          SELECT LOWER(TRIM(company_name)) AS company_key, COUNT(*) AS complaints
+          FROM complaints
+          WHERE NULLIF(TRIM(company_name), '') IS NOT NULL
+          GROUP BY LOWER(TRIM(company_name))
+          `
+        ),
+        pool.query(
+          `
+          SELECT
+            category,
+            COUNT(*) AS count,
+            COUNT(*) FILTER (WHERE status NOT IN ('Resolved', 'Dismissed')) AS open
+          FROM complaints
+          GROUP BY category
+          ORDER BY COUNT(*) DESC, category ASC
+          `
+        ),
+        pool.query(
+          `
+          SELECT
+            t.status,
+            COUNT(*) AS count,
+            COUNT(*) FILTER (
+              WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < CURRENT_DATE
+            ) AS overdue
+          FROM tasks t
+          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE
+          GROUP BY t.status
+          `
+        ),
+        pool.query(
+          `
+          SELECT
+            e.evaluator_type,
+            e.category,
+            COUNT(*) AS count,
+            ROUND(AVG(e.rating)::numeric, 2) AS average_rating
+          FROM evaluations e
+          GROUP BY e.evaluator_type, e.category
+          ORDER BY e.evaluator_type, e.category
+          `
+        ),
+      ]);
+
+      const ratingByCompany = new Map(
+        companyRatings.rows.map((row) => [String(row.company_key), row])
+      );
+      const complaintsByCompany = new Map(
+        companyComplaints.rows.map((row) => [String(row.company_key), Number(row.complaints)])
+      );
+      const companyRows = companies.rows.map((row) => {
+        const key = row.company ? String(row.company).trim().toLowerCase() : "";
+        const rating = ratingByCompany.get(key);
+        return {
+          company: row.company as string | null,
+          students: Number(row.students),
+          hours: Number(row.hours),
+          averageCompletion: Math.round(Number(row.average)),
+          ratings: rating ? Number(rating.ratings) : 0,
+          averageRating: rating ? Number(rating.average_rating) : null,
+          complaints: complaintsByCompany.get(key) ?? 0,
+        };
+      });
+
+      // The four task stages, always all four and always in working order.
+      const taskCounts = new Map(taskFunnel.rows.map((row) => [String(row.status), row]));
+      const taskStages = ["Pending", "In Progress", "Submitted", "Reviewed"].map((status) => ({
+        status,
+        count: Number(taskCounts.get(status)?.count ?? 0),
+        overdue: Number(taskCounts.get(status)?.overdue ?? 0),
+      }));
+
+      const totals = period.rows[0];
+      const spread = progress.rows[0];
 
       return res.json({
-        studentsByCompany: byCompany.rows,
-        complaintsByCategory: complaintsByCategory.rows,
-        taskFunnel: taskFunnel.rows,
-        attendanceTrend: attendanceTrend.rows.map((r) => ({
-          day: r.day,
-          logs: Number(r.logs),
-          hours: Number(r.hours),
+        days,
+        attendanceTrend: trend.rows.map((row) => ({
+          day: row.day,
+          logs: Number(row.logs),
+          hours: Number(row.hours),
+          students: Number(row.students),
         })),
+        period: {
+          hours: Number(totals.hours),
+          previousHours: Number(totals.previous_hours),
+          logs: Number(totals.logs),
+          previousLogs: Number(totals.previous_logs),
+          verified: Number(totals.verified),
+          pending: Number(totals.pending),
+          rejected: Number(totals.rejected),
+          studentsLogged: Number(totals.students_logged),
+          capture: {
+            cameraChecked: Number(totals.camera_checked),
+            bySupervisor: Number(totals.by_supervisor),
+            unchecked: Number(totals.unchecked),
+          },
+        },
+        progress: {
+          students: Number(spread.students),
+          averageCompletion: Math.round(Number(spread.average)),
+          hours: Number(spread.hours),
+          bands: [
+            { label: "Not started", count: Number(spread.not_started) },
+            { label: "Under 25%", count: Number(spread.under_25) },
+            { label: "25 to 49%", count: Number(spread.under_50) },
+            { label: "50 to 74%", count: Number(spread.under_75) },
+            { label: "75 to 99%", count: Number(spread.under_100) },
+            { label: "Completed", count: Number(spread.completed) },
+          ],
+        },
+        companies: companyRows,
+        // Kept for the exports and older clients: companies that have a name.
+        studentsByCompany: companyRows
+          .filter((row) => row.company)
+          .map((row) => ({ company: row.company, student_count: String(row.students) })),
+        complaintsByCategory: complaintsByCategory.rows.map((row) => ({
+          category: row.category,
+          count: Number(row.count),
+          open: Number(row.open),
+        })),
+        taskFunnel: taskStages,
         evaluationSummary: evaluationSummary.rows.map((r) => ({
           evaluatorType: r.evaluator_type === "teacher" ? "coordinator" : r.evaluator_type,
           category: r.category,

@@ -89,7 +89,7 @@ function PreviewInner() {
         <section className="flex flex-wrap items-center gap-6 rounded-2xl bg-white p-6 ring-1 ring-slate-200" aria-label="Real sizes">
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: "#1A237E" }}><PortalBrand role="student" showTag /></div>
           <div className="flex items-center gap-3 rounded-xl px-4 py-3 ring-1 ring-slate-200"><PortalBrand role="coordinator" /></div>
-          <div className="flex items-center gap-3 rounded-xl px-4 py-2" style={{ background: "#121A5E" }}><PortalBrand role="supervisor" showTag /></div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-2" style={{ background: "#121A5E" }}><PortalBrand role="supervisor" showTag size="bar" /></div>
           <div className="flex items-end gap-3">{[24, 32, 40, 44, 48, 64].map((n) => <BrandIcon key={n} size={n} />)}</div>
         </section>
 

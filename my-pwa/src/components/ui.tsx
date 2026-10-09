@@ -289,7 +289,7 @@ export function StatTile({
 }: {
   label: string;
   value: ReactNode;
-  hint?: string;
+  hint?: ReactNode;
   icon?: IconName;
   tone?: keyof typeof TILE_TONES;
 }) {
@@ -305,7 +305,7 @@ export function StatTile({
           </span>
         )}
       </div>
-      <p className="tabular mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
+      <p className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
         {value}
       </p>
       {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { BrandIcon, BrandLoader, PortalBrand, ROLE_THEMES } from "../brand";
+import { BrandIcon, BrandLoader, LOGO_SIZES, PortalBrand, ROLE_THEMES } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
@@ -228,7 +228,7 @@ export default function CoordinatorLayout({
             <Icon name="menu" size={20} />
           </button>
           <span className="shrink-0 lg:hidden">
-            <BrandIcon size={38} tile={ROLE_THEMES.coordinator.colors.surfaceRaised} title="INTERNet" />
+            <BrandIcon size={LOGO_SIZES.bar.icon} tile={ROLE_THEMES.coordinator.colors.surfaceRaised} title="INTERNet" />
           </span>
           <div className="hidden min-w-0 shrink items-center gap-3 lg:flex">
             <span

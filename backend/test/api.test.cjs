@@ -1627,3 +1627,60 @@ test("only a supervisor can record a time-in in person, and only for their own i
   );
   assert.equal(noPhoto.response.status, 400);
 });
+
+test("analytics covers every day of the chosen period and keeps its figures consistent", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" });
+
+  for (const days of [14, 30, 90]) {
+    const { response, body } = await jsonRequest(`/api/coordinator/analytics?days=${days}`, {
+      headers,
+    });
+    assert.equal(response.status, 200);
+    assert.equal(body.days, days);
+
+    // One row per calendar day, quiet days included, ending today.
+    assert.equal(body.attendanceTrend.length, days);
+    assert.equal(body.attendanceTrend.at(-1).day, day.format(new Date()));
+    const daysSeen = new Set(body.attendanceTrend.map((row) => row.day));
+    assert.equal(daysSeen.size, days);
+
+    // The headline figures are the sum of what the chart shows.
+    const charted = body.attendanceTrend.reduce((sum, row) => sum + row.hours, 0);
+    assert.ok(Math.abs(charted - body.period.hours) < 0.01);
+    const logs = body.attendanceTrend.reduce((sum, row) => sum + row.logs, 0);
+    assert.equal(logs, body.period.logs);
+    assert.equal(
+      body.period.verified + body.period.pending + body.period.rejected,
+      body.period.logs
+    );
+    const { cameraChecked, bySupervisor, unchecked } = body.period.capture;
+    assert.equal(cameraChecked + bySupervisor + unchecked, body.period.logs);
+  }
+
+  // An unknown period falls back to 14 days.
+  const fallback = await jsonRequest("/api/coordinator/analytics?days=7", { headers });
+  assert.equal(fallback.body.days, 14);
+
+  const { body } = await jsonRequest("/api/coordinator/analytics", { headers });
+  // Every active student sits in exactly one progress band and one company row.
+  const banded = body.progress.bands.reduce((sum, band) => sum + band.count, 0);
+  assert.equal(banded, body.progress.students);
+  const placed = body.companies.reduce((sum, company) => sum + company.students, 0);
+  assert.equal(placed, body.progress.students);
+  // The task stages are always all four, in working order.
+  assert.deepEqual(
+    body.taskFunnel.map((stage) => stage.status),
+    ["Pending", "In Progress", "Submitted", "Reviewed"]
+  );
+
+  // Analytics, the dashboard and Monitoring count the same active students.
+  const [dashboard, monitoring] = await Promise.all([
+    jsonRequest("/api/coordinator/dashboard", { headers }),
+    jsonRequest("/api/coordinator/monitoring", { headers }),
+  ]);
+  assert.equal(dashboard.body.students.active, body.progress.students);
+  assert.equal(monitoring.body.students.length, body.progress.students);
+  assert.equal(dashboard.body.hoursTrend.length, 14);
+  assert.ok(Math.abs(dashboard.body.totalHoursLogged - body.progress.hours) < 0.01);
+});

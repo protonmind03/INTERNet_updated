@@ -3,6 +3,7 @@ import type { ButtonHTMLAttributes, ReactNode } from "react";
 import RoadGlyph, { CapGlyph, CheckGlyph } from "./RoadGlyph";
 import { BRAND } from "./geometry";
 import { ROLE_THEMES, errorText, getActiveRole, messageFor, successFor } from "./roles";
+import { MOTION } from "./tokens";
 import type { BrandRole, LoadProcess } from "./roles";
 
 /* ======================================================================
@@ -48,7 +49,7 @@ export function BrandToastProvider({ role, children }: { role?: BrandRole; child
       const old = timers.current.get(t.id);
       if (old) window.clearTimeout(old);
       if (t.tone === "working") return;
-      const ms = t.duration ?? (t.tone === "error" ? 6000 : 3200);
+      const ms = t.duration ?? (t.tone === "error" ? 6000 : 3600);
       timers.current.set(t.id, window.setTimeout(() => dismiss(t.id), ms));
     },
     [dismiss],
@@ -114,13 +115,13 @@ function ToastStack({ toasts, role, onDismiss }: { toasts: Toast[]; role?: Brand
           <div
             key={toast.id}
             role={isError ? "alert" : "status"}
-            className={`pointer-events-auto relative w-full max-w-sm overflow-hidden rounded-xl shadow-xl ${toast.leaving ? "inb-toast-out" : "inb-toast-in"}`}
-            style={{ background: bg, color: fg, border: dark && !isError ? "none" : "1px solid #E2E8F0", boxShadow: isError ? "inset 3px 0 0 #DC2626, 0 20px 25px -5px rgba(0,0,0,.15)" : undefined }}
+            className={`pointer-events-auto relative w-full max-w-sm overflow-hidden ${toast.leaving ? "inb-toast-out" : "inb-toast-in"}`}
+            style={{ background: bg, color: fg, borderRadius: "var(--inb-r-card)", border: dark && !isError ? "1px solid rgba(255,255,255,.08)" : "1px solid #E2E8F0", boxShadow: isError ? "inset 3px 0 0 #DC2626, var(--inb-shadow-3)" : "var(--inb-shadow-3)" }}
           >
             <div className="flex items-start gap-3 p-3.5 pr-2">
-              <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full" style={{ background: isError ? "#FEF2F2" : dark ? "rgba(250,204,21,.16)" : t.colors.tagBg, color: accent }}>
-                {toast.tone === "working" && <RoadGlyph size={16} color={accent} />}
-                {toast.tone === "success" && (toast.celebrate ? <CapGlyph size={18} color={dark ? "#FFFFFF" : BRAND.navy} /> : <CheckGlyph size={16} color={accent} />)}
+              <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full" style={{ background: isError ? "#FEF2F2" : dark ? "rgba(250,204,21,.16)" : t.colors.tagBg, color: accent }}>
+                {toast.tone === "working" && <RoadGlyph size={18} color={accent} />}
+                {toast.tone === "success" && (toast.celebrate ? <CapGlyph size={22} color={dark ? "#FFFFFF" : BRAND.navy} burst /> : <CheckGlyph size={18} color={accent} />)}
                 {toast.tone === "error" && <span className="text-sm font-bold" aria-hidden="true">!</span>}
                 {toast.tone === "info" && <span className="h-2 w-2 rounded-full" style={{ background: accent }} aria-hidden="true" />}
               </span>
@@ -142,7 +143,7 @@ function ToastStack({ toasts, role, onDismiss }: { toasts: Toast[]; role?: Brand
             {toast.tone !== "working" && (
               <span
                 className="inb-countdown absolute bottom-0 left-0 h-0.5 w-full"
-                style={{ background: accent, opacity: 0.6, animationDuration: `${toast.duration ?? (isError ? 6000 : 3200)}ms` }}
+                style={{ background: accent, opacity: 0.6, animationDuration: `${toast.duration ?? (isError ? 6000 : 3600)}ms` }}
                 aria-hidden="true"
               />
             )}
@@ -190,7 +191,7 @@ export function useBrandAction(opts: ActionOptions) {
       setError(null);
       let toastId = 0;
       // Only show a "working" toast when the action takes long enough to notice.
-      const slow = opts.toast !== false ? window.setTimeout(() => { toastId = show({ tone: "working", title: messageFor(role, opts.process) }); }, 450) : undefined;
+      const slow = opts.toast !== false ? window.setTimeout(() => { toastId = show({ tone: "working", title: messageFor(role, opts.process) }); }, MOTION.workingToastDelay) : undefined;
       try {
         const result = await fn();
         window.clearTimeout(slow);
@@ -200,7 +201,7 @@ export function useBrandAction(opts: ActionOptions) {
           if (toastId) update(toastId, patch); else show(patch);
         }
         setState("success");
-        reset.current = window.setTimeout(() => setState("idle"), 1800);
+        reset.current = window.setTimeout(() => setState("idle"), MOTION.doneHold);
         return result;
       } catch (err) {
         window.clearTimeout(slow);
@@ -278,13 +279,14 @@ export function ActionButton({
       type={type}
       disabled={disabled || state === "working"}
       aria-busy={state === "working"}
+      data-state={state}
       onClick={() => void run(onAction)}
-      className={`inb-press inline-flex min-h-[44px] items-center justify-center gap-2 rounded-lg font-semibold disabled:opacity-80 ${pad} ${state === "error" ? "inb-shake" : ""} ${className}`}
-      style={palette}
+      className={`inb-press inline-flex min-h-[44px] items-center justify-center gap-2 font-semibold disabled:opacity-90 ${pad} ${state === "error" ? "inb-shake" : ""} ${className}`}
+      style={{ ...palette, borderRadius: "var(--inb-r-control)" }}
     >
       {state === "working" && <RoadGlyph size={18} />}
-      {state === "success" && (celebrate ? <CapGlyph size={20} color="currentColor" tassel={intent === "primary" && t.surface === "dark" ? BRAND.navy : BRAND.amber} /> : <CheckGlyph size={18} />)}
-      <span>{label}</span>
+      {state === "success" && (celebrate ? <CapGlyph size={22} color="currentColor" tassel={intent === "primary" && t.surface === "dark" ? BRAND.navy : BRAND.amber} burst /> : <CheckGlyph size={18} />)}
+      <span key={state} className={state === "idle" ? undefined : "inb-fade-up"} style={{ animationDuration: "var(--inb-dur-2)" }}>{label}</span>
     </button>
   );
 }
@@ -303,7 +305,7 @@ function shorten(msg: string) {
 export function RouteProgress({ trigger, color = BRAND.amber }: { trigger: string; color?: string }) {
   return (
     <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[95] h-[3px]">
-      <div key={trigger} className="inb-route h-full w-full" style={{ background: color }} />
+      <div key={trigger} className="inb-route h-full w-full rounded-r-full" style={{ background: `linear-gradient(90deg, ${color}00, ${color} 30%, ${color})` }} />
     </div>
   );
 }

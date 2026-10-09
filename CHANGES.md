@@ -552,3 +552,60 @@ changes, run `npm install` in `backend` and `my-pwa`, then
   It has been run against recorded clips of a real person blinking and
   smiling, and against a still photo (refused), but not yet live, and the
   head-turn prompt has not been tried on a real face at all.
+
+## 15. Coordinator analytics and dashboard, and the kit's sign-in page (October 2026)
+
+**Analytics: data fixes**
+- Every figure now counts active students only, the same rule the dashboard
+  and Monitoring use, so the three pages agree. A test checks this.
+- The hours chart has a column for every day of the period, quiet days
+  included. Days without logs used to be dropped, which hid gaps.
+- Task stages always come back as all four, in working order.
+- Every partner company is listed (it used to stop at ten), with a
+  "No company set" row for students without one.
+
+**Analytics: the page**
+- `GET /api/coordinator/analytics?days=14|30|90` sets the period for the
+  attendance figures; everything else is to date. 90 days is drawn by week.
+- New: change against the previous period, how many students logged, review
+  status of the period's logs, how the time-in photos were taken, progress
+  toward required hours by band, and a partner company table (interns,
+  average progress, verified hours, student rating, complaints).
+- Complaints are matched to a company by its typed name, so a misspelt
+  company on a complaint is not counted against that company.
+- Charts live in `my-pwa/src/components/charts.tsx`: one colour per series,
+  exact values on hover or arrow keys, and a "View as a table" twin.
+- The CSV and PDF exports carry the same tables.
+
+**Dashboard**
+- Tiles: timed in today, active students, verified hours (with the last 7
+  days) and average completion. `GET /api/coordinator/dashboard` now also
+  returns `today`, `weekHours` and a 14-day `hoursTrend`.
+- New cards: verified hours for the last 14 days, progress by band, and
+  what is waiting with each supervisor.
+
+**Sign-in page (brand kit v4, prompt 4)**
+- `my-pwa/src/pages/Login.tsx` is now the kit's `LoginScreen` with this
+  app's sign-in logic passed in. Requests, stored keys, the change-password
+  redirect, the session notice and the post-login splash are unchanged.
+  The last role used is remembered (`localStorage.inb_last_role`).
+- `my-pwa/src/brand/` and the app icons in `my-pwa/public/` are kit v4,
+  which redraws the logo everywhere. The supervisor bar and the coordinator
+  phone header use the kit's top-bar logo size.
+- Local edits inside kit files are marked "Local edit" or "Local addition".
+  Re-apply them after copying a newer kit:
+  - `brand.css`: the loader plays once and holds (the kit loops it).
+  - `SplashScreen.tsx`: one steady line, no percentage.
+  - `PortalHeader.tsx`: the app's shared gradient on dark headers.
+  - `LoginScreen.tsx`: "Coordinator email" (coordinators sign in by email
+    only; students may use their ID or email), "your required total"
+    instead of a fixed 480 h, a Caps Lock warning, and a `prefill` prop
+    for the demo logins in development.
+- The sign-in headings load Bricolage Grotesque from Google Fonts and fall
+  back to the system font when offline.
+- Not applied: the kit's `manifest.json` (its home-screen shortcuts are
+  role-specific but would show to every role) and the rest of prompt 3.
+
+**Tests**
+- 53 API tests, including one that checks the analytics figures against
+  each other and against the dashboard and Monitoring.
