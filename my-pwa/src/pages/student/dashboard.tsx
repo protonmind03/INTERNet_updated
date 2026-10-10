@@ -159,8 +159,10 @@ export default function Dashboard() {
                 You completed your required hours on {formatDate(summary.completedAt)}
               </p>
               <p className="text-sm text-emerald-900">
-                Check that your documents and tasks are complete too, then print your time
-                record for signing.
+                <Link to="/student/completion" className="font-semibold underline underline-offset-2">
+                  See what else is left
+                </Link>{" "}
+                before your OJT is done, then print your time record for signing.
               </p>
             </div>
             <Link

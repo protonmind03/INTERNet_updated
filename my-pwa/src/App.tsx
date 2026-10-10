@@ -113,6 +113,7 @@ const StudentFeedback = page("student", () => import("./pages/student/Feedback")
 const StudentTimeRecord = page("student", () => import("./pages/student/TimeRecord"));
 const StudentAnnouncements = page("student", () => import("./pages/student/Announcements"));
 const StudentJournal = page("student", () => import("./pages/student/Journal"));
+const StudentCompletion = page("student", () => import("./pages/student/Completion"));
 const SupervisorAnnouncements = page("supervisor", () => import("./pages/supervisor/Announcements"));
 
 /*
@@ -261,6 +262,11 @@ function App() {
         <Route
           path="/journal"
           element={<StudentJournal />}
+        />
+
+        <Route
+          path="/student/completion"
+          element={<StudentCompletion />}
         />
 
         <Route

@@ -1191,7 +1191,7 @@ export function registerExtensionRoutes(
         const student = await pool.query(
           `
           SELECT s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
-                 s.is_active, s.completed_at, s.supervisor_id,
+                 s.is_active, s.completed_at, s.completion_requested_at, s.supervisor_id,
                  s.phone, s.emergency_contact_name, s.emergency_contact_phone,
                  sup.name AS supervisor_name,
                  COALESCE(sup.is_active, FALSE) AS supervisor_active,
@@ -2465,4 +2465,204 @@ export function registerExtensionRoutes(
       return res.status(500).json({ message: "Failed to review the journal." });
     }
   });
+
+  /*
+  |--------------------------------------------------------------------------
+  | COMPLETION CHECKLIST (student)
+  |--------------------------------------------------------------------------
+  |
+  | What still stands between a student and the end of their OJT, worked
+  | out here so the page and the request below can never disagree:
+  |
+  |   hours       verified hours have reached the requirement
+  |   attendance  no log is still open or waiting for the supervisor
+  |   documents   every active requirement has an approved file
+  |   tasks       no task is unfinished or waiting for review
+  |   evaluation  the supervisor has evaluated the student
+  |   feedback    the student has given feedback about the company
+  |
+  | When all six are done the student may ask the coordinator, once, to
+  | review their record. Asking changes nothing else: the coordinator still
+  | decides.
+  |
+  */
+
+  type ChecklistItem = { key: string; done: boolean; detail: string };
+
+  async function completionChecklist(studentId: string): Promise<{
+    items: ChecklistItem[];
+    ready: boolean;
+    requested_at: string | null;
+    name: string;
+  } | null> {
+    const result = await pool.query<{
+      name: string;
+      required_hours: number | null;
+      completion_requested_at: string | null;
+      hours: string;
+      waiting_logs: number;
+      requirements: number;
+      approved: number;
+      open_tasks: number;
+      supervisor_evaluations: number;
+      own_feedback: number;
+    }>(
+      `
+      SELECT s.name, s.required_hours, s.completion_requested_at,
+        (SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
+          WHERE a.student_id = s.student_id AND a.status = 'Verified') AS hours,
+        (SELECT COUNT(*)::int FROM attendance a
+          WHERE a.student_id = s.student_id
+            AND (a.status = 'Pending' OR a.time_out IS NULL)) AS waiting_logs,
+        (SELECT COUNT(*)::int FROM ojt_requirements r WHERE r.is_active = TRUE) AS requirements,
+        (SELECT COUNT(*)::int FROM ojt_requirements r
+          WHERE r.is_active = TRUE AND EXISTS (
+            SELECT 1 FROM documents d
+            WHERE d.student_id = s.student_id AND d.doc_type = r.name AND d.status = 'Approved'
+          )) AS approved,
+        (SELECT COUNT(*)::int FROM tasks t
+          WHERE t.student_id = s.student_id
+            AND t.status IN ('Pending', 'In Progress', 'Submitted')) AS open_tasks,
+        (SELECT COUNT(*)::int FROM evaluations e
+          WHERE e.student_id = s.student_id AND e.evaluator_type = 'supervisor') AS supervisor_evaluations,
+        (SELECT COUNT(*)::int FROM evaluations e
+          WHERE e.evaluator_type = 'student' AND e.evaluator_id = s.student_id) AS own_feedback
+      FROM students s WHERE s.student_id = $1
+      `,
+      [studentId]
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+
+    const hours = Math.round(Number(row.hours) * 100) / 100;
+    const required = Number(row.required_hours) || 0;
+    const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+    const items: ChecklistItem[] = [
+      {
+        key: "hours",
+        done: required > 0 && hours >= required,
+        detail:
+          required > 0
+            ? `${hours} of ${required} required hours verified.`
+            : "Your coordinator has not set your required hours yet.",
+      },
+      {
+        key: "attendance",
+        done: row.waiting_logs === 0,
+        detail:
+          row.waiting_logs === 0
+            ? "No log is open or waiting for your supervisor."
+            : `${count(row.waiting_logs, "log is", "logs are")} still open or waiting for your supervisor.`,
+      },
+      {
+        key: "documents",
+        done: row.approved >= row.requirements,
+        detail:
+          row.requirements === 0
+            ? "No documents are required."
+            : `${row.approved} of ${count(row.requirements, "required document", "required documents")} approved.`,
+      },
+      {
+        key: "tasks",
+        done: row.open_tasks === 0,
+        detail:
+          row.open_tasks === 0
+            ? "No task is unfinished or waiting for review."
+            : `${count(row.open_tasks, "task is", "tasks are")} unfinished or waiting for review.`,
+      },
+      {
+        key: "evaluation",
+        done: row.supervisor_evaluations > 0,
+        detail:
+          row.supervisor_evaluations > 0
+            ? "Your supervisor has evaluated you."
+            : "Your supervisor has not evaluated you yet.",
+      },
+      {
+        key: "feedback",
+        done: row.own_feedback > 0,
+        detail:
+          row.own_feedback > 0
+            ? "You have given feedback about your company."
+            : "You have not given feedback about your company yet.",
+      },
+    ];
+    return {
+      items,
+      ready: items.every((item) => item.done),
+      requested_at: row.completion_requested_at,
+      name: row.name,
+    };
+  }
+
+  app.get("/api/students/:studentId/completion", requireRole("student"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (auth.id !== req.params.studentId) {
+        return res.status(403).json({ message: "You can only see your own checklist." });
+      }
+      const checklist = await completionChecklist(auth.id);
+      if (!checklist) return res.status(404).json({ message: "Student not found." });
+      return res.json({
+        items: checklist.items,
+        ready: checklist.ready,
+        requested_at: checklist.requested_at,
+      });
+    } catch (error) {
+      console.error("COMPLETION CHECKLIST ERROR:", error);
+      return res.status(500).json({ message: "Failed to load your completion checklist." });
+    }
+  });
+
+  app.post(
+    "/api/students/:studentId/completion/request",
+    requireRole("student"),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        if (auth.id !== req.params.studentId) {
+          return res.status(403).json({ message: "You can only ask for your own review." });
+        }
+        const checklist = await completionChecklist(auth.id);
+        if (!checklist) return res.status(404).json({ message: "Student not found." });
+        if (checklist.requested_at) {
+          return res.status(409).json({
+            message: "You have already asked for a completion review.",
+            requested_at: checklist.requested_at,
+          });
+        }
+        if (!checklist.ready) {
+          const left = checklist.items.filter((item) => !item.done).length;
+          return res.status(400).json({
+            message: `${left} ${left === 1 ? "thing is" : "things are"} still left on your checklist. Finish ${left === 1 ? "it" : "them"} before asking for a review.`,
+          });
+        }
+        // Only the first request sets the time, whatever arrives together.
+        const saved = await pool.query<{ completion_requested_at: string }>(
+          `UPDATE students SET completion_requested_at = NOW()
+           WHERE student_id = $1 AND completion_requested_at IS NULL
+           RETURNING completion_requested_at`,
+          [auth.id]
+        );
+        if (saved.rows.length === 0) {
+          return res.status(409).json({ message: "You have already asked for a completion review." });
+        }
+        await quietly("COMPLETION REQUEST NOTIFICATION ERROR", () =>
+          notifyCoordinators({
+            entity: { type: "student", id: auth.id },
+            title: "Completion review requested",
+            message: `${checklist.name} has finished everything on their completion checklist and asks you to review their record.`,
+            type: "info",
+          })
+        );
+        return res.status(201).json({
+          message: "Your coordinator has been asked to review your record.",
+          requested_at: saved.rows[0].completion_requested_at,
+        });
+      } catch (error) {
+        console.error("COMPLETION REQUEST ERROR:", error);
+        return res.status(500).json({ message: "Failed to send the request." });
+      }
+    }
+  );
 }

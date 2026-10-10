@@ -54,6 +54,8 @@ type Student = {
   required_hours: number;
   is_active: boolean;
   completed_at: string | null;
+  /** When the student asked for a completion review, if they have. */
+  completion_requested_at?: string | null;
   supervisor_name: string | null;
   supervisor_active: boolean;
   hours_rendered: number;
@@ -304,6 +306,12 @@ export default function StudentRecord() {
                       <StatusBadge
                         status={`Hours completed ${formatDate(student.completed_at)}`}
                         tone="good"
+                      />
+                    )}
+                    {student.completion_requested_at && (
+                      <StatusBadge
+                        status={`Asked for completion review ${formatDate(student.completion_requested_at)}`}
+                        tone="info"
                       />
                     )}
                   </div>

@@ -35,6 +35,7 @@ const PRIMARY_NAV: NavItem[] = [
 const SECONDARY_NAV: NavItem[] = [
   { label: "Schedule", path: "/schedule", icon: "calendar" },
   { label: "Weekly journal", path: "/journal", icon: "note" },
+  { label: "Completion", path: "/student/completion", icon: "check-circle" },
   { label: "Feedback", path: "/student/feedback", icon: "star" },
   { label: "Report a concern", path: "/report", icon: "flag" },
   { label: "Announcements", path: "/announcements", icon: "megaphone" },

@@ -3365,3 +3365,143 @@ test("a journal goes from the student to the supervisor and back, and closes onc
     await pool.end();
   }
 });
+
+/*
+| Completion checklist
+*/
+
+const CHECKLIST_KEYS = ["hours", "attendance", "documents", "tasks", "evaluation", "feedback"];
+
+test("the completion checklist is the student's own and names the same six things", async () => {
+  const supervisor = await supervisorSession();
+  const id = encodeURIComponent(student.student_id);
+  const path = `/api/students/${id}/completion`;
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/completion", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/completion/request", jsonBody(studentToken, "POST", {}))).response.status, 403);
+  assert.equal((await jsonRequest(`${path}/request`, jsonBody(coordinatorToken, "POST", {}))).response.status, 403);
+
+  const { response, body } = await jsonRequest(path, { headers: authHeaders(studentToken) });
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.items.map((item) => item.key), CHECKLIST_KEYS);
+  for (const item of body.items) {
+    assert.equal(typeof item.done, "boolean", item.key);
+    assert.ok(item.detail.length > 5, item.key);
+  }
+  assert.equal(body.ready, body.items.every((item) => item.done));
+  assert.ok("requested_at" in body);
+
+  // The hours line agrees with the student's own verified attendance.
+  const own = await jsonRequest(`/api/attendance/${id}`, { headers: authHeaders(studentToken) });
+  const verified = own.body.attendance.filter((log) => log.status === "Verified").reduce((sum, log) => sum + Number(log.hours || 0), 0);
+  const hours = body.items.find((item) => item.key === "hours");
+  assert.ok(hours.detail.startsWith(`${Math.round(verified * 100) / 100} of `), hours.detail);
+
+  // Not everything done and not yet asked: asking is refused, and says how much is left.
+  if (!body.ready && !body.requested_at) {
+    const refused = await jsonRequest(`${path}/request`, jsonBody(studentToken, "POST", {}));
+    assert.equal(refused.response.status, 400);
+    assert.match(refused.body.message, /still left on your checklist/);
+    const after = await jsonRequest(path, { headers: authHeaders(studentToken) });
+    assert.equal(after.body.requested_at, null, "a refused request records nothing");
+  }
+});
+
+test("a student whose checklist is complete asks for a review once, and the coordinator is told", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  // A student made for this test, with everything done, so the demo
+  // student's record is left as it is.
+  const pool = localTestPool();
+  const sid = "TEST-COMPLETE-0001";
+  const clear = async () => {
+    for (const table of ["attendance", "documents", "tasks", "notifications"]) {
+      await pool.query(`DELETE FROM ${table} WHERE student_id = $1`, [sid]);
+    }
+    await pool.query(`DELETE FROM evaluations WHERE student_id = $1 OR evaluator_id = $1`, [sid]);
+    await pool.query(`DELETE FROM notifications WHERE entity_type = 'student' AND entity_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+  };
+  await clear();
+  try {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, program, company, supervisor_id, is_active, required_hours)
+       SELECT $1, 'complete.test@internet.test', password, 'Complete Test', program, company, supervisor_id, TRUE, 8
+       FROM students WHERE student_id = $2`,
+      [sid, student.student_id]
+    );
+    const session = await login("student", "complete.test@internet.test", studentPassword);
+    const token = session.token;
+    const path = `/api/students/${sid}/completion`;
+    const read = async () => (await jsonRequest(path, { headers: authHeaders(token) })).body;
+    const ask = () => jsonRequest(`${path}/request`, jsonBody(token, "POST", {}));
+    const done = (body) => Object.fromEntries(body.items.map((item) => [item.key, item.done]));
+
+    // Nothing rendered yet. With no open logs or tasks those two lines are already done.
+    let state = await read();
+    assert.deepEqual(done(state), { hours: false, attendance: true, documents: false, tasks: true, evaluation: false, feedback: false });
+    assert.equal((await ask()).response.status, 400);
+
+    // Hours, but one more log still waiting.
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status)
+       VALUES ($1, '2001-02-05', '2001-02-05 08:00', '2001-02-05 17:00', 8, 'Verified'),
+              ($1, '2001-02-06', '2001-02-06 08:00', NULL, NULL, 'Pending')`,
+      [sid]
+    );
+    state = await read();
+    assert.equal(done(state).hours, true);
+    assert.equal(done(state).attendance, false);
+    await pool.query(`UPDATE attendance SET time_out = '2001-02-06 17:00', hours = 8, status = 'Verified' WHERE student_id = $1 AND date = '2001-02-06'`, [sid]);
+
+    // Every active requirement approved; a rejected file does not count.
+    await pool.query(
+      `INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status)
+       SELECT $1, r.name, 'file.pdf', '/uploads/test-complete-' || r.id || '.pdf', 'application/pdf', 10, 'Rejected'
+       FROM ojt_requirements r WHERE r.is_active = TRUE`,
+      [sid]
+    );
+    const requirements = (await pool.query(`SELECT COUNT(*)::int AS n FROM ojt_requirements WHERE is_active = TRUE`)).rows[0].n;
+    assert.equal(done(await read()).documents, requirements === 0);
+    await pool.query(`UPDATE documents SET status = 'Approved' WHERE student_id = $1`, [sid]);
+    assert.equal(done(await read()).documents, true);
+
+    // An unfinished task holds it up; a reviewed one does not.
+    await pool.query(`INSERT INTO tasks (student_id, title, status, due_date) VALUES ($1, 'Final report', 'Submitted', '2001-03-01')`, [sid]);
+    assert.equal(done(await read()).tasks, false);
+    await pool.query(`UPDATE tasks SET status = 'Reviewed' WHERE student_id = $1`, [sid]);
+
+    // The two evaluations.
+    await pool.query(
+      `INSERT INTO evaluations (student_id, evaluator_type, evaluator_id, evaluator_name, category, rating, comments)
+       VALUES ($1, 'supervisor', 'SUP', 'A Supervisor', 'Overall', 5, 'Good work.'),
+              ($1, 'student', $1, 'Complete Test', 'Company', 4, 'Learned a lot.')`,
+      [sid]
+    );
+    state = await read();
+    assert.ok(state.ready, JSON.stringify(done(state)));
+    assert.equal(state.requested_at, null);
+
+    // Asked once.
+    const asked = await ask();
+    assert.equal(asked.response.status, 201, JSON.stringify(asked.body));
+    assert.ok(asked.body.requested_at);
+    const again = await ask();
+    assert.equal(again.response.status, 409);
+    assert.ok((await read()).requested_at);
+
+    // The coordinator is told, the notification opens the student's record, and the record shows it.
+    const notes = await jsonRequest(`/api/notifications/coordinator/${encodeURIComponent(coordinator.coordinator_id)}`, { headers: authHeaders(coordinatorToken) });
+    const told = notes.body.notifications.find((item) => item.title === "Completion review requested" && item.entity_id === sid);
+    assert.equal(told?.link, `/coordinator/students/${sid}`);
+    const record = await jsonRequest(`/api/coordinator/students/${sid}/overview`, { headers: authHeaders(coordinatorToken) });
+    assert.ok(record.body.student.completion_requested_at);
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});
