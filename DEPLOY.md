@@ -144,28 +144,40 @@ never share them in a chat.
 
 ### Database (run by you)
 
-You need the Railway CLI (`npm i -g @railway/cli`, then `railway login` and
-`railway link` inside the `backend` folder) and the PostgreSQL client tools,
-the same major version as the hosted database or newer.
+You need the Railway CLI and the PostgreSQL client tools (the same major
+version as the hosted database, or newer). Once only, in the `backend`
+folder:
 
-`railway run` runs a command on your own machine with the service's
-variables filled in. The variable must be read by the inner command, not by
-your shell, hence the quoting:
-
-```powershell
-# PowerShell, from the backend folder
-$env:Path += ";C:\Program Files\PostgreSQL\18\bin"
-railway run cmd /c "pg_dump %DATABASE_PUBLIC_URL% --format=custom --no-owner --no-privileges --file internet-prod.dump"
+```
+npm i -g @railway/cli
+railway login
+railway link
 ```
 
-Rename the file with the date afterwards.
+`railway link` asks which project, environment and service: choose the
+project, `production`, and the backend service.
 
-```bash
-# macOS / Linux
-railway run sh -c 'pg_dump "$DATABASE_PUBLIC_URL" --format=custom --no-owner --no-privileges --file "internet-prod-$(date +%Y%m%d-%H%M).dump"'
+Then, each time you want a backup, from the `backend` folder:
+
+```
+railway run --service Postgres npm run db:backup-production
 ```
 
-The command only reads. A dump of a few megabytes takes seconds.
+Type it exactly as shown; there is nothing to fill in. It writes
+`backend/backups/internet-production-<date>-<time>.dump` and prints its
+size. It only reads, and takes seconds.
+
+How it works, and why not a plain `pg_dump` of `DATABASE_PUBLIC_URL`: the
+backend reaches the database at `postgres.railway.internal`, an address
+that exists only inside Railway, so a dump aimed at it from a laptop fails
+with "could not translate host name". The script uses the database's public
+address instead (Railway's TCP proxy) and takes the user, database name and
+password from the Postgres service itself, so none of them is typed or
+shown. **Never paste the connection string into a command or a chat: it
+contains the database password.**
+
+If it says the database has no public address: Postgres service > Settings
+> Networking > add a TCP proxy for port 5432, then run it again.
 
 ### Uploaded files (run by you)
 
