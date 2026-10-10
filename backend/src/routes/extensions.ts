@@ -1182,6 +1182,7 @@ export function registerExtensionRoutes(
           `
           SELECT s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
                  s.is_active, s.completed_at, s.supervisor_id,
+                 s.phone, s.emergency_contact_name, s.emergency_contact_phone,
                  sup.name AS supervisor_name,
                  COALESCE(sup.is_active, FALSE) AS supervisor_active,
                  COALESCE((

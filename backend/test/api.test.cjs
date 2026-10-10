@@ -2907,3 +2907,67 @@ test("the accomplishment note at time-out is optional, and checked when it is se
   });
   for (const log of own.body.attendance) assert.ok("accomplishments" in log);
 });
+
+
+/*
+| Student contact details and "my coordinator"
+*/
+
+test("a student keeps their own contact details; only their staff can read them", async () => {
+  const id = encodeURIComponent(student.student_id);
+  const put = (body, token = studentToken, target = id) =>
+    jsonRequest(`/api/students/${target}/contact`, jsonBody(token, "PUT", body));
+  const profile = () => jsonRequest(`/api/students/${id}/profile`, { headers: authHeaders(studentToken) });
+
+  // Only the student, and only their own.
+  assert.equal((await jsonRequest(`/api/students/${id}/contact`, { method: "PUT" })).response.status, 401);
+  assert.equal((await put({ phone: "09171234567" }, coordinatorToken)).response.status, 403);
+  assert.equal((await put({ phone: "09171234567" }, studentToken, "SOMEONE-ELSE")).response.status, 403);
+
+  // Refused before anything is saved.
+  for (const bad of [{ phone: "call me" }, { phone: "123" }, { phone: 9171234567 }, { emergency_contact_phone: "0917-123-4567-ext-99999" },
+    { emergency_contact_name: "x".repeat(151) }, { emergency_contact_name: "A" }]) {
+    assert.equal((await put(bad)).response.status, 400, JSON.stringify(bad).slice(0, 50));
+  }
+
+  const before = (await profile()).body.student;
+  for (const key of ["phone", "emergency_contact_name", "emergency_contact_phone"]) assert.ok(key in before, key);
+
+  // Save, read back, then put everything back as it was.
+  const saved = await put({ phone: " +63 917 123 4567 ", emergency_contact_name: "Maria Santos", emergency_contact_phone: "(075) 123-4567" });
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  assert.deepEqual(saved.body.contact, { phone: "+63 917 123 4567", emergency_contact_name: "Maria Santos", emergency_contact_phone: "(075) 123-4567" });
+  // A field that is not sent is left alone; an empty one is cleared.
+  const partial = await put({ phone: "" });
+  assert.deepEqual(partial.body.contact, { phone: null, emergency_contact_name: "Maria Santos", emergency_contact_phone: "(075) 123-4567" });
+  // The name-and-email route still answers as it did, and does not touch these.
+  const unchanged = await jsonRequest(`/api/students/${id}/profile`, jsonBody(studentToken, "PUT", { name: before.name, email: before.email }));
+  assert.equal(unchanged.response.status, 200);
+  assert.equal((await profile()).body.student.emergency_contact_name, "Maria Santos");
+
+  // Their supervisor and the coordinator can read them.
+  const supervisor = await supervisorSession();
+  const interns = await jsonRequest(`/api/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}/interns`, { headers: authHeaders(supervisor.token) });
+  const intern = interns.body.interns.find((item) => item.student_id === student.student_id);
+  assert.equal(intern.emergency_contact_name, "Maria Santos");
+
+  const restore = await put({
+    phone: before.phone ?? "",
+    emergency_contact_name: before.emergency_contact_name ?? "",
+    emergency_contact_phone: before.emergency_contact_phone ?? "",
+  });
+  assert.equal(restore.response.status, 200);
+  assert.deepEqual(
+    restore.body.contact,
+    { phone: before.phone, emergency_contact_name: before.emergency_contact_name, emergency_contact_phone: before.emergency_contact_phone }
+  );
+});
+
+test("a student is told who their coordinator is, and nothing private about them", async () => {
+  const { response, body } = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
+  assert.equal(response.status, 200);
+  assert.ok(body.coordinator, "there is an active coordinator");
+  assert.deepEqual(Object.keys(body.coordinator).sort(), ["department", "email", "name"]);
+  assert.equal(typeof body.coordinator.name, "string");
+  assert.match(body.coordinator.email, /@/);
+});

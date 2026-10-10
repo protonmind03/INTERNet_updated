@@ -1,0 +1,153 @@
+import { useState } from "react";
+import { Button, Card, FormError, FormField } from "../../components/ui";
+import { API_URL, withStudentAuth } from "../../lib/api";
+import { errorText, toast } from "../../lib/toast";
+
+export type Contact = {
+  phone: string | null;
+  emergency_contact_name: string | null;
+  emergency_contact_phone: string | null;
+};
+
+export type Coordinator = { name: string; email: string; department: string | null };
+
+const PHONE = /^[0-9+() .-]{7,20}$/;
+
+/**
+ * The student's phone number and emergency contact. Their supervisor and
+ * the coordinator can see these; other students cannot.
+ */
+export default function ContactDetails({
+  studentId,
+  contact,
+  onSaved,
+}: {
+  studentId: string;
+  contact: Contact;
+  onSaved: (contact: Contact) => void;
+}) {
+  const [phone, setPhone] = useState(contact.phone || "");
+  const [name, setName] = useState(contact.emergency_contact_name || "");
+  const [contactPhone, setContactPhone] = useState(contact.emergency_contact_phone || "");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const changed =
+    phone.trim() !== (contact.phone || "") ||
+    name.trim() !== (contact.emergency_contact_name || "") ||
+    contactPhone.trim() !== (contact.emergency_contact_phone || "");
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    for (const number of [phone.trim(), contactPhone.trim()]) {
+      if (number && !PHONE.test(number)) {
+        return setError("Write phone numbers with 7 to 20 digits. Spaces, +, - and brackets are fine.");
+      }
+    }
+    if (contactPhone.trim() && name.trim().length < 2) {
+      return setError("Add the name of the person that number belongs to.");
+    }
+    setSaving(true);
+    setError("");
+    try {
+      const response = await fetch(
+        `${API_URL}/api/students/${encodeURIComponent(studentId)}/contact`,
+        withStudentAuth({
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: phone.trim(),
+            emergency_contact_name: name.trim(),
+            emergency_contact_phone: contactPhone.trim(),
+          }),
+        })
+      );
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.message || "Your contact details could not be saved.");
+      onSaved(data.contact as Contact);
+      toast.success("Contact details saved.");
+    } catch (saveError) {
+      setError(errorText(saveError, "Your contact details could not be saved."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Card className="p-5">
+      <form onSubmit={save}>
+        <h2 className="text-sm font-semibold text-slate-900">Contact details</h2>
+        <p className="mt-1 text-sm text-slate-600">
+          Seen by your supervisor and your OJT coordinator, so they can reach you or someone
+          close to you if something happens at work.
+        </p>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <FormField label="Your mobile number" htmlFor="contact-phone" optional className="sm:col-span-2">
+            <input
+              id="contact-phone"
+              type="tel"
+              autoComplete="tel"
+              maxLength={20}
+              value={phone}
+              onChange={(event) => setPhone(event.target.value)}
+              className="field"
+            />
+          </FormField>
+          <FormField label="Emergency contact" htmlFor="contact-name" optional hint="A parent, guardian or relative">
+            <input
+              id="contact-name"
+              type="text"
+              maxLength={150}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              className="field"
+            />
+          </FormField>
+          <FormField label="Their phone number" htmlFor="contact-emergency-phone" optional>
+            <input
+              id="contact-emergency-phone"
+              type="tel"
+              maxLength={20}
+              value={contactPhone}
+              onChange={(event) => setContactPhone(event.target.value)}
+              className="field"
+            />
+          </FormField>
+        </div>
+        <FormError message={error} />
+        <Button
+          type="submit"
+          busy={saving}
+          doneLabel="Saved"
+          failed={Boolean(error)}
+          disabled={!changed}
+          className="mt-4"
+        >
+          {saving ? "Saving" : "Save contact details"}
+        </Button>
+      </form>
+    </Card>
+  );
+}
+
+/** Who runs the OJT programme for this student, and how to reach them. */
+export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | null }) {
+  if (!coordinator) return null;
+  return (
+    <Card className="p-5">
+      <h2 className="text-sm font-semibold text-slate-900">Your OJT coordinator</h2>
+      <p className="mt-2 text-sm font-medium text-slate-900">{coordinator.name}</p>
+      {coordinator.department && <p className="text-sm text-slate-600">{coordinator.department}</p>}
+      <a
+        href={`mailto:${coordinator.email}`}
+        className="mt-1 inline-block break-all text-sm font-semibold text-psu-700 hover:underline"
+      >
+        {coordinator.email}
+      </a>
+      <p className="mt-2 text-xs text-slate-500">
+        For questions about requirements, your hours, or a problem at your company. To report a
+        concern in confidence, use Report.
+      </p>
+    </Card>
+  );
+}

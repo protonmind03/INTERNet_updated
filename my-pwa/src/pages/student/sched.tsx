@@ -64,6 +64,7 @@ export default function OjtSchedule() {
 
   const [schedule, setSchedule] = useState<ScheduleDay[]>([]);
   const [company, setCompany] = useState<Company | null>(null);
+  const [coordinator, setCoordinator] = useState<{ name: string; email: string } | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -90,6 +91,11 @@ export default function OjtSchedule() {
         setTasks(Array.isArray(list) ? list : []);
       }
       setError("");
+      // Who to ask at the university. Extra to the page: a failure here is not shown.
+      savedFetch("student", "profile", `${API_URL}/api/students/${id}/profile`, withStudentAuth())
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => setCoordinator(data?.coordinator ?? null))
+        .catch(() => undefined);
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your schedule."));
     } finally {
@@ -245,6 +251,17 @@ export default function OjtSchedule() {
                   {company?.department && (
                     <Detail icon="users" label="Department">
                       {company.department}
+                    </Detail>
+                  )}
+                  {coordinator && (
+                    <Detail icon="user" label="OJT coordinator">
+                      {coordinator.name}
+                      <a
+                        href={`mailto:${coordinator.email}`}
+                        className="block break-all text-psu-700 hover:underline"
+                      >
+                        {coordinator.email}
+                      </a>
                     </Detail>
                   )}
                 </dl>

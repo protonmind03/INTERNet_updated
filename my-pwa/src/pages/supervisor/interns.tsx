@@ -224,6 +224,34 @@ function InternDialog({
           >
             {intern.email}
           </a>
+          {(intern.phone || intern.emergency_contact_phone) && (
+            <dl className="mt-3 space-y-1 text-sm text-slate-700">
+              {intern.phone && (
+                <div>
+                  <dt className="inline font-medium">Mobile: </dt>
+                  <dd className="inline">
+                    <a href={`tel:${intern.phone}`} className="text-psu-700 hover:underline">
+                      {intern.phone}
+                    </a>
+                  </dd>
+                </div>
+              )}
+              {intern.emergency_contact_phone && (
+                <div>
+                  <dt className="inline font-medium">In an emergency: </dt>
+                  <dd className="inline">
+                    {intern.emergency_contact_name ? `${intern.emergency_contact_name}, ` : ""}
+                    <a
+                      href={`tel:${intern.emergency_contact_phone}`}
+                      className="text-psu-700 hover:underline"
+                    >
+                      {intern.emergency_contact_phone}
+                    </a>
+                  </dd>
+                </div>
+              )}
+            </dl>
+          )}
         </div>
 
         <InternSchedule key={intern.student_id} studentId={intern.student_id} />

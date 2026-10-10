@@ -56,6 +56,10 @@ type Student = {
   supervisor_name: string | null;
   supervisor_active: boolean;
   hours_rendered: number;
+  /** Entered by the student on their own profile. */
+  phone?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
 };
 
 type Log = {
@@ -290,6 +294,15 @@ export default function StudentRecord() {
                   <ProgressBar value={completion} className="mt-2" />
                   <dl className="mt-5 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
                     <Fact label="Email" value={student.email} />
+                    <Fact label="Mobile" value={student.phone || "Not given"} />
+                    <Fact
+                      label="Emergency contact"
+                      value={
+                        student.emergency_contact_phone
+                          ? `${student.emergency_contact_name || "Contact"}, ${student.emergency_contact_phone}`
+                          : "Not given"
+                      }
+                    />
                     <Fact
                       label="Supervisor"
                       value={

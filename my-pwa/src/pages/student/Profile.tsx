@@ -9,6 +9,7 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { getInitials } from "../../lib/format";
 import { updateStoredAccount, useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import ContactDetails, { CoordinatorCard, type Contact, type Coordinator } from "./ContactDetails";
 
 type StudentProfile = {
   student_id: string;
@@ -17,13 +18,14 @@ type StudentProfile = {
   program: string | null;
   company: string | null;
   required_hours: number;
-};
+} & Contact;
 
 export default function StudentProfilePage() {
   const account = useAccount("student");
   const studentId = account?.student_id;
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
+  const [coordinator, setCoordinator] = useState<Coordinator | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -43,6 +45,7 @@ export default function StudentProfilePage() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not load your profile.");
       setProfile(data.student);
+      setCoordinator(data.coordinator ?? null);
       setName(data.student.name);
       setEmail(data.student.email);
       setError("");
@@ -84,7 +87,8 @@ export default function StudentProfilePage() {
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Your profile could not be saved.");
-      setProfile(data.student);
+      // The answer has the name and email only; keep the rest as it was.
+      setProfile((current) => (current ? { ...current, ...data.student } : data.student));
       // Other pages read the stored account; keep it in step.
       updateStoredAccount("student", { name: data.student.name, email: data.student.email });
       toast.success("Profile saved.");
@@ -191,6 +195,19 @@ export default function StudentProfilePage() {
               </Button>
             </form>
           </Card>
+
+          {studentId && profile && (
+            <ContactDetails
+              key={studentId}
+              studentId={studentId}
+              contact={profile}
+              onSaved={(contact) =>
+                setProfile((current) => (current ? { ...current, ...contact } : current))
+              }
+            />
+          )}
+
+          <CoordinatorCard coordinator={coordinator} />
 
           {studentId && <PasswordForm role="student" accountId={studentId} />}
 

@@ -7274,7 +7274,8 @@ app.get(
     const result = await pool.query(
       `
       SELECT student_id, email, name, program, company, supervisor_id,
-        required_hours, is_active
+        required_hours, is_active,
+        phone, emergency_contact_name, emergency_contact_phone
       FROM students
       WHERE student_id = $1
       `,
@@ -7285,7 +7286,24 @@ app.get(
       return res.status(404).json({ message: "Student not found." });
     }
 
-    return res.json({ student: result.rows[0] });
+    // Who runs the programme for this student: the coordinator they are
+    // assigned to or, for the many students assigned to none, the active
+    // coordinator who has been one longest.
+    const coordinator = await pool.query(
+      `
+      SELECT c.name, c.email, c.department
+      FROM coordinators c
+      WHERE c.is_active = TRUE
+      ORDER BY (c.coordinator_id::text = (
+                 SELECT coordinator_id::text FROM students WHERE student_id = $1
+               )) DESC NULLS LAST,
+               c.created_at ASC NULLS LAST, c.coordinator_id ASC
+      LIMIT 1
+      `,
+      [studentId]
+    );
+
+    return res.json({ student: result.rows[0], coordinator: coordinator.rows[0] ?? null });
   } catch (error) {
     console.error("GET STUDENT PROFILE ERROR:", error);
     return res.status(500).json({
@@ -7346,6 +7364,80 @@ app.put(
       error: error instanceof Error ? error.message : String(error),
     });
   }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| STUDENT CONTACT DETAILS
+|--------------------------------------------------------------------------
+|
+| The student's own phone number and emergency contact. Kept apart from the
+| name-and-email route above, so that route answers exactly as it always
+| has. A field that is not sent is left as it is; an empty one is cleared.
+|
+*/
+
+const PHONE_PATTERN = /^[0-9+() .-]{7,20}$/;
+
+app.put(
+  "/api/students/:studentId/contact",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { studentId } = req.params;
+      if (!auth || auth.id !== studentId) {
+        return res.status(403).json({ message: "You can only update your own contact details." });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const read = (key: string, max: number): { sent: boolean; value: string | null } | null => {
+        if (body[key] === undefined) return { sent: false, value: null };
+        if (body[key] !== null && typeof body[key] !== "string") return null;
+        const value = typeof body[key] === "string" ? (body[key] as string).trim() : "";
+        return value.length > max ? null : { sent: true, value: value || null };
+      };
+      const phone = read("phone", 20);
+      const contactName = read("emergency_contact_name", 150);
+      const contactPhone = read("emergency_contact_phone", 20);
+      if (!phone || !contactName || !contactPhone) {
+        return res.status(400).json({ message: "Those contact details are not readable." });
+      }
+      for (const number of [phone.value, contactPhone.value]) {
+        if (number && !PHONE_PATTERN.test(number)) {
+          return res.status(400).json({
+            message: "Write phone numbers with 7 to 20 digits. Spaces, +, - and brackets are fine.",
+          });
+        }
+      }
+      if (contactName.value && contactName.value.length < 2) {
+        return res.status(400).json({ message: "Give your emergency contact's name." });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE students SET
+          phone = CASE WHEN $2 THEN $3 ELSE phone END,
+          emergency_contact_name = CASE WHEN $4 THEN $5 ELSE emergency_contact_name END,
+          emergency_contact_phone = CASE WHEN $6 THEN $7 ELSE emergency_contact_phone END
+        WHERE student_id = $1
+        RETURNING phone, emergency_contact_name, emergency_contact_phone
+        `,
+        [
+          studentId,
+          phone.sent, phone.value,
+          contactName.sent, contactName.value,
+          contactPhone.sent, contactPhone.value,
+        ]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Student not found." });
+      }
+      return res.json({ message: "Contact details saved.", contact: result.rows[0] });
+    } catch (error) {
+      console.error("UPDATE STUDENT CONTACT ERROR:", error);
+      return res.status(500).json({ message: "Failed to save your contact details." });
+    }
   }
 );
 
@@ -7659,6 +7751,7 @@ app.get(
       `
       SELECT
         s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
+        s.phone, s.emergency_contact_name, s.emergency_contact_phone,
         (
           SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
           WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)

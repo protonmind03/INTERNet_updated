@@ -27,6 +27,10 @@ export type Intern = {
   active_tasks: number;
   tasks_awaiting_review: number;
   completion: number;
+  /** Entered by the intern on their own profile. */
+  phone?: string | null;
+  emergency_contact_name?: string | null;
+  emergency_contact_phone?: string | null;
 };
 
 export type AttendanceEntry = {
