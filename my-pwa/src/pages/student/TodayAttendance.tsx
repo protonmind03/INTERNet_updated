@@ -62,14 +62,20 @@ export default function TodayAttendance({
     const action = pending;
     if (!action) return;
     try {
-      if (action === "break") {
-        await attendance.startBreak();
+      const outcome =
+        action === "break"
+          ? await attendance.startBreak()
+          : action === "back"
+            ? await attendance.endBreak()
+            : await attendance.timeOut();
+      if (outcome === "queued") {
+        // No connection: kept on the phone with the time it was pressed.
+        toast.info("Saved on this phone. It will be sent when you're back online.");
+      } else if (action === "break") {
         toast.success("Break started.");
       } else if (action === "back") {
-        await attendance.endBreak();
         toast.success("Welcome back. Your break has ended.");
       } else {
-        await attendance.timeOut();
         toast.celebrate("Time-out recorded. Your supervisor will verify today's log.");
       }
       setPending(null);
@@ -131,6 +137,17 @@ export default function TodayAttendance({
             </p>
             {stage === "done" && <StatusBadge status={todayLog.status} />}
           </div>
+        )}
+
+        {!loading && todayLog?.waiting && todayLog.waiting.length > 0 && (
+          <p role="status" className="mt-3 flex items-start gap-2 text-sm text-gold-200">
+            <Icon name="clock" size={16} className="mt-0.5 shrink-0" />
+            <span>
+              {todayLog.waiting.length === 1 ? "1 step is" : `${todayLog.waiting.length} steps are`}{" "}
+              saved on this phone and will be sent when you're back online. Keep the app
+              signed in until then.
+            </span>
+          </p>
         )}
 
         {!loading && stage === "not-started" && (

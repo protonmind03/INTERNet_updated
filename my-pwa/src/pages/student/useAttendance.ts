@@ -5,6 +5,14 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { localDateKey } from "../../lib/format";
 import { compressPhoto } from "../../lib/image";
 import { notifyDataChanged } from "../../lib/navCounts";
+import {
+  QUEUE_CHANGED,
+  queueStep,
+  sendWaitingSteps,
+  waitingSteps,
+  type QueuedStep,
+  type StepPath,
+} from "../../lib/offlineQueue";
 import { savedFetch } from "../../lib/offlineStore";
 
 export type AttendanceStatus = "Verified" | "Pending" | "Flagged" | "Rejected";
@@ -29,7 +37,40 @@ export type AttendanceLog = {
   corrected_at?: string | null;
   /** How the photo was taken: the camera check, or by the supervisor in person. */
   capture_method?: "liveness" | "supervisor" | null;
+  /** At least one step's time came from the phone while it was offline. */
+  recorded_offline?: boolean;
+  /** Steps taken offline on this phone that have not reached the server yet. */
+  waiting?: StepPath[];
 };
+
+const STEP_FIELD: Record<StepPath, "break_time" | "break_end_time" | "time_out"> = {
+  break: "break_time",
+  "break-end": "break_end_time",
+  "time-out": "time_out",
+};
+
+/**
+ * Shows the steps still waiting on this phone as if they were recorded, so
+ * the day reads correctly (and the same step cannot be pressed twice) until
+ * the server has them.
+ */
+function withWaitingSteps(logs: AttendanceLog[], steps: QueuedStep[]): AttendanceLog[] {
+  if (steps.length === 0) return logs;
+  return logs.map((log) => {
+    const mine = steps.filter((step) => step.logId === log.id);
+    if (mine.length === 0) return log;
+    const next: AttendanceLog = { ...log, waiting: mine.map((step) => step.path) };
+    for (const step of mine) {
+      const field = STEP_FIELD[step.path];
+      if (!next[field]) next[field] = step.occurredAt;
+      // A break still open when the student timed out ends at the time-out.
+      if (step.path === "time-out" && next.break_time && !next.break_end_time) {
+        next.break_end_time = step.occurredAt;
+      }
+    }
+    return next;
+  });
+}
 
 /** The prompts the server picked for one time-in, and the ticket that proves it. */
 export type LivenessChallenge = { ticket: string; prompts: Prompt[]; spare: Prompt };
@@ -101,7 +142,8 @@ export function useAttendance(studentId: string | undefined) {
       if (!response.ok) {
         throw new Error(messageFrom(data, "Could not load your attendance."));
       }
-      setLogs(Array.isArray(data.attendance) ? (data.attendance as AttendanceLog[]) : []);
+      const loaded = Array.isArray(data.attendance) ? (data.attendance as AttendanceLog[]) : [];
+      setLogs(withWaitingSteps(loaded, await waitingSteps()));
       setError("");
     } catch (loadError) {
       setError(
@@ -123,7 +165,12 @@ export function useAttendance(studentId: string | undefined) {
     refresh();
     // A supervisor verifying a log raises a live notification; pick it up.
     window.addEventListener("internet-notification", refresh);
-    return () => window.removeEventListener("internet-notification", refresh);
+    // Steps recorded offline have just been sent (or refused).
+    window.addEventListener(QUEUE_CHANGED, refresh);
+    return () => {
+      window.removeEventListener("internet-notification", refresh);
+      window.removeEventListener(QUEUE_CHANGED, refresh);
+    };
   }, [load]);
 
   const todayLog = useMemo(() => {
@@ -188,21 +235,48 @@ export function useAttendance(studentId: string | undefined) {
     [studentId, run]
   );
 
+  /**
+   * Records a step on today's log. With a connection it goes straight to the
+   * server ("sent"). With none it is kept on the phone with the time it was
+   * pressed and sent later ("queued"); see lib/offlineQueue.ts.
+   */
   const step = useCallback(
-    (path: "break" | "break-end" | "time-out", fallback: string) => {
-      if (!todayLog) return Promise.reject(new Error("Time in first."));
-      return run(
-        () =>
-          fetch(
-            `${API_URL}/api/attendance/${todayLog.id}/${path}`,
-            withStudentAuth({
-              method: "PUT",
-              headers: { "Content-Type": "application/json" },
-              body: "{}",
-            })
-          ),
-        fallback
-      );
+    async (path: StepPath, fallback: string): Promise<"sent" | "queued"> => {
+      if (!todayLog) throw new Error("Time in first.");
+      // Earlier steps are still waiting: this one has to wait behind them,
+      // or the server would be asked for them out of order.
+      const mustQueue = (todayLog.waiting?.length ?? 0) > 0;
+      if (!mustQueue) {
+        try {
+          await run(
+            () =>
+              fetch(
+                `${API_URL}/api/attendance/${todayLog.id}/${path}`,
+                withStudentAuth({
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: "{}",
+                })
+              ),
+            fallback
+          );
+          return "sent";
+        } catch (error) {
+          // fetch() rejects with a TypeError when the server cannot be reached.
+          if (!(error instanceof TypeError)) throw error;
+        }
+      }
+      const kept = await queueStep(todayLog.id, path);
+      if (!kept) {
+        throw new TypeError("No connection, and this browser cannot keep the step for later.");
+      }
+      setLogs((current) => withWaitingSteps(current, [kept]).map((log) =>
+        log.id === kept.logId
+          ? { ...log, waiting: [...(todayLog.waiting ?? []), kept.path] }
+          : log
+      ));
+      if (mustQueue) void sendWaitingSteps();
+      return "queued";
     },
     [todayLog, run]
   );

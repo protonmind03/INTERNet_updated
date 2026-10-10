@@ -144,6 +144,15 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
       )}
 
       <CaptureNote entry={entry} />
+      {entry.recorded_offline && (
+        <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+          <Icon name="clock" size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <span>
+            Recorded while offline. The intern's phone had no connection for a break or the
+            time-out on this log, so that time comes from the phone's clock, not the server's.
+          </span>
+        </p>
+      )}
 
       <AttendancePhoto path={entry.image_url} role="supervisor" />
 
