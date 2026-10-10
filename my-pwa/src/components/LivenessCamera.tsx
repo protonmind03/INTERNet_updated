@@ -15,6 +15,7 @@ import {
 } from "../lib/liveness/engine";
 import Icon, { type IconName } from "./Icon";
 import { Button } from "./ui";
+import { useWakeLock } from "../lib/useWakeLock";
 
 /*
 |--------------------------------------------------------------------------
@@ -146,6 +147,9 @@ export default function LivenessCamera({
   const [view, setView] = useState<EngineView | null>(null);
   const [flash, setFlash] = useState<FlashColour | null>(null);
   const [finished, setFinished] = useState(false);
+  // The check is done by looking at the phone, not touching it: keep the
+  // screen on until the photo is taken.
+  useWakeLock(!finished);
 
   useEffect(() => {
     let cancelled = false;
