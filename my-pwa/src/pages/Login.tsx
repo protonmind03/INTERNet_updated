@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
 import { LoginScreen, SplashScreen, type Role } from "../brand";
+import { IosInstallGuide } from "../components/InstallApp";
 import { API_URL } from "../lib/api";
 
 /*
@@ -122,6 +123,7 @@ export default function Login() {
   return (
     <>
       {launch && <SplashScreen role={launch.role} />}
+      <IosInstallGuide />
       <LoginScreen
         initialRole={lastRole()}
         onRoleChange={rememberRole}

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../components/Icon";
+import InstallApp from "../../components/InstallApp";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice } from "../../components/ui";
 import { BrandLoader } from "../../brand";
@@ -223,6 +224,8 @@ export default function SupervisorProfilePage() {
           </Card>
 
           {supervisorId && <PasswordForm role="supervisor" accountId={supervisorId} />}
+
+          <InstallApp />
         </div>
       </div>
     </SupervisorLayout>

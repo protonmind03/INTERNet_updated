@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../components/Icon";
+import InstallApp from "../../components/InstallApp";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice } from "../../components/ui";
 import { BrandLoader } from "../../brand";
@@ -192,6 +193,8 @@ export default function StudentProfilePage() {
           </Card>
 
           {studentId && <PasswordForm role="student" accountId={studentId} />}
+
+          <InstallApp />
         </div>
       </div>
     </StudentLayout>

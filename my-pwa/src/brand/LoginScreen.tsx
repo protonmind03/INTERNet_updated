@@ -6,6 +6,7 @@ import RoadGlyph, { CheckGlyph } from "./RoadGlyph";
 import { BRAND } from "./geometry";
 import { errorText } from "./roles";
 import type { Role } from "./roles";
+import { useInstallPrompt } from "../lib/useInstallPrompt";
 
 /* ------------------------------------------------------------------ */
 /*  Copy and colours per role — edit wording here, not in the layout   */
@@ -60,19 +61,11 @@ export const LOGIN_ROLES: Record<Role, {
 
 /* ------------------------------------------------------------------ */
 /*  PWA install prompt (Chrome/Edge/Android). Hidden when unavailable. */
+/*  Local edit: the kit's own hook lived here and only heard the      */
+/*  browser's offer while this screen was open. It moved to           */
+/*  lib/useInstallPrompt.ts, which catches the offer at start-up so   */
+/*  the Profile pages can use it too.                                 */
 /* ------------------------------------------------------------------ */
-type BeforeInstallPromptEvent = Event & { prompt: () => Promise<void>; userChoice: Promise<{ outcome: string }> };
-function useInstallPrompt() {
-  const [evt, setEvt] = useState<BeforeInstallPromptEvent | null>(null);
-  useEffect(() => {
-    const onPrompt = (e: Event) => { e.preventDefault(); setEvt(e as BeforeInstallPromptEvent); };
-    const onInstalled = () => setEvt(null);
-    window.addEventListener("beforeinstallprompt", onPrompt);
-    window.addEventListener("appinstalled", onInstalled);
-    return () => { window.removeEventListener("beforeinstallprompt", onPrompt); window.removeEventListener("appinstalled", onInstalled); };
-  }, []);
-  return evt ? async () => { await evt.prompt(); await evt.userChoice.catch(() => null); setEvt(null); } : null;
-}
 
 function DecoRoad({ opacity }: { opacity: number }) {
   const d = "M-80 960 C 140 760, 60 600, 300 500 S 760 380, 640 160 S 600 -40, 820 -90";
@@ -136,7 +129,7 @@ export default function LoginScreen({ onSubmit, onSignedIn, initialRole = "stude
   const [error, setError] = useState<string | null>(null);
   const [shakeKey, setShakeKey] = useState(0);
   const timer = useRef<number | undefined>(undefined);
-  const install = useInstallPrompt();
+  const { install } = useInstallPrompt();
   const r = LOGIN_ROLES[role];
 
   useEffect(() => () => window.clearTimeout(timer.current), []);

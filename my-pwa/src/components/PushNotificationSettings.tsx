@@ -4,6 +4,7 @@ import { API_URL, withRoleAuth } from "../lib/api";
 import { BrandLoader } from "../brand";
 import { useReportedHeight } from "../lib/layers";
 import { toast } from "../lib/toast";
+import { useInstallPrompt } from "../lib/useInstallPrompt";
 
 type Role = "coordinator" | "student" | "supervisor";
 
@@ -60,6 +61,7 @@ export default function PushNotificationSettings() {
   // come back on every page.
   // Toasts rest above this card while it shows (8 px between them).
   const card = useReportedHeight<HTMLElement>("--inb-push-card", 8);
+  const { needsIosSteps } = useInstallPrompt();
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISSED_KEY) === "1"
   );
@@ -218,6 +220,37 @@ export default function PushNotificationSettings() {
       setBusy(false);
     }
   };
+
+  // iPhone and iPad only allow notifications for an app on the Home Screen.
+  // In the browser there is nothing to turn on, so say what to do instead.
+  if (identity && !dismissed && available && needsIosSteps && !("PushManager" in window)) {
+    return (
+      <aside
+        aria-label="Notifications on iPhone and iPad"
+        ref={card}
+        className="float-card print:hidden fixed right-4 z-(--z-push-card) w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">Want notifications on this phone?</p>
+            <p className="mt-1 text-xs text-slate-600">
+              On iPhone and iPad they work only after INTERNet is added to the Home Screen. In
+              Safari, tap Share, then Add to Home Screen. Open INTERNet from there and you
+              will be asked again.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Dismiss"
+            onClick={dismiss}
+            className="text-slate-400 hover:text-slate-700"
+          >
+            ×
+          </button>
+        </div>
+      </aside>
+    );
+  }
 
   // The prompt is an invitation, so it only appears when push can actually
   // be turned on and this device has not answered yet.

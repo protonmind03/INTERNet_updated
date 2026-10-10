@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import InstallApp from "../../components/InstallApp";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice, FormError, FormField } from "../../components/ui";
 import { BrandLoader } from "../../brand";
@@ -142,6 +143,8 @@ export default function CoordinatorProfilePage() {
         </Card>
 
         {coordinatorId && <PasswordForm role="coordinator" accountId={coordinatorId} />}
+
+        <InstallApp />
       </div>
     </CoordinatorLayout>
   );

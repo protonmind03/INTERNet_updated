@@ -8,8 +8,11 @@ import { watchOfflineQueue } from './lib/offlineQueue'
 import { LaunchGate } from './brand'
 import ErrorBoundary from './components/ErrorBoundary'
 import { registerServiceWorker } from './lib/serviceWorker'
+import { watchInstallPrompt } from './lib/useInstallPrompt'
 
 installSessionGuard()
+// The browser offers installation once, early: listen before anything renders.
+watchInstallPrompt()
 // Erase offline data left behind by an account no longer signed in here.
 // Then send any attendance steps recorded offline that are still waiting.
 void purgeOrphanedOfflineData().then(watchOfflineQueue)
