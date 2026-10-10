@@ -4,9 +4,11 @@ The single tracker for the multi-phase work. Items are ticked as they are
 finished. Findings behind each adjustment are in `docs/AUDIT-2026-10.md`;
 platform steps are in `docs/PLATFORM-CHANGES.md`.
 
-Status: **Phase 1 pushed on 2026-10-10. Phase 2 built and committed
-locally on 2026-10-10, not pushed.** Waiting at the Phase 2 gate. Phases 3
-to 5 are not started.
+Status: **Phases 1 and 2 are pushed and live (2026-10-10).** Phase 2 went
+out in two pushes, backend first, after a production backup that was
+restored and tested locally. Still owed for Phase 2: the phone checks in
+`DEPLOY.md`, on a real Android phone and a real iPhone. Phases 3 to 5 are
+not started.
 
 ## Rules
 
