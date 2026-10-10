@@ -1,6 +1,8 @@
 @import "tailwindcss";
 @import "./brand/brand.css";
 @import "@fontsource-variable/public-sans";
+/* Sign-in page headings. Self-hosted so the app loads nothing from another site. */
+@import "@fontsource-variable/bricolage-grotesque/opsz.css";
 
 /*
 |--------------------------------------------------------------------------

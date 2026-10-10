@@ -13,6 +13,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@fontsource-variable/bricolage-grotesque": "^5.3.0",
     "@fontsource-variable/public-sans": "^5.3.0",
     "@mediapipe/tasks-vision": "0.10.14",
     "@tailwindcss/vite": "^4.3.3",

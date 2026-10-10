@@ -182,7 +182,9 @@ export default function LoginScreen({ onSubmit, onSignedIn, initialRole = "stude
   const fieldCls = "w-full min-h-[48px] border bg-white px-3.5 text-[15px] text-slate-900 outline-none transition-shadow focus:border-[#1A237E] focus:shadow-[0_0_0_3px_rgba(26,35,126,.15)]";
 
   return (
-    <div className="min-h-screen bg-white text-slate-900 lg:flex" style={{ fontFamily: "'Bricolage Grotesque', system-ui, sans-serif" }}>
+    // Local edit: the typeface is self-hosted (@fontsource-variable), whose
+    // family name ends in "Variable"; it used to come from Google Fonts.
+    <div className="min-h-screen bg-white text-slate-900 lg:flex" style={{ fontFamily: "'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif" }}>
       {/* ---------------- brand panel ---------------- */}
       <section
         aria-label={`INTERNet ${r.portal}`}
