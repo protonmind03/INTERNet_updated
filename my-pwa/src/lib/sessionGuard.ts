@@ -1,6 +1,7 @@
 import { API_URL } from "./api";
+import { clearSession, type SessionRole } from "./session";
 
-type Role = "coordinator" | "student" | "supervisor";
+type Role = SessionRole;
 const roles: Role[] = ["coordinator", "student", "supervisor"];
 
 function roleForAuthorization(header: string | null): Role | null {
@@ -9,14 +10,6 @@ function roleForAuthorization(header: string | null): Role | null {
   return roles.find((role) => localStorage.getItem(`${role}_token`) === token) ?? null;
 }
 
-function clearSession(role: Role): void {
-  localStorage.removeItem(role);
-  localStorage.removeItem(`${role}_id`);
-  localStorage.removeItem(`${role}_token`);
-  if (localStorage.getItem("active_role") === role) {
-    localStorage.removeItem("active_role");
-  }
-}
 
 /**
  * Watches every API response. When the server says the login behind a
