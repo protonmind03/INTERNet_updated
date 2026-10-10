@@ -3,6 +3,7 @@ import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PortalBrand, PortalHeader } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
+import SavedDataNotice from "../components/SavedDataNotice";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts, type NavCounts } from "../lib/navCounts";
@@ -225,6 +226,7 @@ export default function StudentLayout({
               </div>
               {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
             </div>
+            <SavedDataNotice />
             {children}
           </div>
         </main>

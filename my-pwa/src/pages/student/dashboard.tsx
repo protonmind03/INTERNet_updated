@@ -26,6 +26,7 @@ import {
   localDateKey,
 } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
+import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { MissedTimeOutNotice } from "./AttendanceCorrections";
 import TodayAttendance from "./TodayAttendance";
@@ -73,9 +74,9 @@ export default function Dashboard() {
     const id = encodeURIComponent(studentId);
     try {
       const [summaryResponse, tasksResponse, scheduleResponse] = await Promise.all([
-        fetch(`${API_URL}/api/dashboard/${id}`, withStudentAuth()),
-        fetch(`${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
-        fetch(`${API_URL}/api/ojt-schedule/${id}`, withStudentAuth()),
+        savedFetch("student", "dashboard", `${API_URL}/api/dashboard/${id}`, withStudentAuth()),
+        savedFetch("student", "tasks", `${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
+        savedFetch("student", "schedule", `${API_URL}/api/ojt-schedule/${id}`, withStudentAuth()),
       ]);
       if (!summaryResponse.ok) throw new Error("Could not load your progress.");
       setSummary((await summaryResponse.json()) as DashboardData);

@@ -15,6 +15,7 @@ import { API_URL, downloadProtectedUpload, withStudentAuth } from "../../lib/api
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { daysUntil, dueLabel, formatDate, formatDateTime } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
+import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 
@@ -60,7 +61,9 @@ export default function MyTasks() {
   const load = useCallback(async () => {
     if (!studentId) return;
     try {
-      const response = await fetch(
+      const response = await savedFetch(
+        "student",
+        "tasks",
         `${API_URL}/api/tasks/student/${encodeURIComponent(studentId)}`,
         withStudentAuth()
       );

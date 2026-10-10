@@ -13,6 +13,7 @@ import {
 } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDayDate, localDateKey } from "../../lib/format";
+import { savedFetch } from "../../lib/offlineStore";
 import { errorText, toast } from "../../lib/toast";
 
 type Absence = {
@@ -45,7 +46,9 @@ export default function Absences({ studentId }: { studentId: string | undefined 
   const load = useCallback(async () => {
     if (!studentId) return;
     try {
-      const response = await fetch(
+      const response = await savedFetch(
+        "student",
+        "absences",
         `${API_URL}/api/absences/student/${encodeURIComponent(studentId)}`,
         withStudentAuth()
       );

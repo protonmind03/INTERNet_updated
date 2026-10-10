@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
+import { savedFetch } from "./offlineStore";
 import { toast } from "./toast";
 
 export type NotificationRole = "student" | "supervisor" | "coordinator";
@@ -28,10 +29,14 @@ export function useNotifications(role: NotificationRole) {
     const accountId = localStorage.getItem(`${role}_id`);
     if (!accountId) return;
     try {
-      const response = await fetch(
-        `${API_URL}/api/notifications/${role}/${encodeURIComponent(accountId)}`,
-        withRoleAuth(role)
-      );
+      const url = `${API_URL}/api/notifications/${role}/${encodeURIComponent(accountId)}`;
+      // Students and supervisors keep a copy for offline reading. The
+      // coordinator's notifications name people across the whole programme,
+      // so none of them is kept on the device.
+      const response =
+        role === "coordinator"
+          ? await fetch(url, withRoleAuth(role))
+          : await savedFetch(role, "notifications", url, withRoleAuth(role));
       const data = await response.json();
       if (!response.ok) {
         throw new Error(data.message || "Failed to load notifications.");

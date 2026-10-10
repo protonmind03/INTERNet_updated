@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { API_URL } from "./api";
+import { purgeOfflineData } from "./offlineStore";
 
 /*
 |--------------------------------------------------------------------------
@@ -59,6 +60,12 @@ export function readAccount<R extends SessionRole>(role: R): AccountFor<R> | nul
 }
 
 export function clearSession(role: SessionRole): void {
+  // Whatever was kept on this device for offline use goes with the session:
+  // saved records, drafts and queued actions. Every way of leaving an account
+  // (Sign out, an ended session, the forced password change) comes through here.
+  const accountId = localStorage.getItem(`${role}_id`);
+  if (accountId) void purgeOfflineData(role, accountId);
+
   localStorage.removeItem(role);
   localStorage.removeItem(`${role}_id`);
   localStorage.removeItem(`${role}_token`);

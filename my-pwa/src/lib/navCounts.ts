@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
 import { localDateKey } from "./format";
+import { savedFetch } from "./offlineStore";
 import type { SessionRole } from "./session";
 
 /*
@@ -27,8 +28,15 @@ export function notifyDataChanged(): void {
   window.dispatchEvent(new Event(CHANGED_EVENT));
 }
 
-async function getJson(role: SessionRole, path: string): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_URL}${path}`, withRoleAuth(role));
+/** `saveAs` names the copy kept for offline reading; without it nothing is kept. */
+async function getJson(
+  role: SessionRole,
+  path: string,
+  saveAs?: string
+): Promise<Record<string, unknown>> {
+  const response = saveAs
+    ? await savedFetch(role, saveAs, `${API_URL}${path}`, withRoleAuth(role))
+    : await fetch(`${API_URL}${path}`, withRoleAuth(role));
   if (!response.ok) throw new Error(`Request failed (${response.status}).`);
   return (await response.json()) as Record<string, unknown>;
 }
@@ -42,10 +50,10 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
 
   if (role === "student") {
     const [tasks, attendance] = await Promise.all([
-      fetch(`${API_URL}/api/tasks/student/${id}`, withRoleAuth(role)).then((response) =>
-        response.ok ? response.json() : []
+      savedFetch(role, "tasks", `${API_URL}/api/tasks/student/${id}`, withRoleAuth(role)).then(
+        (response) => (response.ok ? response.json() : [])
       ),
-      getJson(role, `/api/attendance/${id}`),
+      getJson(role, `/api/attendance/${id}`, "attendance"),
     ]);
     const today = localDateKey(new Date());
     return {
@@ -63,7 +71,7 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
 
   if (role === "supervisor") {
     // One small count from the server, not the four lists it is counted from.
-    const summary = await getJson(role, "/api/supervisor/review-count");
+    const summary = await getJson(role, "/api/supervisor/review-count", "review-count");
     return { "/supervisor/dashboard": Number(summary.waiting) || 0 };
   }
 

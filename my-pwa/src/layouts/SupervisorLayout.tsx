@@ -3,6 +3,7 @@ import { Navigate, NavLink, useNavigate } from "react-router-dom";
 import { PortalBrand, ROLE_THEMES } from "../brand";
 import Icon from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
+import SavedDataNotice from "../components/SavedDataNotice";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
@@ -203,6 +204,7 @@ export default function SupervisorLayout({
           </div>
           {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
         </div>
+        <SavedDataNotice />
         {children}
       </main>
 

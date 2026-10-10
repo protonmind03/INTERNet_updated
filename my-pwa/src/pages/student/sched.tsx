@@ -12,6 +12,7 @@ import {
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { daysUntil, dueLabel, formatDate, formatHours } from "../../lib/format";
+import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText } from "../../lib/toast";
 
@@ -72,9 +73,9 @@ export default function OjtSchedule() {
     const id = encodeURIComponent(studentId);
     try {
       const [scheduleResponse, companyResponse, tasksResponse] = await Promise.all([
-        fetch(`${API_URL}/api/ojt-schedule/${id}`, withStudentAuth()),
-        fetch(`${API_URL}/api/company/${id}`, withStudentAuth()),
-        fetch(`${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
+        savedFetch("student", "schedule", `${API_URL}/api/ojt-schedule/${id}`, withStudentAuth()),
+        savedFetch("student", "company", `${API_URL}/api/company/${id}`, withStudentAuth()),
+        savedFetch("student", "tasks", `${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
       ]);
       if (!scheduleResponse.ok) throw new Error("Could not load your schedule.");
       const scheduleData = await scheduleResponse.json();

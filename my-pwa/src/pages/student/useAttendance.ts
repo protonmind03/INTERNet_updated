@@ -5,6 +5,7 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { localDateKey } from "../../lib/format";
 import { compressPhoto } from "../../lib/image";
 import { notifyDataChanged } from "../../lib/navCounts";
+import { savedFetch } from "../../lib/offlineStore";
 
 export type AttendanceStatus = "Verified" | "Pending" | "Flagged" | "Rejected";
 
@@ -90,7 +91,9 @@ export function useAttendance(studentId: string | undefined) {
   const load = useCallback(async () => {
     if (!studentId) return;
     try {
-      const response = await fetch(
+      const response = await savedFetch(
+        "student",
+        "attendance",
         `${API_URL}/api/attendance/${encodeURIComponent(studentId)}`,
         withStudentAuth()
       );

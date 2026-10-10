@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { notifyDataChanged } from "../../lib/navCounts";
+import { savedFetch } from "../../lib/offlineStore";
 import { errorText, withWorkingToast } from "../../lib/toast";
 
 /*
@@ -118,8 +119,11 @@ export type QueueItem =
   | { kind: "document"; key: string; waitingSince: string; entry: DocumentEntry }
   | { kind: "absence"; key: string; waitingSince: string; entry: AbsenceEntry };
 
-async function getJson(path: string): Promise<Record<string, unknown>> {
-  const response = await fetch(`${API_URL}${path}`, withSupervisorAuth());
+/** `saveAs` names the copy kept for offline reading; without it nothing is kept. */
+async function getJson(path: string, saveAs?: string): Promise<Record<string, unknown>> {
+  const response = saveAs
+    ? await savedFetch("supervisor", saveAs, `${API_URL}${path}`, withSupervisorAuth())
+    : await fetch(`${API_URL}${path}`, withSupervisorAuth());
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok) {
     throw new Error(typeof data.message === "string" ? data.message : "Could not load data.");
@@ -178,9 +182,20 @@ export function useSupervisorWork(
     const get = (list: WorkList, path: string) =>
       want(list) ? getJson(path) : Promise.resolve(null);
     try {
+      // The intern list is the one part kept for offline reading. It is
+      // settled by itself, so with no connection the interns still show
+      // from their saved copy while the other lists report the problem.
+      const internRequest = want("interns")
+        ? getJson(`/api/supervisor/${id}/interns`, "interns")
+        : Promise.resolve(null);
+      internRequest
+        .then((data) => {
+          if (data) setInterns((data.interns as Intern[]) || []);
+        })
+        .catch(() => {});
       const [internData, attendanceData, taskData, documentData, absenceData] =
         await Promise.all([
-          get("interns", `/api/supervisor/${id}/interns`),
+          internRequest,
           get("attendance", `/api/supervisor/attendance/${id}`),
           get("tasks", `/api/tasks/supervisor/${id}`),
           get("documents", `/api/documents/supervisor`),
