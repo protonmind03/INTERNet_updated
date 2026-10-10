@@ -2750,3 +2750,98 @@ test("list routes page on request and are unchanged without it", async () => {
   const past = await jsonRequest("/api/coordinator/discrepancies?limit=50&from=1990-01-01&to=1990-12-31", { headers: authHeaders(coordinatorToken) });
   assert.equal(past.body.total, 0);
 });
+
+
+/*
+| Terms
+*/
+
+test("terms are coordinator-only and validated", async () => {
+  const path = "/api/coordinator/terms";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+
+  const list = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.terms));
+  assert.equal(typeof list.body.unassigned_active_students, "number");
+
+  const post = (body) => jsonRequest(path, jsonBody(coordinatorToken, "POST", body));
+  assert.equal((await post({})).response.status, 400);
+  assert.equal((await post({ name: "T", start_date: "2026-01-01", end_date: "2026-05-01" })).response.status, 400);
+  assert.equal((await post({ name: "A term", start_date: "01/01/2026", end_date: "2026-05-01" })).response.status, 400);
+  assert.equal((await post({ name: "A term", start_date: "2026-06-01", end_date: "2026-01-01" })).response.status, 400);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "POST", { name: "A term", start_date: "2026-01-01", end_date: "2026-05-01" }))).response.status, 403);
+
+  // Unknown terms.
+  for (const action of ["close", "reopen", "students"]) {
+    assert.equal((await jsonRequest(`${path}/999999999/${action}`, jsonBody(coordinatorToken, "POST", { unassigned: true }))).response.status, 404, action);
+    assert.equal((await jsonRequest(`${path}/abc/${action}`, jsonBody(coordinatorToken, "POST", {}))).response.status, 404, action);
+  }
+  assert.equal((await jsonRequest(`${path}/999999999`, jsonBody(coordinatorToken, "PUT", { name: "A term", start_date: "2026-01-01", end_date: "2026-05-01" }))).response.status, 404);
+  // No route deletes a term.
+  assert.equal((await jsonRequest(`${path}/1`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+
+  // The student list's term filter.
+  const students = (query) => jsonRequest(`/api/coordinator/students${query}`, { headers: authHeaders(coordinatorToken) });
+  assert.equal((await students("?term=abc")).response.status, 400);
+  assert.equal((await students("?term=999999999")).body.students.length, 0);
+  const all = await students("");
+  const without = await students("?term=none");
+  assert.ok(without.body.students.length <= all.body.students.length);
+  for (const row of all.body.students) assert.ok("term_id" in row && "term_name" in row);
+});
+
+test("closing a term deactivates its students and keeps their records; reopening restores them", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const path = "/api/coordinator/terms";
+  const headers = authHeaders(coordinatorToken);
+  const name = `Test term ${Date.now()}`;
+  const today = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+
+  const created = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { name, start_date: "2026-01-01", end_date: "2099-12-31" }));
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  const id = created.body.term.id;
+  assert.equal(created.body.term.students, 0);
+  assert.equal((await jsonRequest(path, jsonBody(coordinatorToken, "POST", { name: name.toUpperCase(), start_date: "2026-01-01", end_date: "2026-02-01" }))).response.status, 409);
+
+  // Put the demo student in it.
+  const bad = await jsonRequest(`${path}/${id}/students`, jsonBody(coordinatorToken, "POST", { student_ids: [] }));
+  assert.equal(bad.response.status, 400);
+  const added = await jsonRequest(`${path}/${id}/students`, jsonBody(coordinatorToken, "POST", { student_ids: [student.student_id] }));
+  assert.equal(added.body.count, 1, JSON.stringify(added.body));
+  const inTerm = await jsonRequest(`/api/coordinator/students?term=${id}`, { headers });
+  assert.deepEqual(inTerm.body.students.map((row) => row.student_id), [student.student_id]);
+  assert.equal(inTerm.body.students[0].term_name, name);
+
+  const attendanceBefore = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+  const logsBefore = attendanceBefore.body.attendance.length;
+
+  // Close: the student can no longer sign in, and nothing of theirs is gone.
+  const closed = await jsonRequest(`${path}/${id}/close`, jsonBody(coordinatorToken, "POST", {}));
+  assert.equal(closed.response.status, 200, JSON.stringify(closed.body));
+  assert.equal(closed.body.deactivated, 1);
+  assert.equal((await jsonRequest(`${path}/${id}/close`, jsonBody(coordinatorToken, "POST", {}))).response.status, 409);
+  const refused = await jsonRequest("/api/login/student", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: studentEmail, password: studentPassword }) });
+  assert.notEqual(refused.response.status, 200, "a student of a closed term cannot sign in");
+  const record = await jsonRequest(`/api/coordinator/students?term=${id}&status=inactive`, { headers });
+  assert.equal(record.body.students.length, 1, "the student is still listed, as inactive");
+  assert.equal((await jsonRequest(`${path}/${id}/students`, jsonBody(coordinatorToken, "POST", { student_ids: [student.student_id] }))).response.status, 409);
+
+  // Reopen: exactly that student is active again.
+  const reopened = await jsonRequest(`${path}/${id}/reopen`, jsonBody(coordinatorToken, "POST", {}));
+  assert.equal(reopened.body.reactivated, 1, JSON.stringify(reopened.body));
+  assert.equal((await jsonRequest(`${path}/${id}/reopen`, jsonBody(coordinatorToken, "POST", {}))).response.status, 409);
+  const again = await login("student", studentEmail, studentPassword);
+  studentToken = again.token;
+  const attendanceAfter = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+  assert.equal(attendanceAfter.body.attendance.length, logsBefore, "every attendance log is still there");
+
+  // A student created while a term is running joins it by itself.
+  const terms = (await jsonRequest(path, { headers })).body.terms;
+  const running = terms.find((term) => !term.is_closed && term.start_date <= today && term.end_date >= today);
+  assert.ok(running, "a term is running today");
+});

@@ -224,6 +224,47 @@ export const AUDIT_RULES: Rule[] = [
     entityType: "company",
     entityId: param("id"),
   },
+  // Terms
+  {
+    method: "POST",
+    path: "/api/coordinator/terms",
+    action: "term.create",
+    entityType: "term",
+    entityId: (source) => nested(source.result.term, "id"),
+    keep: ["name", "start_date", "end_date"],
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/terms/:id",
+    action: "term.edit",
+    entityType: "term",
+    entityId: param("id"),
+    keep: ["name", "start_date", "end_date"],
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/terms/:id/students",
+    action: "term.add_students",
+    entityType: "term",
+    entityId: param("id"),
+    from: (source) => ({ students: source.result.count }),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/terms/:id/close",
+    action: "term.close",
+    entityType: "term",
+    entityId: param("id"),
+    from: (source) => ({ deactivated: source.result.deactivated }),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/terms/:id/reopen",
+    action: "term.reopen",
+    entityType: "term",
+    entityId: param("id"),
+    from: (source) => ({ reactivated: source.result.reactivated }),
+  },
   // Complaints, announcements, requirements, schedules
   {
     method: "PATCH",

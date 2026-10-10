@@ -76,6 +76,9 @@ export default function CoordinatorStudents() {
     searchParams.get("filter") === "unassigned" ? "unassigned" : "all"
   );
   const [sortBy, setSortBy] = useState<SortBy>("name");
+  // One term's students, "none" for those with no term, or "" for everyone.
+  const [term, setTerm] = useState(() => searchParams.get("term") || "");
+  const [terms, setTerms] = useState<{ id: number; name: string; is_closed: boolean }[]>([]);
 
   const [editing, setEditing] = useState<Student | "new" | null>(null);
   const [toggling, setToggling] = useState<Student | null>(null);
@@ -101,6 +104,7 @@ export default function CoordinatorStudents() {
     const params = new URLSearchParams();
     if (search.trim()) params.set("q", search.trim());
     if (status !== "all") params.set("status", status === "unassigned" ? "active" : status);
+    if (term) params.set("term", term);
     try {
       const data = await coordinatorRequest<{ students: Student[] }>(
         `/api/coordinator/students?${params.toString()}`
@@ -115,7 +119,17 @@ export default function CoordinatorStudents() {
     } finally {
       setLoading(false);
     }
-  }, [search, status]);
+  }, [search, status, term]);
+
+  useEffect(() => {
+    coordinatorRequest<{ terms: { id: number; name: string; is_closed: boolean }[] }>(
+      "/api/coordinator/terms"
+    )
+      .then((data) => setTerms(data.terms || []))
+      .catch(() => {
+        // The list still works without the term filter.
+      });
+  }, []);
 
   // Wait for typing to pause before searching.
   useEffect(() => {
@@ -191,6 +205,25 @@ export default function CoordinatorStudents() {
                 { value: "inactive", label: "Deactivated" },
               ]}
             />
+            {terms.length > 0 && (
+              <label className="flex items-center gap-2 text-sm text-slate-600">
+                Term
+                <select
+                  value={term}
+                  onChange={(event) => setTerm(event.target.value)}
+                  className="field w-auto"
+                >
+                  <option value="">All terms</option>
+                  {terms.map((item) => (
+                    <option key={item.id} value={String(item.id)}>
+                      {item.name}
+                      {item.is_closed ? " (closed)" : ""}
+                    </option>
+                  ))}
+                  <option value="none">No term</option>
+                </select>
+              </label>
+            )}
             <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
               Sort by
               <select

@@ -5108,6 +5108,11 @@ app.get(
     try {
       const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
       const status = req.query.status as string | undefined;
+      // Optional: one term's students (its id), or "none" for those with no term.
+      const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
+      if (term && term !== "none" && !/^[0-9]{1,9}$/.test(term)) {
+        return res.status(400).json({ message: "That is not a term." });
+      }
 
       const result = await listQuery(req, { order: "name ASC, student_id ASC" }, 
         `
@@ -5115,6 +5120,7 @@ app.get(
           s.id, s.student_id, s.email, s.name, s.program, s.company,
           s.supervisor_id, sup.name AS supervisor_name,
           s.required_hours, s.is_active, s.coordinator_id,
+          s.term_id, term.name AS term_name,
           COALESCE((
             SELECT SUM(a.hours) FROM attendance a
             WHERE a.student_id::text = s.student_id::text AND a.status = 'Verified'
@@ -5122,13 +5128,17 @@ app.get(
         FROM students s
         LEFT JOIN supervisors sup
           ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+        LEFT JOIN terms term ON term.id = s.term_id
         WHERE (s.name ILIKE $1 OR s.email ILIKE $1 OR s.student_id::text ILIKE $1 OR s.company ILIKE $1 OR s.program ILIKE $1)
         AND ($2::text IS NULL
           OR ($2 = 'active' AND s.is_active = TRUE)
           OR ($2 = 'inactive' AND s.is_active = FALSE))
+        AND ($3::text IS NULL
+          OR ($3 = 'none' AND s.term_id IS NULL)
+          OR s.term_id::text = $3)
         ORDER BY s.name ASC
         `,
-        [q, status || null]
+        [q, status || null, term || null]
       );
 
       return res.json({ students: result.rows, ...result.page });

@@ -1588,6 +1588,257 @@ export function registerExtensionRoutes(
 
   /*
   |--------------------------------------------------------------------------
+  | TERMS
+  |--------------------------------------------------------------------------
+  |
+  | A term groups one batch of interns by dates. Closing a term deactivates
+  | its students together and keeps every record; reopening it reactivates
+  | exactly the students that closing deactivated. See migration 021.
+  |
+  */
+
+  function readTerm(body: unknown): { term: { name: string; start: string; end: string } } | { problem: string } {
+    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const name = text(input.name);
+    const start = text(input.start_date);
+    const end = text(input.end_date);
+    if (name.length < 2 || name.length > 80) {
+      return { problem: "Give the term a name (2 to 80 characters)." };
+    }
+    for (const date of [start, end]) {
+      if (!DATE_PATTERN.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+        return { problem: "A term needs a start date and an end date, written as YYYY-MM-DD." };
+      }
+    }
+    if (end < start) return { problem: "The term cannot end before it starts." };
+    return { term: { name, start, end } };
+  }
+
+  const TERM_COLUMNS = `
+    t.id, t.name,
+    TO_CHAR(t.start_date, 'YYYY-MM-DD') AS start_date,
+    TO_CHAR(t.end_date, 'YYYY-MM-DD') AS end_date,
+    t.is_closed, t.closed_at,
+    (SELECT COUNT(*)::int FROM students s WHERE s.term_id = t.id) AS students,
+    (SELECT COUNT(*)::int FROM students s WHERE s.term_id = t.id AND s.is_active = TRUE) AS active_students,
+    JSONB_ARRAY_LENGTH(t.closed_student_ids) AS deactivated_on_close
+  `;
+
+  const termId = (value: unknown): number | null =>
+    /^\d{1,9}$/.test(String(value)) ? Number(value) : null;
+
+  app.get("/api/coordinator/terms", requireCoordinator, async (_req, res) => {
+    try {
+      const [terms, unassigned] = await Promise.all([
+        pool.query(`SELECT ${TERM_COLUMNS} FROM terms t ORDER BY t.start_date DESC, t.id DESC`),
+        pool.query<{ count: number }>(
+          `SELECT COUNT(*)::int AS count FROM students WHERE term_id IS NULL AND is_active = TRUE`
+        ),
+      ]);
+      return res.json({ terms: terms.rows, unassigned_active_students: unassigned.rows[0].count });
+    } catch (error) {
+      console.error("GET TERMS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the terms." });
+    }
+  });
+
+  app.post("/api/coordinator/terms", requireCoordinator, async (req, res) => {
+    try {
+      const read = readTerm(req.body);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const duplicate = await pool.query(
+        `SELECT 1 FROM terms WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))`,
+        [read.term.name]
+      );
+      if (duplicate.rows.length > 0) {
+        return res.status(409).json({ message: "There is already a term with that name." });
+      }
+      const saved = await pool.query<{ id: number }>(
+        `INSERT INTO terms (name, start_date, end_date) VALUES ($1, $2, $3) RETURNING id`,
+        [read.term.name, read.term.start, read.term.end]
+      );
+      const result = await pool.query(`SELECT ${TERM_COLUMNS} FROM terms t WHERE t.id = $1`, [
+        saved.rows[0].id,
+      ]);
+      return res.status(201).json({ message: "Term added.", term: result.rows[0] });
+    } catch (error) {
+      console.error("CREATE TERM ERROR:", error);
+      return res.status(500).json({ message: "Failed to add the term." });
+    }
+  });
+
+  app.put("/api/coordinator/terms/:id", requireCoordinator, async (req, res) => {
+    try {
+      const id = termId(req.params.id);
+      if (id === null) return res.status(404).json({ message: "Term not found." });
+      const read = readTerm(req.body);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const duplicate = await pool.query(
+        `SELECT 1 FROM terms WHERE id <> $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))`,
+        [id, read.term.name]
+      );
+      if (duplicate.rows.length > 0) {
+        return res.status(409).json({ message: "There is already a term with that name." });
+      }
+      const updated = await pool.query(
+        `UPDATE terms SET name = $2, start_date = $3, end_date = $4 WHERE id = $1 RETURNING id`,
+        [id, read.term.name, read.term.start, read.term.end]
+      );
+      if (updated.rows.length === 0) return res.status(404).json({ message: "Term not found." });
+      const result = await pool.query(`SELECT ${TERM_COLUMNS} FROM terms t WHERE t.id = $1`, [id]);
+      return res.json({ message: "Term updated.", term: result.rows[0] });
+    } catch (error) {
+      console.error("UPDATE TERM ERROR:", error);
+      return res.status(500).json({ message: "Failed to update the term." });
+    }
+  });
+
+  // Puts students in a term: the listed ones, or every active student that
+  // has no term yet (`unassigned: true`).
+  app.post("/api/coordinator/terms/:id/students", requireCoordinator, async (req, res) => {
+    try {
+      const id = termId(req.params.id);
+      if (id === null) return res.status(404).json({ message: "Term not found." });
+      const term = await pool.query<{ is_closed: boolean }>(
+        `SELECT is_closed FROM terms WHERE id = $1`,
+        [id]
+      );
+      if (term.rows.length === 0) return res.status(404).json({ message: "Term not found." });
+      if (term.rows[0].is_closed) {
+        return res.status(409).json({ message: "That term is closed. Reopen it before adding students." });
+      }
+
+      const everyoneWithout = req.body?.unassigned === true;
+      const listed: unknown = req.body?.student_ids;
+      if (!everyoneWithout) {
+        if (!Array.isArray(listed) || listed.length === 0 || listed.length > 1000) {
+          return res.status(400).json({ message: "Choose the students to add to the term." });
+        }
+        if (listed.some((value) => typeof value !== "string" || !value.trim() || value.length > 50)) {
+          return res.status(400).json({ message: "That list of students is not readable." });
+        }
+      }
+      const result = everyoneWithout
+        ? await pool.query(
+            `UPDATE students SET term_id = $1 WHERE term_id IS NULL AND is_active = TRUE`,
+            [id]
+          )
+        : await pool.query(
+            `UPDATE students SET term_id = $1 WHERE student_id = ANY($2::text[])`,
+            [id, (listed as string[]).map((value) => value.trim())]
+          );
+      const count = result.rowCount ?? 0;
+      return res.json({
+        message: `${count} student${count === 1 ? "" : "s"} added to the term.`,
+        count,
+      });
+    } catch (error) {
+      console.error("ASSIGN TERM ERROR:", error);
+      return res.status(500).json({ message: "Failed to add the students to the term." });
+    }
+  });
+
+  app.post("/api/coordinator/terms/:id/close", requireCoordinator, async (req, res) => {
+    const id = termId(req.params.id);
+    if (id === null) return res.status(404).json({ message: "Term not found." });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const term = await client.query<{ is_closed: boolean }>(
+        `SELECT is_closed FROM terms WHERE id = $1 FOR UPDATE`,
+        [id]
+      );
+      if (term.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Term not found." });
+      }
+      if (term.rows[0].is_closed) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "That term is already closed." });
+      }
+      // Deactivate, never delete: every record of these students stays.
+      const deactivated = await client.query<{ student_id: string }>(
+        `UPDATE students SET is_active = FALSE
+         WHERE term_id = $1 AND is_active = TRUE
+         RETURNING student_id`,
+        [id]
+      );
+      const ids = deactivated.rows.map((row) => String(row.student_id));
+      await client.query(
+        `UPDATE terms SET is_closed = TRUE, closed_at = NOW(), closed_student_ids = $2::jsonb WHERE id = $1`,
+        [id, JSON.stringify(ids)]
+      );
+      if (ids.length > 0) {
+        await client.query(
+          `DELETE FROM web_push_subscriptions WHERE role = 'student' AND account_id = ANY($1::text[])`,
+          [ids]
+        );
+      }
+      await client.query("COMMIT");
+      // Their open pages stop receiving live updates straight away.
+      for (const studentId of ids) closeNotificationStreams({ role: "student", id: studentId });
+      return res.json({
+        message: `Term closed. ${ids.length} student${ids.length === 1 ? " was" : "s were"} deactivated; their records are kept.`,
+        deactivated: ids.length,
+      });
+    } catch (error) {
+      await quietly("TERM CLOSE ROLLBACK ERROR", () => client.query("ROLLBACK"));
+      console.error("CLOSE TERM ERROR:", error);
+      return res.status(500).json({ message: "Failed to close the term. Nothing was changed." });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.post("/api/coordinator/terms/:id/reopen", requireCoordinator, async (req, res) => {
+    const id = termId(req.params.id);
+    if (id === null) return res.status(404).json({ message: "Term not found." });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const term = await client.query<{ is_closed: boolean; closed_student_ids: string[] }>(
+        `SELECT is_closed, closed_student_ids FROM terms WHERE id = $1 FOR UPDATE`,
+        [id]
+      );
+      if (term.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Term not found." });
+      }
+      if (!term.rows[0].is_closed) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "That term is not closed." });
+      }
+      // Only the students the closing deactivated, and only if they are
+      // still in this term: someone deactivated for another reason stays so.
+      const ids = Array.isArray(term.rows[0].closed_student_ids)
+        ? term.rows[0].closed_student_ids.map(String)
+        : [];
+      const reactivated = await client.query(
+        `UPDATE students SET is_active = TRUE
+         WHERE term_id = $1 AND is_active = FALSE AND student_id = ANY($2::text[])`,
+        [id, ids]
+      );
+      await client.query(
+        `UPDATE terms SET is_closed = FALSE, closed_at = NULL, closed_student_ids = '[]'::jsonb WHERE id = $1`,
+        [id]
+      );
+      await client.query("COMMIT");
+      const count = reactivated.rowCount ?? 0;
+      return res.json({
+        message: `Term reopened. ${count} student${count === 1 ? " was" : "s were"} reactivated.`,
+        reactivated: count,
+      });
+    } catch (error) {
+      await quietly("TERM REOPEN ROLLBACK ERROR", () => client.query("ROLLBACK"));
+      console.error("REOPEN TERM ERROR:", error);
+      return res.status(500).json({ message: "Failed to reopen the term. Nothing was changed." });
+    } finally {
+      client.release();
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
   | AUDIT LOG (READ-ONLY)
   |--------------------------------------------------------------------------
   |
