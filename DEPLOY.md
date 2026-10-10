@@ -207,6 +207,33 @@ the local upload folder into `backend/backups/`. It refuses any database
 that is not on this machine. Options: `-- --out <folder>` and
 `-- --pg-bin <folder with pg_dump>`.
 
+## The service worker, and what to do if it goes wrong
+
+The site installs a service worker (`/service-worker.js`, built from
+`my-pwa/src/service-worker.ts`). It keeps a copy of the app's own files so
+the app opens with no connection, keeps the face-tracking files after
+their first download, and shows push notifications. It never stores
+anything from the API.
+
+After a deploy, people who already have the site open see "Update
+available" with a **Reload** action; the new version takes over only when
+they press it, or the next time they open the site after closing all its
+tabs.
+
+**If a deploy leaves people stuck** (an old version that will not update,
+or pages that will not load), publish the kill switch:
+
+1. Vercel > Settings > Environment Variables: add `SW_KILLSWITCH` with the
+   value `true` for Production.
+2. Redeploy (Deployments > the latest > Redeploy).
+3. Each device that opens the site then removes its service worker and
+   everything it stored, and reloads from the network. The app keeps
+   working, without offline use.
+4. When the fault is fixed, delete `SW_KILLSWITCH` and redeploy. Devices
+   install the normal worker again on their next visit.
+
+Unset, `SW_KILLSWITCH` does nothing.
+
 ## Validating the foreign keys (optional, run by you)
 
 Migration 006 added 15 foreign keys as `NOT VALID`: the database enforces

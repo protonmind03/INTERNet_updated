@@ -5,6 +5,7 @@ import App from './App.tsx'
 import { installSessionGuard } from './lib/sessionGuard'
 import { LaunchGate } from './brand'
 import ErrorBoundary from './components/ErrorBoundary'
+import { registerServiceWorker } from './lib/serviceWorker'
 
 installSessionGuard()
 
@@ -28,10 +29,4 @@ const clearAppBadge = () => {
 clearAppBadge();
 document.addEventListener("visibilitychange", clearAppBadge);
 
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/service-worker.js").catch((error) => {
-      console.error("SERVICE WORKER REGISTRATION ERROR:", error);
-    });
-  });
-}
+registerServiceWorker()

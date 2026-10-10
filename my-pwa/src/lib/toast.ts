@@ -74,10 +74,11 @@ function show(
   text: string,
   action?: ToastAction,
   celebrate = false,
-  detail?: string
+  detail?: string,
+  stays = false
 ): number {
   const id = nextId++;
-  const lifetime = lifetimeFor(tone, action);
+  const lifetime = stays ? 0 : lifetimeFor(tone, action);
   // Keep the stack short; the oldest message gives way to the newest.
   messages = [...messages.slice(-2), { id, tone, text, detail, action, celebrate, lifetime }];
   emit();
@@ -118,6 +119,10 @@ export const toast = {
   /** A notification that just arrived: its title, its message, and a way to open it. */
   notice: (title: string, detail: string, action?: ToastAction) => {
     show("info", title, action, false, detail);
+  },
+  /** Stays until its action is pressed or it is dismissed: for something to decide, like an update. */
+  sticky: (text: string, action: ToastAction) => {
+    show("info", text, action, false, undefined, true);
   },
   working: (text: string) => show("working", text),
   update,
