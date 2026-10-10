@@ -18,6 +18,7 @@ import {
   type AbsenceEntry,
   type AttendanceEntry,
   type DocumentEntry,
+  type JournalEntry,
   type QueueItem,
   type SupervisorWork,
   type TaskEntry,
@@ -57,6 +58,9 @@ export default function ReviewDetail({
   }
   if (item.kind === "absence") {
     return <AbsenceDetail key={item.key} entry={item.entry} {...shared} />;
+  }
+  if (item.kind === "journal") {
+    return <JournalDetail key={item.key} entry={item.entry} {...shared} />;
   }
   return <DocumentDetail key={item.key} entry={item.entry} {...shared} />;
 }
@@ -440,6 +444,57 @@ function AbsenceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Absenc
             `Absence marked unexcused. ${entry.student_name} has been notified.`,
             undo
           );
+          onDecided();
+        }}
+      />
+    </DetailShell>
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
+| WEEKLY JOURNAL
+|--------------------------------------------------------------------------
+*/
+
+function JournalDetail({ entry, work, onDecided, shortcuts }: DetailProps<JournalEntry>) {
+  const undo = undoAction(
+    () => work.decideJournal(entry.id, "Submitted", ""),
+    "Decision withdrawn. The journal is back in your queue."
+  );
+  const weekEnd = new Date(`${entry.week_start}T00:00:00`);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+
+  return (
+    <DetailShell
+      eyebrow="Weekly journal"
+      title={entry.student_name}
+      meta={`Week of ${formatDate(entry.week_start)} to ${formatDate(weekEnd)} · sent ${formatDateTime(entry.submitted_at)}`}
+    >
+      {entry.review_notes && (
+        <Quote label="What you asked for when you returned it">{entry.review_notes}</Quote>
+      )}
+      <Quote label="What the intern did">{entry.activities}</Quote>
+      <Quote label="What the intern learned">{entry.learnings}</Quote>
+      {entry.challenges && <Quote label="Difficulties they met">{entry.challenges}</Quote>}
+
+      <Decision
+        key={entry.id}
+        approveLabel="Mark reviewed"
+        rejectLabel="Return"
+        noteLabel="Comment for the intern"
+        notePlaceholder="A word on the week, or what to add before you can accept it."
+        noteAlwaysVisible
+        rejectNoteHint="Say what to add or change before returning the journal."
+        shortcut={shortcuts}
+        onApprove={async (note) => {
+          await work.decideJournal(entry.id, "Reviewed", note);
+          toast.success(`${entry.student_name}'s journal marked reviewed.`, undo);
+          onDecided();
+        }}
+        onReject={async (note) => {
+          await work.decideJournal(entry.id, "Returned", note);
+          toast.success(`Journal returned to ${entry.student_name}.`, undo);
           onDecided();
         }}
       />

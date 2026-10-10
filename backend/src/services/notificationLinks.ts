@@ -26,6 +26,7 @@ export const NOTIFICATION_PAGE: Record<NotificationRole, string> = {
 };
 
 function studentLink(type: string, title: string): string {
+  if (title.includes("journal")) return "/journal";
   if (title.includes("absence")) return "/daily-log";
   if (type === "attendance") return "/daily-log";
   if (type === "task" || type === "comment") return "/task";

@@ -265,6 +265,22 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     from: (source) => ({ reactivated: source.result.reactivated }),
   },
+  // Weekly journals
+  {
+    method: "PATCH",
+    path: "/api/journals/:id/review",
+    action: (source) =>
+      source.body.status === "Reviewed"
+        ? "journal.review"
+        : source.body.status === "Returned"
+          ? "journal.return"
+          : source.body.status === "Submitted"
+            ? "journal.undo"
+            : null,
+    entityType: "journal",
+    entityId: param("id"),
+    keep: ["notes"],
+  },
   // Holidays
   {
     method: "POST",

@@ -36,6 +36,7 @@ const KIND_ICON: Record<QueueItem["kind"], IconName> = {
   task: "tasks",
   document: "document",
   absence: "calendar",
+  journal: "note",
 };
 
 /** How long an item has been waiting, in plain words. */
@@ -54,6 +55,7 @@ function titleOf(item: QueueItem): string {
   if (item.kind === "attendance") return `Attendance · ${formatDayDate(item.entry.date)}`;
   if (item.kind === "task") return item.entry.title;
   if (item.kind === "absence") return `Absence · ${formatDayDate(item.entry.date)}`;
+  if (item.kind === "journal") return `Journal · week of ${formatDayDate(item.entry.week_start)}`;
   return item.entry.doc_type;
 }
 
@@ -65,6 +67,9 @@ function summaryOf(item: QueueItem): string {
   }
   if (item.kind === "task") return "Task submitted";
   if (item.kind === "absence") return "Absence filed";
+  if (item.kind === "journal") {
+    return item.entry.review_notes ? "Journal sent again" : "Journal written";
+  }
   return "Document uploaded";
 }
 
@@ -128,6 +133,7 @@ export default function SupervisorDashboard() {
       task: scoped.filter((item) => item.kind === "task").length,
       document: scoped.filter((item) => item.kind === "document").length,
       absence: scoped.filter((item) => item.kind === "absence").length,
+      journal: scoped.filter((item) => item.kind === "journal").length,
     }),
     [scoped]
   );
@@ -295,6 +301,7 @@ export default function SupervisorDashboard() {
                 { value: "task", label: "Tasks", count: counts.task },
                 { value: "document", label: "Documents", count: counts.document },
                 { value: "absence", label: "Absences", count: counts.absence },
+                { value: "journal", label: "Journals", count: counts.journal },
               ]}
             />
           </div>

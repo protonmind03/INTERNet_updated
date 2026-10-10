@@ -3216,3 +3216,152 @@ test("a holiday is added, edited and removed, one per date", async (t) => {
   const removal = audit.body.entries.find((entry) => String(entry.entity_id) === String(id) && entry.action === "holiday.remove");
   assert.deepEqual(removal.details, { date: "2099-12-31", name: "Rizal Day (moved)" });
 });
+
+/*
+| Weekly journal
+*/
+
+const journalBody = {
+  activities: "Encoded the week's delivery receipts and filed them by supplier.",
+  learnings: "How the company numbers its receipts, and why the order matters.",
+  challenges: "",
+};
+const shiftDay = (date, days) => {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+};
+
+test("a journal is the student's own, one per week, and checked before it is saved", async () => {
+  const supervisor = await supervisorSession();
+  const id = encodeURIComponent(student.student_id);
+  const mine = await jsonRequest(`/api/journals/student/${id}`, { headers: authHeaders(studentToken) });
+  assert.equal(mine.response.status, 200);
+  assert.ok(Array.isArray(mine.body.journals));
+  assert.deepEqual(mine.body.limits, { min: 30, max: 3000 });
+  const week = mine.body.current_week_start;
+  assert.match(week, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(new Date(`${week}T00:00:00Z`).getUTCDay(), 1, "the week starts on a Monday");
+  const weeks = mine.body.journals.map((item) => item.week_start);
+  assert.equal(new Set(weeks).size, weeks.length, "one entry per week");
+
+  const put = (target, body, token = studentToken, who = id) =>
+    jsonRequest(`/api/journals/student/${who}/${target}`, jsonBody(token, "PUT", body));
+  // Only the student, and only their own.
+  assert.equal((await jsonRequest(`/api/journals/student/${id}/${week}`, { method: "PUT" })).response.status, 401);
+  assert.equal((await put(week, journalBody, coordinatorToken)).response.status, 403);
+  assert.equal((await put(week, journalBody, supervisor.token)).response.status, 403);
+  assert.equal((await put(week, journalBody, studentToken, "SOMEONE-ELSE")).response.status, 403);
+  assert.equal((await jsonRequest("/api/journals/student/SOMEONE-ELSE", { headers: authHeaders(studentToken) })).response.status, 403);
+
+  // The week: a real Monday that has started.
+  for (const bad of ["this-week", "2026-13-40", shiftDay(week, 1), shiftDay(week, -3), shiftDay(week, 7)]) {
+    assert.equal((await put(bad, journalBody)).response.status, 400, bad);
+  }
+  // The text: both required parts, long enough, not too long, and text.
+  for (const bad of [{}, { ...journalBody, activities: "Worked." }, { ...journalBody, learnings: "" },
+    { ...journalBody, activities: "x".repeat(3001) }, { ...journalBody, challenges: "x".repeat(3001) },
+    { ...journalBody, learnings: 12345 }, { ...journalBody, challenges: ["a list"] }]) {
+    assert.equal((await put(week, bad)).response.status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+
+  // The supervisor's list and decision.
+  assert.equal((await jsonRequest("/api/journals/supervisor", { headers: authHeaders(studentToken) })).response.status, 403);
+  const list = await jsonRequest("/api/journals/supervisor", { headers: authHeaders(supervisor.token) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.journals));
+  const review = (target, body, token = supervisor.token) =>
+    jsonRequest(`/api/journals/${target}/review`, jsonBody(token, "PATCH", body));
+  assert.equal((await review("1", { status: "Reviewed" }, studentToken)).response.status, 403);
+  assert.equal((await review("1", { status: "Reviewed" }, coordinatorToken)).response.status, 403);
+  assert.equal((await review("999999999", { status: "Approved" })).response.status, 400);
+  assert.equal((await review("999999999", { status: "Returned" })).response.status, 400, "returning needs a note");
+  assert.equal((await review("999999999", { status: "Reviewed", notes: "x".repeat(1001) })).response.status, 400);
+  assert.equal((await review("999999999", { status: "Reviewed" })).response.status, 404);
+  assert.equal((await review("abc", { status: "Reviewed" })).response.status, 404);
+});
+
+test("a journal goes from the student to the supervisor and back, and closes once reviewed", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const id = encodeURIComponent(student.student_id);
+  const read = async () => (await jsonRequest(`/api/journals/student/${id}`, { headers: authHeaders(studentToken) })).body;
+  const week = (await read()).current_week_start;
+  const put = (body) => jsonRequest(`/api/journals/student/${id}/${week}`, jsonBody(studentToken, "PUT", body));
+  const review = (journalId, body) => jsonRequest(`/api/journals/${journalId}/review`, jsonBody(supervisor.token, "PATCH", body));
+  const pool = localTestPool();
+  const clear = () => pool.query(`DELETE FROM journals WHERE student_id = $1 AND week_start = $2`, [student.student_id, week]);
+  await clear();
+  try {
+    const first = await put({ ...journalBody, challenges: "  The scanner jammed twice.  " });
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    const journal = first.body.journal;
+    assert.equal(journal.status, "Submitted");
+    assert.equal(journal.week_start, week);
+    assert.equal(journal.challenges, "The scanner jammed twice.");
+
+    // Still open: an edit replaces it; there is still one entry for the week.
+    const edited = await put({ ...journalBody, activities: `${journalBody.activities} Also answered the front desk phone.` });
+    assert.equal(edited.response.status, 200);
+    assert.equal(edited.body.journal.id, journal.id);
+    assert.equal(edited.body.journal.challenges, null);
+    assert.equal((await read()).journals.filter((item) => item.week_start === week).length, 1);
+
+    // The supervisor sees it, with whose it is.
+    const listed = (await jsonRequest("/api/journals/supervisor", { headers: authHeaders(supervisor.token) })).body.journals.find((item) => item.id === journal.id);
+    assert.equal(listed.student_name, student.name);
+    assert.equal(listed.status, "Submitted");
+
+    // Returned with a note: the student sees it and can send it again.
+    const returned = await review(journal.id, { status: "Returned", notes: "Say which tasks were yours." });
+    assert.equal(returned.response.status, 200, JSON.stringify(returned.body));
+    assert.equal(returned.body.journal.status, "Returned");
+    assert.equal((await review(journal.id, { status: "Reviewed" })).response.status, 409, "already decided");
+    const seen = (await read()).journals.find((item) => item.id === journal.id);
+    assert.equal(seen.review_notes, "Say which tasks were yours.");
+    const again = await put(journalBody);
+    assert.equal(again.response.status, 200);
+    assert.equal(again.body.journal.status, "Submitted");
+    assert.equal(again.body.journal.reviewed_at, null);
+
+    // Reviewed: closed to the student.
+    const reviewed = await review(journal.id, { status: "Reviewed", notes: "Clear and complete." });
+    assert.equal(reviewed.body.journal.status, "Reviewed");
+    assert.ok(reviewed.body.journal.reviewed_at);
+    const locked = await put(journalBody);
+    assert.equal(locked.response.status, 409);
+    assert.match(locked.body.message, /already reviewed/);
+
+    // The decision can be withdrawn, once.
+    const undone = await review(journal.id, { status: "Submitted" });
+    assert.equal(undone.response.status, 200);
+    assert.deepEqual([undone.body.journal.status, undone.body.journal.review_notes, undone.body.journal.reviewed_at], ["Submitted", null, null]);
+    assert.equal((await review(journal.id, { status: "Submitted" })).response.status, 409);
+
+    // The coordinator reads it on the student's record.
+    const record = await jsonRequest(`/api/coordinator/students/${id}/overview`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(record.response.status, 200);
+    assert.ok(record.body.journals.some((item) => item.id === journal.id));
+
+    // Each side was told, and the student's notification opens the journal.
+    const notes = await jsonRequest(`/api/notifications/student/${id}`, { headers: authHeaders(studentToken) });
+    const told = notes.body.notifications.find((item) => item.title === "Weekly journal reviewed");
+    assert.equal(told?.link, "/journal");
+    const supervisorNotes = await jsonRequest(`/api/notifications/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) });
+    const asked = supervisorNotes.body.notifications.find((item) => item.title === "Weekly journal submitted");
+    assert.equal(asked?.link, "/supervisor/dashboard");
+
+    // The decisions are in the audit log; the student's own writing is not.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=journal&limit=20", { headers: authHeaders(coordinatorToken) });
+    const actions = audit.body.entries.filter((entry) => String(entry.entity_id) === String(journal.id)).map((entry) => entry.action);
+    assert.deepEqual([...actions].sort(), ["journal.return", "journal.review", "journal.undo"]);
+  } finally {
+    await clear();
+    await pool.query(`DELETE FROM notifications WHERE entity_type = 'journal' AND title LIKE 'Weekly journal%'`);
+    await pool.end();
+  }
+});

@@ -9,8 +9,9 @@ import { errorText, withWorkingToast } from "../../lib/toast";
 | SUPERVISOR DATA
 |--------------------------------------------------------------------------
 |
-| Everything a supervisor works with comes from five lists: their interns,
-| and those interns' attendance logs, tasks, documents and absences. This
+| Everything a supervisor works with comes from six lists: their interns,
+| and those interns' attendance logs, tasks, documents, absences and weekly
+| journals. This
 | hook loads them once and exposes the review actions, so the Review queue
 | and the individual pages always show the same thing.
 |
@@ -68,9 +69,16 @@ export type AttendanceEntry = {
 };
 
 /** The lists a supervisor page can ask for. */
-export type WorkList = "interns" | "attendance" | "tasks" | "documents" | "absences";
+export type WorkList = "interns" | "attendance" | "tasks" | "documents" | "absences" | "journals";
 
-const ALL_LISTS: readonly WorkList[] = ["interns", "attendance", "tasks", "documents", "absences"];
+const ALL_LISTS: readonly WorkList[] = [
+  "interns",
+  "attendance",
+  "tasks",
+  "documents",
+  "absences",
+  "journals",
+];
 
 export type TaskStatus = "Pending" | "In Progress" | "Submitted" | "Reviewed";
 
@@ -120,12 +128,30 @@ export type AbsenceEntry = {
   created_at: string;
 };
 
+/** One week's journal, written by the intern. */
+export type JournalEntry = {
+  id: number;
+  student_id: string;
+  student_name: string;
+  /** The Monday the week starts on. */
+  week_start: string;
+  activities: string;
+  learnings: string;
+  challenges: string | null;
+  status: "Submitted" | "Reviewed" | "Returned";
+  /** What the supervisor wrote; on a resubmitted journal, what they asked for. */
+  review_notes: string | null;
+  submitted_at: string;
+  reviewed_at: string | null;
+};
+
 /** One thing waiting for the supervisor's decision. */
 export type QueueItem =
   | { kind: "attendance"; key: string; waitingSince: string; entry: AttendanceEntry }
   | { kind: "task"; key: string; waitingSince: string; entry: TaskEntry }
   | { kind: "document"; key: string; waitingSince: string; entry: DocumentEntry }
-  | { kind: "absence"; key: string; waitingSince: string; entry: AbsenceEntry };
+  | { kind: "absence"; key: string; waitingSince: string; entry: AbsenceEntry }
+  | { kind: "journal"; key: string; waitingSince: string; entry: JournalEntry };
 
 /** `saveAs` names the copy kept for offline reading; without it nothing is kept. */
 async function getJson(path: string, saveAs?: string): Promise<Record<string, unknown>> {
@@ -161,7 +187,7 @@ async function sendJson(
 
 /**
  * `lists` names what the page actually shows. The Review queue needs all
- * five; a page such as Evaluations only needs the interns, and asking for
+ * six; a page such as Evaluations only needs the interns, and asking for
  * just that keeps it from downloading every log, task and document first.
  */
 export function useSupervisorWork(
@@ -175,6 +201,7 @@ export function useSupervisorWork(
   const [tasks, setTasks] = useState<TaskEntry[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [absences, setAbsences] = useState<AbsenceEntry[]>([]);
+  const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -201,19 +228,22 @@ export function useSupervisorWork(
           if (data) setInterns((data.interns as Intern[]) || []);
         })
         .catch(() => {});
-      const [internData, attendanceData, taskData, documentData, absenceData] =
+      const [internData, attendanceData, taskData, documentData, absenceData, journalData] =
         await Promise.all([
           internRequest,
           get("attendance", `/api/supervisor/attendance/${id}`),
           get("tasks", `/api/tasks/supervisor/${id}`),
           get("documents", `/api/documents/supervisor`),
           get("absences", `/api/absences/supervisor`),
+          // The newest list: if it cannot be loaded, the rest of the queue still shows.
+          get("journals", `/api/journals/supervisor`).catch(() => null),
         ]);
       if (internData) setInterns((internData.interns as Intern[]) || []);
       if (attendanceData) setAttendance((attendanceData.attendance as AttendanceEntry[]) || []);
       if (taskData) setTasks((taskData.tasks as TaskEntry[]) || []);
       if (documentData) setDocuments((documentData.documents as DocumentEntry[]) || []);
       if (absenceData) setAbsences((absenceData.absences as AbsenceEntry[]) || []);
+      if (journalData) setJournals((journalData.journals as JournalEntry[]) || []);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your interns' records."));
@@ -297,12 +327,20 @@ export function useSupervisorWork(
           waitingSince: entry.created_at,
           entry,
         })),
+      ...journals
+        .filter((entry) => entry.status === "Submitted")
+        .map((entry) => ({
+          kind: "journal" as const,
+          key: `journal-${entry.id}`,
+          waitingSince: entry.submitted_at,
+          entry,
+        })),
     ];
     // Longest wait first.
     return items.sort(
       (a, b) => new Date(a.waitingSince).getTime() - new Date(b.waitingSince).getTime()
     );
-  }, [attendance, tasks, documents, absences]);
+  }, [attendance, tasks, documents, absences, journals]);
 
   /**
    * Runs one change, then reloads. The reload also happens when the change
@@ -458,12 +496,27 @@ export function useSupervisorWork(
     [change]
   );
 
+  const decideJournal = useCallback(
+    // "Submitted" withdraws the decision.
+    (id: number, status: "Reviewed" | "Returned" | "Submitted", notes: string) =>
+      change(() =>
+        sendJson(
+          "PATCH",
+          `/api/journals/${id}/review`,
+          { status, notes: notes.trim() },
+          "The journal could not be reviewed."
+        )
+      ),
+    [change]
+  );
+
   return {
     interns,
     attendance,
     tasks,
     documents,
     absences,
+    journals,
     queue,
     loading,
     error,
@@ -476,6 +529,7 @@ export function useSupervisorWork(
     decideDocument,
     undoDocument,
     decideAbsence,
+    decideJournal,
   };
 }
 

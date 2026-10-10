@@ -3566,7 +3566,7 @@ app.post(
 |--------------------------------------------------------------------------
 |
 | One number for the badge beside "Review", counted the same way the queue
-| is built, so every page does not have to download four lists to show it.
+| is built, so every page does not have to download five lists to show it.
 |
 */
 
@@ -3594,6 +3594,8 @@ app.get(
               WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending')
           + (SELECT COUNT(*) FROM absences b
               WHERE TRIM(b.student_id::text) IN (SELECT student_id FROM mine) AND b.status = 'Pending')
+          + (SELECT COUNT(*) FROM journals j
+              WHERE TRIM(j.student_id::text) IN (SELECT student_id FROM mine) AND j.status = 'Submitted')
           AS waiting
         `,
         [auth?.id]

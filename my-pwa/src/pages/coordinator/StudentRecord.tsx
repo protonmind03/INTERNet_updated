@@ -124,6 +124,17 @@ type ScheduleDay = {
   hours: number | string | null;
 };
 
+type Journal = {
+  id: number;
+  week_start: string;
+  activities: string;
+  learnings: string;
+  challenges: string | null;
+  status: "Submitted" | "Reviewed" | "Returned";
+  review_notes: string | null;
+  submitted_at: string;
+};
+
 type Overview = {
   student: Student;
   attendance: Log[];
@@ -132,9 +143,18 @@ type Overview = {
   evaluations: Evaluation[];
   absences: Absence[];
   schedule: ScheduleDay[];
+  /** Missing when the answer comes from a server older than the journal. */
+  journals?: Journal[];
 };
 
-type Tab = "overview" | "attendance" | "tasks" | "documents" | "evaluations" | "record";
+type Tab =
+  | "overview"
+  | "attendance"
+  | "tasks"
+  | "documents"
+  | "evaluations"
+  | "journals"
+  | "record";
 
 /** A decision the coordinator is making in place of a missing supervisor. */
 type Pending =
@@ -254,6 +274,7 @@ export default function StudentRecord() {
                   { value: "tasks", label: "Tasks", count: data.tasks.length },
                   { value: "documents", label: "Documents", count: data.documents.length },
                   { value: "evaluations", label: "Evaluations", count: data.evaluations.length },
+                  { value: "journals", label: "Journals", count: (data.journals || []).length },
                   { value: "record", label: "Time record" },
                 ]}
               />
@@ -544,6 +565,56 @@ export default function StudentRecord() {
               </Card>
             )}
 
+            {tab === "journals" && (
+              <Card>
+                {(data.journals || []).length === 0 ? (
+                  <EmptyState
+                    icon="note"
+                    title="No journals yet"
+                    description="The student writes one a week, and their supervisor reviews it."
+                  />
+                ) : (
+                  <ul className="divide-y divide-slate-100">
+                    {(data.journals || []).map((item) => (
+                      <li key={item.id} className="space-y-2.5 px-4 py-4 sm:px-5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-sm font-semibold text-slate-900">
+                            Week of {formatDate(item.week_start)}
+                          </p>
+                          <StatusBadge
+                            status={
+                              item.status === "Submitted"
+                                ? "Waiting for the supervisor"
+                                : item.status === "Returned"
+                                  ? "Returned to the student"
+                                  : "Reviewed"
+                            }
+                            tone={
+                              item.status === "Reviewed"
+                                ? "good"
+                                : item.status === "Returned"
+                                  ? "bad"
+                                  : "waiting"
+                            }
+                          />
+                        </div>
+                        <JournalPart label="What they did">{item.activities}</JournalPart>
+                        <JournalPart label="What they learned">{item.learnings}</JournalPart>
+                        {item.challenges && (
+                          <JournalPart label="Difficulties they met">{item.challenges}</JournalPart>
+                        )}
+                        {item.review_notes && (
+                          <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
+                            <span className="font-semibold">Supervisor:</span> {item.review_notes}
+                          </p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </Card>
+            )}
+
             {tab === "record" && (
               <DtrSheet
                 loading={false}
@@ -618,6 +689,15 @@ function DecideButtons({
         {approveLabel}
       </Button>
     </>
+  );
+}
+
+function JournalPart({ label, children }: { label: string; children: string }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
+      <p className="mt-0.5 whitespace-pre-line break-words text-sm text-slate-700">{children}</p>
+    </div>
   );
 }
 

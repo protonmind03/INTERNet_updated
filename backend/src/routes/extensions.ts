@@ -63,6 +63,16 @@ export type ExtensionDependencies = {
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/** How much a weekly journal's required parts must say, and the most any part may. */
+const JOURNAL_MIN = 30;
+const JOURNAL_MAX = 3000;
+
+const JOURNAL_COLUMNS = `
+  j.id, j.student_id, TO_CHAR(j.week_start, 'YYYY-MM-DD') AS week_start,
+  j.activities, j.learnings, j.challenges, j.status, j.review_notes,
+  j.submitted_at, j.updated_at, j.reviewed_at
+`;
+
 /** Today's date in the Philippines, the zone every OJT date is kept in. */
 function todayInManila(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
@@ -1199,7 +1209,7 @@ export function registerExtensionRoutes(
           return res.status(404).json({ message: "Student not found." });
         }
 
-        const [attendance, tasks, documents, evaluations, absences, schedule] = await Promise.all([
+        const [attendance, tasks, documents, evaluations, absences, schedule, journals] = await Promise.all([
           pool.query(
             `SELECT id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
                     time_out, hours, note, status, review_notes, correction_note,
@@ -1239,6 +1249,11 @@ export function registerExtensionRoutes(
                WHEN 'Sunday' THEN 7 ELSE 8 END`,
             [id]
           ),
+          pool.query(
+            `SELECT ${JOURNAL_COLUMNS} FROM journals j WHERE j.student_id = $1
+             ORDER BY j.week_start DESC LIMIT 200`,
+            [id]
+          ),
         ]);
 
         const row = student.rows[0];
@@ -1250,6 +1265,7 @@ export function registerExtensionRoutes(
           evaluations: evaluations.rows,
           absences: absences.rows,
           schedule: schedule.rows,
+          journals: journals.rows,
         });
       } catch (error) {
         console.error("STUDENT OVERVIEW ERROR:", error);
@@ -2183,6 +2199,270 @@ export function registerExtensionRoutes(
     } catch (error) {
       console.error("DELETE HOLIDAY ERROR:", error);
       return res.status(500).json({ message: "Failed to remove the holiday." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | WEEKLY JOURNAL
+  |--------------------------------------------------------------------------
+  |
+  | Once a week a student writes what they did and what they learned. The
+  | entry is kept under the Monday its week starts on, one per week. Their
+  | supervisor marks it reviewed, or returns it with a note saying what to
+  | add; a returned entry can be edited and sent again. A reviewed entry is
+  | closed. The coordinator reads them on the student's record.
+  |
+  */
+
+  /** The Monday of the week a date falls in. */
+  function mondayOf(date: string): string {
+    const day = new Date(`${date}T00:00:00Z`).getUTCDay();
+    return shiftDate(date, -((day + 6) % 7));
+  }
+
+  function readJournal(
+    body: unknown
+  ): { journal: { activities: string; learnings: string; challenges: string | null } } | { problem: string } {
+    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    for (const key of ["activities", "learnings", "challenges"]) {
+      if (input[key] !== undefined && input[key] !== null && typeof input[key] !== "string") {
+        return { problem: "Write each part of the journal as text." };
+      }
+    }
+    const activities = text(input.activities);
+    const learnings = text(input.learnings);
+    const challenges = text(input.challenges);
+    if (activities.length < JOURNAL_MIN || activities.length > JOURNAL_MAX) {
+      return { problem: `Say what you did this week in ${JOURNAL_MIN} to ${JOURNAL_MAX} characters.` };
+    }
+    if (learnings.length < JOURNAL_MIN || learnings.length > JOURNAL_MAX) {
+      return { problem: `Say what you learned this week in ${JOURNAL_MIN} to ${JOURNAL_MAX} characters.` };
+    }
+    if (challenges.length > JOURNAL_MAX) {
+      return { problem: `Keep the difficulties you met to ${JOURNAL_MAX} characters.` };
+    }
+    return { journal: { activities, learnings, challenges: challenges || null } };
+  }
+
+  app.get("/api/journals/student/:studentId", requireRole("student"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (auth.id !== req.params.studentId) {
+        return res.status(403).json({ message: "You can only read your own journal." });
+      }
+      const result = await pool.query(
+        `SELECT ${JOURNAL_COLUMNS} FROM journals j WHERE j.student_id = $1
+         ORDER BY j.week_start DESC LIMIT 200`,
+        [auth.id]
+      );
+      return res.json({
+        journals: result.rows,
+        current_week_start: mondayOf(todayInManila()),
+        limits: { min: JOURNAL_MIN, max: JOURNAL_MAX },
+      });
+    } catch (error) {
+      console.error("GET JOURNALS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load your journal." });
+    }
+  });
+
+  // Writes the entry for one week, or changes it while it is still open.
+  app.put(
+    "/api/journals/student/:studentId/:weekStart",
+    requireRole("student"),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        if (auth.id !== req.params.studentId) {
+          return res.status(403).json({ message: "You can only write your own journal." });
+        }
+        const week = String(req.params.weekStart);
+        if (!DATE_PATTERN.test(week) || Number.isNaN(Date.parse(`${week}T00:00:00Z`))) {
+          return res.status(400).json({ message: "Name the week by its Monday, written as YYYY-MM-DD." });
+        }
+        if (mondayOf(week) !== week) {
+          return res.status(400).json({ message: "A journal week starts on a Monday." });
+        }
+        if (week > mondayOf(todayInManila())) {
+          return res.status(400).json({ message: "That week has not started yet." });
+        }
+        const read = readJournal(req.body);
+        if ("problem" in read) return res.status(400).json({ message: read.problem });
+
+        const existing = await pool.query<{ status: string }>(
+          `SELECT status FROM journals WHERE student_id = $1 AND week_start = $2`,
+          [auth.id, week]
+        );
+        const before = existing.rows[0]?.status;
+        if (before === "Reviewed") {
+          return res.status(409).json({
+            message: "Your supervisor has already reviewed this week's journal, so it can no longer be changed.",
+          });
+        }
+
+        // The status check is repeated in the statement, in case the
+        // supervisor reviews the entry at the same moment.
+        const result = await pool.query(
+          `
+          INSERT INTO journals AS j (student_id, week_start, activities, learnings, challenges)
+          VALUES ($1, $2, $3, $4, $5)
+          ON CONFLICT (student_id, week_start) DO UPDATE
+            SET activities = EXCLUDED.activities,
+                learnings = EXCLUDED.learnings,
+                challenges = EXCLUDED.challenges,
+                status = 'Submitted',
+                review_notes = CASE WHEN j.status = 'Returned' THEN j.review_notes ELSE NULL END,
+                reviewed_at = NULL,
+                reviewed_by_supervisor_id = NULL,
+                submitted_at = CASE WHEN j.status = 'Returned' THEN NOW() ELSE j.submitted_at END,
+                updated_at = NOW()
+            WHERE j.status <> 'Reviewed'
+          RETURNING ${JOURNAL_COLUMNS}
+          `,
+          [auth.id, week, read.journal.activities, read.journal.learnings, read.journal.challenges]
+        );
+        if (result.rows.length === 0) {
+          return res.status(409).json({
+            message: "Your supervisor has already reviewed this week's journal, so it can no longer be changed.",
+          });
+        }
+        const journal = result.rows[0];
+
+        // The supervisor hears when there is something new to read: a first
+        // entry, or one sent again after they returned it. Not on each edit.
+        if (!before || before === "Returned") {
+          await quietly("JOURNAL SUBMITTED NOTIFICATION ERROR", async () => {
+            const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
+              `SELECT name, supervisor_id FROM students WHERE student_id = $1`,
+              [auth.id]
+            );
+            if (!owner.rows[0]?.supervisor_id) return;
+            await createNotification({
+              supervisorId: owner.rows[0].supervisor_id,
+              entity: { type: "journal", id: journal.id },
+              title: before ? "Weekly journal submitted again" : "Weekly journal submitted",
+              message: `${owner.rows[0].name} ${before ? "revised" : "wrote"} their journal for the week of ${week}.`,
+              type: "info",
+            });
+          });
+        }
+
+        return res.status(before ? 200 : 201).json({
+          message: before ? "Journal updated." : "Journal submitted.",
+          journal,
+        });
+      } catch (error) {
+        console.error("SAVE JOURNAL ERROR:", error);
+        return res.status(500).json({ message: "Failed to save the journal." });
+      }
+    }
+  );
+
+  app.get("/api/journals/supervisor", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const result = await pool.query(
+        `
+        SELECT ${JOURNAL_COLUMNS}, s.name AS student_name
+        FROM journals j
+        INNER JOIN students s ON s.student_id = j.student_id
+        WHERE s.supervisor_id = $1
+          AND s.is_active = TRUE
+        ORDER BY CASE WHEN j.status = 'Submitted' THEN 0 ELSE 1 END, j.week_start DESC, j.id DESC
+        LIMIT 500
+        `,
+        [auth.id]
+      );
+      return res.json({ journals: result.rows });
+    } catch (error) {
+      console.error("GET SUPERVISOR JOURNALS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the journals." });
+    }
+  });
+
+  app.patch("/api/journals/:id/review", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const status = req.body?.status;
+      const notes = text(req.body?.notes);
+      if (!/^\d{1,9}$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Journal not found." });
+      }
+      // "Submitted" withdraws a decision made by mistake.
+      if (status !== "Reviewed" && status !== "Returned" && status !== "Submitted") {
+        return res.status(400).json({ message: "Status must be Reviewed, Returned, or Submitted." });
+      }
+      if (status === "Returned" && !notes) {
+        return res.status(400).json({
+          message: "Say what the intern should add or change before returning the journal.",
+        });
+      }
+      if (notes.length > 1000) {
+        return res.status(400).json({ message: "Keep the note to 1000 characters." });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE journals j
+        SET status = $1::text,
+            review_notes = CASE WHEN $1::text = 'Submitted' THEN NULL ELSE $2::text END,
+            reviewed_by_supervisor_id = CASE WHEN $1::text = 'Submitted' THEN NULL ELSE $4::text END,
+            reviewed_at = CASE WHEN $1::text = 'Submitted' THEN NULL ELSE NOW() END,
+            updated_at = NOW()
+        FROM students s
+        WHERE j.id = $3
+          AND s.student_id = j.student_id
+          AND s.supervisor_id = $4::text
+          -- A decision applies to a waiting journal; an undo to a decided one.
+          AND (($1::text = 'Submitted') <> (j.status = 'Submitted'))
+        RETURNING ${JOURNAL_COLUMNS}
+        `,
+        [status, notes || null, Number(req.params.id), auth.id]
+      );
+      if (result.rows.length === 0) {
+        const current = await pool.query(
+          `SELECT 1 FROM journals j JOIN students s ON s.student_id = j.student_id
+           WHERE j.id = $1 AND s.supervisor_id = $2`,
+          [Number(req.params.id), auth.id]
+        );
+        if (current.rows.length > 0) {
+          return res.status(409).json({
+            message:
+              status === "Submitted"
+                ? "This journal is already waiting for review."
+                : "This journal was already reviewed.",
+          });
+        }
+        return res.status(404).json({ message: "Journal not found." });
+      }
+
+      const journal = result.rows[0];
+      await quietly("JOURNAL REVIEW NOTIFICATION ERROR", () =>
+        createNotification({
+          studentId: journal.student_id,
+          entity: { type: "journal", id: journal.id },
+          link: "/journal",
+          title:
+            status === "Reviewed"
+              ? "Weekly journal reviewed"
+              : status === "Returned"
+                ? "Weekly journal returned"
+                : "Weekly journal back under review",
+          message:
+            status === "Reviewed"
+              ? `Your supervisor reviewed your journal for the week of ${journal.week_start}.${notes ? ` Note: ${notes}` : ""}`
+              : status === "Returned"
+                ? `Your supervisor returned your journal for the week of ${journal.week_start}. Note: ${notes}`
+                : `The decision on your journal for the week of ${journal.week_start} was withdrawn. It is waiting to be reviewed again.`,
+          type: "info",
+        })
+      );
+
+      return res.json({ message: "Journal reviewed.", journal });
+    } catch (error) {
+      console.error("REVIEW JOURNAL ERROR:", error);
+      return res.status(500).json({ message: "Failed to review the journal." });
     }
   });
 }
