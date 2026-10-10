@@ -1684,3 +1684,141 @@ test("analytics covers every day of the chosen period and keeps its figures cons
   assert.equal(dashboard.body.hoursTrend.length, 14);
   assert.ok(Math.abs(dashboard.body.totalHoursLogged - body.progress.hours) < 0.01);
 });
+
+/*
+| Route sweep
+|
+| Reads every route out of the source, so a route added later is covered
+| without touching this file. Requests carry no body and use ids that do
+| not exist, so nothing is created or changed.
+|
+*/
+
+const fs = require("node:fs");
+const nodePath = require("node:path");
+
+// The only routes that may answer without a token.
+const PUBLIC_ROUTES = new Set([
+  "GET /api/health",
+  "GET /api/test-db",
+  "POST /api/login/student",
+  "POST /api/login/supervisor",
+  "POST /api/login/coordinator",
+  "POST /api/auth/password-reset/request",
+  "POST /api/auth/password-reset/confirm",
+  "GET /api/push/vapid-public-key",
+]);
+
+function readRoutes() {
+  const routes = [];
+  for (const file of ["server.ts", "routes/extensions.ts"]) {
+    const text = fs.readFileSync(
+      nodePath.join(__dirname, "..", "src", file),
+      "utf8"
+    );
+    const pattern =
+      /\bapp\.(get|post|put|patch|delete)\(\s*(["'`])([^"'`]+)\2/g;
+    const starts = [...text.matchAll(pattern)];
+    starts.forEach((match, index) => {
+      const end =
+        index + 1 < starts.length ? starts[index + 1].index : text.length;
+      const body = text.slice(match.index, end);
+      // Whatever sits between the path and the handler is middleware.
+      const head = body.slice(
+        0,
+        body.search(/async\s*\(|\(\s*_?req\b|\(\s*req\s*,/)
+      );
+      let roles = null;
+      const roleCall = head.match(/requireRole\(([^)]*)\)/);
+      if (roleCall) roles = [...roleCall[1].matchAll(/"(\w+)"/g)].map((m) => m[1]);
+      else if (/requireCoordinator/.test(head)) roles = ["coordinator"];
+      routes.push({
+        method: match[1].toUpperCase(),
+        path: match[3],
+        key: `${match[1].toUpperCase()} ${match[3]}`,
+        roles,
+        where: `${file}:${text.slice(0, match.index).split("\n").length}`,
+      });
+    });
+  }
+  return routes;
+}
+
+const sweepRoutes = readRoutes();
+const fillParams = (path, value) =>
+  path.replace(/:\w+/g, encodeURIComponent(value));
+
+async function sweepStatus(route, token, paramValue = "sweep-0000") {
+  const response = await fetch(
+    new URL(fillParams(route.path, paramValue), apiBaseUrl),
+    {
+      method: route.method,
+      headers: token ? authHeaders(token) : {},
+    }
+  );
+  await response.body?.cancel();
+  return response.status;
+}
+
+test("the route sweep finds the routes", () => {
+  assert.ok(sweepRoutes.length >= 111, `found only ${sweepRoutes.length} routes`);
+});
+
+test("only the listed routes are open to anyone", () => {
+  const open = sweepRoutes.filter((route) => !route.roles).map((route) => route.key);
+  assert.deepEqual(
+    open.sort(),
+    [...PUBLIC_ROUTES].sort(),
+    "a route without a sign-in check must be added to PUBLIC_ROUTES on purpose"
+  );
+});
+
+test("every protected route refuses a request with no token or a bad one", async () => {
+  for (const route of sweepRoutes.filter((r) => r.roles)) {
+    assert.equal(
+      await sweepStatus(route, null),
+      401,
+      `${route.key} (${route.where}) should refuse a request with no token`
+    );
+    assert.equal(
+      await sweepStatus(route, "not.a.token"),
+      401,
+      `${route.key} (${route.where}) should refuse a made-up token`
+    );
+  }
+});
+
+test("every protected route refuses a signed-in user of the wrong role", async () => {
+  const supervisor = await supervisorSession();
+  const tokens = {
+    student: studentToken,
+    supervisor: supervisor.token,
+    coordinator: coordinatorToken,
+  };
+
+  for (const route of sweepRoutes.filter((r) => r.roles)) {
+    for (const [role, token] of Object.entries(tokens)) {
+      if (route.roles.includes(role)) continue;
+      assert.equal(
+        await sweepStatus(route, token),
+        403,
+        `${route.key} (${route.where}) should refuse a ${role}`
+      );
+    }
+  }
+});
+
+test("a student cannot use their token on another student's routes", async () => {
+  const mine = sweepRoutes.filter(
+    (route) => route.roles?.includes("student") && /:studentId\b/.test(route.path)
+  );
+  assert.ok(mine.length >= 15, `found only ${mine.length} student-scoped routes`);
+
+  for (const route of mine) {
+    const status = await sweepStatus(route, studentToken, "SOMEONE-ELSE-0000");
+    assert.ok(
+      status === 403 || status === 404,
+      `${route.key} (${route.where}) answered ${status} for another student's id`
+    );
+  }
+});

@@ -6885,11 +6885,12 @@ app.put(
   try {
     const auth = (req as AuthedRequest).auth;
     const { studentId } = req.params;
-    const { name, email } = req.body;
 
     if (!auth || auth.id !== studentId) {
       return res.status(403).json({ message: "You can only update your own profile." });
     }
+    // A request with no body leaves req.body undefined.
+    const { name, email } = req.body ?? {};
     if (!name || !email) {
       return res.status(400).json({
         message: "Name and email are required.",
