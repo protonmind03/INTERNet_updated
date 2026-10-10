@@ -54,6 +54,9 @@ type MonitorRow = {
   completion: number;
   /** When verified hours first reached the requirement, if they have. */
   completed_at: string | null;
+  /** Only when a date range is chosen: verified hours and logs dated inside it. */
+  period_hours?: number;
+  period_logs?: number;
 };
 
 type Discrepancy = {
@@ -98,8 +101,16 @@ export default function CoordinatorMonitoring() {
 
   const load = useCallback(async () => {
     try {
+      // The chosen dates also go to the server, which adds each student's
+      // hours and logs inside them; overall progress is always the whole.
+      const range = new URLSearchParams();
+      if (dateFrom) range.set("from", dateFrom);
+      if (dateTo) range.set("to", dateTo);
+      // A range typed back to front is not sent; the page then shows the whole.
+      const ordered = !dateFrom || !dateTo || dateFrom <= dateTo;
+      const query = ordered && range.toString() ? `?${range.toString()}` : "";
       const [monitoring, discrepancies] = await Promise.all([
-        coordinatorRequest<{ students: MonitorRow[] }>("/api/coordinator/monitoring"),
+        coordinatorRequest<{ students: MonitorRow[] }>(`/api/coordinator/monitoring${query}`),
         coordinatorRequest<{ discrepancies: Discrepancy[] }>("/api/coordinator/discrepancies"),
       ]);
       setRows(monitoring.students || []);
@@ -110,7 +121,7 @@ export default function CoordinatorMonitoring() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [dateFrom, dateTo]);
 
   useEffect(() => {
     const refresh = () => {
@@ -163,6 +174,7 @@ export default function CoordinatorMonitoring() {
   const flagPager = usePagination(visibleFlags, 10);
   const focused = rows.find((row) => row.student_id === focusStudent);
   const attentionCount = rows.filter(needsAttention).length;
+  const hasRange = Boolean(dateFrom || dateTo);
 
   const showFlags = (studentId: string) => {
     setFocusStudent(studentId);
@@ -195,7 +207,21 @@ export default function CoordinatorMonitoring() {
                 { value: "attention", label: "Needs attention", count: attentionCount },
               ]}
             />
+            <DateRangeFilter
+              from={dateFrom}
+              to={dateTo}
+              onChange={(from, to) => {
+                setDateFrom(from);
+                setDateTo(to);
+              }}
+            />
           </div>
+          {hasRange && (
+            <p className="border-b border-slate-100 bg-psu-50/50 px-4 py-2 text-xs text-slate-600 sm:px-5">
+              Each student shows the hours verified between the chosen dates. The progress bar is
+              always the whole placement. The flagged logs below follow the same dates.
+            </p>
+          )}
 
           {loading ? (
             <SkeletonRows rows={6} />
@@ -240,6 +266,7 @@ export default function CoordinatorMonitoring() {
                         {formatHours(row.hours_rendered)} / {formatHours(row.required_hours)}
                       </span>
                     </div>
+                    <PeriodHours row={row} />
                     <p className="mt-2 text-xs text-slate-600">
                       <TaskSummary row={row} />
                     </p>
@@ -299,6 +326,7 @@ export default function CoordinatorMonitoring() {
                           <p className="tabular mt-1 text-xs text-slate-500">
                             {formatHours(row.hours_rendered)} of {formatHours(row.required_hours)}
                           </p>
+                          <PeriodHours row={row} />
                         </td>
                         <td className="px-3 py-3 text-slate-700">
                           <TaskSummary row={row} />
@@ -337,16 +365,21 @@ export default function CoordinatorMonitoring() {
               }
             />
           </div>
-          <div className="border-b border-slate-100 px-4 pb-4 pt-3 sm:px-5">
-            <DateRangeFilter
-              from={dateFrom}
-              to={dateTo}
-              onChange={(from, to) => {
-                setDateFrom(from);
-                setDateTo(to);
-              }}
-            />
-          </div>
+          {hasRange && (
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-100 px-4 pb-3 pt-1 text-xs text-slate-600 sm:px-5">
+              Showing only logs between the dates chosen at the top.
+              <button
+                type="button"
+                onClick={() => {
+                  setDateFrom("");
+                  setDateTo("");
+                }}
+                className="font-semibold text-psu-700 hover:underline"
+              >
+                Clear dates
+              </button>
+            </p>
+          )}
           {loading ? (
             <SkeletonRows rows={3} />
           ) : visibleFlags.length === 0 ? (
@@ -642,6 +675,21 @@ function FlaggedLogDialog({
         <FormError message={error} />
       </div>
     </Modal>
+  );
+}
+
+/** Hours and logs inside the chosen dates; nothing when no dates are chosen. */
+function PeriodHours({ row }: { row: MonitorRow }) {
+  if (row.period_hours === undefined) return null;
+  const logs = row.period_logs ?? 0;
+  return (
+    <p className="tabular mt-1 text-xs font-medium text-psu-700">
+      {formatHours(row.period_hours)} in these dates
+      <span className="font-normal text-slate-500">
+        {" "}
+        · {logs} {logs === 1 ? "log" : "logs"}
+      </span>
+    </p>
   );
 }
 

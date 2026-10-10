@@ -1994,3 +1994,59 @@ test("the crash report route is size-capped, validated and rate-limited", async 
   const firstRefusal = statuses.indexOf(429);
   assert.ok(statuses.slice(firstRefusal).every((status) => status === 429), "once refused, it stays refused");
 });
+test("monitoring takes an optional date range and is unchanged without one", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const get = (query = "") => jsonRequest(`/api/coordinator/monitoring${query}`, { headers });
+
+  const plain = await get();
+  assert.equal(plain.response.status, 200);
+  assert.deepEqual(Object.keys(plain.body), ["students"], "no new top-level field without a range");
+  for (const row of plain.body.students) {
+    assert.equal("period_hours" in row, false, "no period fields without a range");
+    assert.equal("period_logs" in row, false);
+  }
+
+  // Empty parameters are the same as none (a cleared date field).
+  const empty = await get("?from=&to=");
+  assert.deepEqual(empty.body, plain.body);
+
+  // A range that covers everything: the period equals the whole.
+  const all = await get("?from=2000-01-01&to=2099-12-31");
+  assert.equal(all.response.status, 200);
+  assert.deepEqual(all.body.period, { from: "2000-01-01", to: "2099-12-31" });
+  assert.equal(all.body.students.length, plain.body.students.length);
+  for (const row of all.body.students) {
+    const whole = plain.body.students.find((item) => item.student_id === row.student_id);
+    assert.equal(row.period_hours, whole.hours_rendered, "period hours equal total hours");
+    // Everything that was there before is still there, with the same value.
+    for (const key of Object.keys(whole)) assert.deepEqual(row[key], whole[key], key);
+  }
+
+  // A range before any log: nothing in the period, overall progress intact.
+  const none = await get("?from=1990-01-01&to=1990-12-31");
+  for (const row of none.body.students) {
+    const whole = plain.body.students.find((item) => item.student_id === row.student_id);
+    assert.equal(row.period_hours, 0);
+    assert.equal(row.period_logs, 0);
+    assert.equal(row.hours_rendered, whole.hours_rendered);
+    assert.equal(row.completion, whole.completion);
+  }
+
+  // One-sided ranges are allowed, and splitting the timeline loses nothing.
+  const [before, after] = await Promise.all([get("?to=2020-12-31"), get("?from=2021-01-01")]);
+  assert.deepEqual(before.body.period, { from: null, to: "2020-12-31" });
+  for (const row of after.body.students) {
+    const earlier = before.body.students.find((item) => item.student_id === row.student_id);
+    const whole = plain.body.students.find((item) => item.student_id === row.student_id);
+    assert.ok(Math.abs(earlier.period_hours + row.period_hours - whole.hours_rendered) < 0.01);
+  }
+
+  for (const bad of ["?from=10/01/2026", "?to=2026-13-40", "?from=2026-10-09&to=2026-10-01", "?from=yesterday"]) {
+    assert.equal((await get(bad)).response.status, 400, bad);
+  }
+  assert.equal((await jsonRequest("/api/coordinator/monitoring?from=2026-01-01")).response.status, 401);
+  assert.equal(
+    (await jsonRequest("/api/coordinator/monitoring?from=2026-01-01", { headers: authHeaders(studentToken) })).response.status,
+    403
+  );
+});

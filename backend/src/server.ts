@@ -5785,8 +5785,27 @@ app.get(
 app.get(
   "/api/coordinator/monitoring",
   requireCoordinator,
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      // Optional date range. Without it the answer is exactly what it has
+      // always been. With it, each student also gets the verified hours and
+      // the number of logs dated inside the range; overall progress and the
+      // attention counts stay whole, because a requirement is met over the
+      // whole placement and a problem does not go away by narrowing dates.
+      const isDate = (value: unknown): value is string =>
+        typeof value === "string" &&
+        /^\d{4}-\d{2}-\d{2}$/.test(value) &&
+        !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+      const from = req.query.from === undefined || req.query.from === "" ? null : req.query.from;
+      const to = req.query.to === undefined || req.query.to === "" ? null : req.query.to;
+      if ((from !== null && !isDate(from)) || (to !== null && !isDate(to))) {
+        return res.status(400).json({ message: "Dates must be written as YYYY-MM-DD." });
+      }
+      if (from !== null && to !== null && from > to) {
+        return res.status(400).json({ message: "The start date must not be after the end date." });
+      }
+      const hasPeriod = from !== null || to !== null;
+
       // Attendance and task aggregates are computed in separate LATERAL
       // subqueries. Joining both tables in one GROUP BY multiplies rows
       // (each log x each task) and inflated hours and counts.
@@ -5803,6 +5822,8 @@ app.get(
           att.stale_pending_logs,
           att.flagged_logs,
           att.last_log_date,
+          att.period_hours,
+          att.period_logs,
           tk.active_tasks,
           tk.tasks_awaiting_review,
           tk.overdue_tasks
@@ -5817,7 +5838,16 @@ app.get(
             COUNT(*) FILTER (WHERE ${missingTimeoutCondition("a")}) AS missing_timeout_logs,
             COUNT(*) FILTER (WHERE ${stalePendingCondition("a")}) AS stale_pending_logs,
             COUNT(*) FILTER (WHERE ${flaggedLogCondition("a")}) AS flagged_logs,
-            TO_CHAR(MAX(a.date), 'YYYY-MM-DD') AS last_log_date
+            TO_CHAR(MAX(a.date), 'YYYY-MM-DD') AS last_log_date,
+            COALESCE(SUM(a.hours) FILTER (
+              WHERE a.status = 'Verified'
+                AND ($1::date IS NULL OR a.date >= $1::date)
+                AND ($2::date IS NULL OR a.date <= $2::date)
+            ), 0) AS period_hours,
+            COUNT(*) FILTER (
+              WHERE ($1::date IS NULL OR a.date >= $1::date)
+                AND ($2::date IS NULL OR a.date <= $2::date)
+            ) AS period_logs
           FROM attendance a
           WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)
         ) att ON TRUE
@@ -5833,11 +5863,15 @@ app.get(
         ) tk ON TRUE
         WHERE s.is_active = TRUE
         ORDER BY s.name ASC
-        `
+        `,
+        [from, to]
       );
 
-      const students = result.rows.map((row) => ({
+      const students = result.rows.map(({ period_hours, period_logs, ...row }) => ({
         ...row,
+        ...(hasPeriod
+          ? { period_hours: Number(period_hours), period_logs: Number(period_logs) }
+          : {}),
         hours_rendered: Number(row.hours_rendered),
         pending_logs: Number(row.pending_logs),
         rejected_logs: Number(row.rejected_logs),
@@ -5858,7 +5892,7 @@ app.get(
           : 0,
       }));
 
-      return res.json({ students });
+      return res.json(hasPeriod ? { students, period: { from, to } } : { students });
     } catch (error) {
       console.error("COORDINATOR MONITORING ERROR:", error);
       return res.status(500).json({
