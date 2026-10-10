@@ -940,3 +940,116 @@ steps for going live are in `docs/PLATFORM-CHANGES.md`.
   in production.
 - The triggers on a database with many rows. They run once per account
   written and do one indexed lookup, so no problem is expected.
+
+## 19. Phase 4, student part (10 and 11 October 2026)
+
+The student items of Phase 4 in `docs/IMPLEMENTATION-PLAN.md`. Seven
+additive migrations (022 to 028). Built and committed locally, not pushed:
+it is waiting to be looked at on localhost. The steps for going live are in
+`docs/PLATFORM-CHANGES.md`.
+
+**What was accomplished, at time-out**
+- Timing out asks what the student did that day (15 to 1000 characters,
+  kept as a draft until sent). It is shown to the supervisor reviewing the
+  log and printed under the day on the Daily Time Record.
+- The server accepts a time-out with no note, so a copy of the app from
+  before this keeps working. When a note is sent, it is checked.
+
+**Contact details and "my coordinator"**
+- A student can add a mobile number and an emergency contact on their
+  Profile. Their supervisor and the coordinator can see them; nobody else.
+- Profile and Schedule show the coordinator's name and email.
+
+**Announcements page**
+- Students and supervisors have a page listing the announcements sent to
+  them, newest first. An announcement's notification opens it.
+
+**Forgot-to-time-out reminder**
+- One notification, an hour after the scheduled end of the shift, when
+  today's log is still open. At most one a day per student
+  (`time_out_reminders`). Checked every five minutes.
+- Only on a day the student is scheduled: a day with no shift has no end
+  to measure from. It is an in-app notification (and a push notification
+  where push is set up); no email.
+
+**Holidays**
+- The coordinator keeps a list of holidays, one per date (Programme >
+  Holidays). Everyone signed in can read it.
+- A student's Schedule names a holiday on its day this week, says so on
+  the Today card, and lists the next five. Every copy of the Daily Time
+  Record (student, supervisor, coordinator) names it on its row.
+- A holiday does not stop anyone timing in: a company may work through it,
+  and those hours count. Adding, editing and removing are in the audit log.
+
+**Weekly journal**
+- A student writes once a week what they did, what they learned and,
+  optionally, what was difficult (More > Weekly journal). One entry per
+  week, kept under the week's Monday. The last four weeks can still be
+  filled in when one was missed. What is typed is kept as a draft.
+- The entry joins the supervisor's review queue as a new kind, with its
+  own filter. They mark it reviewed, or return it with a note; a returned
+  entry can be edited and sent again, a reviewed one is closed. A decision
+  can be withdrawn, as with the other kinds.
+- Both sides are notified, the decisions are in the audit log, the Review
+  badge counts waiting journals, and the coordinator reads them on a new
+  Journals tab of the student's record.
+
+**Completion page**
+- More > Completion lists six things, counted on the server: required
+  hours verified, no log still open or waiting, every required document
+  approved, no unfinished task, the supervisor's evaluation, and the
+  student's own feedback about the company. A line that is not done links
+  to where it is finished.
+- When all six are done the student can ask the coordinator, once, to
+  review their record. The coordinators are notified and the student's
+  record shows when they asked. Asking changes nothing else.
+
+**Privacy notice, consent and "Download my data"**
+- A student who has not agreed to the current notice is shown it when they
+  tap Time in, before the camera opens. When they agreed, and to which
+  version, is recorded; a changed version asks again.
+- **The wording is a draft and says so on screen.** It lives in
+  `backend/src/services/privacy.ts`. It must be replaced with the text the
+  university approves, and two parts are left as bracketed gaps: how long
+  records are kept, and the Data Protection Officer's contact.
+- Profile has a Privacy card: when they agreed, the notice to read again,
+  and "Download my data", one file with everything the system holds that
+  is theirs. It never contains the password.
+- Two switches, both off unless set. `PRIVACY_CONSENT_REQUIRED=true` makes
+  the server itself refuse a time-in without consent. `PHOTO_RETENTION_DAYS`
+  sets how old a decided log's photo may be before
+  `npm run privacy:purge-photos` removes it; that script only lists what it
+  would remove unless run with `--confirm`, and nothing is ever removed
+  automatically.
+
+**Where this falls short of the plan**
+- The plan said holidays would be skipped by "projections". The app has no
+  projection of a finishing date, so there was nothing to change.
+- The reminder delay is fixed at one hour. The `TIMEOUT_REMINDER_HOURS`
+  variable the plan mentioned was not added.
+- A supervisor sees a journal while it waits for them. There is no page
+  yet where they can read back the ones they have already reviewed.
+- A time-in a supervisor records in person does not ask the student for
+  consent.
+- The `.ics` calendar export was skipped (decision D12).
+
+**What was checked**
+- 95 API tests (83 before these five items). Seven more of them write real
+  records and run only with `ALLOW_TEST_WRITES=true`, which CI sets.
+- In a browser against the production build, at phone and desktop widths:
+  the holiday list and where it shows, the journal from writing to review,
+  the completion page for an unfinished and a finished student, and the
+  consent step, the Privacy card and the downloaded file. All 43 pages
+  load with no errors.
+- The consent switch, with the server started both ways: off, a time-in is
+  not held up; on, it is refused until the student agrees.
+- Migrations 001 to 028 on a fresh database, and 017 to 028 on a local
+  restore of the production backup of 10 October: all applied, and the row
+  counts were unchanged.
+
+**Not checked**
+- The reminder against a real clock. The test drives it with chosen times.
+- The photo purge with `--confirm`, and running it on the hosting platform.
+- The API tests against the production copy: it has no demo accounts. This
+  is done before the push, with a fresh backup.
+- Anything on a real phone.

@@ -367,4 +367,24 @@ are true of the system today, for a scope section:
   reports are lines in the server log.
 - There is one coordinator account by default and no screen for creating
   another.
-- Students can edit only their name and email on their profile.
+- On their profile a student can edit their name and email, and add a
+  mobile number and an emergency contact. Program, company and required
+  hours are set by the coordinator.
+- A student writes a weekly journal, which their supervisor marks reviewed
+  or returns with a note. It is not graded and is not counted toward
+  completion.
+- The Completion page is a checklist the system counts (hours, logs,
+  documents, tasks, the supervisor's evaluation, the student's feedback).
+  "Request completion review" tells the coordinator the list is done. It
+  does not complete, clear or certify anything; if the paper says the
+  system "clears" or "certifies" a student, that is not accurate.
+- Holidays entered by the coordinator are shown on the schedule and the
+  Daily Time Record. They do not block a time-in.
+- A student who leaves a log open is reminded once, an hour after their
+  scheduled end. The log is not closed for them.
+- Before the first time-in a student reads and agrees to a privacy notice,
+  and can download a copy of their data. The notice wording in the system
+  is a draft awaiting the university's approved text, and no retention
+  period for attendance photos has been set: photos are kept. If the paper
+  describes a retention period or an approved consent form, it is ahead of
+  the system.

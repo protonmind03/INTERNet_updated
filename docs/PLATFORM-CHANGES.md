@@ -137,17 +137,48 @@ New variables this phase: none.
 
 ## Phase 4
 
-Additive migrations in each of the three parts (student, supervisor,
-coordinator and cross-cutting). A backup before each push.
+### Student part (built locally, not pushed)
+
+Seven additive migrations: 022 (accomplishment note), 023 (student
+contact), 024 (time-out reminders), 025 (holidays), 026 (journals), 027
+(completion request), 028 (privacy consent). One push. If Phase 3 has not
+gone out yet, the same push carries its four as well: 018 to 028.
+
+Why one push is enough: nothing the new frontend sends is misread by the
+old backend, and nothing the new backend requires is missing from the old
+frontend. A time-out with no accomplishment note is still accepted, and
+the server does not insist on privacy consent unless told to. For the few
+minutes between Vercel finishing and Railway finishing, the new pages
+(Weekly journal, Completion, Holidays, the Privacy card) answer "route not
+found"; everything that existed before keeps working.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| Before the push | Railway (run by you) | A fresh database backup: open the tunnel (`railway connect Postgres --tunnel-only`), then `railway run --service Postgres npm run db:backup-production <tunnel port>`. Tell me it is done, and I will restore it locally and run the migrations and the tests against it before pushing. | The push runs migrations. |
+| After the push | GitHub → Actions | The run is green. Railway deploys only after it is. | A failing test blocks the backend. |
+| After the push | Railway → backend → Deployments → Deploy Logs | `Applied 022` to `Applied 028` (from `018` if Phase 3 goes with it), then `Backend running`. | Confirms the migrations ran. |
+| After the push | The live site, as coordinator | Programme > Holidays: add the holidays for the term. | The list starts empty. |
+| Before real use by students | A code change, by me, when you send the text | Replace the draft privacy notice in `backend/src/services/privacy.ts` with the wording the university approves, fill in the retention period and the Data Protection Officer's contact, and change its version. Every student is then asked to agree again. | The notice on screen is marked as a draft. |
+| Optional, later | Railway → Variables | `PRIVACY_CONSENT_REQUIRED`: `true`. **Unset means the server does not insist.** Set it only once everyone is on the current app, or a phone still holding the old app cannot time in. | Makes the server refuse a time-in without consent. |
+| Optional, only after the retention period is approved | Railway → Variables | `PHOTO_RETENTION_DAYS`: a whole number of days, at least 30. **Unset means the purge is off.** | How old a decided log's photo may be. |
+| Later, by you | Railway backend shell (run by you) | The photo purge: `npm run privacy:purge-photos` lists what it would remove; add `-- --confirm` to remove it. It must run on the server, where the photos are (`railway ssh`). Take a backup of the uploads first. Not yet run on the host. | Deletes old photos; never automatic. |
+| | Vercel | No setting changes. | |
+
+New variables in this part: `PRIVACY_CONSENT_REQUIRED` and
+`PHOTO_RETENTION_DAYS` (Railway, both optional, both off when unset).
+
+Not added: `TIMEOUT_REMINDER_HOURS`. The reminder is fixed at one hour
+after the scheduled end (decision D11).
+
+### Supervisor, coordinator and cross-cutting parts (not built yet)
+
+Additive migrations in each. A backup before each push.
 
 | When | Platform | Change | Why |
 |---|---|---|---|
 | Before each push | Railway | Fresh Postgres backup. | Migrations. |
 | Optional | Railway → Variables | `SUPERVISOR_DIGEST_TIME`: `HH:MM`, Asia/Manila. Unset means `07:30`. | When the daily supervisor email goes out. |
-| Optional | Railway → Variables | `TIMEOUT_REMINDER_HOURS`: hours after the scheduled end. Unset means the default agreed in decision D11. | The forgot-to-time-out reminder. |
-| Optional, only after the consent text is approved | Railway → Variables | `PHOTO_RETENTION_DAYS`: a number of days. **Unset means the purge is off.** | Retention of attendance photos. |
 | Needed for the digests | Railway → Variables | All five of `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Without all five the digests stay off (as password-recovery email is today). | Email delivery. |
-| Later, by you | Postgres (run by you) | The retention purge: dry run first, then `--confirm`. | Deletes old photos; never automatic. |
 | | Vercel | No setting changes. | |
 
 ## Phase 5
@@ -167,7 +198,7 @@ All optional; unset means today's behaviour.
 | `OFFLINE_ACTION_MAX_AGE_HOURS` | Railway | 2 | 12 |
 | `SW_KILLSWITCH` | Vercel | 2 | off (emergency only) |
 | `SUPERVISOR_DIGEST_TIME` | Railway | 4 | `07:30` |
-| `TIMEOUT_REMINDER_HOURS` | Railway | 4 | per decision D11 |
+| `PRIVACY_CONSENT_REQUIRED` | Railway | 4 | off: the app asks, the server does not insist |
 | `PHOTO_RETENTION_DAYS` | Railway | 4 | purge off |
 | `COORDINATOR_DIGEST_DAY`, `COORDINATOR_DIGEST_TIME` | Railway | 5 | documented defaults |
 

@@ -10,14 +10,13 @@ restored and tested locally. Still owed for Phase 2: the phone checks in
 `DEPLOY.md`, on a real Android phone and a real iPhone. Phases 3 to 5 are
 not started.
 
-**Phase 4, student part, is under way locally (not pushed):** the
-accomplishment note at time-out (4.S1), contact details (4.S4), "my
-coordinator" (4.S5) and the announcements page (4.S9) are built. Still to
-build in the student part: weekly journal (4.S2), completion page (4.S3),
-privacy consent and data download (4.S6), holidays (4.S7) and the
-forgot-to-time-out reminder (4.S8). Decisions D9 (note required, 15
+**Phase 4, student part, is built and committed locally (2026-10-11), not
+pushed.** Every student item is built except the optional `.ics` export
+(skipped, decision D12). It is waiting for the owner to look at it on
+localhost: this is the gate after Student. Decisions D9 (note required, 15
 characters) and D11 (reminder after 1 hour) were answered as recommended
-on 2026-10-10.
+on 2026-10-10; D10 was built as recommended (purge off, the notice a
+marked draft).
 
 **Phase 3 is built and committed locally (2026-10-10), not pushed.** It
 is waiting for the owner to look at it on localhost. Two parts fall short
@@ -361,24 +360,44 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
 ### Student
 - [x] **4.S1 Accomplishment at time-out.** `attendance.accomplishments`;
   shown in `ReviewDetail` and on `DtrSheet`. **[DECISION D9]**
-- [ ] **4.S2 Weekly journal.** `journals` (unique per student per week); a
+- [x] **4.S2 Weekly journal.** `journals` (unique per student per week); a
   `journal` kind in the supervisor queue; shown in the coordinator's
   student record.
-- [ ] **4.S3 Completion page** `/student/completion`; a one-time "Request
+- [x] **4.S3 Completion page** `/student/completion`; a one-time "Request
   completion review".
 - [x] **4.S4 Contact details.** Phone and emergency contact, edited by the
   student, visible to supervisor and coordinator.
 - [x] **4.S5 My coordinator** on Profile and Schedule.
-- [ ] **4.S6 Privacy consent.** `privacy_consent_at` and
+- [x] **4.S6 Privacy consent.** `privacy_consent_at` and
   `privacy_consent_version`; a consent screen before the first time-in
   with clearly marked placeholder text; "Download my data"; a retention
   purge script, off unless `PHOTO_RETENTION_DAYS` is set. **[DECISION D10]**
-- [ ] **4.S7 Holidays.** `holidays` table managed by the coordinator; the
+- [x] **4.S7 Holidays.** `holidays` table managed by the coordinator; the
   schedule, DTR and projections skip them.
-- [ ] **4.S8 Forgot-to-time-out reminder,** at most once a day per
+- [x] **4.S8 Forgot-to-time-out reminder,** at most once a day per
   student. **[DECISION D11]**
 - [x] **4.S9 Announcements page** for students and supervisors.
-- [ ] **4.S10 Optional:** `.ics` export. **[DECISION D12]**
+- [ ] **4.S10 Optional:** `.ics` export. **[DECISION D12]** Skipped.
+
+**How the student part turned out differently from the list above**
+- 4.S1: the server accepts a time-out with no note, so an older copy of
+  the app keeps working. A note that is sent is checked.
+- 4.S2: three parts (did, learned, and optionally difficulties). The last
+  four weeks can still be written. The supervisor can also withdraw a
+  decision. **A supervisor has no page for re-reading journals they have
+  already reviewed**; the coordinator's Journals tab shows all of them.
+- 4.S3: six lines, counted on the server. A rejected log does not hold a
+  student back; an open or pending one does. Journals are not on the list.
+- 4.S6: the app asks for consent; **the server refuses a time-in without
+  it only when `PRIVACY_CONSENT_REQUIRED=true`**, so an older copy of the
+  app is not locked out. A time-in the supervisor records in person does
+  not ask. The purge script has to run on the server, where the photos
+  are, and has not been run there. The notice text is a draft with two
+  bracketed gaps.
+- 4.S7: the app has no projection of a finishing date, so there was none
+  to change. A holiday is shown; it does not block a time-in.
+- 4.S8: one hour, fixed; `TIMEOUT_REMINDER_HOURS` was not added. Only on a
+  scheduled day. In-app (and push where set up), no email.
 
 ### Supervisor
 - [ ] **4.V1 Daily email digest** at `SUPERVISOR_DIGEST_TIME`; idempotent;
@@ -487,12 +506,14 @@ screenshots)
   deactivates students and hides the term by default.
 - **D9: answered 2026-10-10, as recommended.** Accomplishment at time-out: required, with a 15-character
   minimum? *Recommend:* required, 15 characters, with the draft autosaved.
-- **D10. Photo retention period** and who approves the consent text.
+- **D10: built as recommended, awaiting the approved text and period.**
+  Photo retention period and who approves the consent text.
   *Recommend:* leave the purge off until the Data Protection Officer
   confirms a period.
 - **D11: answered 2026-10-10, as recommended.** Time-out reminder delay. *Recommend:* 1 hour after the
   scheduled end.
-- **D12. Optional items:** `.ics` export, per-intern summary PDF,
+- **D12: skipped as recommended for the student part (`.ics`); say if
+  you want any.** Optional items: `.ics` export, per-intern summary PDF,
   announcement read receipts. *Recommend:* skip all three for now.
 - **D13. Final evaluation form:** the university's criteria and scale,
   to be supplied.

@@ -59,6 +59,13 @@ Optional, each can be added later:
 - `OFFLINE_ACTION_MAX_AGE_HOURS` (default 12, allowed 1 to 72): how old a
   break, back-to-work or time-out recorded while a phone was offline may be
   when it arrives. Older ones are refused.
+- `PRIVACY_CONSENT_REQUIRED` (off unless `true`): the server refuses a
+  time-in from a student who has not agreed to the current privacy notice.
+  The app asks either way. See "Privacy notice and photo retention" below
+  before setting it.
+- `PHOTO_RETENTION_DAYS` (off unless a whole number, at least 30): how old
+  a decided log's time-in photo may be before the purge script removes
+  it. Setting it removes nothing by itself.
 - `LOGIN_MAX_FAILURES` (default 5): wrong passwords allowed on one account
   before a 15-minute lockout.
 - `LOGIN_IP_MAX_FAILURES` (default 100): wrong passwords allowed from one
@@ -367,6 +374,36 @@ devices. Do them once on an Android phone (Chrome) and once on an iPhone
 15. iPhone: the prompt appears only in the app opened from the Home Screen.
 
 Write down any step that does not behave as described, with the phone and browser used.
+
+## Privacy notice and photo retention
+
+**The notice.** A student is shown the privacy notice when they first tap
+Time in, and agrees before the camera opens. The text is in
+`backend/src/services/privacy.ts`. As shipped it is a draft, and the app
+says so above it. To put the approved text in: replace the sections, fill
+in the two bracketed gaps (how long records are kept, and the Data
+Protection Officer's contact), set `placeholder` to `false`, and change
+`version`. Changing the version asks every student to agree again.
+
+**Making the server insist.** By default only the app asks. A phone that
+still holds a copy of the app from before the notice would otherwise be
+unable to time in, with no way to agree. Once everyone has the current app
+(a week after the deploy is a safe wait), set `PRIVACY_CONSENT_REQUIRED` to
+`true` on Railway and the server refuses a time-in without consent.
+
+**Removing old photos (run by you).** Off until `PHOTO_RETENTION_DAYS` is
+set. Nothing is removed automatically; this script is the only thing that
+removes a photo, and it keeps the log, its times and its hours.
+
+1. Back up the uploaded files first (see "Uploaded files" above).
+2. Open a shell in the backend service (`railway ssh`). The photos are on
+   that server's disk, so the script cannot do this from a laptop.
+3. `npm run privacy:purge-photos` prints how many photos are older than
+   the limit and removes nothing.
+4. `npm run privacy:purge-photos -- --confirm` removes them.
+
+Only logs that are Verified or Rejected are touched. This has been run on
+a local database only, not on the host.
 
 ## Checks after deploying
 
