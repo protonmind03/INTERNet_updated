@@ -10,6 +10,15 @@ restored and tested locally. Still owed for Phase 2: the phone checks in
 `DEPLOY.md`, on a real Android phone and a real iPhone. Phases 3 to 5 are
 not started.
 
+**Phase 4, student part, is under way locally (not pushed):** the
+accomplishment note at time-out (4.S1), contact details (4.S4), "my
+coordinator" (4.S5) and the announcements page (4.S9) are built. Still to
+build in the student part: weekly journal (4.S2), completion page (4.S3),
+privacy consent and data download (4.S6), holidays (4.S7) and the
+forgot-to-time-out reminder (4.S8). Decisions D9 (note required, 15
+characters) and D11 (reminder after 1 hour) were answered as recommended
+on 2026-10-10.
+
 **Phase 3 is built and committed locally (2026-10-10), not pushed.** It
 is waiting for the owner to look at it on localhost. Two parts fall short
 of the list below and are noted under it: the pages have not moved to
@@ -350,16 +359,16 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
 ## Phase 4: Role features
 
 ### Student
-- [ ] **4.S1 Accomplishment at time-out.** `attendance.accomplishments`;
+- [x] **4.S1 Accomplishment at time-out.** `attendance.accomplishments`;
   shown in `ReviewDetail` and on `DtrSheet`. **[DECISION D9]**
 - [ ] **4.S2 Weekly journal.** `journals` (unique per student per week); a
   `journal` kind in the supervisor queue; shown in the coordinator's
   student record.
 - [ ] **4.S3 Completion page** `/student/completion`; a one-time "Request
   completion review".
-- [ ] **4.S4 Contact details.** Phone and emergency contact, edited by the
+- [x] **4.S4 Contact details.** Phone and emergency contact, edited by the
   student, visible to supervisor and coordinator.
-- [ ] **4.S5 My coordinator** on Profile and Schedule.
+- [x] **4.S5 My coordinator** on Profile and Schedule.
 - [ ] **4.S6 Privacy consent.** `privacy_consent_at` and
   `privacy_consent_version`; a consent screen before the first time-in
   with clearly marked placeholder text; "Download my data"; a retention
@@ -368,7 +377,7 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
   schedule, DTR and projections skip them.
 - [ ] **4.S8 Forgot-to-time-out reminder,** at most once a day per
   student. **[DECISION D11]**
-- [ ] **4.S9 Announcements page** for students and supervisors.
+- [x] **4.S9 Announcements page** for students and supervisors.
 - [ ] **4.S10 Optional:** `.ics` export. **[DECISION D12]**
 
 ### Supervisor
@@ -476,12 +485,12 @@ screenshots)
 - **D8: built as recommended, awaiting your confirmation.** Terms. Structure (for example school year + semester) and what
   "archive" means. *Recommend:* name, start date, end date; closing
   deactivates students and hides the term by default.
-- **D9. Accomplishment at time-out:** required, with a 15-character
+- **D9: answered 2026-10-10, as recommended.** Accomplishment at time-out: required, with a 15-character
   minimum? *Recommend:* required, 15 characters, with the draft autosaved.
 - **D10. Photo retention period** and who approves the consent text.
   *Recommend:* leave the purge off until the Data Protection Officer
   confirms a period.
-- **D11. Time-out reminder delay.** *Recommend:* 1 hour after the
+- **D11: answered 2026-10-10, as recommended.** Time-out reminder delay. *Recommend:* 1 hour after the
   scheduled end.
 - **D12. Optional items:** `.ics` export, per-intern summary PDF,
   announcement read receipts. *Recommend:* skip all three for now.
