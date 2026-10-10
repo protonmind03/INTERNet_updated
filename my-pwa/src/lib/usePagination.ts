@@ -36,3 +36,27 @@ export function usePagination<T>(items: T[], pageSize = 20): PaginationState<T> 
     setPage: (next) => setRequested(Math.max(1, Math.min(pageCount, next))),
   };
 }
+
+/**
+ * The same shape for a list the server pages: only the current page's rows
+ * are in the browser, and `total` is the server's count of all of them.
+ * Lets <Pagination> show either kind.
+ */
+export function serverPagination<T>(
+  pageItems: T[],
+  total: number,
+  page: number,
+  pageSize: number,
+  setPage: (page: number) => void
+): PaginationState<T> {
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  return {
+    pageItems,
+    page,
+    pageCount,
+    total,
+    from: total === 0 ? 0 : (page - 1) * pageSize + 1,
+    to: Math.min((page - 1) * pageSize + pageItems.length, total),
+    setPage: (next) => setPage(Math.max(1, Math.min(pageCount, next))),
+  };
+}

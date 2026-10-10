@@ -24,6 +24,7 @@ import {
   startPostgresNotificationListener,
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
+import { auditMiddleware } from "./services/audit";
 import { clientErrorRecord, createRateLimiter } from "./services/clientErrors";
 import {
   notificationLink,
@@ -329,6 +330,10 @@ function requireJwtSecret(): string {
 }
 
 const JWT_SECRET = requireJwtSecret();
+
+// Writes the audit log (services/audit.ts). Registered here, ahead of every
+// route that changes a record, so none of them can be missed.
+app.use(auditMiddleware(pool, JWT_SECRET));
 const accountTables = {
   student: { table: "students", idColumn: "student_id" },
   supervisor: { table: "supervisors", idColumn: "supervisor_id" },

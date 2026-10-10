@@ -1322,6 +1322,84 @@ export function registerExtensionRoutes(
 
   /*
   |--------------------------------------------------------------------------
+  | AUDIT LOG (READ-ONLY)
+  |--------------------------------------------------------------------------
+  |
+  | The rows are written by services/audit.ts as actions happen. This is the
+  | coordinator's view of them: newest first, a page at a time, filtered by
+  | kind of action, who did it, or a date range. There is no route that
+  | changes or removes a row.
+  |
+  */
+
+  app.get("/api/coordinator/audit", requireCoordinator, async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? ""), 10) || 50, 1), 200);
+      const offset = Math.max(Number.parseInt(String(req.query.offset ?? ""), 10) || 0, 0);
+      const action = text(req.query.action).slice(0, 60);
+      const actorRole = text(req.query.actor_role);
+      const search = text(req.query.q).slice(0, 100);
+      const from = text(req.query.from);
+      const to = text(req.query.to);
+
+      if ((from && !DATE_PATTERN.test(from)) || (to && !DATE_PATTERN.test(to))) {
+        return res.status(400).json({ message: "Dates must be written as YYYY-MM-DD." });
+      }
+      if (from && to && from > to) {
+        return res.status(400).json({ message: "The start date must not be after the end date." });
+      }
+      if (actorRole && !["student", "supervisor", "coordinator"].includes(actorRole)) {
+        return res.status(400).json({ message: "That is not a kind of account." });
+      }
+
+      // "attendance" matches every attendance action; "attendance.verify" one.
+      const filters = `
+        WHERE ($1 = '' OR a.action = $1 OR a.action LIKE $1 || '.%')
+          AND ($2 = '' OR a.actor_role = $2)
+          AND ($3 = '' OR (a.created_at AT TIME ZONE 'Asia/Manila')::date >= $3::date)
+          AND ($4 = '' OR (a.created_at AT TIME ZONE 'Asia/Manila')::date <= $4::date)
+          AND ($5 = ''
+            OR a.actor_id ILIKE '%' || $5 || '%'
+            OR a.entity_id ILIKE '%' || $5 || '%'
+            OR COALESCE(st.name, sup.name, co.name, '') ILIKE '%' || $5 || '%')
+      `;
+      const joins = `
+        FROM audit_log a
+        LEFT JOIN students st ON a.actor_role = 'student' AND st.student_id::text = a.actor_id
+        LEFT JOIN supervisors sup ON a.actor_role = 'supervisor' AND sup.supervisor_id::text = a.actor_id
+        LEFT JOIN coordinators co ON a.actor_role = 'coordinator' AND co.coordinator_id::text = a.actor_id
+      `;
+      const values = [action, actorRole, from, to, search];
+
+      const [entries, total] = await Promise.all([
+        pool.query(
+          `
+          SELECT a.id, a.actor_role, a.actor_id,
+                 COALESCE(st.name, sup.name, co.name) AS actor_name,
+                 a.action, a.entity_type, a.entity_id, a.details, a.created_at
+          ${joins} ${filters}
+          ORDER BY a.created_at DESC, a.id DESC
+          LIMIT $6 OFFSET $7
+          `,
+          [...values, limit, offset]
+        ),
+        pool.query(`SELECT COUNT(*) AS total ${joins} ${filters}`, values),
+      ]);
+
+      return res.json({
+        entries: entries.rows,
+        total: Number(total.rows[0].total),
+        limit,
+        offset,
+      });
+    } catch (error) {
+      console.error("GET AUDIT LOG ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the audit log." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
   | COMPLAINT REPLIES
   |--------------------------------------------------------------------------
   |

@@ -2359,3 +2359,164 @@ test("notification lists carry the page and record for each notification", async
     }
   }
 });
+
+
+/*
+| Audit log
+*/
+
+test("the audit rules name each action and keep only the listed facts", () => {
+  require("tsx/cjs");
+  const { auditEntryFor, AUDIT_RULES } = require("../src/services/audit.ts");
+  const entry = (method, path, source = {}) =>
+    auditEntryFor(method, path, { params: {}, body: {}, result: {}, ...source });
+
+  // Every rule points at a route that exists, so a renamed route cannot
+  // silently stop being logged.
+  const known = new Set(sweepRoutes.map((route) => route.key));
+  for (const rule of AUDIT_RULES) {
+    assert.ok(known.has(`${rule.method} ${rule.path}`), `no such route: ${rule.method} ${rule.path}`);
+  }
+  // And every audited route is one a signed-in account must be allowed to use.
+  for (const rule of AUDIT_RULES) {
+    const route = sweepRoutes.find((item) => item.key === `${rule.method} ${rule.path}`);
+    assert.ok(route.roles || rule.path === "/api/documents/:documentId/review", `${rule.path} has no role check`);
+  }
+
+  // Attendance: one route, three actions.
+  const status = "/api/attendance/:id/status";
+  assert.equal(entry("PATCH", status, { params: { id: "7" }, body: { status: "Verified" } }).action, "attendance.approve");
+  assert.equal(entry("PATCH", status, { params: { id: "7" }, body: { status: "Rejected", reason: "No photo" } }).action, "attendance.rejected");
+  const undone = entry("PATCH", status, { params: { id: "7" }, body: { status: "Pending" } });
+  assert.deepEqual(
+    { action: undone.action, type: undone.entityType, id: undone.entityId },
+    { action: "attendance.undo", type: "attendance", id: "7" }
+  );
+
+  // Only the named fields are kept. A password can never be.
+  const reset = entry("POST", "/api/coordinator/:kind/:id/reset-password", {
+    params: { kind: "students", id: "2021-0001" },
+    body: { password: "SuperSecret123!", extra: "x" },
+  });
+  assert.deepEqual(reset, {
+    action: "account.password_reset",
+    entityType: "student",
+    entityId: "2021-0001",
+    details: {},
+  });
+  const created = entry("POST", "/api/coordinator/students", {
+    body: { student_id: "2021-0002", name: "A Student", email: "a@b.c", password: "SuperSecret123!", company: "Acme" },
+  });
+  assert.equal(created.entityId, "2021-0002");
+  assert.deepEqual(created.details, { name: "A Student", company: "Acme" });
+  assert.equal(JSON.stringify(AUDIT_RULES.map((rule) => rule.keep || [])).includes("password"), false);
+
+  // Long text is cut; objects are dropped.
+  const long = entry("PATCH", status, { params: { id: "1" }, body: { status: "Rejected", reason: "x".repeat(900) } });
+  assert.equal(long.details.reason.length, 300);
+  const odd = entry("PATCH", status, { params: { id: "1" }, body: { status: "Rejected", reason: { nested: true } } });
+  assert.equal("reason" in odd.details, false);
+
+  // Ids that only exist in the answer.
+  assert.equal(
+    entry("POST", "/api/supervisor/attendance/record", {
+      body: { student_id: "S1", reason: "Camera broken" },
+      result: { attendance: { id: 42 } },
+    }).entityId,
+    "42"
+  );
+  assert.equal(entry("PATCH", "/api/coordinator/students/:studentId/status", { params: { studentId: "S1" }, body: { is_active: false } }).action, "account.deactivate");
+  assert.equal(entry("PATCH", "/api/coordinator/students/:studentId/status", { params: { studentId: "S1" }, body: { is_active: true } }).action, "account.activate");
+
+  // Not audited: reading, and actions on one's own record.
+  assert.equal(entry("GET", "/api/coordinator/students"), null);
+  assert.equal(entry("PUT", "/api/attendance/:id/break"), null);
+  assert.equal(entry("PATCH", status, { params: { id: "1" }, body: {} }), null, "no status, no entry");
+});
+
+test("the audit log is coordinator-only, read-only and paged", async () => {
+  const path = "/api/coordinator/audit";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+  const headers = authHeaders(coordinatorToken);
+  const first = await jsonRequest(`${path}?limit=5`, { headers });
+  assert.equal(first.response.status, 200);
+  assert.ok(Array.isArray(first.body.entries));
+  assert.equal(typeof first.body.total, "number");
+  assert.equal(first.body.limit, 5);
+  assert.ok(first.body.entries.length <= 5);
+  for (const row of first.body.entries) {
+    for (const key of ["id", "actor_role", "actor_id", "action", "details", "created_at"]) assert.ok(key in row, key);
+    assert.equal("ip_hash" in row, false, "the address hash is not sent to the browser");
+    assert.equal(JSON.stringify(row.details).toLowerCase().includes("password"), false);
+  }
+  // Newest first.
+  const times = first.body.entries.map((row) => new Date(row.created_at).getTime());
+  assert.deepEqual(times, [...times].sort((a, b) => b - a));
+
+  // Past the end: no rows, the same total.
+  const beyond = await jsonRequest(`${path}?limit=5&offset=1000000`, { headers });
+  assert.equal(beyond.body.entries.length, 0);
+  assert.equal(beyond.body.total, first.body.total);
+  // Limits are kept within bounds.
+  assert.equal((await jsonRequest(`${path}?limit=99999`, { headers })).body.limit, 200);
+  assert.equal((await jsonRequest(`${path}?limit=-3&offset=-9`, { headers })).body.offset, 0);
+
+  // Filters.
+  const none = await jsonRequest(`${path}?from=1990-01-01&to=1990-12-31`, { headers });
+  assert.equal(none.body.total, 0);
+  assert.equal((await jsonRequest(`${path}?from=31-12-2026`, { headers })).response.status, 400);
+  assert.equal((await jsonRequest(`${path}?from=2026-10-09&to=2026-10-01`, { headers })).response.status, 400);
+  assert.equal((await jsonRequest(`${path}?actor_role=admin`, { headers })).response.status, 400);
+  const onlyAttendance = await jsonRequest(`${path}?action=attendance&limit=200`, { headers });
+  assert.ok(onlyAttendance.body.entries.every((row) => row.action.startsWith("attendance.")));
+
+  // There is no way to change it.
+  for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+    const attempt = await jsonRequest(path, jsonBody(coordinatorToken, method, { action: "x" }));
+    assert.equal(attempt.response.status, 404, `${method} must not exist`);
+  }
+});
+
+test("an audited action writes exactly one row, with who did it", async (t) => {
+  // Needs a real change to observe, so it runs only on a throwaway database.
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const headers = authHeaders(coordinatorToken);
+  const count = async (query) => (await jsonRequest(`/api/coordinator/audit?${query}`, { headers })).body.total;
+  const before = await count("action=account.deactivate");
+
+  const id = encodeURIComponent(student.student_id);
+  const off = await jsonRequest(`/api/coordinator/students/${id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: false }));
+  assert.equal(off.response.status, 200, JSON.stringify(off.body));
+  const on = await jsonRequest(`/api/coordinator/students/${id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: true }));
+  assert.equal(on.response.status, 200, JSON.stringify(on.body));
+  // The row is written after the answer is sent; give it a moment.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+
+  assert.equal(await count("action=account.deactivate"), before + 1);
+  const latest = await jsonRequest("/api/coordinator/audit?action=account&limit=2", { headers });
+  assert.deepEqual(latest.body.entries.map((row) => row.action), ["account.activate", "account.deactivate"]);
+  for (const row of latest.body.entries) {
+    assert.equal(row.actor_role, "coordinator");
+    assert.equal(row.actor_id, coordinator.coordinator_id);
+    assert.equal(row.entity_type, "student");
+    assert.equal(row.entity_id, student.student_id);
+    assert.ok(row.actor_name, "the actor's name is filled in");
+  }
+  // A refused request writes nothing.
+  const refused = await jsonRequest(`/api/coordinator/students/${id}/status`, jsonBody(studentToken, "PATCH", { is_active: false }));
+  assert.equal(refused.response.status, 403);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  assert.equal(await count("action=account.deactivate"), before + 1);
+
+  // The student's sign-in from the start of this run was ended by the
+  // deactivation; sign in again for any test that follows.
+  const again = await login("student", studentEmail, studentPassword);
+  studentToken = again.token;
+});
