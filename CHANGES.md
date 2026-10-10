@@ -611,3 +611,119 @@ changes, run `npm install` in `backend` and `my-pwa`, then
 **Tests**
 - 53 API tests, including one that checks the analytics figures against
   each other and against the dashboard and Monitoring.
+
+## 16. Phase 1: safety, hygiene and quick wins (10 October 2026)
+
+The first phase of the plan in `docs/IMPLEMENTATION-PLAN.md`. No database
+change; every item is its own commit. What was found before starting is in
+`docs/AUDIT-2026-10.md`, and the steps to take on Vercel, Railway and
+GitHub are in `docs/PLATFORM-CHANGES.md`.
+
+**Safety net**
+- **Checks on every push.** `.github/workflows/ci.yml` runs the API tests
+  against a throwaway PostgreSQL and builds and lints the site. Rehearsed
+  step by step on a fresh local database; it has not yet run on GitHub,
+  which happens on the first push.
+- **Backups.** Railway's own backups need the Pro plan, so `DEPLOY.md` now
+  has the manual steps for the database and for the uploaded files, and a
+  restore drill. `npm run db:backup-local` backs up the local database and
+  upload folder and refuses anything that is not on this machine. The
+  drill was run locally: dump, restore to a scratch database, all tests
+  pass on the restored copy. The upload-volume steps come from Railway's
+  CLI reference and have not been tried on the hosted volume.
+- **Foreign keys.** `npm run db:fk-orphans` reports, read-only, the 15
+  foreign keys that migration 006 added without checking existing rows,
+  with the number of orphan rows for each. `npm run db:fk-validate`
+  validates the ones with none, only with `--confirm`. Neither runs during
+  a deploy.
+
+**Security**
+- **Route sweep.** A test reads every route out of the source and checks
+  that only nine listed routes answer without a token, that every other
+  route answers 401 to no token or a made-up one and 403 to the wrong
+  role, and that a student's token does not work on another student's id.
+  It found no unprotected route. It found one fault: a profile update sent
+  with no body answered 500; it now answers 400 or 403.
+- **No stored copies.** Every API answer carries
+  `Cache-Control: private, no-store`, except the health check and the
+  public push key.
+- **Uploads checked by content.** All nine upload routes refuse a file
+  whose first bytes do not match its extension (JPG, PNG, PDF, DOC, DOCX).
+  Before, only the name and the type the browser claimed were checked.
+- **Headers.** `vercel.json` now allows the camera by policy
+  (`camera=(self)`), sends a `Content-Security-Policy-Report-Only` header
+  (it reports, it does not block), and serves the service worker and the
+  manifest with `Cache-Control: no-cache`. On the production build behind
+  these headers, 35 pages and the camera check (with a fake camera) raised
+  one report: the inline script in `offline.html`, which has to be dealt
+  with before the policy is enforced.
+- **The account-wipe tool is gone:** the page, its place on the
+  coordinator's Profile page, and `POST /api/coordinator/accounts/wipe`.
+
+**Fixes**
+- Opening the sign-in page while signed in goes straight to that role's
+  portal. An ended session still shows its notice.
+- The launch screen leaves when the landing page has its data (about one
+  second locally) instead of always after 2.3 seconds.
+- Photos are compressed once, by one helper that keeps the camera
+  orientation. Two paths compressed twice.
+- **One stacking order.** Everything pinned to the screen takes its
+  z-index from variables listed in `index.css` and positions itself from
+  the other layers' measured heights (`lib/layers.ts`). Toasts clear the
+  student tab bar and the phone's safe area; the offline strip moves the
+  page down and no longer covers the header's bell and avatar; a live
+  notification is a toast with a "View" action, and the separate popup
+  that could cover an open dialog is removed. Not seen in a browser: the
+  toast resting above the push prompt, because that prompt only appears
+  when the server has push keys.
+- The coordinator has a notifications page, `/coordinator/notifications`,
+  reached from the bell's "View all notifications".
+- The camera check's colour order is shuffled without bias.
+- A crash shows a screen with Reload and Sign out, and sends one short
+  report to `POST /api/client-errors` (error text, page path, build; ten a
+  minute per address; 8 kB at most; nothing about the person).
+- Monitoring's date range moved to the top of the page and now also shows
+  each student's verified hours and logs inside the dates.
+  `GET /api/coordinator/monitoring` takes optional `from` and `to`; without
+  them its answer is unchanged.
+
+**Size and loading**
+- Each portal page is its own file, fetched when first opened. The main
+  script went from 742 kB to 372 kB (196 kB to 111 kB gzipped). After
+  sign-in the rest of that role's portal is fetched in the background. A
+  page file that fails to load gets one fresh load of the address, which
+  also picks up a newly published version.
+- The sign-in typeface is served by the app (`@fontsource-variable`); the
+  app now loads nothing from another site. IBM Plex Mono was requested
+  from Google but no style used it, so it was dropped, not self-hosted.
+
+**Housekeeping**
+- The root `package.json` and lock file are removed (nothing used them).
+- Every example uses port 5000. The API tests read the port from
+  `backend/.env`, so a machine that runs the backend elsewhere needs no
+  extra setting.
+- `.gitignore` covers database dumps, the backup folder and every `.env.*`
+  file except the two that hold no secret.
+- `sessionGuard.ts` uses the shared `clearSession`. The brand kit's own
+  toast components (`brand/feedback.tsx`) are used only by the
+  development-only preview page; the app's toasts are `lib/toast.ts`.
+
+**Brand kit files edited this round** (each marked "Local edit" in the file)
+- `SplashScreen.tsx`: the launch screen waits for the page's ready signal;
+  fallback 1.2 s; a signal that comes at once is held to 450 ms.
+- `PortalHeader.tsx`: the header sticks below the offline strip.
+- `LoginScreen.tsx`: font family name of the self-hosted typeface.
+
+**Statements in earlier sections that no longer hold**
+- Section 1: "This workspace uses port 5001" (corrected in place).
+- "Architecture alignment decisions": "PDF report generation is not
+  included". Analytics has a PDF export.
+- The same section and "Known gaps": a time-in photo can no longer be
+  chosen from the device; see section 14.
+- Section 9: "Student/supervisor endpoints were left as-is". Every route
+  except the nine public ones requires a token and a role.
+- Section 13, "Still open": the lint errors are fixed, and the date range
+  now reaches the progress list.
+
+**Tests:** 63, all passing (53 before this phase), on a fresh database and
+on one restored from a dump.

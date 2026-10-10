@@ -11,14 +11,23 @@ they were not checked; the last section lists what each one has to show.
 
 ## A. Decisions to make first
 
-**A1. Who can confirm attendance.** Part III, section 2 says the design
-"ensures only supervisors can confirm attendance". The system also lets a
-coordinator verify or reject a log, and records which role did it
-(`verifier_role`). No coordinator screen uses this yet. Choose one:
+**A1. Who can confirm attendance: settled, change the paper.** Part III,
+section 2 says the design "ensures only supervisors can confirm
+attendance". That is no longer how the system works, and the difference is
+in daily use, so the paper has to follow it (entry B9 has the wording):
 
-- Keep the system and change the paper (entry B9 has the wording), or
-- Keep the paper and restrict the route to supervisors. This is a one-line
-  change in `backend/src/server.ts`.
+- The assigned supervisor still confirms or rejects each log.
+- The coordinator now decides flagged logs on the Monitoring page: a log
+  can be verified, rejected with a reason, returned to the supervisor's
+  queue, or acknowledged. The system records which role decided
+  (`verifier_role`).
+- Since October 2026 a supervisor can also record an intern's time-in in
+  person, with a reason, when the camera check cannot run on the intern's
+  device. That log is marked as recorded by the supervisor and is verified
+  when the intern times out.
+
+Restricting the route to supervisors is no longer a one-line change: it
+would remove the coordinator's flagged-log review.
 
 **A2. File storage wording.** The paper presents Azure Blob Storage as the
 production store. `DEPLOY.md` uses a persistent volume on the backend host
@@ -130,15 +139,21 @@ for all three roles; add the read actions.
 
 ### Part III
 
-**B9. Section 2, Use Case Diagram, last paragraph** (see A1; use this only
-if you keep the system as it is).
+**B9. Section 2, Use Case Diagram, last paragraph** (see A1; this
+replacement is needed).
 
 > Current: "...ensures only supervisors can confirm attendance under Daily
 > Report Logging (Feature 3)..."
 
 > Replace with: "...ensures attendance under Daily Report Logging (Feature
-> 3) is confirmed by the assigned supervisor, with the coordinator able to
-> correct a review, and records which role made each decision..."
+> 3) is confirmed by the assigned supervisor, or recorded by that
+> supervisor in person when the student's camera check cannot run; the
+> coordinator reviews logs the system flags and can verify, reject or
+> return them; and the system records which role made each decision..."
+
+If the Use Case Diagram is redrawn, the coordinator needs a "Review
+flagged attendance" use case, and the supervisor a "Record time-in in
+person" use case.
 
 **B10. Section 2, "How the Components Interact".**
 
@@ -177,7 +192,11 @@ after the sentence about Process 3.0:
 
 > Current: "...reflects the PostgreSQL migrations (001–006)."
 
-> Replace with: "...reflects the PostgreSQL migrations (001–008)."
+> Replace with: "...reflects the PostgreSQL migrations (001–016)."
+
+(There were 8 migrations when this entry was first written and 16 on
+10 October 2026. Count the files in `backend/migrations` before
+submitting, and use that number.)
 
 Then, in the component list:
 
@@ -322,16 +341,24 @@ are true of the system today, for a scope section:
 
 - It works online only. The service worker handles push notifications; it
   does not cache pages for offline use.
-- An attendance image can be taken with the camera or chosen from the
-  device, so the system cannot prove the photo was taken at time-in. The
-  supervisor's review is the control.
+- A student's time-in photo is taken by the app after a short camera check
+  (blink, smile or turn, on prompts the server chooses); a photo chosen
+  from the device is refused. The check runs in the student's browser and
+  the server trusts its report, so it raises the effort needed to fake a
+  time-in but does not prove presence; the supervisor's review is still
+  the control. A replacement photo sent with a corrected log, and the
+  supervisor's in-person photo, are ordinary uploads.
 - Password recovery, reminder emails, and browser push need SMTP and VAPID
   settings on the server; without them those features report that they
   are not configured.
 - Coordinator dashboard, monitoring, and analytics figures load on request
   and are not live.
-- The coordinator's date range applies to flagged attendance logs, not to
-  the per-student progress totals.
+- On Monitoring, the coordinator's date range shows each student's hours
+  and logs inside the dates and filters the flagged logs. Progress toward
+  the required hours is always for the whole placement.
+- A page that crashes shows a recovery screen and sends the server a short
+  report (error text, page path, build). There is no error dashboard; the
+  reports are lines in the server log.
 - There is one coordinator account by default and no screen for creating
   another.
 - Students can edit only their name and email on their profile.

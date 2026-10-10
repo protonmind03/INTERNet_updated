@@ -42,6 +42,16 @@ and push this folder. The root `.gitignore` already keeps `.env` files,
 
 Optional, each can be added later:
 
+- `CORS_ORIGINS`: extra browser addresses allowed to call the API,
+  comma-separated, each starting with `https://` and with no trailing
+  slash. Needed when the site answers on more than one address (for
+  example an old Vercel address kept beside a new one); `FRONTEND_URL` is
+  always allowed and is the address used in password-reset links.
+- `LOGIN_MAX_FAILURES` (default 5): wrong passwords allowed on one account
+  before a 15-minute lockout.
+- `LOGIN_IP_MAX_FAILURES` (default 100): wrong passwords allowed from one
+  network address, across all accounts, per 15 minutes. Keep it high if
+  many users share one campus connection.
 - Email (password recovery, deadline reminder emails): `SMTP_HOST`,
   `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Without all five,
   "Forgot password" reports that email is not configured.
@@ -61,6 +71,40 @@ Optional, each can be added later:
    and redeploy the backend.
 
 `VITE_API_URL` is read when the site is built. After changing it, redeploy.
+
+`my-pwa/vercel.json` sets the site's security headers. Its
+`Content-Security-Policy-Report-Only` header names the backend address the
+site may call (`connect-src`). **If the backend URL ever changes, change it
+there as well as in `VITE_API_URL`.** While the header is report-only a
+mismatch only shows as a browser console warning; once it is enforced, a
+mismatch would stop the site reaching the API.
+
+## Which branch deploys
+
+Both hosts deploy the `main` branch, automatically, on every push (Vercel:
+Settings > Environments > Production > Branch Tracking; Railway: service >
+Settings > Source). A push to `main` therefore rebuilds the site, rebuilds
+the backend, and runs any new database migration. Take a backup first when
+the push contains a migration (see Backups).
+
+## Checks on every push (GitHub Actions)
+
+`.github/workflows/ci.yml` runs on every push: it starts a throwaway
+PostgreSQL, applies the migrations, seeds the demo accounts, starts the API
+and runs the API tests; separately it builds and lints the site. It needs
+no secrets. The result shows on the repository's Actions tab and as a tick
+or cross beside each commit.
+
+By default a failing run does **not** stop a deploy. To make it stop one:
+
+- Railway: service > Settings > Source > turn on **Wait for CI**.
+- Vercel: Settings > Git; look for the option to wait for GitHub checks
+  before a production deployment. (Not confirmed on the Hobby plan. If it
+  is not offered, Railway's switch still protects the backend and its
+  migrations, and a red cross on GitHub is the signal not to trust the
+  site build.)
+
+Turn these on only after the workflow has passed once on `main`.
 
 ## 4. First login
 
@@ -189,6 +233,12 @@ and decide what those rows should point at first.
 - Refreshing a page such as `/student/dashboard` reloads it, not a 404.
 - A time-in shows the correct Philippine time.
 - Upload a document, redeploy the backend, and confirm it still downloads.
+- In the browser's developer tools (Network > the page > Response
+  Headers): `Permissions-Policy` includes `camera=(self)` and
+  `Content-Security-Policy-Report-Only` is present. In the Console, sign
+  in and open a few pages: a line mentioning "Report Only" names something
+  the policy would have blocked. The offline page's own script is the one
+  known case.
 - On a phone, tap Time in: the camera opens, the prompts appear, and the
   photo is taken by itself. (The camera needs https, which both hosts
   provide. The Vercel build copies the face-tracking files itself.)
