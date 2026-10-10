@@ -275,7 +275,8 @@ export function useAttendance(studentId: string | undefined) {
           ? { ...log, waiting: [...(todayLog.waiting ?? []), kept.path] }
           : log
       ));
-      if (mustQueue) void sendWaitingSteps();
+      // Start trying to send it: this keeps going until it gets through.
+      void sendWaitingSteps();
       return "queued";
     },
     [todayLog, run]

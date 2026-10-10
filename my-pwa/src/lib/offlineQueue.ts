@@ -18,7 +18,9 @@ import { toast } from "./toast";
 | Time-in is not queued. It needs the camera check, which needs the server.
 |
 | The queue is sent when the app starts, when the phone reports that it is
-| online again, and when the app is brought back to the front. Background
+| online again, and when the app is brought back to the front. If an
+| attempt cannot get through it is repeated (after 3 seconds, then 6, 12,
+| and so on up to once a minute) for as long as steps are waiting. Background
 | Sync is not used: it would run in the service worker, which cannot read
 | the sign-in token, and keeping the token where the worker could read it
 | would widen who can reach it.
@@ -77,25 +79,54 @@ export async function waitingSteps(): Promise<QueuedStep[]> {
 }
 
 let sending: Promise<void> | null = null;
+let retryTimer = 0;
+let retryDelay = 0;
+
+// A phone says it is "online" the moment it joins a network, often a few
+// seconds before a request can actually get through. So one attempt is not
+// enough: while steps are still waiting, keep trying, a little less often
+// each time, until they are sent.
+const RETRY_FIRST_MS = 3_000;
+const RETRY_MAX_MS = 60_000;
+
+function retryLater(): void {
+  window.clearTimeout(retryTimer);
+  retryDelay = retryDelay ? Math.min(retryDelay * 2, RETRY_MAX_MS) : RETRY_FIRST_MS;
+  retryTimer = window.setTimeout(() => {
+    if (localStorage.getItem("student_token")) void sendWaitingSteps();
+  }, retryDelay);
+}
 
 /** Sends the waiting steps in order. Safe to call at any time, any number of times. */
 export function sendWaitingSteps(): Promise<void> {
-  sending ??= send().finally(() => {
-    sending = null;
-  });
+  sending ??= send()
+    .then((outcome) => {
+      if (outcome === "waiting") {
+        retryLater();
+      } else {
+        window.clearTimeout(retryTimer);
+        retryDelay = 0;
+      }
+    })
+    .finally(() => {
+      sending = null;
+    });
   return sending;
 }
 
-async function send(): Promise<void> {
-  if (!navigator.onLine) return;
+/** "done" when nothing is left to send; "waiting" when something still is. */
+async function send(): Promise<"done" | "waiting"> {
   let rows;
   try {
     rows = await queued<QueuedStep>("student");
   } catch {
-    return;
+    return "done";
   }
-  if (rows.length === 0) return;
+  if (rows.length === 0) return "done";
+  // The phone's own "offline" is believed; its "online" is tested by trying.
+  if (!navigator.onLine) return "waiting";
 
+  let stillWaiting = false;
   let sent = 0;
   const refused: string[] = [];
   for (const row of rows) {
@@ -114,11 +145,17 @@ async function send(): Promise<void> {
         })
       );
     } catch {
-      // Still no connection: keep this step and everything after it.
+      // No connection yet: keep this step and everything after it, and try again.
+      stillWaiting = true;
       break;
     }
-    // Signed out, or the server is having trouble: try again later.
-    if (response.status === 401 || response.status === 403 || response.status >= 500) break;
+    // The server is having trouble: try again.
+    if (response.status >= 500) {
+      stillWaiting = true;
+      break;
+    }
+    // Signed out: the steps wait for the next sign-in on this phone.
+    if (response.status === 401 || response.status === 403) break;
 
     await dequeue(row.id).catch(() => {});
     if (response.ok) {
@@ -146,6 +183,7 @@ async function send(): Promise<void> {
     window.dispatchEvent(new Event(QUEUE_CHANGED));
     notifyDataChanged();
   }
+  return stillWaiting ? "waiting" : "done";
 }
 
 /** Starts watching for the moments when waiting steps can be sent. Call once. */
@@ -153,7 +191,11 @@ export function watchOfflineQueue(): void {
   const attempt = () => {
     if (localStorage.getItem("student_token")) void sendWaitingSteps();
   };
-  window.addEventListener("online", attempt);
+  window.addEventListener("online", () => {
+    // Start the waits over: a connection has just come back.
+    retryDelay = 0;
+    attempt();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") attempt();
   });
