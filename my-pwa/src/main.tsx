@@ -4,13 +4,16 @@ import './index.css'
 import App from './App.tsx'
 import { installSessionGuard } from './lib/sessionGuard'
 import { LaunchGate } from './brand'
+import ErrorBoundary from './components/ErrorBoundary'
 
 installSessionGuard()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <LaunchGate>
-      <App />
+      <ErrorBoundary>
+        <App />
+      </ErrorBoundary>
     </LaunchGate>
   </StrictMode>,
 )

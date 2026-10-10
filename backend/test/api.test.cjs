@@ -1712,6 +1712,7 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/auth/password-reset/request",
   "POST /api/auth/password-reset/confirm",
   "GET /api/push/vapid-public-key",
+  "POST /api/client-errors",
 ]);
 
 function readRoutes() {
@@ -1907,4 +1908,83 @@ test("an upload must really be the kind of file its name says", async () => {
   });
   assert.equal(fakeDocx.response.status, 400);
   assert.match(fakeDocx.body.message, /not a real DOCX file/i);
+});
+/*
+| Crash reports from the browser
+*/
+
+test("a crash report keeps four short fields and nothing else", () => {
+  // The rule itself, loaded straight from the source.
+  require("tsx/cjs");
+  const { clientErrorRecord, createRateLimiter } = require("../src/services/clientErrors.ts");
+
+  const record = clientErrorRecord({
+    message: "  Cannot read properties of undefined  ",
+    stack: "Error: x\n    at Page (index.js:1:1)",
+    route: "/reset-password?token=secret-token#top",
+    version: "1f5c9a1",
+    // None of these may survive.
+    token: "Bearer abc",
+    student_id: "DEMO-STU-0001",
+    email: "someone@example.com",
+    userAgent: "Mozilla/5.0",
+    extra: { nested: true },
+  });
+  assert.deepEqual(Object.keys(record).sort(), ["message", "route", "stack", "version"]);
+  assert.equal(record.message, "Cannot read properties of undefined");
+  assert.equal(record.route, "/reset-password", "the query string is dropped");
+  assert.equal(record.version, "1f5c9a1");
+
+  const long = clientErrorRecord({
+    message: "m".repeat(5000),
+    stack: "s".repeat(50000),
+    route: "/" + "r".repeat(5000),
+    version: "v".repeat(500),
+  });
+  assert.equal(long.message.length, 500);
+  assert.equal(long.stack.length, 4000);
+  assert.equal(long.route.length, 200);
+  assert.equal(long.version.length, 40);
+
+  assert.equal(clientErrorRecord({ stack: "no message" }), null);
+  assert.equal(clientErrorRecord({ message: 42 }), null);
+  assert.equal(clientErrorRecord("text"), null);
+  assert.equal(clientErrorRecord(null), null);
+  assert.equal(clientErrorRecord({ message: "x", route: "javascript:alert(1)" }).route, "");
+  assert.equal(clientErrorRecord({ message: "x", version: "<script>" }).version, "");
+
+  // The limiter: ten in a window, then refused until the window passes.
+  const allowed = createRateLimiter(10, 60_000);
+  const results = Array.from({ length: 12 }, () => allowed("one-address", 1_000));
+  assert.deepEqual(results, [...Array(10).fill(true), false, false]);
+  assert.equal(allowed("another-address", 1_000), true, "each address is counted alone");
+  assert.equal(allowed("one-address", 62_000), true, "a new window starts after a minute");
+});
+
+test("the crash report route is size-capped, validated and rate-limited", async () => {
+  const send = (body, raw = false) =>
+    fetch(new URL("/api/client-errors", apiBaseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: raw ? body : JSON.stringify(body),
+    }).then(async (response) => {
+      await response.body?.cancel();
+      return response.status;
+    });
+
+  // Too large and unreadable bodies are refused before anything is counted.
+  assert.equal(await send({ message: "x", stack: "s".repeat(20_000) }), 413);
+  assert.equal(await send("{not json", true), 400);
+
+  // Reports are accepted up to the limit, then refused. An earlier run in
+  // the same minute may already have used some of the allowance.
+  const statuses = [];
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    statuses.push(await send({ message: "Test crash report", route: "/test", version: "test" }));
+  }
+  assert.ok(statuses.every((status) => status === 204 || status === 429), statuses.join(","));
+  assert.ok(statuses.filter((status) => status === 204).length <= 10, statuses.join(","));
+  assert.equal(statuses.at(-1), 429, "the limit is reached within twelve reports");
+  const firstRefusal = statuses.indexOf(429);
+  assert.ok(statuses.slice(firstRefusal).every((status) => status === 429), "once refused, it stays refused");
 });

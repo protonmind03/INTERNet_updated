@@ -24,6 +24,7 @@ import {
   startPostgresNotificationListener,
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
+import { clientErrorRecord, createRateLimiter } from "./services/clientErrors";
 import { registerExtensionRoutes } from "./routes/extensions";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
@@ -66,6 +67,33 @@ app.use(
     ? cors({ origin: allowedOrigins })
     : cors()
 );
+
+// Crash reports from the browser. Registered before the general body parser
+// so it can have a much smaller size limit of its own. See
+// services/clientErrors.ts for what is kept.
+const clientErrorBody = express.json({ limit: "8kb" });
+const clientErrorAllowed = createRateLimiter(10, 60_000);
+app.post("/api/client-errors", (req, res) => {
+  clientErrorBody(req, res, (parseError?: unknown) => {
+    if (parseError) {
+      const tooLarge =
+        (parseError as { type?: string }).type === "entity.too.large";
+      return res
+        .status(tooLarge ? 413 : 400)
+        .json({ message: tooLarge ? "Report too large." : "Report not readable." });
+    }
+    if (!clientErrorAllowed(req.ip || "unknown")) {
+      return res.status(429).json({ message: "Too many reports. Try again later." });
+    }
+    const record = clientErrorRecord(req.body);
+    if (!record) {
+      return res.status(400).json({ message: "A report needs a message." });
+    }
+    console.error("CLIENT ERROR:", JSON.stringify(record));
+    return res.status(204).end();
+  });
+});
+
 app.use(express.json());
 
 // Unauthenticated liveness probe for the hosting platform's health check.

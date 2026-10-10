@@ -20,6 +20,13 @@ export default defineConfig(({ mode }) => {
     loadEnv('development', process.cwd(), 'VITE_').VITE_API_URL || 'http://localhost:5000'
 
   return {
+    // Shown in crash reports so a fault can be tied to a build. Vercel supplies
+    // the commit; a local build says "local".
+    define: {
+      __APP_VERSION__: JSON.stringify(
+        (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'local'
+      ),
+    },
     plugins: [react(), tailwindcss(), ...(phone ? [basicSsl()] : [])],
     server: phone
       ? { host: true, proxy: { '/api': { target: backend, changeOrigin: true } } }
