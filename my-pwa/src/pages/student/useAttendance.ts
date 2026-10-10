@@ -227,7 +227,8 @@ export function useAttendance(studentId: string | undefined) {
     async (logId: number, explanation: string, photo: File | null) => {
       const form = new FormData();
       form.append("explanation", explanation.trim());
-      if (photo) form.append("image", await compressPhoto(photo));
+      // Already made smaller by the page that chose it (AttendanceCorrections).
+      if (photo) form.append("image", photo);
       await run(
         () =>
           fetch(

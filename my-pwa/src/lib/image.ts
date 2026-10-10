@@ -3,6 +3,11 @@
  * over the server's 5 MB limit; an attendance photo only needs to be clear
  * enough to verify, so it is scaled to at most `maxEdge` pixels and saved
  * as JPEG. If the browser cannot decode the file, the original is returned.
+ *
+ * This is the only photo compressor. The page that receives the photo calls
+ * it once, checks the result against the size limit, and passes that file
+ * on; nothing downstream compresses it again. The photo is read with its
+ * camera orientation applied, so a phone held upright stays upright.
  */
 export async function compressPhoto(
   file: File,
@@ -39,7 +44,8 @@ export async function compressPhoto(
   const blob = await new Promise<Blob | null>((resolve) =>
     canvas.toBlob(resolve, "image/jpeg", quality)
   );
-  if (!blob) return file;
+  // Re-encoding did not help (a small PNG, say): keep the original.
+  if (!blob || blob.size >= file.size) return file;
 
   const name = file.name.replace(/\.[^.]+$/, "") || "attendance";
   return new File([blob], `${name}.jpg`, { type: "image/jpeg" });

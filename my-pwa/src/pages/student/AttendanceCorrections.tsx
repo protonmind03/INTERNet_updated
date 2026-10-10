@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import Icon from "../../components/Icon";
 import { Button, FormError, FormField, Modal } from "../../components/ui";
 import { formatDayDate, formatLongDate, formatTime } from "../../lib/format";
-import { ATTENDANCE_PHOTO_MAX_MB, shrinkPhoto, uploadProblem } from "../../lib/files";
+import { ATTENDANCE_PHOTO_MAX_MB, uploadProblem } from "../../lib/files";
+import { compressPhoto } from "../../lib/image";
 import { errorText, toast } from "../../lib/toast";
 import {
   logDateKey,
@@ -207,7 +208,7 @@ export function ResubmitDialog({
       setError("Use a JPG or PNG photo.");
       return;
     }
-    const file = await shrinkPhoto(chosen);
+    const file = await compressPhoto(chosen);
     const problem = uploadProblem(file, ATTENDANCE_PHOTO_MAX_MB);
     if (problem) {
       setError(problem);

@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
-import { compressPhoto } from "../../lib/image";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, withWorkingToast } from "../../lib/toast";
 
@@ -333,7 +332,8 @@ export function useSupervisorWork(
         form.append("student_id", studentId);
         form.append("reason", reason.trim());
         if (note.trim()) form.append("note", note.trim());
-        form.append("image", await compressPhoto(photo));
+        // Already made smaller by the page that chose it (RecordTimeIn).
+        form.append("image", photo);
         const response = await fetch(
           `${API_URL}/api/supervisor/attendance/record`,
           withSupervisorAuth({ method: "POST", body: form })

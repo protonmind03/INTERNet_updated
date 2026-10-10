@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../../components/Icon";
 import { Button, FormError, FormField, Modal } from "../../components/ui";
-import { ATTENDANCE_PHOTO_MAX_MB, shrinkPhoto, uploadProblem } from "../../lib/files";
+import { ATTENDANCE_PHOTO_MAX_MB, uploadProblem } from "../../lib/files";
+import { compressPhoto } from "../../lib/image";
 import { formatTime, localDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import type { SupervisorWork } from "./useSupervisorWork";
@@ -86,7 +87,7 @@ export default function RecordTimeIn({
       setError("Use a JPG or PNG photo.");
       return;
     }
-    const smaller = await shrinkPhoto(file);
+    const smaller = await compressPhoto(file);
     const problem = uploadProblem(smaller, ATTENDANCE_PHOTO_MAX_MB);
     if (problem) {
       setError(problem);
