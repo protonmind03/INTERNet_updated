@@ -34,6 +34,8 @@ export type QueuedStep = {
   path: StepPath;
   occurredAt: string;
   requestId: string;
+  /** Anything else the step carries: the accomplishment note at time-out. */
+  extra?: Record<string, string>;
 };
 
 /** Sent to the pages that show attendance, so they reload after a step is sent. */
@@ -54,12 +56,17 @@ function requestId(): string {
 }
 
 /** Keeps a step for later. Returns it, or null when this browser cannot keep it. */
-export async function queueStep(logId: number, path: StepPath): Promise<QueuedStep | null> {
+export async function queueStep(
+  logId: number,
+  path: StepPath,
+  extra?: Record<string, string>
+): Promise<QueuedStep | null> {
   const step: QueuedStep = {
     logId,
     path,
     occurredAt: new Date().toISOString(),
     requestId: requestId(),
+    ...(extra ? { extra } : {}),
   };
   try {
     const id = await enqueue("student", step);
@@ -139,6 +146,7 @@ async function send(): Promise<"done" | "waiting"> {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            ...(step.extra ?? {}),
             occurred_at: step.occurredAt,
             client_request_id: step.requestId,
           }),

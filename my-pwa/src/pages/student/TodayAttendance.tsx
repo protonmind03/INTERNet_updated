@@ -33,6 +33,9 @@ import {
 
 type Pending = "break" | "back" | "out" | null;
 
+/** The shortest note of the day's work the app accepts at time-out. */
+const ACCOMPLISHMENT_MIN = 15;
+
 const STEPS = [
   { key: "time_in", label: "Time in", icon: "play" },
   { key: "break_time", label: "Break", icon: "coffee" },
@@ -51,6 +54,16 @@ export default function TodayAttendance({
   const [now, setNow] = useState(() => new Date());
   const [timeInOpen, setTimeInOpen] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
+  // What the student did today, asked for at time-out and kept as a draft
+  // until it is sent.
+  const [accomplishment, setAccomplishment] = useState("");
+  const [accomplishmentError, setAccomplishmentError] = useState("");
+  const discardAccomplishment = useDraft(
+    "student",
+    pending === "out" ? "accomplishment" : null,
+    accomplishment,
+    setAccomplishment
+  );
 
   // The clock shows hours and minutes, so it only needs to move when the
   // minute does; a seconds counter was the one thing on this page that
@@ -63,13 +76,24 @@ export default function TodayAttendance({
   const confirm = async () => {
     const action = pending;
     if (!action) return;
+    if (action === "out" && accomplishment.trim().length < ACCOMPLISHMENT_MIN) {
+      setAccomplishmentError(
+        `Say what you accomplished today in at least ${ACCOMPLISHMENT_MIN} characters.`
+      );
+      return;
+    }
+    setAccomplishmentError("");
     try {
       const outcome =
         action === "break"
           ? await attendance.startBreak()
           : action === "back"
             ? await attendance.endBreak()
-            : await attendance.timeOut();
+            : await attendance.timeOut(accomplishment);
+      if (action === "out") {
+        discardAccomplishment();
+        setAccomplishment("");
+      }
       if (outcome === "queued") {
         // No connection: kept on the phone with the time it was pressed.
         toast.info("Saved on this phone. It will be sent when you're back online.");
@@ -299,7 +323,33 @@ export default function TodayAttendance({
         busyProcess="timeIn"
         onConfirm={confirm}
         onCancel={() => setPending(null)}
-      />
+      >
+        <label htmlFor="accomplishment" className="block text-sm font-medium text-slate-900">
+          What did you accomplish today?
+        </label>
+        <p id="accomplishment-hint" className="mt-0.5 text-xs text-slate-500">
+          A sentence or two. Your supervisor sees it with this log, and it is printed on your
+          time record.
+        </p>
+        <textarea
+          id="accomplishment"
+          rows={3}
+          maxLength={1000}
+          value={accomplishment}
+          onChange={(event) => {
+            setAccomplishment(event.target.value);
+            if (accomplishmentError) setAccomplishmentError("");
+          }}
+          aria-describedby="accomplishment-hint"
+          aria-invalid={Boolean(accomplishmentError)}
+          className="field mt-2"
+        />
+        {accomplishmentError && (
+          <p role="alert" className="mt-1 text-sm text-red-700">
+            {accomplishmentError}
+          </p>
+        )}
+      </ConfirmDialog>
     </section>
   );
 }

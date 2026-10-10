@@ -123,6 +123,9 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         <Fact label="Hours" value={open ? "—" : formatHours(entry.hours)} strong />
       </dl>
 
+      {entry.accomplishments && (
+        <Quote label="What the intern accomplished">{entry.accomplishments}</Quote>
+      )}
       {entry.note && <Quote label="Intern's note">{entry.note}</Quote>}
 
       {entry.correction_note && (

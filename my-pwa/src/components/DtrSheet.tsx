@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { Button, Card } from "./ui";
 import { formatHours, formatTime } from "../lib/format";
 
@@ -11,6 +11,8 @@ export type DtrLog = {
   time_out: string | null;
   hours: number | string | null;
   status: string;
+  /** What the student wrote at time-out about the day's work. */
+  accomplishments?: string | null;
 };
 
 export type DtrAbsence = { date: string; status: string };
@@ -149,9 +151,9 @@ export default function DtrSheet({
             </thead>
             <tbody>
               {rows.map((row) => (
+                <Fragment key={row.key}>
                 <tr
-                  key={row.key}
-                  className={`border-b border-slate-200 ${
+                  className={`${row.log?.accomplishments ? "" : "border-b border-slate-200"} ${
                     row.log || row.absence ? "" : "text-slate-400"
                   }`}
                 >
@@ -186,6 +188,15 @@ export default function DtrSheet({
                             : "")}
                   </td>
                 </tr>
+                {row.log?.accomplishments && (
+                  <tr className="border-b border-slate-200">
+                    <td />
+                    <td colSpan={5} className="px-2 pb-1.5 text-[11px] leading-snug text-slate-600">
+                      {row.log.accomplishments}
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
             <tfoot>

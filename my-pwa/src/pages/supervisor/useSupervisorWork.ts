@@ -56,6 +56,8 @@ export type AttendanceEntry = {
   capture_method: "liveness" | "supervisor" | null;
   /** At least one step's time came from the intern's phone while it was offline. */
   recorded_offline?: boolean;
+  /** What the intern wrote at time-out about the day's work. */
+  accomplishments?: string | null;
   liveness_checks: { flash?: string; attempts?: number | null } | null;
   /** Why the supervisor recorded the time-in instead of the camera check. */
   capture_reason: string | null;

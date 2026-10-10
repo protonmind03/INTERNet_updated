@@ -39,6 +39,8 @@ export type AttendanceLog = {
   capture_method?: "liveness" | "supervisor" | null;
   /** At least one step's time came from the phone while it was offline. */
   recorded_offline?: boolean;
+  /** What the student wrote at time-out about the day's work. */
+  accomplishments?: string | null;
   /** Steps taken offline on this phone that have not reached the server yet. */
   waiting?: StepPath[];
 };
@@ -241,7 +243,11 @@ export function useAttendance(studentId: string | undefined) {
    * pressed and sent later ("queued"); see lib/offlineQueue.ts.
    */
   const step = useCallback(
-    async (path: StepPath, fallback: string): Promise<"sent" | "queued"> => {
+    async (
+      path: StepPath,
+      fallback: string,
+      extra?: Record<string, string>
+    ): Promise<"sent" | "queued"> => {
       if (!todayLog) throw new Error("Time in first.");
       // Earlier steps are still waiting: this one has to wait behind them,
       // or the server would be asked for them out of order.
@@ -255,7 +261,7 @@ export function useAttendance(studentId: string | undefined) {
                 withStudentAuth({
                   method: "PUT",
                   headers: { "Content-Type": "application/json" },
-                  body: "{}",
+                  body: JSON.stringify(extra ?? {}),
                 })
               ),
             fallback
@@ -266,7 +272,7 @@ export function useAttendance(studentId: string | undefined) {
           if (!(error instanceof TypeError)) throw error;
         }
       }
-      const kept = await queueStep(todayLog.id, path);
+      const kept = await queueStep(todayLog.id, path, extra);
       if (!kept) {
         throw new TypeError("No connection, and this browser cannot keep the step for later.");
       }
@@ -334,7 +340,11 @@ export function useAttendance(studentId: string | undefined) {
     timeIn,
     startBreak: () => step("break", "Could not record your break."),
     endBreak: () => step("break-end", "Could not record your return from break."),
-    timeOut: () => step("time-out", "Could not record your time-out."),
+    /** Times out, with the student's note of what they did today. */
+    timeOut: (accomplishments: string) =>
+      step("time-out", "Could not record your time-out.", {
+        accomplishments: accomplishments.trim(),
+      }),
   };
 }
 

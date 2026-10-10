@@ -2051,7 +2051,8 @@ app.get(
             correction_note,
             corrected_at,
             capture_method,
-            recorded_offline
+            recorded_offline,
+            accomplishments
           FROM attendance
           WHERE student_id = $1
           ORDER BY
@@ -2787,6 +2788,21 @@ app.put(
       const step = await attendanceStepFor(req, res, "time-out");
       if (!step) return;
 
+      // What the student did today. Optional here, so an older copy of the
+      // app that does not send it still works; when it is sent it has to say
+      // something. The app itself asks for it at every time-out.
+      let accomplishments: string | null = null;
+      if (req.body?.accomplishments !== undefined && req.body.accomplishments !== null) {
+        const written =
+          typeof req.body.accomplishments === "string" ? req.body.accomplishments.trim() : "";
+        if (written.length < ACCOMPLISHMENT_MIN || written.length > ACCOMPLISHMENT_MAX) {
+          return res.status(400).json({
+            message: `Say what you accomplished today in ${ACCOMPLISHMENT_MIN} to ${ACCOMPLISHMENT_MAX} characters.`,
+          });
+        }
+        accomplishments = written;
+      }
+
       const result =
         await pool.query(
           `
@@ -2794,6 +2810,7 @@ app.put(
           SET
             time_out = COALESCE($4::timestamptz, NOW()),
             recorded_offline = recorded_offline OR $4::timestamptz IS NOT NULL,
+            accomplishments = COALESCE($5::text, accomplishments),
 
             -- A break still open at time-out ends now.
             break_end_time = CASE
@@ -2867,9 +2884,10 @@ app.put(
             status,
             image_url,
             capture_method,
-            recorded_offline
+            recorded_offline,
+            accomplishments
           `,
-          [id, auth?.id, MAX_SHIFT_HOURS, step.at]
+          [id, auth?.id, MAX_SHIFT_HOURS, step.at, accomplishments]
         );
 
       if (
@@ -3020,6 +3038,10 @@ const ATTENDANCE_COLUMNS = `
 
 // A shift is never longer than this, so a typo cannot record a multi-day log.
 const MAX_SHIFT_HOURS = 16;
+
+// The note a student writes at time-out about what they did that day.
+const ACCOMPLISHMENT_MIN = 15;
+const ACCOMPLISHMENT_MAX = 1000;
 
 app.put(
   "/api/attendance/:id/late-time-out",
@@ -3361,6 +3383,7 @@ app.get(
             a.corrected_at,
             a.capture_method,
             a.recorded_offline,
+            a.accomplishments,
             a.liveness_checks,
             a.capture_reason
 

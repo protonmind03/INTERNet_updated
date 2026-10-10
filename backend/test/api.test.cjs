@@ -2227,9 +2227,14 @@ test("an offline break, return and time-out are recorded once, in order, and mar
   assert.equal(back.response.status, 200, JSON.stringify(back.body));
 
   const outId = uuid();
-  const out = await step("time-out", { occurred_at: at(3), client_request_id: outId });
+  // A time-out carries the note of the day's work; too short a note is refused.
+  const noNote = await step("time-out", { occurred_at: at(3), client_request_id: uuid(), accomplishments: "Too short" });
+  assert.equal(noNote.response.status, 400);
+  const dayNote = "Encoded 40 inventory records and checked them against the ledger.";
+  const out = await step("time-out", { occurred_at: at(3), client_request_id: outId, accomplishments: `  ${dayNote}  ` });
   assert.equal(out.response.status, 200, JSON.stringify(out.body));
   assert.equal(out.body.attendance.recorded_offline, true);
+  assert.equal(out.body.attendance.accomplishments, dayNote, "stored without the outer spaces");
   assert.equal(new Date(out.body.attendance.time_out).toISOString(), at(3));
   const outAgain = await step("time-out", { occurred_at: at(3), client_request_id: outId });
   assert.equal(outAgain.body.replayed, true);
@@ -2241,6 +2246,7 @@ test("an offline break, return and time-out are recorded once, in order, and mar
     { headers: authHeaders(supervisor.token) }
   );
   assert.equal(list.body.attendance.find((log) => log.id === logId).recorded_offline, true);
+  assert.equal(list.body.attendance.find((log) => log.id === logId).accomplishments, dayNote, "the supervisor sees the note");
   const own = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, {
     headers: authHeaders(studentToken),
   });
@@ -2875,4 +2881,29 @@ test("monitoring can be narrowed to one term and is unchanged without it", async
   assert.equal(both.response.status, 200);
   assert.deepEqual(both.body.period, { from: "2000-01-01", to: "2099-12-31" });
   assert.equal((await jsonRequest("/api/coordinator/monitoring?term=none", { headers: authHeaders(studentToken) })).response.status, 403);
+});
+
+test("the accomplishment note at time-out is optional, and checked when it is sent", async () => {
+  // A log id that does not exist: nothing can be changed by these requests.
+  const timeOut = (body) =>
+    jsonRequest("/api/attendance/999999999/time-out", jsonBody(studentToken, "PUT", body));
+
+  // Not sent: as before (an older copy of the app sends nothing).
+  assert.equal((await timeOut({})).response.status, 404);
+  // Sent but not a real note: refused before anything else.
+  for (const bad of ["", "   ", "Done.", "x".repeat(1001), 42, ["a list"], { a: 1 }]) {
+    const refused = await timeOut({ accomplishments: bad });
+    assert.equal(refused.response.status, 400, JSON.stringify(bad).slice(0, 30));
+    assert.match(refused.body.message, /what you accomplished/i);
+  }
+  // A real note on a log that is not theirs: the usual answer.
+  assert.equal(
+    (await timeOut({ accomplishments: "Filed and labelled the week's delivery receipts." })).response.status,
+    404
+  );
+  // Every attendance row now says what was accomplished, or null.
+  const own = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, {
+    headers: authHeaders(studentToken),
+  });
+  for (const log of own.body.attendance) assert.ok("accomplishments" in log);
 });

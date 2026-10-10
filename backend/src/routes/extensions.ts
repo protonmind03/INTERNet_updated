@@ -1201,7 +1201,8 @@ export function registerExtensionRoutes(
         const [attendance, tasks, documents, evaluations, absences, schedule] = await Promise.all([
           pool.query(
             `SELECT id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
-                    time_out, hours, note, status, review_notes, correction_note
+                    time_out, hours, note, status, review_notes, correction_note,
+                    accomplishments, recorded_offline
              FROM attendance WHERE student_id = $1
              ORDER BY date DESC, id DESC LIMIT 1000`,
             [id]
