@@ -1,0 +1,109 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: internet_ojt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d internet_ojt"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    defaults:
+      run:
+        working-directory: backend
+
+    # None of these are secrets. The database lives only for this run, and
+    # the seed script refuses anything but internet_ojt on a loopback host.
+    env:
+      DATABASE_PUBLIC_URL: postgresql://postgres:postgres@localhost:5432/internet_ojt
+      JWT_SECRET: ci-only-signing-key-never-used-outside-this-workflow
+      PORT: "5000"
+      FRONTEND_URL: http://localhost:5173
+      PRIVATE_UPLOAD_DIR: ${{ runner.temp }}/private-uploads
+      API_BASE_URL: http://127.0.0.1:5000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - run: npm ci
+
+      - name: Apply migrations
+        run: npm run db:migrate
+
+      - name: Seed the demo accounts
+        run: npm run db:seed-demo
+
+      - name: Start the API
+        run: |
+          npx tsx src/server.ts > "$RUNNER_TEMP/api.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "$API_BASE_URL/api/health" > /dev/null; then
+              echo "API is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "The API did not answer /api/health within 30 seconds."
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: Run the API tests
+        run: npm test
+
+      - name: Show the API log
+        if: failure()
+        run: cat "$RUNNER_TEMP/api.log" || true
+
+  frontend:
+    name: Frontend build and lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: my-pwa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: my-pwa/package-lock.json
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - run: npm run lint
