@@ -26,7 +26,7 @@ two rows marked "not checked".
 | Vercel | Plan | Hobby | yes |
 | Railway | Source repo and Root Directory | `protonmind03/INTERNet_updated`, `/backend` | yes |
 | Railway | Branch connected to production | `main`, auto-deploy on | yes |
-| Railway | Wait for CI | available, off | yes |
+| Railway | Wait for CI | on since 2026-10-10 (a failing CI run now blocks the backend deploy) | yes |
 | Railway | Volumes | `internet_updated-volume` on the backend, `postgres-volume` on Postgres | yes |
 | Railway | Variables | `CORS_ORIGINS`, `DATABASE_PUBLIC_URL`, `FRONTEND_URL`, `JWT_SECRET`, `NODE_ENV`, `PRIVATE_UPLOAD_DIR` (six, no others) | yes |
 | Railway | `SMTP_*` (5), `WEB_PUSH_*` (3), `AZURE_*` | not set: recovery email, reminder email and push are off | yes |

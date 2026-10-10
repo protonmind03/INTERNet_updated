@@ -19,7 +19,10 @@ not started.
    `git pull --ff-only origin main`. If the fast-forward fails, stop.
 3. One item = one local commit, with a conventional message
    (`fix(student): ...`).
-4. **Never push unless told "push".** Each phase gate gives a push plan:
+4. **Review on localhost first** (added 2026-10-10). Work is built and
+   committed locally. At each gate the owner is told how to see it on
+   localhost, and it goes live only after they have looked and said so.
+4a. **Never push unless told "push".** Each phase gate gives a push plan:
    the commits, the platform changes to apply first, whether a backup is
    needed, and the order (variables, backend, frontend). When backend and
    frontend must go separately, backend first, then wait for a healthy
