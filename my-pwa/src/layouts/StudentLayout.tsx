@@ -6,6 +6,7 @@ import NotificationBell from "../components/NotificationBell";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts, type NavCounts } from "../lib/navCounts";
+import { useReportedHeight } from "../lib/layers";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useMediaQuery } from "../lib/useMediaQuery";
 
@@ -58,6 +59,8 @@ export default function StudentLayout({
   const desktop = useMediaQuery("(min-width: 768px)");
 
   const [moreOpen, setMoreOpen] = useState(false);
+  // Toasts and the push prompt sit above the tab bar, whatever its height.
+  const tabBar = useReportedHeight<HTMLElement>("--inb-bottom-bar");
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -89,7 +92,7 @@ export default function StudentLayout({
   );
 
   return (
-    <div className="flex h-dvh bg-slate-50 print:block print:h-auto print:bg-white">
+    <div className="flex h-[calc(100dvh-var(--inb-top-inset))] bg-slate-50 print:block print:h-auto print:bg-white">
       {/* SIDEBAR (desktop) */}
       <aside className="surface-brand hidden w-64 shrink-0 flex-col md:flex print:hidden">
         <div className="border-b border-white/10 px-5 py-5">
@@ -228,8 +231,9 @@ export default function StudentLayout({
 
         {/* BOTTOM TAB BAR (phones) */}
         <nav
+          ref={tabBar}
           aria-label="Main"
-          className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_-10px_rgb(15_30_110/0.22)] backdrop-blur md:hidden print:hidden"
+          className="fixed inset-x-0 bottom-0 z-(--z-tabbar) grid grid-cols-5 border-t border-slate-200/80 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_18px_-10px_rgb(15_30_110/0.22)] backdrop-blur md:hidden print:hidden"
         >
           {PRIMARY_NAV.map((item) => (
             <NavLink
@@ -282,7 +286,7 @@ export default function StudentLayout({
       {/* "MORE" SHEET (phones) */}
       {moreOpen && (
         <div
-          className="fixed inset-0 z-50 flex animate-fade-in items-end bg-psu-950/50 md:hidden"
+          className="fixed inset-0 z-(--z-drawer) flex animate-fade-in items-end bg-psu-950/50 md:hidden"
           onClick={() => setMoreOpen(false)}
         >
           <div

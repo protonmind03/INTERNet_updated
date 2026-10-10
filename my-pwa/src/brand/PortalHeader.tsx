@@ -48,9 +48,10 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
   }
 
   return (
-    // Local edit: dark headers use the app's shared brand gradient.
+    // Local edit: dark headers use the app's shared brand gradient, and the
+    // header sticks below the offline strip when that is showing.
     <header
-      className={`sticky top-0 z-30 ${dark ? "surface-brand shadow-raised" : ""}`}
+      className={`sticky top-(--inb-top-inset) z-30 ${dark ? "surface-brand shadow-raised" : ""}`}
       style={dark ? undefined : { background: t.colors.surface, borderBottom: "1px solid #E2E8F0" }}
     >
       <div className="flex items-center gap-2.5 px-3 py-2.5">

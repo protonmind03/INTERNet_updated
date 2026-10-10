@@ -88,8 +88,8 @@ export default function SupervisorLayout({
   };
 
   return (
-    <div className="app-canvas flex min-h-dvh flex-col print:bg-white">
-      <header className="surface-brand-bar sticky top-0 z-30 text-white shadow-raised print:hidden">
+    <div className="app-canvas flex min-h-[calc(100dvh-var(--inb-top-inset))] flex-col print:bg-white">
+      <header className="surface-brand-bar sticky top-(--inb-top-inset) z-30 text-white shadow-raised print:hidden">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
           <NavLink to="/supervisor/dashboard" aria-label="INTERNet Supervisor Portal, dashboard" className="flex shrink-0 items-center gap-2.5">
             <span className="hidden xl:block">

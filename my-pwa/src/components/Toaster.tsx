@@ -19,7 +19,7 @@ export default function Toaster() {
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-20 z-[70] flex flex-col items-center gap-2 px-4 md:inset-x-auto md:bottom-6 md:right-6 md:items-end md:px-0 print:hidden"
+      className="float-toasts pointer-events-none fixed inset-x-0 z-(--z-toast) flex flex-col items-center gap-2 px-4 md:inset-x-auto md:right-6 md:items-end md:px-0 print:hidden"
       aria-live="polite"
     >
       {messages.map((message) => {
@@ -59,7 +59,14 @@ export default function Toaster() {
                 {message.tone === "info" && <Icon name="info" size={16} />}
               </span>
               <div className="min-w-0 flex-1 py-0.5">
-                <p className="text-sm font-medium leading-snug">{message.text}</p>
+                <p className={`text-sm leading-snug ${message.detail ? "font-semibold" : "font-medium"}`}>
+                  {message.text}
+                </p>
+                {message.detail && (
+                  <p className={`mt-0.5 line-clamp-3 text-xs leading-snug ${dark ? "text-white/75" : "text-slate-600"}`}>
+                    {message.detail}
+                  </p>
+                )}
                 {message.action && (
                   <button
                     type="button"

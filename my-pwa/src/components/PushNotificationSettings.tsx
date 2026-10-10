@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import { API_URL, withRoleAuth } from "../lib/api";
 import { BrandLoader } from "../brand";
+import { useReportedHeight } from "../lib/layers";
 import { toast } from "../lib/toast";
 
 type Role = "coordinator" | "student" | "supervisor";
@@ -57,6 +58,8 @@ export default function PushNotificationSettings() {
   const [identity, setIdentity] = useState<ReturnType<typeof currentRole>>(null);
   // Dismissing the prompt is remembered on this device, so it does not
   // come back on every page.
+  // Toasts rest above this card while it shows (8 px between them).
+  const card = useReportedHeight<HTMLElement>("--inb-push-card", 8);
   const [dismissed, setDismissed] = useState(
     () => localStorage.getItem(DISMISSED_KEY) === "1"
   );
@@ -233,7 +236,8 @@ export default function PushNotificationSettings() {
   return (
     <aside
       aria-label="Browser notification settings"
-      className="print:hidden fixed bottom-24 right-4 z-40 w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-xl md:bottom-4"
+      ref={card}
+      className="float-card print:hidden fixed right-4 z-(--z-push-card) w-[min(22rem,calc(100vw-2rem))] rounded-xl border border-slate-200 bg-white p-4 shadow-xl"
     >
       <div className="flex items-start justify-between gap-3">
         <div>

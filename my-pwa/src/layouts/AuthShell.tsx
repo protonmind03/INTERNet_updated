@@ -16,7 +16,7 @@ export default function AuthShell({
   }, [title]);
 
   return (
-    <main className="app-canvas flex min-h-dvh flex-col items-center justify-center px-4 py-10">
+    <main className="app-canvas flex min-h-[calc(100dvh-var(--inb-top-inset))] flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-md animate-page-in">
         <div className="mb-6">
           <BrandLockup size={24} tagline={null} />

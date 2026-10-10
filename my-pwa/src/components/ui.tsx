@@ -537,7 +537,7 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex animate-fade-in items-end justify-center bg-psu-950/50 sm:items-center sm:p-4"
+      className="fixed inset-0 z-(--z-modal) flex animate-fade-in items-end justify-center bg-psu-950/50 sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !locked) onClose();
       }}
@@ -821,7 +821,7 @@ export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] 
               right: place.right,
               transform: place.up ? "translateY(-100%)" : undefined,
             }}
-            className="fixed z-[55] w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-raised"
+            className="fixed z-(--z-menu) w-52 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-raised"
           >
             {items.map((item) => (
               <button

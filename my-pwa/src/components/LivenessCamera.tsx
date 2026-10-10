@@ -467,7 +467,7 @@ export default function LivenessCamera({
       {flash &&
         createPortal(
           <div
-            className="fixed inset-0 z-[90] flex items-center justify-center"
+            className="fixed inset-0 z-(--z-flash) flex items-center justify-center"
             style={{ background: FLASH_COLOURS[flash], transition: "background-color 0.12s linear" }}
           >
             <p className="rounded-full bg-black/55 px-5 py-2.5 text-base font-semibold text-white">

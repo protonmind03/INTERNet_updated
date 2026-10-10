@@ -149,6 +149,67 @@
   }
 }
 
+/*
+|--------------------------------------------------------------------------
+| FIXED LAYERS
+|--------------------------------------------------------------------------
+|
+| Everything pinned to the screen, in one place, lowest to highest. A layer
+| uses its variable (`z-(--z-toast)`), never a number of its own.
+|
+|   tab bar (student, phones)        --z-tabbar
+|   push prompt card                 --z-push-card
+|   drawers and the "More" sheet     --z-drawer
+|   row menus                        --z-menu
+|   dialogs and sheets               --z-modal
+|   toasts                           --z-toast
+|   offline strip                    --z-offline
+|   camera-check colour flash        --z-flash
+|   launch screen                    100, set in brand/SplashScreen.tsx
+|
+| The lengths are published by the layers themselves (lib/layers.ts):
+|   --inb-top-inset    height of the offline strip while it shows
+|   --inb-bottom-bar   height of the tab bar; otherwise the phone's own
+|                      bottom safe area
+|   --inb-push-card    height of the push prompt card while it shows
+|
+*/
+
+:root {
+  --z-tabbar: 30;
+  --z-push-card: 40;
+  --z-drawer: 50;
+  --z-menu: 55;
+  --z-modal: 60;
+  --z-toast: 70;
+  --z-offline: 80;
+  --z-flash: 90;
+
+  --inb-top-inset: 0px;
+  --inb-bottom-bar: env(safe-area-inset-bottom, 0px);
+  --inb-push-card: 0px;
+}
+
+/* The offline strip sits above the page, not on top of its header. */
+body {
+  padding-top: var(--inb-top-inset);
+}
+
+/* The push prompt rests just above the tab bar (or the safe area). */
+.float-card {
+  bottom: calc(var(--inb-bottom-bar) + 1rem);
+}
+
+/* Toasts rest above the push prompt when it shows, else where it would be. */
+.float-toasts {
+  bottom: calc(var(--inb-bottom-bar) + var(--inb-push-card) + 1rem);
+}
+
+@media (min-width: 48rem) {
+  .float-toasts {
+    bottom: calc(var(--inb-bottom-bar) + var(--inb-push-card) + 1.5rem);
+  }
+}
 @layer base {
   html {
     -webkit-text-size-adjust: 100%;

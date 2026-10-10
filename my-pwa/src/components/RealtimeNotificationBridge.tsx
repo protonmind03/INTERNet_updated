@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { API_URL } from "../lib/api";
+import { toast } from "../lib/toast";
 
 type Role = "coordinator" | "student" | "supervisor";
 
@@ -9,6 +10,13 @@ type LiveNotification = {
   title: string;
   message: string;
   type: string;
+};
+
+/** The full notification list for each portal: where "View" leads. */
+const NOTIFICATION_PAGE: Record<Role, string> = {
+  student: "/notifications",
+  supervisor: "/supervisor/notifications",
+  coordinator: "/coordinator/notifications",
 };
 
 const RETRY_MIN_MS = 5_000;
@@ -33,10 +41,20 @@ function activeRoleForPath(path: string): Role | null {
   return null;
 }
 
+/**
+ * Keeps the live notification stream open while someone is signed in. Each
+ * notification that arrives is announced to the pages that list them and
+ * shown as a toast with a "View" action, so it shares the toasts' place on
+ * screen and never covers a header or an open dialog. Renders nothing.
+ */
 export default function RealtimeNotificationBridge() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [notification, setNotification] = useState<LiveNotification | null>(null);
+  // The stream outlives page changes; this keeps "View" on the current router.
+  const navigateRef = useRef(navigate);
+  useEffect(() => {
+    navigateRef.current = navigate;
+  }, [navigate]);
 
   // The stream belongs to the signed-in role, not to the page: moving between
   // pages of the same portal keeps the one connection open.
@@ -96,7 +114,10 @@ export default function RealtimeNotificationBridge() {
             const data = eventText.match(/^data:\s*(.+)$/m)?.[1];
             if (eventName !== "notification" || !data) continue;
             const payload = JSON.parse(data) as LiveNotification;
-            setNotification(payload);
+            toast.notice(payload.title, payload.message, {
+              label: "View",
+              onClick: () => navigateRef.current(NOTIFICATION_PAGE[role]),
+            });
             window.dispatchEvent(
               new CustomEvent("internet-notification", { detail: payload })
             );
@@ -117,50 +138,5 @@ export default function RealtimeNotificationBridge() {
     };
   }, [streamRole, signedIn]);
 
-  useEffect(() => {
-    if (!notification) return;
-    const timer = window.setTimeout(() => setNotification(null), 8000);
-    return () => window.clearTimeout(timer);
-  }, [notification]);
-
-  if (!notification) return null;
-  const role = activeRoleForPath(location.pathname);
-  const target =
-    role === "student"
-      ? "/notifications"
-      : role === "supervisor"
-        ? "/supervisor/notifications"
-        : "/coordinator/dashboard";
-
-  return (
-    <aside
-      role="status"
-      aria-live="polite"
-      className="fixed right-4 top-4 z-[60] w-[min(24rem,calc(100vw-2rem))] rounded-xl border border-slate-200 border-l-4 border-l-gold-400 bg-white p-4 shadow-xl"
-    >
-      <button
-        type="button"
-        aria-label="Dismiss notification"
-        onClick={() => setNotification(null)}
-        className="absolute right-3 top-2 text-slate-400 hover:text-slate-700"
-      >
-        ×
-      </button>
-      <button
-        type="button"
-        onClick={() => {
-          navigate(target);
-          setNotification(null);
-        }}
-        className="block pr-6 text-left"
-      >
-        <span className="block text-sm font-semibold text-slate-900">
-          {notification.title}
-        </span>
-        <span className="mt-1 block text-xs text-slate-600">
-          {notification.message}
-        </span>
-      </button>
-    </aside>
-  );
+  return null;
 }

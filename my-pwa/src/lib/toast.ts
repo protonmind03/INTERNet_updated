@@ -23,6 +23,8 @@ export type ToastMessage = {
   id: number;
   tone: ToastTone;
   text: string;
+  /** A second, quieter line: the body of a notification under its title. */
+  detail?: string;
   action?: ToastAction;
   /** A brand moment: the success icon is the graduation cap. */
   celebrate?: boolean;
@@ -71,12 +73,13 @@ function show(
   tone: ToastTone,
   text: string,
   action?: ToastAction,
-  celebrate = false
+  celebrate = false,
+  detail?: string
 ): number {
   const id = nextId++;
   const lifetime = lifetimeFor(tone, action);
   // Keep the stack short; the oldest message gives way to the newest.
-  messages = [...messages.slice(-2), { id, tone, text, action, celebrate, lifetime }];
+  messages = [...messages.slice(-2), { id, tone, text, detail, action, celebrate, lifetime }];
   emit();
   arm(id, lifetime);
   return id;
@@ -90,7 +93,9 @@ function update(id: number, tone: ToastTone, text: string): void {
   }
   const lifetime = lifetimeFor(tone);
   messages = messages.map((message) =>
-    message.id === id ? { ...message, tone, text, action: undefined, lifetime } : message
+    message.id === id
+      ? { ...message, tone, text, detail: undefined, action: undefined, lifetime }
+      : message
   );
   emit();
   arm(id, lifetime);
@@ -109,6 +114,10 @@ export const toast = {
   },
   info: (text: string) => {
     show("info", text);
+  },
+  /** A notification that just arrived: its title, its message, and a way to open it. */
+  notice: (title: string, detail: string, action?: ToastAction) => {
+    show("info", title, action, false, detail);
   },
   working: (text: string) => show("working", text),
   update,

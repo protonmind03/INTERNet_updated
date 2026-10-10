@@ -78,7 +78,7 @@ export default function NotificationBell({
       </Tooltip>
 
       {open && (
-        <div className="fixed inset-x-3 top-16 z-40 origin-top-right animate-pop-in rounded-xl border border-slate-200 bg-white text-left shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
+        <div className="fixed inset-x-3 top-[calc(4rem+var(--inb-top-inset))] z-40 origin-top-right animate-pop-in rounded-xl border border-slate-200 bg-white text-left shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <p className="text-sm font-semibold text-slate-900">Notifications</p>
             {unreadCount > 0 && (

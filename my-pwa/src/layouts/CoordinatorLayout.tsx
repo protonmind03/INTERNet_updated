@@ -181,14 +181,14 @@ export default function CoordinatorLayout({
   );
 
   return (
-    <div className="flex h-dvh bg-slate-50 print:block print:h-auto print:bg-white">
+    <div className="flex h-[calc(100dvh-var(--inb-top-inset))] bg-slate-50 print:block print:h-auto print:bg-white">
       <aside className="surface-console hidden w-64 shrink-0 flex-col border-r border-slate-200 lg:flex print:hidden">
         {sidebar}
       </aside>
 
       {/* The same sidebar as a drawer on smaller screens. */}
       {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex lg:hidden print:hidden">
+        <div className="fixed inset-0 z-(--z-drawer) flex lg:hidden print:hidden">
           <div
             className="absolute inset-0 animate-fade-in bg-psu-950/50"
             onClick={() => setDrawerOpen(false)}
