@@ -48,6 +48,14 @@ async function jsonRequest(path, options = {}) {
   return { response, body };
 }
 
+// The smallest content the server accepts as each kind of file: uploads
+// are checked by their first bytes, not only by their name.
+const sampleFiles = {
+  jpg: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a, 0x46, 0x49, 0x46, 0x00, 0xff, 0xd9]),
+  png: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  pdf: Buffer.from("%PDF-1.4\n%%EOF\n"),
+};
+
 function authHeaders(token) {
   return { Authorization: ["Bearer", token].join(" ") };
 }
@@ -1241,7 +1249,7 @@ test("a task attachment must be an allowed file type and only a supervisor can s
     body.append("student_id", student.student_id);
     body.append("title", "Attachment check");
     body.append("due_date", "2099-01-01");
-    body.append("attachment", new Blob(["x"], { type }), name);
+    body.append("attachment", new Blob([name.endsWith(".pdf") ? sampleFiles.pdf : "x"], { type }), name);
     return body;
   };
 
@@ -1535,7 +1543,7 @@ test("the account wipe refuses requests it should not act on", async () => {
 });
 
 test("time-in is refused without a passed camera check", async () => {
-  const photo = () => new Blob([Buffer.from("not really a photo")], { type: "image/jpeg" });
+  const photo = () => new Blob([sampleFiles.jpg], { type: "image/jpeg" });
   const timeIn = (extra = {}) => {
     const form = new FormData();
     form.set("student_id", student.student_id);
@@ -1596,7 +1604,7 @@ test("only a supervisor can record a time-in in person, and only for their own i
     const form = new FormData();
     for (const [key, value] of Object.entries(fields)) form.set(key, value);
     if (withPhoto) {
-      form.set("image", new Blob([Buffer.from("photo")], { type: "image/jpeg" }), "intern.jpg");
+      form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "intern.jpg");
     }
     return jsonRequest("/api/supervisor/attendance/record", {
       method: "POST",
@@ -1842,4 +1850,62 @@ test("API answers are marked as not to be stored, except the two public ones", a
 
   // The live stream keeps its own header.
   assert.match(await stored("/api/events", coordinatorToken), /no-cache/);
+});
+test("an upload must really be the kind of file its name says", async () => {
+  const supervisor = await supervisorSession();
+  const timeIn = (bytes, name, type) => {
+    const form = new FormData();
+    form.set("student_id", student.student_id);
+    form.set("image", new Blob([bytes], { type }), name);
+    return jsonRequest("/api/attendance", {
+      method: "POST",
+      headers: authHeaders(studentToken),
+      body: form,
+    });
+  };
+
+  // Text renamed to .jpg, sent with an image type: the name and the claimed
+  // type agree, the content does not.
+  const renamed = await timeIn(Buffer.from("just some text"), "photo.jpg", "image/jpeg");
+  assert.equal(renamed.response.status, 400);
+  assert.match(renamed.body.message, /not a real JPG file/i);
+
+  // A PNG sent under a .jpg name.
+  const wrongKind = await timeIn(sampleFiles.png, "photo.jpg", "image/jpeg");
+  assert.equal(wrongKind.response.status, 400);
+  assert.match(wrongKind.body.message, /not a real JPG file/i);
+
+  // A real JPEG gets past the file check; it is then refused only because
+  // no camera check came with it.
+  const real = await timeIn(sampleFiles.jpg, "photo.jpg", "image/jpeg");
+  assert.equal(real.response.status, 400);
+  assert.match(real.body.message, /camera check/i);
+
+  // The same check guards the other upload routes: a task attachment...
+  const task = new FormData();
+  task.append("student_id", student.student_id);
+  task.append("title", "Signature check");
+  task.append("due_date", "2099-01-01");
+  task.append("attachment", new Blob(["MZ not a pdf"], { type: "application/pdf" }), "brief.pdf");
+  const fakePdf = await jsonRequest("/api/tasks", {
+    method: "POST",
+    headers: authHeaders(supervisor.token),
+    body: task,
+  });
+  assert.equal(fakePdf.response.status, 400);
+  assert.match(fakePdf.body.message, /not a real PDF file/i);
+
+  // ...and a requirement document.
+  const document = new FormData();
+  document.append("doc_type", "Resume");
+  document.append("file", new Blob(["plain text"], {
+    type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  }), "resume.docx");
+  const fakeDocx = await jsonRequest("/api/documents", {
+    method: "POST",
+    headers: authHeaders(studentToken),
+    body: document,
+  });
+  assert.equal(fakeDocx.response.status, 400);
+  assert.match(fakeDocx.body.message, /not a real DOCX file/i);
 });

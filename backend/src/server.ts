@@ -1334,7 +1334,7 @@ app.delete(
 |--------------------------------------------------------------------------
 */
 
-const upload = multer({
+const rawUpload = multer({
   storage: multer.memoryStorage(),
 
   limits: {
@@ -1368,7 +1368,7 @@ const documentMimeTypes: Record<string, string> = {
   ".png": "image/png",
 };
 
-const documentUpload = multer({
+const rawDocumentUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
@@ -1382,6 +1382,58 @@ const documentUpload = multer({
     callback(null, true);
   },
 });
+
+// The filters above only see the file's name and the type the browser
+// claims. Before any route handler runs, the first bytes of the file must
+// also be what that extension really starts with, so a renamed file of
+// another kind is refused. Files are held in memory, so a refused one is
+// simply dropped.
+const startsWith = (buffer: Buffer, bytes: number[]) =>
+  buffer.length >= bytes.length &&
+  bytes.every((byte, index) => buffer[index] === byte);
+
+const fileSignatures: Record<string, (buffer: Buffer) => boolean> = {
+  ".jpg": (buffer) => startsWith(buffer, [0xff, 0xd8, 0xff]),
+  ".jpeg": (buffer) => startsWith(buffer, [0xff, 0xd8, 0xff]),
+  ".png": (buffer) =>
+    startsWith(buffer, [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+  // The PDF header may be preceded by a little leading data.
+  ".pdf": (buffer) => buffer.subarray(0, 1024).includes("%PDF-"),
+  ".doc": (buffer) =>
+    startsWith(buffer, [0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1]),
+  // A .docx file is a zip archive.
+  ".docx": (buffer) => startsWith(buffer, [0x50, 0x4b, 0x03, 0x04]),
+};
+
+function withSignatureCheck(uploader: multer.Multer) {
+  return {
+    single(field: string): express.RequestHandler {
+      const parse = uploader.single(field);
+      return (req, res, next) => {
+        parse(req, res, (error?: unknown) => {
+          if (error) return next(error);
+          if (!req.file) return next();
+
+          const extension = path.extname(req.file.originalname).toLowerCase();
+          const matches = fileSignatures[extension];
+          if (!matches || !matches(req.file.buffer)) {
+            return next(
+              new Error(
+                "That file is not a real " +
+                  extension.slice(1).toUpperCase() +
+                  " file. Choose the original file and try again."
+              )
+            );
+          }
+          next();
+        });
+      };
+    },
+  };
+}
+
+const upload = withSignatureCheck(rawUpload);
+const documentUpload = withSignatureCheck(rawDocumentUpload);
 
 /*
 |--------------------------------------------------------------------------
