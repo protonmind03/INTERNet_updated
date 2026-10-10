@@ -79,6 +79,90 @@ Changing a password signs that account out on all other devices.
 The demo accounts from `npm run db:seed-demo` are for local testing only;
 the script refuses to run against a hosted database.
 
+## Backups
+
+There are two things to back up: the **database**, and the **uploaded
+files** (attendance photos, evidence, documents), which live on the `/data`
+volume and are not in a database dump.
+
+Railway's own backups (volume > **Backups** tab: manual, scheduled,
+point-in-time) need the Pro plan. On Pro, set a daily schedule on both the
+Postgres volume and the backend volume and skip the manual steps below. On
+the trial or Hobby plan the manual steps are the only backup there is.
+
+Take a backup **before every deploy that contains a migration**, and keep
+the files somewhere other than one laptop. Both contain personal data:
+never commit them (`*.dump` and `backend/backups/` are git-ignored) and
+never share them in a chat.
+
+### Database (run by you)
+
+You need the Railway CLI (`npm i -g @railway/cli`, then `railway login` and
+`railway link` inside the `backend` folder) and the PostgreSQL client tools,
+the same major version as the hosted database or newer.
+
+`railway run` runs a command on your own machine with the service's
+variables filled in. The variable must be read by the inner command, not by
+your shell, hence the quoting:
+
+```powershell
+# PowerShell, from the backend folder
+$env:Path += ";C:\Program Files\PostgreSQL\18\bin"
+railway run cmd /c "pg_dump %DATABASE_PUBLIC_URL% --format=custom --no-owner --no-privileges --file internet-prod.dump"
+```
+
+Rename the file with the date afterwards.
+
+```bash
+# macOS / Linux
+railway run sh -c 'pg_dump "$DATABASE_PUBLIC_URL" --format=custom --no-owner --no-privileges --file "internet-prod-$(date +%Y%m%d-%H%M).dump"'
+```
+
+The command only reads. A dump of a few megabytes takes seconds.
+
+### Uploaded files (run by you)
+
+Not yet tried against the hosted volume; the commands are from Railway's
+CLI reference. Do it once while nothing depends on it.
+
+1. Open a shell in the backend service (`railway ssh`, or right-click the
+   service in the dashboard > Copy SSH Command) and pack the folder:
+   `tar czf /data/uploads-backup.tgz -C /data private-uploads`
+2. Back on your machine, download that one file from the volume:
+   `railway volume files download /uploads-backup.tgz ./uploads-backup.tgz`
+   (`railway volume browse /` shows what is on the volume if the path is
+   not found.)
+3. In the service shell again, remove the archive so it does not use up the
+   volume: `rm /data/uploads-backup.tgz`
+
+### Restore drill
+
+A backup that has never been restored is not yet a backup. To check a dump,
+restore it into a scratch database on your own machine and run the tests
+against it:
+
+```powershell
+$bin = "C:\Program Files\PostgreSQL\18\bin"
+& "$bin\createdb.exe" -U postgres internet_restore
+& "$bin\pg_restore.exe" -U postgres -d internet_restore --no-owner --no-privileges --exit-on-error .\internet-prod-XXXX.dump
+```
+
+Then start the API against it on a spare port
+(`DATABASE_PUBLIC_URL=...localhost.../internet_restore`, `PORT=5002`) and
+compare a few row counts with production. Drop the scratch database when
+done: it holds real personal data.
+
+This drill was run on 2026-10-10 with a local dump (made by
+`npm run db:backup-local`): restore succeeded, row counts and the 16 applied
+migrations matched, and all API tests passed against the restored copy.
+
+### Local backup
+
+`npm run db:backup-local` (in `backend`) dumps the local database and copies
+the local upload folder into `backend/backups/`. It refuses any database
+that is not on this machine. Options: `-- --out <folder>` and
+`-- --pg-bin <folder with pg_dump>`.
+
 ## Checks after deploying
 
 - `https://<backend>/api/health` returns `{"status":"ok"}`.

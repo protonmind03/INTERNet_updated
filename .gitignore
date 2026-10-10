@@ -10,6 +10,10 @@ dist/
 backend/uploads/
 backend/private-uploads/
 
+# Database dumps and upload copies made by the backup scripts
+backend/backups/
+*.dump
+
 # Paper drafts stay local; they carry the group members' names
 CC106 GROUP 9*.docx
 CC106 GROUP 9*.pdf

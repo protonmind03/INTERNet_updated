@@ -12,6 +12,7 @@
     "dev": "tsx src/server.ts",
     "db:migrate": "tsx src/scripts/migrate.ts",
     "db:seed-demo": "tsx src/scripts/seed-demo.ts",
+    "db:backup-local": "tsx src/scripts/backup-local.ts",
     "test": "node --test test/*.test.cjs"
   },
   "keywords": [],
