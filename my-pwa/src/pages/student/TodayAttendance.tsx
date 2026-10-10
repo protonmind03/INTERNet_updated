@@ -13,6 +13,7 @@ import {
 import { formatDuration, formatHours, formatLongDate, formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
+import { useOnline } from "../../lib/useOnline";
 import {
   workedMinutes,
   type AttendanceController,
@@ -45,6 +46,7 @@ export default function TodayAttendance({
   attendance: AttendanceController;
 }) {
   const { todayLog, stage, loading, busy } = attendance;
+  const online = useOnline();
 
   const [now, setNow] = useState(() => new Date());
   const [timeInOpen, setTimeInOpen] = useState(false);
@@ -150,10 +152,20 @@ export default function TodayAttendance({
           </p>
         )}
 
-        {!loading && stage === "not-started" && (
+        {!loading && stage === "not-started" && online && (
           <p className="mt-2 max-w-md text-sm text-psu-100">
             Time in from your workplace. A quick camera check takes your photo,
             and your supervisor uses it to verify the day.
+          </p>
+        )}
+
+        {/* Time-in is the one step that cannot be saved for later: the camera
+            check is set and confirmed by the server at that moment. */}
+        {!loading && stage === "not-started" && !online && (
+          <p role="status" className="mt-2 max-w-md text-sm text-gold-200">
+            Time-in needs a connection, because the camera check is confirmed by the server
+            as you take it. Find a signal and try again. If you cannot get online, ask your
+            supervisor to record your time-in from their own phone.
           </p>
         )}
 
@@ -165,6 +177,7 @@ export default function TodayAttendance({
                 variant="gold"
                 size="lg"
                 icon="camera"
+                disabled={!online}
                 onClick={() => setTimeInOpen(true)}
               >
                 Time in
