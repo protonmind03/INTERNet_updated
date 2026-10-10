@@ -104,14 +104,34 @@ Not added: `OFFLINE_TIME_IN`. Offline time-in was not built (decision D7).
 
 ## Phase 3
 
-Additive migrations. Backend and frontend can go together unless a phase
-report says otherwise.
+Four additive migrations: 018 (notification links), 019 (audit log), 020
+(companies, with a trigger), 021 (terms, with a trigger). One push.
+
+Why one push is enough this time: nothing the new frontend sends is
+misread by the old backend. The only effect of the two hosts finishing at
+different times is that the three new pages (Audit log, Companies, Terms)
+answer "route not found" for the few minutes between Vercel finishing and
+Railway finishing, which now waits for CI. Everything that existed before
+keeps working throughout.
 
 | When | Platform | Change | Why |
 |---|---|---|---|
-| Before the push | Railway | Fresh Postgres backup. | Migrations. |
-| After the deploy | Postgres (run by you) | `railway run npm run backfill:companies` (dry run). Review the proposed mapping together, then rerun with `-- --confirm`. | Links existing free-text company names to company rows. |
+| Before the push | Railway (run by you) | A fresh database backup: open the tunnel (`railway connect Postgres --tunnel-only`), then `railway run --service Postgres npm run db:backup-production <tunnel port>`. Tell me it is done, and I will restore it locally and run the four migrations and the tests against it before pushing. | The push runs four migrations. |
+| After the push | GitHub → Actions | The run is green. Railway deploys only after it is (Wait for CI is on). | A failing test now blocks the backend. |
+| After the push | Railway → backend → Deployments → Deploy Logs | `Applied 018`, `019`, `020` and `021`, then `Backend running`. | Confirms the migrations ran. |
+| After the push | The live site, as coordinator | Audit log, Companies and Terms open from the menu. | The new pages. |
+| When you choose | Postgres | The company backfill script (`npm run db:backfill-companies`) cannot yet be run against the hosted database from a laptop. See the note below; the Companies page does the same job. | Turns the company names already typed into company records. |
+| When you choose | The live site | Companies page: add the companies by hand from the "names with no record yet" list. | Does the same as the backfill, one company at a time, with no command. |
+| When you choose | The live site | Terms page: add the current term, then use its menu to add the students that have no term. | Existing students have no term until this is done. |
 | | Vercel | No setting changes. | |
+
+**About the company backfill.** For a handful of companies, the Companies
+page does the job: each typed name with no record is shown as a button, and
+adding it links everyone who carries that name. The script is for when
+there are too many to click through. It connects with `DATABASE_PUBLIC_URL`,
+which on Railway is the internal address, so it cannot yet be run from a
+laptop the way the backup can. If you want to use it, tell me and I will
+give it the same tunnel option as the backup command first.
 
 New variables this phase: none.
 

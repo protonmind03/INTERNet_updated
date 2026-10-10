@@ -842,3 +842,101 @@ and is erased when that account's session ends.
 **Statements in earlier sections that no longer hold**
 - "It works online only. The service worker ... does not cache pages for
   offline use" (`PAPER-CORRECTIONS.md`, section E; corrected there).
+
+## 18. Phase 3: structured records (10 October 2026)
+
+The third phase of `docs/IMPLEMENTATION-PLAN.md`. Four additive migrations
+(018 to 021). Built and reviewed on localhost before being pushed; the
+steps for going live are in `docs/PLATFORM-CHANGES.md`.
+
+**Notifications open what they are about**
+- The server stores, with each notification, the page it opens (`link`)
+  and, where it is known, the record (`entity_type`, `entity_id`). One rule
+  on the server decides the page, so every one of the 58 places that write
+  a notification gets one. Fourteen also name the record: attendance logs,
+  tasks, documents, complaints, and the student for a coordinator, whose
+  link opens that student's record.
+- The bell, the notifications pages, the pop-up toast and push
+  notifications all open the stored page. The portals keep their old
+  title-matching only for notifications written before this.
+- Not done: opening one particular log or task on its page. The link goes
+  to the right page; the record's id is stored for when the pages can use
+  it.
+
+**Audit log**
+- `audit_log` gets a row whenever one of 31 listed routes succeeds:
+  attendance decisions and their undos, a time-in recorded in person, task,
+  document and absence decisions, accounts created, edited, imported,
+  activated, deactivated or given a new password, reassignments, complaint
+  status changes, announcements, requirement and schedule changes, and
+  changes to companies and terms.
+- One piece of middleware does it from a table of rules
+  (`backend/src/services/audit.ts`). A route cannot forget to log, and a
+  failure to log never fails the request. Only fields named in the rules
+  are kept, so a password or a file cannot reach the log. The caller's
+  address is kept only as a one-way hash and is never sent to the browser.
+- `/coordinator/audit` (menu: Records > Audit log) lists entries newest
+  first, a page at a time, with filters. Nothing can edit or remove one.
+
+**Companies**
+- A `companies` table: name, address, contact, the agreement's dates, and
+  how many interns the company takes. Students, supervisors and complaints
+  are linked by a nullable `company_id`.
+- The company text typed on each account stays and is still what every
+  screen shows. A database trigger sets `company_id` whenever that text is
+  written, matching names without regard to capitals or outer spaces, so
+  creating, editing and importing accounts all link themselves.
+- `/coordinator/companies` lists companies with their contact, agreement
+  standing (in force, ending within 30 days, expired) and places taken,
+  shows typed names that have no record yet, and adds, edits and marks
+  companies active or inactive. A company is never deleted. Renaming one
+  rewrites the name on its people.
+- The company field on the student and supervisor forms suggests recorded
+  companies; any name can still be typed.
+- `npm run db:backfill-companies` prints the company records it would
+  create from the names already typed, and writes only with `--confirm`.
+- The API for this is `/api/coordinator/company-records`. The older
+  `GET /api/coordinator/companies` (a plain list of names, used by the
+  announcements page) is unchanged.
+
+**Terms** (decision D8, built as recommended)
+- A term has a name, a start date and an end date; a student belongs to at
+  most one. A student registered while a term is running joins it.
+- Closing a term deactivates its active students together and remembers
+  which ones. Every record is kept. Reopening reactivates exactly those
+  students. A term is never deleted.
+- `/coordinator/terms` manages them; the Students page has a term filter.
+- **The filter covers the Students page only.** The dashboard, Monitoring
+  and Analytics still count every active student, whatever their term.
+  This is less than the plan asked for ("filtering the coordinator
+  console").
+
+**Paging**
+- Six list routes take optional `limit`, `offset`, `q`, `status`, `from`
+  and `to`: the coordinator's students, supervisors, complaints, documents
+  and flagged logs, and a supervisor's attendance list. With `limit` the
+  answer also carries `total`. Without any of them a route answers exactly
+  as before.
+- **The pages have not moved to it yet.** They still load their whole list
+  and page it in the browser; only the audit log pages on the server. This
+  is less than the plan asked for, and matters once a list passes a few
+  hundred rows.
+
+**What was checked**
+- 77 API tests (71 before this phase). Four of them write real records and
+  run only with `ALLOW_TEST_WRITES=true`, which CI sets: the offline steps,
+  an audited action, linking and renaming a company, and closing and
+  reopening a term.
+- In a browser against the production build, at desktop and phone widths:
+  the audit log, the Companies page and the company field, the Terms page
+  including closing and reopening, and the term filter. All 38 pages load
+  with no errors.
+- Migrations 017 to 021 were applied in order to a fresh database. They
+  have not yet been tried on a copy of production; that happens before the
+  push, with a fresh backup.
+
+**Not checked**
+- Push notifications opening the stored page, because push is not set up
+  in production.
+- The triggers on a database with many rows. They run once per account
+  written and do one indexed lookup, so no problem is expected.

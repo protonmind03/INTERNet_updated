@@ -10,10 +10,10 @@ restored and tested locally. Still owed for Phase 2: the phone checks in
 `DEPLOY.md`, on a real Android phone and a real iPhone. Phases 3 to 5 are
 not started.
 
-**Phase 3 in progress, local only (not pushed):** 3.1 notification links
-and 3.2 audit log are built and committed locally on 2026-10-10 and are
-waiting for the owner to look at them on localhost. 3.3 companies and 3.5
-paging are next; 3.4 terms waits for decision D8.
+**Phase 3 is built and committed locally (2026-10-10), not pushed.** It
+is waiting for the owner to look at it on localhost. Two parts fall short
+of the list below and are noted under it: the pages have not moved to
+server paging, and the term filter covers the Students page only.
 
 ## Rules
 
@@ -309,22 +309,41 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
   title matching only for old rows.
 - [x] **3.2 Audit log.** `audit_log` table; a row for each action the
   brief lists; read-only paginated `/coordinator/audit`.
-- [ ] **3.3 Companies.** `companies` table; nullable `company_id` keys
+- [x] **3.3 Companies.** `companies` table; nullable `company_id` keys
   (`NOT VALID`) on `students`, `supervisors`, `complaints`; the text
   columns stay. `scripts/backfill-companies.ts` (prints a proposed mapping;
   writes only with `--confirm`). CRUD at `/coordinator/companies`; a
   company picker in the forms. *Note:* `GET /api/coordinator/companies`
   already exists and returns distinct names for announcements; its
   response must stay compatible.
-- [ ] **3.4 Terms.** `terms` table, nullable `students.term_id`, a term
+- [x] **3.4 Terms.** `terms` table, nullable `students.term_id`, a term
   selector filtering the coordinator console; closing a term deactivates
   its students and never deletes them. **[DECISION D8]**
-- [ ] **3.5 Pagination.** Optional `limit`, `offset`, `q`, `status`,
+- [x] **3.5 Pagination.** Optional `limit`, `offset`, `q`, `status`,
   `from`, `to` on: coordinator students, supervisors, complaints,
   documents; supervisor attendance; discrepancies. With `limit`, a `total`
   field; without it, unchanged. Heavy pages move to server paging in the
   same commit as their endpoint. Tests: first page, last page, past the
   end, role scoping.
+
+**How Phase 3 turned out differently from the list above**
+- 3.1: every notification gets a page; 14 of the 58 writers also name the
+  record. Opening one particular log or task on its page is not built.
+- 3.2: the log is written by one piece of middleware from a table of
+  rules, not by a call in each route. It covers the brief's list plus
+  company and term changes (31 routes).
+- 3.3: the API lives at `/api/coordinator/company-records`, because
+  `/api/coordinator/companies` was taken. Linking is done by a database
+  trigger on the company text, so no account route had to change. The
+  forms suggest companies but still accept any name.
+- 3.4: built on D8's recommendation without an explicit answer. **The term
+  filter covers the Students page only**, not the dashboard, Monitoring or
+  Analytics.
+- 3.5: the six routes page and filter on request, with tests. **The pages
+  still load whole lists**; only the audit log pages on the server.
+- The backfill prints a table: company, other spellings, how many
+  students, supervisors and complaints carry the name, and whether it
+  would create a record or link to an existing one.
 
 **Gate:** report, push plan, the backfill proposal format.
 
@@ -454,7 +473,7 @@ screenshots)
   confirmation.** Offline time-in. Build it or not; if yes, the sync window in
   hours. *Recommend:* do not build it. The camera check is the proof of
   presence, and a delayed sync weakens it.
-- **D8. Terms.** Structure (for example school year + semester) and what
+- **D8: built as recommended, awaiting your confirmation.** Terms. Structure (for example school year + semester) and what
   "archive" means. *Recommend:* name, start date, end date; closing
   deactivates students and hides the term by default.
 - **D9. Accomplishment at time-out:** required, with a 15-character
