@@ -26,7 +26,7 @@ and push this folder. The root `.gitignore` already keeps `.env` files,
 
    | Variable | Value |
    |---|---|
-   | `DATABASE_PUBLIC_URL` | `${{Postgres.DATABASE_PUBLIC_URL}}` |
+   | `DATABASE_PUBLIC_URL` | `${{Postgres.DATABASE_URL}}` (type it exactly; see the note under the table) |
    | `JWT_SECRET` | a new random value (command below) |
    | `NODE_ENV` | `production` |
    | `FRONTEND_URL` | the Vercel URL from step 3 (fill in after step 3) |
@@ -36,6 +36,15 @@ and push this folder. The root `.gitignore` already keeps `.env` files,
    `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`
 
    Do not set `PORT`; Railway provides it.
+
+   `DATABASE_PUBLIC_URL` must be the **reference** `${{Postgres.DATABASE_URL}}`,
+   not a copy of the address. A reference follows the database: when its
+   password changes, the backend gets the new one at its next deploy. A
+   pasted copy keeps the old password, and the backend stops connecting.
+   Despite the variable's name, this is the database's private address,
+   reachable only inside Railway, which is what the backend should use. The
+   eye icon always shows the resolved address; use Edit to see whether the
+   value is the reference.
 5. Settings > Networking > **Generate Domain**. This is the backend URL.
 6. Keep the service on **one instance** and on a plan that does not sleep.
    Deadline reminders and live notifications run inside the server process.
@@ -234,6 +243,30 @@ migrations matched, and all API tests passed against the restored copy.
 the local upload folder into `backend/backups/`. It refuses any database
 that is not on this machine. Options: `-- --out <folder>` and
 `-- --pg-bin <folder with pg_dump>`.
+
+## Changing the database password
+
+Do this if the password may have been seen by someone who should not have
+it. It is part of the connection address, so a screenshot of that address
+is enough. Expect a minute or two when nobody can sign in.
+
+1. Backend service > Variables > `DATABASE_PUBLIC_URL` > Edit: confirm the
+   value is `${{Postgres.DATABASE_URL}}`. If it is a pasted address, replace
+   it with that reference, let the backend deploy, and check that sign-in
+   still works.
+2. Postgres service > Database > Credentials (it may be named Config) >
+   **Regenerate password**. Never edit `PGPASSWORD` or `POSTGRES_PASSWORD`
+   by hand: that changes the variable, not the real password, and nothing
+   can connect afterwards.
+3. Redeploy the backend: Deployments > the Active one > three dots >
+   Redeploy. Railway may not offer this by itself.
+4. In the new deployment's Deploy Logs, look for
+   `Database migrations completed.` and `Backend running on port`, with no
+   `password authentication failed`. Then sign in on the site;
+   `/api/health` does not touch the database, so it is not proof.
+
+Carried out this way on 10 October 2026. The backup command needs no
+change; it reads the password from Railway each time.
 
 ## The service worker, and what to do if it goes wrong
 
