@@ -1506,40 +1506,37 @@ test("student records, reassignment and settling are coordinator-only and valida
   assert.equal(coordinatorReview.response.status, 404);
 });
 
-test("the account wipe refuses requests it should not act on", async () => {
+test("the account wipe tool is gone", async () => {
+  // The trial-phase tool that deleted accounts and their records was
+  // removed. Nobody can reach it, whoever they are and whatever they send.
   const path = "/api/coordinator/accounts/wipe";
-  const target = { student_ids: ["no-such-student"], supervisor_ids: [] };
+  const target = { student_ids: [student.student_id], supervisor_ids: [] };
 
   const anonymous = await jsonRequest(path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ...target, password: coordinatorPassword }),
   });
-  assert.equal(anonymous.response.status, 401);
+  assert.equal(anonymous.response.status, 404);
 
   const asStudent = await jsonRequest(
     path,
     jsonBody(studentToken, "POST", { ...target, password: studentPassword })
   );
-  assert.equal(asStudent.response.status, 403);
+  assert.equal(asStudent.response.status, 404);
 
-  const wrongPassword = await jsonRequest(
-    path,
-    jsonBody(coordinatorToken, "POST", { ...target, password: "not-the-password" })
-  );
-  assert.equal(wrongPassword.response.status, 401);
-
-  const nothingSelected = await jsonRequest(
-    path,
-    jsonBody(coordinatorToken, "POST", { password: coordinatorPassword })
-  );
-  assert.equal(nothingSelected.response.status, 400);
-
-  const unknownAccount = await jsonRequest(
+  const asCoordinator = await jsonRequest(
     path,
     jsonBody(coordinatorToken, "POST", { ...target, password: coordinatorPassword })
   );
-  assert.equal(unknownAccount.response.status, 404);
+  assert.equal(asCoordinator.response.status, 404);
+
+  // The account named in the request is untouched.
+  const stillThere = await jsonRequest(
+    `/api/student/${encodeURIComponent(student.student_id)}`,
+    { headers: authHeaders(studentToken) }
+  );
+  assert.equal(stillThere.response.status, 200);
 });
 
 test("time-in is refused without a passed camera check", async () => {
@@ -1769,7 +1766,9 @@ async function sweepStatus(route, token, paramValue = "sweep-0000") {
 }
 
 test("the route sweep finds the routes", () => {
-  assert.ok(sweepRoutes.length >= 111, `found only ${sweepRoutes.length} routes`);
+  // A floor, not an exact count: it only guards against the sweep silently
+  // reading nothing if the route files move or change style.
+  assert.ok(sweepRoutes.length >= 100, `found only ${sweepRoutes.length} routes`);
 });
 
 test("only the listed routes are open to anyone", () => {

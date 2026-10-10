@@ -5,7 +5,6 @@ import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { updateStoredAccount, useAccount, type CoordinatorAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
-import AccountWipe from "./AccountWipe";
 import { coordinatorRequest } from "./request";
 
 export default function CoordinatorProfilePage() {
@@ -143,8 +142,6 @@ export default function CoordinatorProfilePage() {
         </Card>
 
         {coordinatorId && <PasswordForm role="coordinator" accountId={coordinatorId} />}
-
-        <AccountWipe />
       </div>
     </CoordinatorLayout>
   );
