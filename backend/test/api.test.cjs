@@ -2639,3 +2639,114 @@ test("a company record links the accounts that carry its name, and a rename carr
   const on = await jsonRequest(`${path}/${record.id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: true }));
   assert.equal(on.body.company.is_active, true);
 });
+
+
+/*
+| Paged lists
+*/
+
+test("the paging rules: what is read, refused and built", () => {
+  require("tsx/cjs");
+  const { readListRequest, buildListQuery, MAX_PAGE_SIZE } = require("../src/services/listQuery.ts");
+
+  assert.deepEqual(readListRequest({}).request, { limit: null, offset: 0, q: "", status: "", from: "", to: "" });
+  assert.equal(readListRequest({ limit: "25", offset: "50" }).request.limit, 25);
+  assert.equal(readListRequest({ limit: "99999" }).request.limit, MAX_PAGE_SIZE);
+  for (const bad of [{ limit: "0" }, { limit: "-1" }, { limit: "ten" }, { limit: "1.5" }, { offset: "-1" }, { offset: "x" },
+    { from: "2026/10/01" }, { to: "2026-13-40" }, { from: "2026-10-09", to: "2026-10-01" }, { q: "x".repeat(101) }]) {
+    assert.ok("problem" in readListRequest(bad), JSON.stringify(bad));
+  }
+
+  const sql = "SELECT a.id, a.status, s.name AS student_name, a.date FROM a ORDER BY a.date DESC LIMIT 300";
+  const options = { order: "date DESC, id DESC", search: ["student_name"], status: "status", date: "date" };
+  const request = (overrides) => ({ limit: null, offset: 0, q: "", status: "", from: "", to: "", ...overrides });
+
+  // Nothing asked for: the route's own query runs untouched.
+  assert.equal(buildListQuery(sql, 1, options, request({})), null);
+  // Parameters the route does not offer are ignored, not applied.
+  assert.equal(buildListQuery(sql, 1, { order: "date DESC" }, request({ q: "ana", status: "Pending", from: "2026-01-01" })), null);
+
+  const built = buildListQuery(sql, 1, options, request({ limit: 10, offset: 20, q: "50%_off", status: "Pending", from: "2026-10-01", to: "2026-10-31" }));
+  // Values are parameters, numbered after the route's own.
+  assert.deepEqual(built.values, ["%50\\%\\_off%", "Pending", "2026-10-01", "2026-10-31", 10, 20]);
+  assert.deepEqual(built.countValues, ["%50\\%\\_off%", "Pending", "2026-10-01", "2026-10-31"]);
+  assert.match(built.rowsSql, /ILIKE \$2/);
+  assert.match(built.rowsSql, /LIMIT \$6 OFFSET \$7$/);
+  assert.match(built.rowsSql, /ORDER BY page\."date" DESC, page\."id" DESC/);
+  // The route's fixed cap is lifted for a paged request; nothing typed reaches the SQL.
+  assert.equal(/LIMIT 300/.test(built.rowsSql), false);
+  assert.equal(built.rowsSql.includes("50%_off"), false);
+  assert.equal(built.rowsSql.includes("Pending"), false);
+  assert.equal(/LIMIT|OFFSET/.test(built.countSql), false);
+
+  // A column name can only come from the route, and must look like one.
+  assert.throws(() => buildListQuery(sql, 0, { order: "name; DROP TABLE x" }, request({ limit: 5 })));
+  assert.throws(() => buildListQuery(sql, 0, { order: "name", search: ['x" OR 1=1 --'] }, request({ q: "a" })));
+});
+
+test("list routes page on request and are unchanged without it", async () => {
+  const supervisor = await supervisorSession();
+  const lists = [
+    ["/api/coordinator/students", "students", coordinatorToken],
+    ["/api/coordinator/supervisors", "supervisors", coordinatorToken],
+    ["/api/coordinator/complaints", "complaints", coordinatorToken],
+    ["/api/coordinator/documents", "documents", coordinatorToken],
+    ["/api/coordinator/discrepancies", "discrepancies", coordinatorToken],
+    [`/api/supervisor/attendance/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, "attendance", supervisor.token],
+  ];
+  for (const [path, key, token] of lists) {
+    const get = (query = "") => jsonRequest(`${path}${query}`, { headers: authHeaders(token) });
+    const whole = await get();
+    assert.equal(whole.response.status, 200, path);
+    assert.ok(Array.isArray(whole.body[key]), `${path}: ${key}`);
+    for (const added of ["total", "limit", "offset"]) {
+      assert.equal(added in whole.body, false, `${path}: no ${added} without paging`);
+    }
+    const all = whole.body[key];
+
+    // First page.
+    const first = await get("?limit=1");
+    assert.equal(first.response.status, 200, `${path}?limit=1 ${JSON.stringify(first.body)}`);
+    assert.equal(first.body.limit, 1);
+    assert.equal(first.body.offset, 0);
+    assert.equal(first.body[key].length, Math.min(1, first.body.total));
+    assert.ok(first.body.total >= all.length, `${path}: total covers every row`);
+    if (all.length > 0) assert.deepEqual(first.body[key][0], all[0], `${path}: the same first row, in the same order`);
+
+    // Last page, and one past the end.
+    if (first.body.total > 0) {
+      const last = await get(`?limit=1&offset=${first.body.total - 1}`);
+      assert.equal(last.body[key].length, 1, `${path}: last page`);
+    }
+    const beyond = await get(`?limit=5&offset=${first.body.total + 100}`);
+    assert.equal(beyond.body[key].length, 0);
+    assert.equal(beyond.body.total, first.body.total);
+
+    // Everything in two pages equals the whole.
+    if (all.length >= 2 && first.body.total === all.length) {
+      const half = Math.ceil(all.length / 2);
+      const [a, b] = await Promise.all([get(`?limit=${half}`), get(`?limit=${half}&offset=${half}`)]);
+      assert.deepEqual([...a.body[key], ...b.body[key]].map((row) => row.id), all.map((row) => row.id), `${path}: pages join up`);
+    }
+
+    // Refused when badly written; still role-checked.
+    for (const bad of ["?limit=0", "?limit=abc", "?offset=-2", "?from=01-02-2026", "?from=2026-10-09&to=2026-10-01"]) {
+      assert.equal((await get(bad)).response.status, 400, `${path}${bad}`);
+    }
+    assert.equal((await jsonRequest(`${path}?limit=1`)).response.status, 401);
+    assert.equal((await jsonRequest(`${path}?limit=1`, { headers: authHeaders(studentToken) })).response.status, 403);
+  }
+
+  // A supervisor still only reaches their own interns' logs when paging.
+  const other = await jsonRequest("/api/supervisor/attendance/SOMEONE-ELSE?limit=5", { headers: authHeaders(supervisor.token) });
+  assert.ok([403, 404].includes(other.response.status), `another supervisor's list answered ${other.response.status}`);
+
+  // Filters narrow the list and never widen it.
+  const everyone = await jsonRequest("/api/coordinator/students?limit=200", { headers: authHeaders(coordinatorToken) });
+  const nobody = await jsonRequest("/api/coordinator/students?limit=200&q=zzzz-no-such-student", { headers: authHeaders(coordinatorToken) });
+  assert.equal(nobody.body.total, 0);
+  const demo = await jsonRequest(`/api/coordinator/students?limit=200&q=${encodeURIComponent(student.student_id)}`, { headers: authHeaders(coordinatorToken) });
+  assert.ok(demo.body.total >= 1 && demo.body.total <= everyone.body.total);
+  const past = await jsonRequest("/api/coordinator/discrepancies?limit=50&from=1990-01-01&to=1990-12-31", { headers: authHeaders(coordinatorToken) });
+  assert.equal(past.body.total, 0);
+});

@@ -25,6 +25,12 @@ import {
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { auditMiddleware } from "./services/audit";
+import {
+  buildListQuery,
+  readListRequest,
+  type ListOptions,
+  type ListRequest,
+} from "./services/listQuery";
 import { clientErrorRecord, createRateLimiter } from "./services/clientErrors";
 import {
   notificationLink,
@@ -334,6 +340,63 @@ const JWT_SECRET = requireJwtSecret();
 // Writes the audit log (services/audit.ts). Registered here, ahead of every
 // route that changes a record, so none of them can be missed.
 app.use(auditMiddleware(pool, JWT_SECRET));
+
+/*
+|--------------------------------------------------------------------------
+| PAGED LISTS
+|--------------------------------------------------------------------------
+|
+| See services/listQuery.ts. The list routes named here take optional
+| limit, offset, q, status, from and to. Badly written values are refused
+| once, here, before the route runs.
+|
+*/
+
+const PAGED_LISTS = [
+  /^\/api\/coordinator\/(students|supervisors|complaints|documents|discrepancies)\/?$/,
+  /^\/api\/supervisor\/attendance\/[^/]+\/?$/,
+];
+
+app.use((req, res, next) => {
+  if (req.method !== "GET" || !PAGED_LISTS.some((pattern) => pattern.test(req.path))) {
+    return next();
+  }
+  const read = readListRequest(req.query as Record<string, unknown>);
+  if ("problem" in read) return res.status(400).json({ message: read.problem });
+  res.locals.list = read.request;
+  return next();
+});
+
+/**
+ * Runs a list route's query. With none of the paging or filter parameters
+ * it is the same query as ever and `page` is empty. With them, the rows are
+ * the page asked for and `page` carries `total`, `limit` and `offset`.
+ */
+async function listQuery(
+  req: express.Request,
+  options: ListOptions,
+  sql: string,
+  params: unknown[] = []
+): Promise<{ rows: any[]; page: { total?: number; limit?: number; offset?: number } }> {
+  const request = (req.res?.locals.list as ListRequest | undefined) ?? null;
+  const built = request ? buildListQuery(sql, params.length, options, request) : null;
+  if (!request || !built) {
+    const result = await pool.query(sql, params);
+    return { rows: result.rows, page: {} };
+  }
+  const [rows, count] = await Promise.all([
+    pool.query(built.rowsSql, [...params, ...built.values]),
+    built.countSql
+      ? pool.query<{ total: string }>(built.countSql, [...params, ...built.countValues])
+      : null,
+  ]);
+  return {
+    rows: rows.rows,
+    page: count
+      ? { total: Number(count.rows[0].total), limit: request.limit ?? undefined, offset: request.offset }
+      : {},
+  };
+}
 const accountTables = {
   student: { table: "students", idColumn: "student_id" },
   supervisor: { table: "supervisors", idColumn: "supervisor_id" },
@@ -3267,7 +3330,7 @@ app.get(
       */
 
       const result =
-        await pool.query(
+        await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id"], status: "status", date: "date" }, 
           `
           SELECT
             a.id,
@@ -3331,6 +3394,7 @@ app.get(
       return res.json({
         attendance:
           result.rows,
+        ...result.page,
       });
     } catch (error) {
       console.error(
@@ -5045,7 +5109,7 @@ app.get(
       const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
       const status = req.query.status as string | undefined;
 
-      const result = await pool.query(
+      const result = await listQuery(req, { order: "name ASC, student_id ASC" }, 
         `
         SELECT
           s.id, s.student_id, s.email, s.name, s.program, s.company,
@@ -5067,7 +5131,7 @@ app.get(
         [q, status || null]
       );
 
-      return res.json({ students: result.rows });
+      return res.json({ students: result.rows, ...result.page });
     } catch (error) {
       console.error("LIST STUDENTS ERROR:", error);
       return res.status(500).json({
@@ -5453,7 +5517,7 @@ app.get(
     try {
       const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
 
-      const result = await pool.query(
+      const result = await listQuery(req, { order: "name ASC, supervisor_id ASC" }, 
         `
         SELECT
           sup.id, sup.supervisor_id, sup.email, sup.name, sup.company,
@@ -5469,7 +5533,7 @@ app.get(
         [q]
       );
 
-      return res.json({ supervisors: result.rows });
+      return res.json({ supervisors: result.rows, ...result.page });
     } catch (error) {
       console.error("LIST SUPERVISORS ERROR:", error);
       return res.status(500).json({
@@ -5789,7 +5853,7 @@ app.get(
         typeof req.query.student_id === "string" && req.query.student_id.trim()
           ? req.query.student_id.trim()
           : null;
-      const result = await pool.query(
+      const result = await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id", "company", "supervisor_name"], status: "status", date: "date" }, 
         `
         SELECT
           a.id,
@@ -5825,7 +5889,7 @@ app.get(
         `,
         [studentId]
       );
-      return res.json({ discrepancies: result.rows });
+      return res.json({ discrepancies: result.rows, ...result.page });
     } catch (error) {
       console.error("COORDINATOR DISCREPANCIES ERROR:", error);
       return res.status(500).json({ message: "Failed to load flagged logs." });
@@ -6107,7 +6171,7 @@ app.get(
         });
       }
 
-      const result = await pool.query(
+      const result = await listQuery(req, { order: "created_at DESC, id DESC", date: "created_at" }, 
         `
         SELECT
           c.id, c.student_id, c.filed_by_supervisor_id,
@@ -6136,7 +6200,7 @@ app.get(
         [status || null, query ? `%${query}%` : null]
       );
 
-      return res.json({ complaints: result.rows });
+      return res.json({ complaints: result.rows, ...result.page });
     } catch (error) {
       console.error("COORDINATOR COMPLAINTS ERROR:", error);
       return res.status(500).json({
@@ -8278,10 +8342,10 @@ app.get(
 app.get(
   "/api/coordinator/documents",
   requireCoordinator,
-  async (_req, res) => {
+  async (req, res) => {
     try {
       const [documents, progress, requirements] = await Promise.all([
-        pool.query(
+        listQuery(req, { order: "uploaded_at DESC, id DESC", search: ["student_name", "student_id", "doc_type", "original_filename", "company"], status: "status", date: "uploaded_at" }, 
           `
           SELECT d.id, d.student_id, s.name AS student_name, s.program,
                  s.company, sup.name AS supervisor_name, d.doc_type,
@@ -8333,6 +8397,7 @@ app.get(
       return res.json({
         requirements: requirementNames,
         documents: documents.rows,
+        ...documents.page,
         students: progress.rows.map((row) => ({
           student_id: row.student_id,
           name: row.name,
