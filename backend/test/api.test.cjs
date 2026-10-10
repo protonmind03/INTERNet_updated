@@ -3035,3 +3035,101 @@ test("an announcement reaches only the audience and company it was sent to", asy
   }
   assert.ok(!(await mine(studentToken)).includes(forStudents));
 });
+
+/*
+| The forgot-to-time-out reminder
+*/
+
+// A pool on the throwaway database, for the few checks that have no route
+// to go through. Refuses anything that is not on this machine.
+function localTestPool() {
+  const url = new URL(process.env.DATABASE_PUBLIC_URL || "");
+  assert.ok(allowedLocalHosts.has(url.hostname), "direct database tests are for a local database only");
+  const { Pool } = require("pg");
+  return new Pool({ connectionString: url.toString(), options: "-c timezone=Asia/Manila" });
+}
+
+test("a forgotten time-out is reminded once, an hour after the shift ended", async (t) => {
+  require("tsx/cjs");
+  const { sendTimeOutReminders, clockText, TIME_OUT_REMINDER_DELAY_MINUTES } = require("../src/services/timeOutReminders.ts");
+  assert.equal(TIME_OUT_REMINDER_DELAY_MINUTES, 60);
+  assert.equal(clockText("17:00:00"), "5:00 PM");
+  assert.equal(clockText("00:30:00"), "12:30 AM");
+  assert.equal(clockText("12:05:00"), "12:05 PM");
+  assert.equal(clockText("08:00"), "8:00 AM");
+
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  // Two days long past, a Monday and a Tuesday, so today's log is not touched.
+  const monday = "2001-01-01";
+  const tuesday = "2001-01-02";
+  const id = student.student_id;
+  const sent = [];
+  const writer = async (notification) => {
+    sent.push(notification);
+  };
+  const at = (date, time, plusMinutes) =>
+    new Date(new Date(`${date}T${time}+08:00`).getTime() + plusMinutes * 60_000);
+  try {
+    const shift = await pool.query(
+      `SELECT MAX(end_time)::text AS end_time FROM ojt_schedule
+       WHERE student_id = $1 AND is_active = TRUE AND day = 'Monday'`,
+      [id]
+    );
+    const end = shift.rows[0].end_time;
+    assert.ok(end, "the demo student is scheduled on Mondays");
+    await pool.query(`DELETE FROM time_out_reminders WHERE student_id = $1 AND reminder_date IN ($2, $3)`, [id, monday, tuesday]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND date IN ($2, $3)`, [id, monday, tuesday]);
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2, $2::date + TIME '08:00', 'Pending')`,
+      [id, monday]
+    );
+    // Tuesday's log was timed out, so it is never reminded.
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status)
+       VALUES ($1, $2, $2::date + TIME '08:00', $2::date + TIME '17:00', 8, 'Pending')`,
+      [id, tuesday]
+    );
+
+    // Still inside the hour: nothing.
+    assert.deepEqual(await sendTimeOutReminders(pool, writer, at(monday, end, 59)), []);
+    // An hour after the shift ended: one reminder, to that student.
+    assert.deepEqual(await sendTimeOutReminders(pool, writer, at(monday, end, 60)), [id]);
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].studentId, id);
+    assert.equal(sent[0].type, "attendance");
+    assert.match(sent[0].message, new RegExp(clockText(end).replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    // Later the same day: not again.
+    assert.deepEqual(await sendTimeOutReminders(pool, writer, at(monday, end, 180)), []);
+    // The next day, with the log closed: nothing.
+    assert.deepEqual(await sendTimeOutReminders(pool, writer, at(tuesday, end, 120)), []);
+    assert.equal(sent.length, 1);
+
+    // A reminder that could not be delivered is tried again.
+    await pool.query(`DELETE FROM time_out_reminders WHERE student_id = $1 AND reminder_date = $2`, [id, monday]);
+    const failing = async () => {
+      throw new Error("not delivered");
+    };
+    const quiet = console.error;
+    console.error = () => {};
+    try {
+      assert.deepEqual(await sendTimeOutReminders(pool, failing, at(monday, end, 90)), []);
+    } finally {
+      console.error = quiet;
+    }
+    assert.deepEqual(await sendTimeOutReminders(pool, writer, at(monday, end, 95)), [id]);
+  } finally {
+    await pool.query(`DELETE FROM time_out_reminders WHERE student_id = $1 AND reminder_date IN ($2, $3)`, [id, monday, tuesday]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND date IN ($2, $3)`, [id, monday, tuesday]);
+    await pool.end();
+  }
+});
+
+test("the reminder notification opens the student's time log", () => {
+  require("tsx/cjs");
+  const { notificationLink } = require("../src/services/notificationLinks.ts");
+  assert.equal(notificationLink("student", "attendance", "Did you forget to time out?"), "/daily-log");
+});

@@ -24,6 +24,7 @@ import {
   startPostgresNotificationListener,
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
+import { startTimeOutReminderScheduler } from "./services/timeOutReminders";
 import { auditMiddleware } from "./services/audit";
 import {
   buildListQuery,
@@ -8946,5 +8947,6 @@ app.listen(
     );
     startPostgresNotificationListener(pool);
     startDeadlineReminderScheduler(pool, createNotification);
+    startTimeOutReminderScheduler(pool, createNotification);
   }
 );
