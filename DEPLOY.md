@@ -171,7 +171,7 @@ number, and do not copy or screenshot the rest. In the second terminal,
 with that port number in place of 12345:
 
 ```
-railway run --service Postgres npm run db:backup-production -- --host localhost --port 12345
+railway run --service Postgres npm run db:backup-production 12345
 ```
 
 When it finishes, press Ctrl+C in the first terminal to close the tunnel.

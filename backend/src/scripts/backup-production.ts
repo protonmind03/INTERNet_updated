@@ -23,8 +23,18 @@ function backupProduction() {
   // --host and --port point at a tunnel opened with
   // `railway connect Postgres --tunnel-only`; without them the database's
   // public address is used, if it has one.
-  const host = option("--host") || process.env.RAILWAY_TCP_PROXY_DOMAIN;
-  const port = option("--port") || process.env.RAILWAY_TCP_PROXY_PORT;
+  //
+  // The port may also be given bare (`... db:backup-production 61092`), and
+  // that is the form the guide uses: PowerShell and `railway run` between
+  // them drop the `--` that npm needs to pass named options through, so
+  // `--host`/`--port` arrive here as two bare values. A bare number is the
+  // tunnel's port; a bare address beside it is the host, else 127.0.0.1.
+  const bare = process.argv.slice(2).filter((value) => !value.startsWith("--"));
+  const barePort = option("--port") ? undefined : bare.find((value) => /^\d{2,5}$/.test(value));
+  const bareHost = bare.find((value) => /^(localhost|\d{1,3}(\.\d{1,3}){3})$/.test(value));
+  const host =
+    option("--host") || (barePort ? bareHost || "127.0.0.1" : process.env.RAILWAY_TCP_PROXY_DOMAIN);
+  const port = option("--port") || barePort || process.env.RAILWAY_TCP_PROXY_PORT;
   const user = process.env.PGUSER;
   const database = process.env.PGDATABASE;
   const password = process.env.PGPASSWORD;
@@ -41,7 +51,7 @@ function backupProduction() {
       "This database has no public address, which is the safer setting. Reach it through a tunnel instead:\n" +
         "  1. In a second terminal, in this folder:  railway connect Postgres --tunnel-only\n" +
         "     Leave it running and note the port it listens on (the number after localhost:).\n" +
-        "  2. Here:  railway run --service Postgres npm run db:backup-production -- --host localhost --port <that port>\n" +
+        "  2. Here:  railway run --service Postgres npm run db:backup-production <that port>\n" +
         "  3. Close the tunnel with Ctrl+C when the backup is done."
     );
   }
