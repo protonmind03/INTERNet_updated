@@ -2050,3 +2050,199 @@ test("monitoring takes an optional date range and is unchanged without one", asy
     403
   );
 });
+
+/*
+| Break, back-to-work and time-out recorded offline
+*/
+
+test("the rules for a time recorded offline", () => {
+  require("tsx/cjs");
+  const { readOfflineStamp, offlineMaxAgeHours, CLOCK_SKEW_MS } = require("../src/services/offlineActions.ts");
+  const now = new Date("2026-10-10T08:00:00.000Z");
+  const ago = (minutes) => new Date(now.getTime() - minutes * 60_000).toISOString();
+  const id = "3f2c1a9e-0b7d-4c55-9a11-7e2d5b8c4f10";
+  const read = (body, action = "break", log = null) => readOfflineStamp(body, action, log, now, 12);
+
+  // Neither field: an ordinary live request, whatever else is sent.
+  assert.deepEqual(read({}), { kind: "live" });
+  assert.deepEqual(read(undefined), { kind: "live" });
+  assert.deepEqual(read({ note: "x" }), { kind: "live" });
+
+  // Both fields, well formed, recent: accepted with the phone's time.
+  const accepted = read({ occurred_at: ago(30), client_request_id: id });
+  assert.equal(accepted.kind, "offline");
+  assert.equal(accepted.requestId, id);
+  assert.equal(accepted.occurredAt.toISOString(), ago(30));
+
+  // One without the other, or malformed.
+  assert.equal(read({ occurred_at: ago(30) }).status, 400);
+  assert.equal(read({ client_request_id: id }).status, 400);
+  assert.equal(read({ occurred_at: ago(30), client_request_id: "short" }).status, 400);
+  assert.equal(read({ occurred_at: ago(30), client_request_id: "has spaces in it!" }).status, 400);
+  assert.equal(read({ occurred_at: "2026-10-10 08:00", client_request_id: id }).status, 400, "no zone");
+  assert.equal(read({ occurred_at: "yesterday", client_request_id: id }).status, 400);
+  assert.equal(read({ occurred_at: 1791619200000, client_request_id: id }).status, 400, "a number");
+  assert.equal(read({ occurred_at: "2026-13-45T25:00:00Z", client_request_id: id }).status, 400);
+
+  // The future: refused beyond two minutes; within that, brought back to now.
+  assert.equal(CLOCK_SKEW_MS, 120_000);
+  assert.equal(read({ occurred_at: ago(-3), client_request_id: id }).status, 400);
+  const slightlyAhead = read({ occurred_at: ago(-1), client_request_id: id });
+  assert.equal(slightlyAhead.kind, "offline");
+  assert.equal(slightlyAhead.occurredAt.getTime(), now.getTime());
+
+  // Too old.
+  assert.equal(read({ occurred_at: ago(12 * 60 - 1), client_request_id: id }).kind, "offline");
+  const old = read({ occurred_at: ago(12 * 60 + 1), client_request_id: id }, "time-out");
+  assert.equal(old.status, 409);
+  assert.match(old.message, /missed time-out/);
+
+  // Out of order: before a step already on the log.
+  const log = { time_in: ago(240), break_time: ago(120), break_end_time: null };
+  assert.equal(read({ occurred_at: ago(90), client_request_id: id }, "break-end", log).kind, "offline");
+  assert.equal(read({ occurred_at: ago(150), client_request_id: id }, "break-end", log).status, 409);
+  assert.equal(read({ occurred_at: ago(300), client_request_id: id }, "time-out", log).status, 409);
+
+  // The age limit setting: a sensible number, or the default.
+  assert.equal(offlineMaxAgeHours(undefined), 12);
+  assert.equal(offlineMaxAgeHours("24"), 24);
+  assert.equal(offlineMaxAgeHours("0"), 12);
+  assert.equal(offlineMaxAgeHours("9999"), 12);
+  assert.equal(offlineMaxAgeHours("soon"), 12);
+});
+
+test("offline steps are validated before anything is changed, and live requests are as before", async () => {
+  const id = () => require("node:crypto").randomUUID();
+  const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60_000).toISOString();
+  // A log id that does not exist: nothing can be changed by these requests.
+  const send = (step, body, token = studentToken) =>
+    jsonRequest(
+      `/api/attendance/999999999/${step}`,
+      body === undefined
+        ? { method: "PUT", headers: token ? authHeaders(token) : {} }
+        : token
+          ? jsonBody(token, "PUT", body)
+          : { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+    );
+
+  for (const step of ["break", "break-end", "time-out"]) {
+    // Live requests: no body, or a body without the two fields.
+    assert.equal((await send(step)).response.status, 404, `${step} with no body`);
+    assert.equal((await send(step, {})).response.status, 404, `${step} with an empty body`);
+
+    assert.equal((await send(step, { occurred_at: minutesAgo(5) })).response.status, 400, `${step} without its id`);
+    assert.equal((await send(step, { client_request_id: id() })).response.status, 400, `${step} without its time`);
+    assert.equal(
+      (await send(step, { occurred_at: "10/10/2026 8:00", client_request_id: id() })).response.status,
+      400,
+      `${step} with a badly written time`
+    );
+    assert.equal(
+      (await send(step, { occurred_at: minutesAgo(-30), client_request_id: id() })).response.status,
+      400,
+      `${step} in the future`
+    );
+    const tooOld = await send(step, { occurred_at: minutesAgo(60 * 24 * 4), client_request_id: id() });
+    assert.equal(tooOld.response.status, 409, `${step} four days old`);
+
+    // Well formed, but there is no such log of theirs: the usual answer.
+    assert.equal(
+      (await send(step, { occurred_at: minutesAgo(5), client_request_id: id() })).response.status,
+      404,
+      `${step} on a log that does not exist`
+    );
+    assert.equal(
+      (await send(step, { occurred_at: minutesAgo(5), client_request_id: id() }, null)).response.status,
+      401
+    );
+  }
+});
+
+test("an offline break, return and time-out are recorded once, in order, and marked", async (t) => {
+  // This one writes a real log for the demo student, so it runs only where
+  // that is wanted (the throwaway database in CI), never by default.
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const form = new FormData();
+  form.set("student_id", student.student_id);
+  form.set("reason", "Automated test of offline steps");
+  form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "intern.jpg");
+  const recorded = await jsonRequest("/api/supervisor/attendance/record", {
+    method: "POST",
+    headers: authHeaders(supervisor.token),
+    body: form,
+  });
+  if (recorded.response.status === 409) {
+    t.skip("the demo student already has a log today");
+    return;
+  }
+  assert.ok(recorded.response.ok, JSON.stringify(recorded.body));
+  const logId = recorded.body.attendance.id;
+  const timeIn = new Date(recorded.body.attendance.time_in).getTime();
+  const uuid = () => require("node:crypto").randomUUID();
+  const step = (name, body) =>
+    jsonRequest(`/api/attendance/${logId}/${name}`, jsonBody(studentToken, "PUT", body));
+  // Whole seconds after the time-in, as if pressed while offline a moment ago.
+  const at = (seconds) => new Date(Math.floor(timeIn / 1000) * 1000 + seconds * 1000).toISOString();
+  await new Promise((resolve) => setTimeout(resolve, 4200));
+
+  // A step dated before the time-in cannot be right.
+  const before = await step("break", {
+    occurred_at: new Date(timeIn - 60_000).toISOString(),
+    client_request_id: uuid(),
+  });
+  assert.equal(before.response.status, 409);
+
+  const breakId = uuid();
+  const first = await step("break", { occurred_at: at(1), client_request_id: breakId });
+  assert.equal(first.response.status, 200, JSON.stringify(first.body));
+  assert.equal(first.body.attendance.recorded_offline, true);
+  assert.equal(
+    new Date(first.body.attendance.break_time).toISOString(),
+    at(1),
+    "the time recorded is the one the phone sent"
+  );
+
+  // The same action again (the app retries until it hears back): the same
+  // answer, and nothing changes.
+  const again = await step("break", { occurred_at: at(1), client_request_id: breakId });
+  assert.equal(again.response.status, 200);
+  assert.equal(again.body.replayed, true);
+  assert.equal(again.body.attendance.break_time, first.body.attendance.break_time);
+
+  // The id cannot be reused for a different action.
+  const reused = await step("break-end", { occurred_at: at(2), client_request_id: breakId });
+  assert.equal(reused.response.status, 409);
+
+  // Returning before the break started is refused; after it, accepted.
+  const tooEarly = await step("break-end", {
+    occurred_at: new Date(timeIn - 1000).toISOString(),
+    client_request_id: uuid(),
+  });
+  assert.equal(tooEarly.response.status, 409);
+  const back = await step("break-end", { occurred_at: at(2), client_request_id: uuid() });
+  assert.equal(back.response.status, 200, JSON.stringify(back.body));
+
+  const outId = uuid();
+  const out = await step("time-out", { occurred_at: at(3), client_request_id: outId });
+  assert.equal(out.response.status, 200, JSON.stringify(out.body));
+  assert.equal(out.body.attendance.recorded_offline, true);
+  assert.equal(new Date(out.body.attendance.time_out).toISOString(), at(3));
+  const outAgain = await step("time-out", { occurred_at: at(3), client_request_id: outId });
+  assert.equal(outAgain.body.replayed, true);
+  assert.equal(outAgain.body.attendance.time_out, out.body.attendance.time_out);
+
+  // The supervisor and the student both see that the log has offline steps.
+  const list = await jsonRequest(
+    `/api/supervisor/attendance/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`,
+    { headers: authHeaders(supervisor.token) }
+  );
+  assert.equal(list.body.attendance.find((log) => log.id === logId).recorded_offline, true);
+  const own = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, {
+    headers: authHeaders(studentToken),
+  });
+  assert.equal(own.body.attendance.find((log) => log.id === logId).recorded_offline, true);
+});

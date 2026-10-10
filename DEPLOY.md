@@ -47,6 +47,9 @@ Optional, each can be added later:
   slash. Needed when the site answers on more than one address (for
   example an old Vercel address kept beside a new one); `FRONTEND_URL` is
   always allowed and is the address used in password-reset links.
+- `OFFLINE_ACTION_MAX_AGE_HOURS` (default 12, allowed 1 to 72): how old a
+  break, back-to-work or time-out recorded while a phone was offline may be
+  when it arrives. Older ones are refused.
 - `LOGIN_MAX_FAILURES` (default 5): wrong passwords allowed on one account
   before a 15-minute lockout.
 - `LOGIN_IP_MAX_FAILURES` (default 100): wrong passwords allowed from one

@@ -25,6 +25,11 @@ import {
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { clientErrorRecord, createRateLimiter } from "./services/clientErrors";
+import {
+  readOfflineStamp,
+  type LogTimes,
+  type OfflineAction,
+} from "./services/offlineActions";
 import { registerExtensionRoutes } from "./routes/extensions";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
@@ -1941,7 +1946,8 @@ app.get(
             verified_at,
             correction_note,
             corrected_at,
-            capture_method
+            capture_method,
+            recorded_offline
           FROM attendance
           WHERE student_id = $1
           ORDER BY
@@ -2375,6 +2381,109 @@ app.post(
 
 /*
 |--------------------------------------------------------------------------
+| STEPS RECORDED OFFLINE
+|--------------------------------------------------------------------------
+|
+| Break, back-to-work and time-out may carry `occurred_at` (when the button
+| was pressed) and `client_request_id` (the app's own id for the action),
+| sent together by a phone that had no connection at the time. The rules are
+| in services/offlineActions.ts. A request with neither field is a live one
+| and takes this server's clock, exactly as before.
+|
+*/
+
+type AttendanceStep = { at: Date | null; requestId: string | null };
+
+/**
+ * Works out the time to record for a break, back-to-work or time-out.
+ * Returns null when it has already answered the request itself: with the
+ * first answer again when the same action is sent twice, or with the reason
+ * the offline time cannot be used.
+ */
+async function attendanceStepFor(
+  req: express.Request,
+  res: express.Response,
+  action: OfflineAction
+): Promise<AttendanceStep | null> {
+  const auth = (req as AuthedRequest).auth;
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  if (body.occurred_at === undefined && body.client_request_id === undefined) {
+    return { at: null, requestId: null };
+  }
+
+  const logId = Number(req.params.id);
+  if (typeof body.client_request_id === "string" && Number.isInteger(logId)) {
+    const seen = await pool.query<{
+      student_id: string;
+      attendance_id: number;
+      action: string;
+      response: unknown;
+    }>(
+      `SELECT student_id, attendance_id, action, response
+       FROM offline_action_ledger WHERE client_request_id = $1`,
+      [body.client_request_id]
+    );
+    if (seen.rows.length > 0) {
+      const first = seen.rows[0];
+      if (
+        first.student_id === auth?.id &&
+        first.attendance_id === logId &&
+        first.action === action
+      ) {
+        res.json({
+          message: "Already recorded.",
+          attendance: first.response,
+          replayed: true,
+        });
+      } else {
+        res.status(409).json({ message: "That request id was used for something else." });
+      }
+      return null;
+    }
+  }
+
+  const log = Number.isInteger(logId)
+    ? await pool.query<LogTimes>(
+        `SELECT time_in, break_time, break_end_time
+         FROM attendance WHERE id = $1 AND student_id = $2`,
+        [logId, auth?.id]
+      )
+    : { rows: [] as LogTimes[] };
+
+  const stamp = readOfflineStamp(body, action, log.rows[0] ?? null);
+  if (stamp.kind === "invalid") {
+    res.status(stamp.status).json({ message: stamp.message });
+    return null;
+  }
+  return stamp.kind === "offline"
+    ? { at: stamp.occurredAt, requestId: stamp.requestId }
+    : { at: null, requestId: null };
+}
+
+/** Remembers an offline action by its id, so sending it again changes nothing. */
+async function rememberOfflineStep(
+  step: AttendanceStep,
+  action: OfflineAction,
+  attendance: { id: number; student_id: string }
+): Promise<void> {
+  if (!step.at || !step.requestId) return;
+  try {
+    await pool.query(
+      `INSERT INTO offline_action_ledger
+         (client_request_id, student_id, attendance_id, action, occurred_at, response)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (client_request_id) DO NOTHING`,
+      [step.requestId, attendance.student_id, attendance.id, action, step.at, JSON.stringify(attendance)]
+    );
+  } catch (error) {
+    // The step itself is saved; only the note for a repeat is missing. A
+    // repeat then gets "already recorded", which the app treats as done.
+    console.error("OFFLINE LEDGER ERROR:", error);
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
 | RECORD BREAK START
 |--------------------------------------------------------------------------
 */
@@ -2388,13 +2497,16 @@ app.put(
       const {
         id,
       } = req.params;
+      const step = await attendanceStepFor(req, res, "break");
+      if (!step) return;
 
       const result =
         await pool.query(
           `
           UPDATE attendance
           SET
-            break_time = NOW()
+            break_time = COALESCE($3::timestamptz, NOW()),
+            recorded_offline = recorded_offline OR $3::timestamptz IS NOT NULL
           WHERE id = $1
           AND student_id = $2
           AND break_time IS NULL
@@ -2413,9 +2525,10 @@ app.put(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            recorded_offline
           `,
-          [id, auth?.id]
+          [id, auth?.id, step.at]
         );
 
       if (
@@ -2426,6 +2539,8 @@ app.put(
             "Attendance record not found or break was already recorded.",
         });
       }
+
+      await rememberOfflineStep(step, "break", result.rows[0]);
 
       return res.json({
         message:
@@ -2467,12 +2582,16 @@ app.put(
 
     try {
       const auth = (req as AuthedRequest).auth;
+      const step = await attendanceStepFor(req, res, "break-end");
+      if (!step) return;
+
       const result =
         await pool.query(
           `
           UPDATE attendance
           SET
-            break_end_time = NOW()
+            break_end_time = COALESCE($3::timestamptz, NOW()),
+            recorded_offline = recorded_offline OR $3::timestamptz IS NOT NULL
           WHERE id = $1
           AND student_id = $2
           AND break_time IS NOT NULL
@@ -2492,9 +2611,10 @@ app.put(
             hours,
             note,
             status,
-            image_url
+            image_url,
+            recorded_offline
           `,
-          [id, auth?.id]
+          [id, auth?.id, step.at]
         );
 
       if (
@@ -2505,6 +2625,8 @@ app.put(
             "Attendance record not found or return from break was already recorded.",
         });
       }
+
+      await rememberOfflineStep(step, "break-end", result.rows[0]);
 
       return res.status(200).json({
         message:
@@ -2554,19 +2676,25 @@ app.put(
       | NOW() = Philippine Time because the database
       | connection timezone is Asia/Manila.
       |
+      | $4 is the time the button was pressed, for a time-out recorded while
+      | the phone was offline; it is NULL for a live request.
+      |
       */
+      const step = await attendanceStepFor(req, res, "time-out");
+      if (!step) return;
 
       const result =
         await pool.query(
           `
           UPDATE attendance
           SET
-            time_out = NOW(),
+            time_out = COALESCE($4::timestamptz, NOW()),
+            recorded_offline = recorded_offline OR $4::timestamptz IS NOT NULL,
 
             -- A break still open at time-out ends now.
             break_end_time = CASE
               WHEN break_time IS NOT NULL
-              THEN COALESCE(break_end_time, NOW())
+              THEN COALESCE(break_end_time, COALESCE($4::timestamptz, NOW()))
               ELSE break_end_time
             END,
 
@@ -2575,12 +2703,12 @@ app.put(
               ROUND(
                 (
                   (
-                    EXTRACT(EPOCH FROM (NOW() - time_in))
+                    EXTRACT(EPOCH FROM (COALESCE($4::timestamptz, NOW()) - time_in))
                     - CASE
                         WHEN break_time IS NOT NULL
                         THEN EXTRACT(
                           EPOCH FROM (
-                            COALESCE(break_end_time, NOW()) - break_time
+                            COALESCE(break_end_time, COALESCE($4::timestamptz, NOW())) - break_time
                           )
                         )
                         ELSE 0
@@ -2617,7 +2745,7 @@ app.put(
           AND time_in IS NOT NULL
           -- A log left open from an earlier day is closed through the
           -- missed time-out route, which asks for the real time and a reason.
-          AND time_in > NOW() - make_interval(hours => $3)
+          AND time_in > COALESCE($4::timestamptz, NOW()) - make_interval(hours => $3)
 
           RETURNING
             id,
@@ -2634,9 +2762,10 @@ app.put(
             note,
             status,
             image_url,
-            capture_method
+            capture_method,
+            recorded_offline
           `,
-          [id, auth?.id, MAX_SHIFT_HOURS]
+          [id, auth?.id, MAX_SHIFT_HOURS, step.at]
         );
 
       if (
@@ -2657,6 +2786,8 @@ app.put(
             "Attendance record not found or time-out was already recorded.",
         });
       }
+
+      await rememberOfflineStep(step, "time-out", result.rows[0]);
 
       // A day the supervisor recorded in person is already verified: count its
       // hours and tell the student, instead of asking the supervisor again.
@@ -3124,6 +3255,7 @@ app.get(
             a.correction_note,
             a.corrected_at,
             a.capture_method,
+            a.recorded_offline,
             a.liveness_checks,
             a.capture_reason
 

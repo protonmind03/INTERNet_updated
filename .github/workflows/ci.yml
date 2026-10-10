@@ -45,6 +45,9 @@ jobs:
       FRONTEND_URL: http://localhost:5173
       PRIVATE_UPLOAD_DIR: /tmp/internet-ci-uploads
       API_BASE_URL: http://127.0.0.1:5000
+      # Lets the one test that writes a real attendance log run; this
+      # database is thrown away after the job.
+      ALLOW_TEST_WRITES: "true"
 
     steps:
       - uses: actions/checkout@v4
