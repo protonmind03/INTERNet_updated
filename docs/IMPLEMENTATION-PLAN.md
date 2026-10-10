@@ -10,6 +10,11 @@ restored and tested locally. Still owed for Phase 2: the phone checks in
 `DEPLOY.md`, on a real Android phone and a real iPhone. Phases 3 to 5 are
 not started.
 
+**Phase 3 in progress, local only (not pushed):** 3.1 notification links
+and 3.2 audit log are built and committed locally on 2026-10-10 and are
+waiting for the owner to look at them on localhost. 3.3 companies and 3.5
+paging are next; 3.4 terms waits for decision D8.
+
 ## Rules
 
 **Git**
@@ -298,11 +303,11 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
 
 ## Phase 3: Structured data foundations (additive migrations)
 
-- [ ] **3.1 Notification links.** Nullable `notifications.link`,
+- [x] **3.1 Notification links.** Nullable `notifications.link`,
   `entity_type`, `entity_id`, filled at all 58 creation sites (audit item
   4); `link` in push and event payloads; navigation uses `link` first and
   title matching only for old rows.
-- [ ] **3.2 Audit log.** `audit_log` table; a row for each action the
+- [x] **3.2 Audit log.** `audit_log` table; a row for each action the
   brief lists; read-only paginated `/coordinator/audit`.
 - [ ] **3.3 Companies.** `companies` table; nullable `company_id` keys
   (`NOT VALID`) on `students`, `supervisors`, `complaints`; the text
