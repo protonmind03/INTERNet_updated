@@ -12,6 +12,7 @@ import {
 } from "../../components/ui";
 import { formatDuration, formatHours, formatLongDate, formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
+import { useDraft } from "../../lib/useDraft";
 import {
   workedMinutes,
   type AttendanceController,
@@ -321,6 +322,8 @@ function TimeInDialog({
   const [challenge, setChallenge] = useState<LivenessChallenge | null>(null);
   const [capture, setCapture] = useState<Capture | null>(null);
   const [note, setNote] = useState("");
+  // The note survives a closed dialog or a failed attempt, until it is sent.
+  const discardNote = useDraft("student", open ? "time-in-note" : null, note, setNote);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   // Raised to ask the server for a fresh set of prompts.
@@ -379,6 +382,7 @@ function TimeInDialog({
     try {
       await onSubmit(capture.photo, note, { ticket: challenge.ticket, report: capture.report });
       toast.celebrate("Time-in recorded. Have a good day at work.");
+      discardNote();
       reset();
       onClose();
     } catch (submitError) {

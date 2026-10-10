@@ -16,6 +16,7 @@ import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../..
 import { formatDateTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { useDraft } from "../../lib/useDraft";
 import { useSupervisorWork, type Intern } from "./useSupervisorWork";
 
 type Complaint = {
@@ -185,6 +186,12 @@ function FileDialog({
   const [studentId, setStudentId] = useState("");
   const [category, setCategory] = useState(CATEGORIES[0]);
   const [description, setDescription] = useState("");
+  const discardDescription = useDraft(
+    "supervisor",
+    open ? "report-description" : null,
+    description,
+    setDescription
+  );
   const [evidence, setEvidence] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -242,6 +249,7 @@ function FileDialog({
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The report could not be sent.");
       toast.success("Report sent to the OJT coordinator.");
+      discardDescription();
       reset();
       onFiled();
     } catch (submitError) {

@@ -3,11 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { installSessionGuard } from './lib/sessionGuard'
+import { purgeOrphanedOfflineData } from './lib/offlineStore'
 import { LaunchGate } from './brand'
 import ErrorBoundary from './components/ErrorBoundary'
 import { registerServiceWorker } from './lib/serviceWorker'
 
 installSessionGuard()
+// Erase offline data left behind by an account no longer signed in here.
+void purgeOrphanedOfflineData()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

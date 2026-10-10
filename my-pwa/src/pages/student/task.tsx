@@ -18,6 +18,7 @@ import { notifyDataChanged } from "../../lib/navCounts";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { useDraft } from "../../lib/useDraft";
 
 type TaskStatus = "Pending" | "In Progress" | "Submitted" | "Reviewed";
 type Priority = "High" | "Medium" | "Low";
@@ -398,6 +399,8 @@ function SubmitDialog({
   onSubmitted: () => void;
 }) {
   const [notes, setNotes] = useState("");
+  // Kept per task, so a note for one task never appears on another.
+  const discardNotes = useDraft("student", task ? `task-note:${task.id}` : null, notes, setNotes);
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -450,6 +453,7 @@ function SubmitDialog({
         throw new Error(data.message || "Your work could not be submitted.");
       }
       toast.celebrate("Work submitted. Your supervisor has been notified.");
+      discardNotes();
       reset();
       onSubmitted();
     } catch (submitError) {

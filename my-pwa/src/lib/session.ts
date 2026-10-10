@@ -54,17 +54,22 @@ export function readAccount<R extends SessionRole>(role: R): AccountFor<R> | nul
   try {
     return JSON.parse(saved) as AccountFor<R>;
   } catch {
-    clearSession(role);
+    void clearSession(role);
     return null;
   }
 }
 
-export function clearSession(role: SessionRole): void {
+/**
+ * Ends the role's session on this device. The returned promise settles when
+ * what was kept for offline use has been erased; wait for it before leaving
+ * the page with a full reload, or the erase can be cut short.
+ */
+export function clearSession(role: SessionRole): Promise<void> {
   // Whatever was kept on this device for offline use goes with the session:
   // saved records, drafts and queued actions. Every way of leaving an account
   // (Sign out, an ended session, the forced password change) comes through here.
   const accountId = localStorage.getItem(`${role}_id`);
-  if (accountId) void purgeOfflineData(role, accountId);
+  const erased = accountId ? purgeOfflineData(role, accountId) : Promise.resolve();
 
   localStorage.removeItem(role);
   localStorage.removeItem(`${role}_id`);
@@ -73,6 +78,7 @@ export function clearSession(role: SessionRole): void {
     localStorage.removeItem("active_role");
   }
   window.dispatchEvent(new Event("internet-auth-changed"));
+  return erased;
 }
 
 /**
@@ -81,10 +87,10 @@ export function clearSession(role: SessionRole): void {
  * sending this device the account's push notifications. That part is best
  * effort, so signing out still works with no connection.
  */
-export function signOut(role: SessionRole): void {
+export function signOut(role: SessionRole): Promise<void> {
   const token = localStorage.getItem(`${role}_token`);
-  clearSession(role);
-  if (!token) return;
+  const erased = clearSession(role);
+  if (!token) return erased;
 
   void (async () => {
     let endpoint: string | undefined;
@@ -112,6 +118,7 @@ export function signOut(role: SessionRole): void {
       console.error("SIGN OUT ERROR:", error);
     }
   })();
+  return erased;
 }
 
 /** Saves an edited account record and tells open layouts to refresh. */

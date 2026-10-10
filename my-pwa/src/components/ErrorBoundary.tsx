@@ -88,8 +88,8 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
                   <button
                     type="button"
                     onClick={() => {
-                      signOut(role);
-                      window.location.assign("/");
+                      // Leave only once the offline data has been erased.
+                      void signOut(role).finally(() => window.location.assign("/"));
                     }}
                     className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   >

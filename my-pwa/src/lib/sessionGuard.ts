@@ -46,7 +46,12 @@ export function installSessionGuard(): void {
 
       const body = await response.clone().json().catch(() => null);
       if (body?.code === "SESSION_INVALID") {
-        clearSession(role);
+        // Wait (briefly) for the offline data to be erased: the reload below
+        // would otherwise cut the erase short.
+        await Promise.race([
+          clearSession(role),
+          new Promise((resolve) => window.setTimeout(resolve, 1500)),
+        ]);
         sessionStorage.setItem(
           "session_notice",
           "Your session has ended. Please log in again."

@@ -15,6 +15,7 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDayDate, localDateKey } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { errorText, toast } from "../../lib/toast";
+import { useDraft } from "../../lib/useDraft";
 
 type Absence = {
   id: number;
@@ -189,6 +190,7 @@ function FileAbsenceDialog({
 }) {
   const [date, setDate] = useState(() => localDateKey(new Date()));
   const [reason, setReason] = useState("");
+  const discardReason = useDraft("student", "absence-reason", reason, setReason);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -210,6 +212,7 @@ function FileAbsenceDialog({
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The absence could not be filed.");
       toast.success("Absence filed. Your supervisor has been notified.");
+      discardReason();
       onFiled();
     } catch (saveError) {
       setError(errorText(saveError, "The absence could not be filed."));

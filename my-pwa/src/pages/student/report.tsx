@@ -16,6 +16,7 @@ import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../..
 import { formatDateTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { useDraft } from "../../lib/useDraft";
 
 type ReportType = "student" | "supervisor";
 
@@ -61,6 +62,7 @@ export default function ReportComplaint() {
   const [context, setContext] = useState("");
   const [category, setCategory] = useState(CATEGORIES.supervisor[0]);
   const [description, setDescription] = useState("");
+  const discardDescription = useDraft("student", "report-description", description, setDescription);
   const [evidence, setEvidence] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -199,6 +201,7 @@ export default function ReportComplaint() {
         throw new Error(data.message || "Your report could not be submitted.");
       }
       toast.success("Report submitted. Your OJT coordinator will review it.");
+      discardDescription();
       setDescription("");
       setEvidence(null);
       if (type === "student") {

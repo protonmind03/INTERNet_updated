@@ -130,6 +130,33 @@ export async function purgeOfflineData(role: OfflineRole, accountId: string): Pr
   }
 }
 
+/**
+ * Erases whatever belongs to an account that is not signed in on this device
+ * any more. Run when the app starts: it catches anything an interrupted
+ * sign-out left behind (a closed tab, a crash, a redirect that came first).
+ */
+export async function purgeOrphanedOfflineData(): Promise<void> {
+  try {
+    const db = await open();
+    if (!db) return;
+    const signedIn = new Set(
+      (["student", "supervisor", "coordinator"] as const)
+        .map(currentOwner)
+        .filter((owner): owner is string => owner !== null)
+    );
+    const transaction = db.transaction([RECORDS, DRAFTS, QUEUE], "readwrite");
+    for (const name of [RECORDS, DRAFTS, QUEUE]) {
+      const store = transaction.objectStore(name);
+      const rows = (await done(store.getAll())) as Array<{ key?: string; id?: number; owner: string }>;
+      for (const row of rows) {
+        if (!signedIn.has(row.owner)) store.delete((row.key ?? row.id) as IDBValidKey);
+      }
+    }
+  } catch (error) {
+    console.error("OFFLINE DATA CLEAN-UP ERROR:", error);
+  }
+}
+
 /*
 |--------------------------------------------------------------------------
 | SAVED RECORDS
