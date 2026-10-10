@@ -1,6 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, type ComponentType } from "react";
 import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router-dom";
-import { RouteProgress } from "./brand";
+import { BrandLoader, RouteProgress } from "./brand";
 import OfflineBanner from "./components/OfflineBanner";
 import PushNotificationSettings from "./components/PushNotificationSettings";
 import RealtimeNotificationBridge from "./components/RealtimeNotificationBridge";
@@ -12,19 +12,104 @@ import ChangePassword from "./pages/ChangePassword";
 
 /*
 |--------------------------------------------------------------------------
+| PAGE LOADING
+|--------------------------------------------------------------------------
+|
+| The sign-in and password pages above are part of the first download. Every
+| portal page below is its own file, fetched when it is first opened, so
+| nobody downloads the two portals they cannot use. Once someone is signed
+| in, the rest of their own portal is fetched quietly in the background, so
+| moving between its pages does not wait.
+|
+*/
+
+type PortalRole = "student" | "supervisor" | "coordinator";
+type PageLoader = () => Promise<{ default: ComponentType }>;
+
+const portalPages: Record<PortalRole, PageLoader[]> = {
+  student: [],
+  supervisor: [],
+  coordinator: [],
+};
+
+function page(role: PortalRole, load: PageLoader) {
+  portalPages[role].push(load);
+  return lazy(() =>
+    load().then(
+      (module) => {
+        sessionStorage.removeItem(RELOADED_FOR);
+        return module;
+      },
+      (error: unknown) => {
+        // A page file that will not load is usually one of two things: the
+        // connection dropped for a moment, or a new version was published
+        // and this tab still asks for the old files. The browser remembers
+        // the failure, so asking again cannot work; a fresh load of the
+        // address can. It is tried once per address; after that, or with no
+        // connection at all, the error screen takes over.
+        const here = window.location.pathname;
+        if (navigator.onLine && sessionStorage.getItem(RELOADED_FOR) !== here) {
+          sessionStorage.setItem(RELOADED_FOR, here);
+          window.location.reload();
+          return new Promise<never>(() => {});
+        }
+        throw error;
+      }
+    )
+  );
+}
+
+const RELOADED_FOR = "inb_page_reload";
+
+const fetchedPortals = new Set<PortalRole>();
+
+/** Fetches the signed-in role's other pages once the first one has settled. */
+function PortalPrefetch() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    const role = localStorage.getItem("active_role") as PortalRole | null;
+    if (!role || !(role in portalPages) || fetchedPortals.has(role)) return;
+    if (!localStorage.getItem(`${role}_token`)) return;
+    // Someone on a metered connection asked the browser to save data.
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean } }).connection;
+    if (connection?.saveData || !navigator.onLine) return;
+
+    const timer = window.setTimeout(() => {
+      if (!navigator.onLine) return;
+      fetchedPortals.add(role);
+      for (const load of portalPages[role]) void load().catch(() => {});
+    }, 2000);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
+
+  return null;
+}
+
+/** Shown while a page's file is on its way. */
+function PageFallback() {
+  return (
+    <div className="app-canvas grid min-h-[calc(100dvh-var(--inb-top-inset))] place-items-center px-6">
+      <BrandLoader variant="page" process="launch" />
+    </div>
+  );
+}
+
+/*
+|--------------------------------------------------------------------------
 | STUDENT PAGES
 |--------------------------------------------------------------------------
 */
 
-import Dashboard from "./pages/student/dashboard";
-import DailyLog from "./pages/student/dailylog";
-import MyTasks from "./pages/student/task";
-import Schedule from "./pages/student/sched";
-import Documents from "./pages/student/document";
-import Report from "./pages/student/report";
-import Notifications from "./pages/student/notifications";
-import StudentFeedback from "./pages/student/Feedback";
-import StudentTimeRecord from "./pages/student/TimeRecord";
+const Dashboard = page("student", () => import("./pages/student/dashboard"));
+const DailyLog = page("student", () => import("./pages/student/dailylog"));
+const MyTasks = page("student", () => import("./pages/student/task"));
+const Schedule = page("student", () => import("./pages/student/sched"));
+const Documents = page("student", () => import("./pages/student/document"));
+const Report = page("student", () => import("./pages/student/report"));
+const Notifications = page("student", () => import("./pages/student/notifications"));
+const StudentFeedback = page("student", () => import("./pages/student/Feedback"));
+const StudentTimeRecord = page("student", () => import("./pages/student/TimeRecord"));
 
 /*
 |--------------------------------------------------------------------------
@@ -32,17 +117,17 @@ import StudentTimeRecord from "./pages/student/TimeRecord";
 |--------------------------------------------------------------------------
 */
 
-import SupervisorDashboard from "./pages/supervisor/dashboardsp";
-import SupervisorAttendanceApproval from "./pages/supervisor/attendance";
-import SupervisorTasks from "./pages/supervisor/tasks";
-import StudentProfilePage from "./pages/student/Profile";
-import SupervisorInterns from "./pages/supervisor/interns";
-import SupervisorEvaluation from "./pages/supervisor/evaluation";
-import SupervisorComplaints from "./pages/supervisor/complaints";
-import SupervisorProfilePage from "./pages/supervisor/profile";
-import SupervisorDocuments from "./pages/supervisor/documents";
-import SupervisorNotifications from "./pages/supervisor/notifications";
-import SupervisorTimeRecord from "./pages/supervisor/TimeRecord";
+const SupervisorDashboard = page("supervisor", () => import("./pages/supervisor/dashboardsp"));
+const SupervisorAttendanceApproval = page("supervisor", () => import("./pages/supervisor/attendance"));
+const SupervisorTasks = page("supervisor", () => import("./pages/supervisor/tasks"));
+const StudentProfilePage = page("student", () => import("./pages/student/Profile"));
+const SupervisorInterns = page("supervisor", () => import("./pages/supervisor/interns"));
+const SupervisorEvaluation = page("supervisor", () => import("./pages/supervisor/evaluation"));
+const SupervisorComplaints = page("supervisor", () => import("./pages/supervisor/complaints"));
+const SupervisorProfilePage = page("supervisor", () => import("./pages/supervisor/profile"));
+const SupervisorDocuments = page("supervisor", () => import("./pages/supervisor/documents"));
+const SupervisorNotifications = page("supervisor", () => import("./pages/supervisor/notifications"));
+const SupervisorTimeRecord = page("supervisor", () => import("./pages/supervisor/TimeRecord"));
 
 /*
 |--------------------------------------------------------------------------
@@ -50,19 +135,19 @@ import SupervisorTimeRecord from "./pages/supervisor/TimeRecord";
 |--------------------------------------------------------------------------
 */
 
-import CoordinatorDashboard from "./pages/coordinator/Dashboard";
-import CoordinatorStudents from "./pages/coordinator/Students";
-import CoordinatorSupervisors from "./pages/coordinator/Supervisors";
-import CoordinatorMonitoring from "./pages/coordinator/Monitoring";
-import CoordinatorComplaints from "./pages/coordinator/Complaints";
-import CoordinatorEvaluations from "./pages/coordinator/Evaluations";
-import CoordinatorAnalytics from "./pages/coordinator/Analytics";
-import CoordinatorProfile from "./pages/coordinator/Profile";
-import CoordinatorRequirements from "./pages/coordinator/Requirements";
-import CoordinatorDocuments from "./pages/coordinator/Documents";
-import CoordinatorAnnouncements from "./pages/coordinator/Announcements";
-import CoordinatorStudentRecord from "./pages/coordinator/StudentRecord";
-import CoordinatorNotifications from "./pages/coordinator/Notifications";
+const CoordinatorDashboard = page("coordinator", () => import("./pages/coordinator/Dashboard"));
+const CoordinatorStudents = page("coordinator", () => import("./pages/coordinator/Students"));
+const CoordinatorSupervisors = page("coordinator", () => import("./pages/coordinator/Supervisors"));
+const CoordinatorMonitoring = page("coordinator", () => import("./pages/coordinator/Monitoring"));
+const CoordinatorComplaints = page("coordinator", () => import("./pages/coordinator/Complaints"));
+const CoordinatorEvaluations = page("coordinator", () => import("./pages/coordinator/Evaluations"));
+const CoordinatorAnalytics = page("coordinator", () => import("./pages/coordinator/Analytics"));
+const CoordinatorProfile = page("coordinator", () => import("./pages/coordinator/Profile"));
+const CoordinatorRequirements = page("coordinator", () => import("./pages/coordinator/Requirements"));
+const CoordinatorDocuments = page("coordinator", () => import("./pages/coordinator/Documents"));
+const CoordinatorAnnouncements = page("coordinator", () => import("./pages/coordinator/Announcements"));
+const CoordinatorStudentRecord = page("coordinator", () => import("./pages/coordinator/StudentRecord"));
+const CoordinatorNotifications = page("coordinator", () => import("./pages/coordinator/Notifications"));
 
 // The brand kit preview only exists in development builds.
 const BrandPreview = import.meta.env.DEV ? lazy(() => import("./brand/BrandPreview")) : null;
@@ -77,6 +162,8 @@ function App() {
   return (
     <BrowserRouter>
       <RouteLine />
+      <PortalPrefetch />
+      <Suspense fallback={<PageFallback />}>
       <Routes>
 
         {/* 
@@ -287,7 +374,7 @@ function App() {
         {BrandPreview && (
           <Route
             path="/brand-preview"
-            element={<Suspense fallback={null}><BrandPreview /></Suspense>}
+            element={<BrandPreview />}
           />
         )}
 
@@ -295,6 +382,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
 
       </Routes>
+      </Suspense>
       <RealtimeNotificationBridge />
       <PushNotificationSettings />
       <Toaster />
