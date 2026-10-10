@@ -33,6 +33,10 @@ type NotificationInput = {
   title: string;
   message: string;
   type?: string;
+  /** The page to open; worked out by the server when left out. */
+  link?: string;
+  /** The record this is about, when there is one. */
+  entity?: { type: string; id: string | number | null | undefined };
 };
 
 export type ExtensionDependencies = {
@@ -44,6 +48,8 @@ export type ExtensionDependencies = {
     title: string;
     message: string;
     type?: string;
+    link?: string;
+    entity?: { type: string; id: string | number | null | undefined };
   }) => Promise<void>;
   hashPassword: (plain: string) => Promise<string>;
   passwordPolicyError: (password: unknown) => string | null;
@@ -480,6 +486,7 @@ export function registerExtensionRoutes(
         await pool.query(`DELETE FROM task_deadline_reminders WHERE task_id = $1`, [task.id]);
         await createNotification({
           studentId: String(task.student_id),
+          entity: { type: "task", id: task?.id },
           title: "Task updated",
           message: `"${task.title}" was updated by your supervisor. It is due ${dueDate}.`,
           type: "task",
@@ -524,6 +531,7 @@ export function registerExtensionRoutes(
         await pool.query(`DELETE FROM task_deadline_reminders WHERE task_id = $1`, [task.id]);
         await createNotification({
           studentId: String(task.student_id),
+          entity: { type: "task", id: task?.id },
           title: "Task cancelled",
           message: `"${task.title}" was cancelled by your supervisor. You no longer need to submit it.`,
           type: "task",
@@ -580,6 +588,7 @@ export function registerExtensionRoutes(
       await quietly("TASK UNDO NOTIFICATION ERROR", () =>
         createNotification({
           studentId: String(task.student_id),
+          entity: { type: "task", id: task?.id },
           title: "Task back under review",
           message: `The review of "${task.title}" was withdrawn. It is waiting to be reviewed again.`,
           type: "task",
@@ -628,6 +637,7 @@ export function registerExtensionRoutes(
       await quietly("DOCUMENT UNDO NOTIFICATION ERROR", () =>
         createNotification({
           studentId: String(document.student_id),
+          entity: { type: "document", id: document?.id },
           title: "Document back under review",
           message: `The review of your ${document.doc_type} was withdrawn. It is waiting to be reviewed again.`,
           type: "document",
@@ -1409,12 +1419,14 @@ export function registerExtensionRoutes(
             await createNotification({
               studentId: complaint.student_id,
               supervisorId: complaint.student_id ? null : complaint.filed_by_supervisor_id,
+              entity: { type: "complaint", id: complaint?.id },
               title: "Reply on your complaint",
               message: `The OJT coordinator replied about your ${complaint.category} report.`,
               type: "info",
             });
           } else {
             await notifyCoordinators({
+              entity: { type: "complaint", id: complaint?.id },
               title: "Reply on a complaint",
               message: `${author.rows[0]?.name || "The filer"} replied about a ${complaint.category} report.`,
               type: "warning",

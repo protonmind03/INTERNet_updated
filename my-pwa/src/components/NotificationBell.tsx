@@ -5,6 +5,7 @@ import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import {
   formatNotificationTime,
+  notificationPath,
   useNotifications,
   type NotificationItem,
   type NotificationRole,
@@ -115,7 +116,9 @@ export default function NotificationBell({
                   type="button"
                   onClick={() => {
                     if (!item.is_read) void markRead(item.id);
-                    const path = resolvePath?.(item);
+                    // The portal's own rule if it gave one; otherwise the page
+                    // the server stored with the notification.
+                    const path = resolvePath ? resolvePath(item) : notificationPath(item, "");
                     if (path) {
                       setOpen(false);
                       navigate(path);

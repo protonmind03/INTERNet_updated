@@ -26,6 +26,11 @@ import {
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { clientErrorRecord, createRateLimiter } from "./services/clientErrors";
 import {
+  notificationLink,
+  safeLink,
+  type NotificationEntity,
+} from "./services/notificationLinks";
+import {
   readOfflineStamp,
   type LogTimes,
   type OfflineAction,
@@ -246,6 +251,7 @@ async function sendWebPush(
     message: string;
     id: number;
     type?: string;
+    link?: string | null;
   }
 ): Promise<void> {
   const result = await pool.query<{ id: number; subscription: webpush.PushSubscription }>(
@@ -261,7 +267,10 @@ async function sendWebPush(
             title: notification.title,
             body: notification.message,
             notificationId: notification.id,
+            // The stored link first; the older type table only if a
+            // notification somehow has none.
             url:
+              notification.link ||
               pushTargets[recipient.role].byType[notification.type || ""] ||
               pushTargets[recipient.role].fallback,
           }),
@@ -1045,6 +1054,11 @@ function requireRole(
 /**
  * Writes one notification row. Pass exactly one of studentId,
  * supervisorId, coordinatorId as the recipient.
+ *
+ * `entity` names the record it is about, when there is one. `link` names
+ * the page to open; left out, it is worked out from the recipient, type,
+ * title and entity (services/notificationLinks.ts), so every notification
+ * is stored with somewhere to go.
  */
 async function createNotification(options: {
   studentId?: string | null;
@@ -1053,6 +1067,8 @@ async function createNotification(options: {
   title: string;
   message: string;
   type?: string;
+  link?: string;
+  entity?: { type: string; id: string | number | null | undefined };
 }) {
   const recipients: {
     role: "coordinator" | "student" | "supervisor";
@@ -1073,18 +1089,32 @@ async function createNotification(options: {
     throw new Error("A notification must have exactly one recipient.");
   }
 
+  // A record without an id is no record: callers pass what they have.
+  const entity =
+    options.entity && options.entity.id !== undefined && options.entity.id !== null &&
+    String(options.entity.id) !== ""
+      ? options.entity
+      : undefined;
+  const link =
+    safeLink(options.link) ??
+    notificationLink(recipient.role, options.type, options.title, entity);
+
   const result = await pool.query<{
     id: number;
     title: string;
     message: string;
     type: string;
     created_at: string;
+    link: string | null;
+    entity_type: string | null;
+    entity_id: string | null;
   }>(
     `
     INSERT INTO notifications
-    (student_id, supervisor_id, coordinator_id, title, message, type, is_read)
-    VALUES ($1, $2, $3, $4, $5, $6, FALSE)
-    RETURNING id, title, message, type, created_at
+    (student_id, supervisor_id, coordinator_id, title, message, type, is_read,
+     link, entity_type, entity_id)
+    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9)
+    RETURNING id, title, message, type, created_at, link, entity_type, entity_id
     `,
     [
       options.studentId || null,
@@ -1093,6 +1123,9 @@ async function createNotification(options: {
       options.title,
       options.message,
       options.type || "info",
+      link,
+      entity ? String(entity.type).slice(0, 40) : null,
+      entity ? String(entity.id).slice(0, 80) : null,
     ]
   );
   const payload = result.rows[0];
@@ -1156,6 +1189,7 @@ async function syncCompletion(studentId: string): Promise<void> {
         title: "Student completed required hours",
         message: `${student.name} has completed their ${student.required_hours} required OJT hours.`,
         type: "attendance",
+        entity: { type: "student", id: studentId },
       });
     } else if (!reached && student.completed_at) {
       await pool.query(
@@ -1193,6 +1227,8 @@ async function notifyCoordinators(notification: {
   title: string;
   message: string;
   type?: string;
+  link?: string;
+  entity?: NotificationEntity;
 }): Promise<void> {
   try {
     const coordinators = await pool.query<{ coordinator_id: string }>(
@@ -2822,6 +2858,7 @@ app.put(
         if (owner.rows[0]?.supervisor_id) {
           await createNotification({
             supervisorId: owner.rows[0].supervisor_id,
+            entity: { type: "attendance", id: result.rows[0]?.id },
             title: "Attendance log ready to verify",
             message: `${owner.rows[0].name} timed out on ${result.rows[0].date} with ${result.rows[0].hours} hours.`,
             type: "attendance",
@@ -3397,6 +3434,7 @@ app.post(
       try {
         await createNotification({
           studentId,
+          entity: { type: "attendance", id: result.rows[0]?.id },
           title: "Time-in recorded by your supervisor",
           message: `Your supervisor recorded your time-in for ${result.rows[0].date}. Remember to time out when you finish; the day is verified automatically.`,
           type: "attendance",
@@ -3793,6 +3831,7 @@ app.patch(
           status === "Pending" ? "returned to pending" : status.toLowerCase();
         await createNotification({
           supervisorId: String(result.rows[0].supervisor_id),
+          entity: { type: "attendance", id: result.rows[0]?.id },
           title: "Coordinator decided an attendance log",
           message: `${result.rows[0].student_name}'s attendance for ${result.rows[0].date} was ${outcome} by the OJT coordinator.${
             cleanReason ? ` Reason: ${cleanReason}` : ""
@@ -3808,6 +3847,7 @@ app.patch(
       if (status === "Pending") {
         await createNotification({
           studentId: result.rows[0].student_id,
+          entity: { type: "attendance", id: result.rows[0]?.id },
           title: "Attendance back under review",
           message: `The decision on your attendance for ${result.rows[0].date} was withdrawn. It is waiting to be reviewed again.`,
           type: "attendance",
@@ -3838,6 +3878,7 @@ app.patch(
       // A rejected log is a discrepancy the coordinator is expected to follow.
       if (status === "Rejected" && auth?.role === "supervisor") {
         await notifyCoordinators({
+          entity: { type: "attendance", id: result.rows[0]?.id },
           title: "Attendance log rejected",
           message: `A supervisor rejected a student's attendance for ${result.rows[0].date}.${
             cleanReason ? ` Reason: ${cleanReason}` : ""
@@ -4432,7 +4473,10 @@ app.get(
             message,
             type,
             is_read,
-            created_at
+            created_at,
+            link,
+            entity_type,
+            entity_id
           FROM notifications
           WHERE student_id = $1
           ORDER BY created_at DESC
@@ -4501,7 +4545,10 @@ app.get(
             message,
             type,
             is_read,
-            created_at
+            created_at,
+            link,
+            entity_type,
+            entity_id
           FROM notifications
           WHERE student_id = $1
           ORDER BY created_at DESC
@@ -6693,6 +6740,7 @@ app.post(
       if (reviewerId) {
         await createNotification({
           supervisorId: String(reviewerId),
+          entity: { type: "task", id: task?.id },
           title: "Task submitted",
           message: `A student submitted "${task.title}" for your review.`,
           type: "info",
@@ -7033,7 +7081,8 @@ app.get(
 
       const result = await pool.query(
         `
-        SELECT id, supervisor_id, title, message, type, is_read, created_at
+        SELECT id, supervisor_id, title, message, type, is_read, created_at,
+               link, entity_type, entity_id
         FROM notifications
         WHERE supervisor_id = $1
         ORDER BY created_at DESC, id DESC
@@ -7068,7 +7117,8 @@ app.get(
 
       const result = await pool.query(
         `
-        SELECT id, coordinator_id, title, message, type, is_read, created_at
+        SELECT id, coordinator_id, title, message, type, is_read, created_at,
+               link, entity_type, entity_id
         FROM notifications
         WHERE coordinator_id = $1
         ORDER BY created_at DESC, id DESC
@@ -8385,6 +8435,7 @@ app.patch(
       const document = result.rows[0];
       await createNotification({
         studentId: document.student_id,
+        entity: { type: "document", id: document?.id },
         title: `Document ${status.toLowerCase()}`,
         message: reviewNotes
           ? `${document.doc_type}: ${reviewNotes}`

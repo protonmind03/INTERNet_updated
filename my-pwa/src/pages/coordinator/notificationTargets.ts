@@ -1,5 +1,5 @@
 import type { NotificationTarget } from "../../components/NotificationFeed";
-import type { NotificationItem } from "../../lib/useNotifications";
+import { notificationPath, type NotificationItem } from "../../lib/useNotifications";
 
 /**
  * The page a coordinator notification is about, inferred from what it says.
@@ -8,6 +8,13 @@ import type { NotificationItem } from "../../lib/useNotifications";
  * own and is only marked as read.
  */
 export function coordinatorNotificationTarget(item: NotificationItem): NotificationTarget {
+  const guess = fromWording(item);
+  // The stored page when there is one (a student's own record, for
+  // example); the icon still comes from the wording.
+  return { icon: guess.icon, path: notificationPath(item, guess.path) };
+}
+
+function fromWording(item: NotificationItem): NotificationTarget {
   if (item.type === "announcement") return { icon: "megaphone", path: "" };
   const title = item.title.toLowerCase();
   if (title.includes("complaint")) return { icon: "flag", path: "/coordinator/complaints" };

@@ -2246,3 +2246,116 @@ test("an offline break, return and time-out are recorded once, in order, and mar
   });
   assert.equal(own.body.attendance.find((log) => log.id === logId).recorded_offline, true);
 });
+
+
+/*
+| Where a notification leads
+*/
+
+test("every kind of notification is given a page inside the app", () => {
+  require("tsx/cjs");
+  const { notificationLink, safeLink, NOTIFICATION_PAGE } = require("../src/services/notificationLinks.ts");
+
+  // [role, type, title, expected page]: the titles the server really writes.
+  const cases = [
+    ["student", "attendance", "Attendance verified", "/daily-log"],
+    ["student", "attendance", "Time-in recorded by your supervisor", "/daily-log"],
+    ["student", "attendance", "Absence excused", "/daily-log"],
+    ["student", "info", "New task assigned", "/task"],
+    ["student", "info", "Revisions requested", "/task"],
+    ["student", "task", "Task deadline reached", "/task"],
+    ["student", "document", "Document approved", "/documents"],
+    ["student", "evaluation", "New evaluation received", "/student/feedback"],
+    ["student", "schedule", "OJT schedule updated", "/schedule"],
+    ["student", "info", "Supervisor assigned", "/schedule"],
+    ["student", "success", "Complaint resolved", "/report"],
+    ["student", "info", "Reply on your complaint", "/report"],
+    ["student", "info", "Welcome to INTERNet", "/student/dashboard"],
+    ["student", "info", "Required hours changed", "/student/dashboard"],
+    ["student", "announcement", "Announcement: Orientation", "/notifications"],
+    ["supervisor", "attendance", "Attendance log awaiting verification", "/supervisor/dashboard"],
+    ["supervisor", "attendance", "Attendance log ready to verify", "/supervisor/dashboard"],
+    ["supervisor", "attendance", "Absence filed for review", "/supervisor/dashboard"],
+    ["supervisor", "info", "Task submitted", "/supervisor/dashboard"],
+    ["supervisor", "document", "Document submitted for review", "/supervisor/dashboard"],
+    ["supervisor", "task", "Task past its deadline", "/supervisor/tasks"],
+    ["supervisor", "attendance", "Coordinator decided an attendance log", "/supervisor/attendance"],
+    ["supervisor", "info", "New intern assigned", "/supervisor/interns"],
+    ["supervisor", "schedule", "Intern schedule updated", "/supervisor/interns"],
+    ["supervisor", "document", "New document required", "/supervisor/documents"],
+    ["supervisor", "info", "Complaint resolved", "/supervisor/complaints"],
+    ["supervisor", "announcement", "Announcement: Orientation", "/supervisor/notifications"],
+    ["coordinator", "warning", "New complaint filed", "/coordinator/complaints"],
+    ["coordinator", "warning", "Reply on a complaint", "/coordinator/complaints"],
+    ["coordinator", "attendance", "Attendance log rejected", "/coordinator/monitoring"],
+    ["coordinator", "evaluation", "New company feedback", "/coordinator/evaluations"],
+    ["coordinator", "info", "Something new", "/coordinator/notifications"],
+  ];
+  for (const [role, type, title, expected] of cases) {
+    assert.equal(notificationLink(role, type, title), expected, `${role}: "${title}"`);
+  }
+
+  // A notification about one student takes the coordinator to that student.
+  assert.equal(
+    notificationLink("coordinator", "attendance", "Student completed required hours", {
+      type: "student",
+      id: "2021-0001 A/B",
+    }),
+    "/coordinator/students/2021-0001%20A%2FB"
+  );
+  // Nothing falls through to "no page": the full list is always the fallback.
+  for (const role of ["student", "supervisor", "coordinator"]) {
+    const link = notificationLink(role, undefined, "");
+    assert.equal(link, NOTIFICATION_PAGE[role]);
+    assert.ok(link.startsWith("/"));
+  }
+
+  // A link a caller supplies is kept only if it is a path inside the app.
+  assert.equal(safeLink("/task"), "/task");
+  assert.equal(safeLink("/coordinator/students/2021-0001?tab=logs"), "/coordinator/students/2021-0001?tab=logs");
+  assert.equal(safeLink("https://example.com/"), null);
+  assert.equal(safeLink("//example.com/x"), null);
+  assert.equal(safeLink("javascript:alert(1)"), null);
+  assert.equal(safeLink("task"), null);
+  assert.equal(safeLink("/a b"), null);
+  assert.equal(safeLink("/" + "a".repeat(400)), null);
+  assert.equal(safeLink(undefined), null);
+  assert.equal(safeLink(42), null);
+});
+
+test("notification lists carry the page and record for each notification", async () => {
+  const supervisor = await supervisorSession();
+  const lists = [
+    [`/api/notifications/student/${encodeURIComponent(student.student_id)}`, studentToken],
+    [`/api/notifications/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, supervisor.token],
+    [`/api/notifications/coordinator/${encodeURIComponent(coordinator.coordinator_id)}`, coordinatorToken],
+  ];
+  for (const [path, token] of lists) {
+    const { response, body } = await jsonRequest(path, { headers: authHeaders(token) });
+    assert.equal(response.status, 200, path);
+    assert.ok(Array.isArray(body.notifications), path);
+    for (const item of body.notifications) {
+      // The three fields are always present; older rows hold nulls.
+      for (const key of ["link", "entity_type", "entity_id"]) assert.ok(key in item, `${path}: ${key}`);
+      if (item.link !== null) assert.match(item.link, /^\/(?!\/)/, `${path}: a path inside the app`);
+      // Everything that was returned before is still returned.
+      for (const key of ["id", "title", "message", "type", "is_read", "created_at"]) assert.ok(key in item, key);
+    }
+  }
+
+  // Where the write test has run (CI), the notifications it caused are new
+  // ones, so they must have their page and their record.
+  if (process.env.ALLOW_TEST_WRITES === "true") {
+    const mine = await jsonRequest(lists[0][0], { headers: authHeaders(studentToken) });
+    const verified = mine.body.notifications.find((item) => item.title === "Attendance verified");
+    if (verified) {
+      assert.equal(verified.link, "/daily-log");
+    }
+    const recorded = mine.body.notifications.find((item) => item.title === "Time-in recorded by your supervisor");
+    if (recorded) {
+      assert.equal(recorded.link, "/daily-log");
+      assert.equal(recorded.entity_type, "attendance");
+      assert.match(String(recorded.entity_id), /^\d+$/);
+    }
+  }
+});

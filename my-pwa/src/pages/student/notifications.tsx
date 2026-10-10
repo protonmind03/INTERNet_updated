@@ -1,7 +1,11 @@
 import NotificationFeed, { type NotificationTarget } from "../../components/NotificationFeed";
 import { Button } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
-import { useNotifications, type NotificationItem } from "../../lib/useNotifications";
+import {
+  notificationPath,
+  useNotifications,
+  type NotificationItem,
+} from "../../lib/useNotifications";
 
 /** Where a notification leads in the student portal, and how it is drawn. */
 const KINDS: Record<string, NotificationTarget> = {
@@ -12,7 +16,13 @@ const KINDS: Record<string, NotificationTarget> = {
   comment: { icon: "note", path: "/task" },
 };
 
+/** The stored page when there is one; the icon still comes from the wording. */
 function resolve(item: NotificationItem): NotificationTarget {
+  const guess = fromWording(item);
+  return { icon: guess.icon, path: notificationPath(item, guess.path) };
+}
+
+function fromWording(item: NotificationItem): NotificationTarget {
   if (item.type === "announcement") return { icon: "megaphone", path: "" };
   if (item.title.toLowerCase().includes("absence")) {
     return { icon: "calendar", path: "/daily-log" };

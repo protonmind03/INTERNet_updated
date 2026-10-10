@@ -14,7 +14,23 @@ export type NotificationItem = {
   type: string;
   is_read: boolean;
   created_at: string;
+  /** The page it opens, stored by the server. Missing on older notifications. */
+  link?: string | null;
+  /** The record it is about, when the server knew one. */
+  entity_type?: string | null;
+  entity_id?: string | null;
 };
+
+/**
+ * The page a notification opens. The server stores it with each new
+ * notification; `fromTitle` is what a portal worked out from the wording,
+ * kept for notifications written before links were stored. An announcement
+ * is read where it is listed, so it opens nothing.
+ */
+export function notificationPath(item: NotificationItem, fromTitle: string): string {
+  if (item.type === "announcement") return "";
+  return item.link || fromTitle;
+}
 
 /**
  * Loads the signed-in account's notifications, keeps them current when a

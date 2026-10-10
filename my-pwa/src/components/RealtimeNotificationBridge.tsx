@@ -10,6 +10,8 @@ type LiveNotification = {
   title: string;
   message: string;
   type: string;
+  /** The page it is about, stored by the server. */
+  link?: string | null;
 };
 
 /** The full notification list for each portal: where "View" leads. */
@@ -116,7 +118,12 @@ export default function RealtimeNotificationBridge() {
             const payload = JSON.parse(data) as LiveNotification;
             toast.notice(payload.title, payload.message, {
               label: "View",
-              onClick: () => navigateRef.current(NOTIFICATION_PAGE[role]),
+              // Straight to what it is about; an announcement, or anything
+              // without a page, opens the full list.
+              onClick: () =>
+                navigateRef.current(
+                  (payload.type !== "announcement" && payload.link) || NOTIFICATION_PAGE[role]
+                ),
             });
             window.dispatchEvent(
               new CustomEvent("internet-notification", { detail: payload })

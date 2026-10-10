@@ -1,10 +1,20 @@
 import NotificationFeed, { type NotificationTarget } from "../../components/NotificationFeed";
 import { Button } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { useNotifications, type NotificationItem } from "../../lib/useNotifications";
+import {
+  notificationPath,
+  useNotifications,
+  type NotificationItem,
+} from "../../lib/useNotifications";
 
 /** Where a notification leads in the supervisor portal, inferred from what it says. */
 function resolve(item: NotificationItem): NotificationTarget {
+  const guess = fromWording(item);
+  // The stored page when there is one; the icon still comes from the wording.
+  return { icon: guess.icon, path: notificationPath(item, guess.path) };
+}
+
+function fromWording(item: NotificationItem): NotificationTarget {
   if (item.type === "announcement") return { icon: "megaphone", path: "" };
   const title = item.title.toLowerCase();
   if (title.includes("absence")) return { icon: "calendar", path: "/supervisor/dashboard" };

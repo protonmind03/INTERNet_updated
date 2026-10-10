@@ -12,6 +12,10 @@ type NotificationPayload = {
   message: string;
   type: string;
   created_at: string;
+  /** The page this notification opens. */
+  link?: string | null;
+  entity_type?: string | null;
+  entity_id?: string | null;
 };
 
 const streams = new Map<string, Set<Response>>();
