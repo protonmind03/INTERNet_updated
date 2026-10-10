@@ -118,12 +118,9 @@ export default function RealtimeNotificationBridge() {
             const payload = JSON.parse(data) as LiveNotification;
             toast.notice(payload.title, payload.message, {
               label: "View",
-              // Straight to what it is about; an announcement, or anything
-              // without a page, opens the full list.
-              onClick: () =>
-                navigateRef.current(
-                  (payload.type !== "announcement" && payload.link) || NOTIFICATION_PAGE[role]
-                ),
+              // Straight to what it is about; anything without a page opens
+              // the full list.
+              onClick: () => navigateRef.current(payload.link || NOTIFICATION_PAGE[role]),
             });
             window.dispatchEvent(
               new CustomEvent("internet-notification", { detail: payload })

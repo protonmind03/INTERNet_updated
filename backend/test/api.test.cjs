@@ -2278,7 +2278,7 @@ test("every kind of notification is given a page inside the app", () => {
     ["student", "info", "Reply on your complaint", "/report"],
     ["student", "info", "Welcome to INTERNet", "/student/dashboard"],
     ["student", "info", "Required hours changed", "/student/dashboard"],
-    ["student", "announcement", "Announcement: Orientation", "/notifications"],
+    ["student", "announcement", "Announcement: Orientation", "/announcements"],
     ["supervisor", "attendance", "Attendance log awaiting verification", "/supervisor/dashboard"],
     ["supervisor", "attendance", "Attendance log ready to verify", "/supervisor/dashboard"],
     ["supervisor", "attendance", "Absence filed for review", "/supervisor/dashboard"],
@@ -2290,7 +2290,7 @@ test("every kind of notification is given a page inside the app", () => {
     ["supervisor", "schedule", "Intern schedule updated", "/supervisor/interns"],
     ["supervisor", "document", "New document required", "/supervisor/documents"],
     ["supervisor", "info", "Complaint resolved", "/supervisor/complaints"],
-    ["supervisor", "announcement", "Announcement: Orientation", "/supervisor/notifications"],
+    ["supervisor", "announcement", "Announcement: Orientation", "/supervisor/announcements"],
     ["coordinator", "warning", "New complaint filed", "/coordinator/complaints"],
     ["coordinator", "warning", "Reply on a complaint", "/coordinator/complaints"],
     ["coordinator", "attendance", "Attendance log rejected", "/coordinator/monitoring"],
@@ -2970,4 +2970,68 @@ test("a student is told who their coordinator is, and nothing private about them
   assert.deepEqual(Object.keys(body.coordinator).sort(), ["department", "email", "name"]);
   assert.equal(typeof body.coordinator.name, "string");
   assert.match(body.coordinator.email, /@/);
+});
+
+test("students and supervisors can list the announcements meant for them", async () => {
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest("/api/announcements")).response.status, 401);
+  // The coordinator has their own list, with who each one was sent to.
+  assert.equal((await jsonRequest("/api/announcements", { headers: authHeaders(coordinatorToken) })).response.status, 403);
+
+  for (const token of [studentToken, supervisor.token]) {
+    const { response, body } = await jsonRequest("/api/announcements", { headers: authHeaders(token) });
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(body.announcements));
+    for (const item of body.announcements) {
+      // What was said and when; not who else it went to.
+      assert.deepEqual(Object.keys(item).sort(), ["created_at", "id", "message", "title"]);
+    }
+    const times = body.announcements.map((item) => new Date(item.created_at).getTime());
+    assert.deepEqual(times, [...times].sort((a, b) => b - a), "newest first");
+  }
+});
+
+test("an announcement reaches only the audience and company it was sent to", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const stamp = Date.now();
+  const send = (body) => jsonRequest("/api/coordinator/announcements", jsonBody(coordinatorToken, "POST", body));
+  const mine = async (token) => (await jsonRequest("/api/announcements", { headers: authHeaders(token) })).body.announcements.map((item) => item.title);
+
+  const forStudents = `Students only ${stamp}`;
+  const forSupervisors = `Supervisors only ${stamp}`;
+  const forOtherCompany = `Another company ${stamp}`;
+  const sent = [];
+  for (const body of [
+    { title: forStudents, message: "For students.", audience: "students" },
+    { title: forSupervisors, message: "For supervisors.", audience: "supervisors" },
+  ]) {
+    const result = await send(body);
+    assert.ok(result.response.ok, JSON.stringify(result.body));
+    sent.push(result.body.announcement.id);
+  }
+  // One for a company nobody in the demo data belongs to is refused or reaches nobody.
+  const other = await send({ title: forOtherCompany, message: "Elsewhere.", audience: "everyone", company: "A Company With No One" });
+  if (other.response.ok) sent.push(other.body.announcement.id);
+
+  const studentSees = await mine(studentToken);
+  const supervisorSees = await mine(supervisor.token);
+  assert.ok(studentSees.includes(forStudents) && !studentSees.includes(forSupervisors));
+  assert.ok(supervisorSees.includes(forSupervisors) && !supervisorSees.includes(forStudents));
+  assert.ok(!studentSees.includes(forOtherCompany) && !supervisorSees.includes(forOtherCompany));
+
+  // The notification each got opens the announcements page.
+  const notes = await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+  const note = notes.body.notifications.find((item) => item.title === `Announcement: ${forStudents}`);
+  assert.equal(note?.link, "/announcements");
+
+  // Withdrawn: gone from the list.
+  for (const id of sent) {
+    const gone = await jsonRequest(`/api/coordinator/announcements/${id}`, jsonBody(coordinatorToken, "DELETE", {}));
+    assert.ok(gone.response.ok, JSON.stringify(gone.body));
+  }
+  assert.ok(!(await mine(studentToken)).includes(forStudents));
 });

@@ -161,6 +161,17 @@ export default function SupervisorLayout({
                     type="button"
                     onClick={() => {
                       setMenuOpen(false);
+                      navigate("/supervisor/announcements");
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Icon name="megaphone" className="text-slate-400" />
+                    Announcements
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
                       setConfirmSignOut(true);
                     }}
                     className="flex w-full items-center gap-3 border-t border-slate-100 px-4 py-3 text-left text-sm text-red-600 hover:bg-red-50"

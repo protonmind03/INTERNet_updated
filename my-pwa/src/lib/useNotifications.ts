@@ -24,11 +24,9 @@ export type NotificationItem = {
 /**
  * The page a notification opens. The server stores it with each new
  * notification; `fromTitle` is what a portal worked out from the wording,
- * kept for notifications written before links were stored. An announcement
- * is read where it is listed, so it opens nothing.
+ * kept for notifications written before links were stored.
  */
 export function notificationPath(item: NotificationItem, fromTitle: string): string {
-  if (item.type === "announcement") return "";
   return item.link || fromTitle;
 }
 

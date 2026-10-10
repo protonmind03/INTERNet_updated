@@ -87,8 +87,13 @@ export function notificationLink(
 ): string {
   const kind = (type || "").toLowerCase();
   const words = title.toLowerCase();
-  // An announcement is read where it is listed; it has no page of its own.
-  if (kind === "announcement") return NOTIFICATION_PAGE[role];
+  // An announcement opens the page that lists them. The coordinator, who
+  // sends them, has that list on their own Announcements page.
+  if (kind === "announcement") {
+    if (role === "student") return "/announcements";
+    if (role === "supervisor") return "/supervisor/announcements";
+    return "/coordinator/announcements";
+  }
   if (role === "student") return studentLink(kind, words);
   if (role === "supervisor") return supervisorLink(kind, words);
   return coordinatorLink(kind, words, entity);

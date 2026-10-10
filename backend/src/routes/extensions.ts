@@ -1324,6 +1324,46 @@ export function registerExtensionRoutes(
 
   /*
   |--------------------------------------------------------------------------
+  | ANNOUNCEMENTS, AS THEIR READERS SEE THEM
+  |--------------------------------------------------------------------------
+  |
+  | An announcement also arrives as a notification, but a notification list
+  | is soon buried. This gives a student or supervisor the announcements
+  | meant for them in one place: those sent to their kind of account (or to
+  | everyone) and, when one was sent to a single company, only if it is
+  | theirs. A withdrawn announcement is deleted, so it is not listed.
+  |
+  */
+
+  app.get("/api/announcements", requireRole(["student", "supervisor"]), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const result = await pool.query(
+        `
+        SELECT a.id, a.title, a.message, a.created_at
+        FROM announcements a
+        WHERE a.audience IN ($1, 'everyone')
+          AND (
+            a.company IS NULL OR TRIM(a.company) = ''
+            OR LOWER(TRIM(a.company)) = LOWER(TRIM(COALESCE((
+              SELECT company FROM ${auth.role === "student" ? "students" : "supervisors"}
+              WHERE ${auth.role === "student" ? "student_id" : "supervisor_id"} = $2
+            ), '')))
+          )
+        ORDER BY a.created_at DESC, a.id DESC
+        LIMIT 100
+        `,
+        [auth.role === "student" ? "students" : "supervisors", auth.id]
+      );
+      return res.json({ announcements: result.rows });
+    } catch (error) {
+      console.error("GET MY ANNOUNCEMENTS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load announcements." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
   | COMPANIES
   |--------------------------------------------------------------------------
   |
