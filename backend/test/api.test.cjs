@@ -2845,3 +2845,34 @@ test("closing a term deactivates its students and keeps their records; reopening
   const running = terms.find((term) => !term.is_closed && term.start_date <= today && term.end_date >= today);
   assert.ok(running, "a term is running today");
 });
+
+
+test("monitoring can be narrowed to one term and is unchanged without it", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const get = (query = "") => jsonRequest(`/api/coordinator/monitoring${query}`, { headers });
+
+  const all = await get();
+  assert.equal(all.response.status, 200);
+  assert.deepEqual(Object.keys(all.body), ["students"]);
+
+  assert.equal((await get("?term=abc")).response.status, 400);
+  assert.equal((await get("?term=1;drop")).response.status, 400);
+  assert.equal((await get("?term=999999999")).body.students.length, 0, "an unknown term has nobody");
+
+  // Every active student is in exactly one of: a term, or no term.
+  const terms = (await jsonRequest("/api/coordinator/terms", { headers })).body.terms;
+  let counted = (await get("?term=none")).body.students.length;
+  for (const term of terms) {
+    const inTerm = await get(`?term=${term.id}`);
+    assert.equal(inTerm.response.status, 200);
+    assert.equal(inTerm.body.students.length, term.active_students, `${term.name}: the same count as the Terms page`);
+    counted += inTerm.body.students.length;
+  }
+  assert.equal(counted, all.body.students.length);
+
+  // It combines with the date range.
+  const both = await get("?term=none&from=2000-01-01&to=2099-12-31");
+  assert.equal(both.response.status, 200);
+  assert.deepEqual(both.body.period, { from: "2000-01-01", to: "2099-12-31" });
+  assert.equal((await jsonRequest("/api/coordinator/monitoring?term=none", { headers: authHeaders(studentToken) })).response.status, 403);
+});

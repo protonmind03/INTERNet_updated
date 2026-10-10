@@ -6064,6 +6064,12 @@ app.get(
       }
       const hasPeriod = from !== null || to !== null;
 
+      // Optional: one term's students (its id), or "none" for those with no term.
+      const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
+      if (term && term !== "none" && !/^[0-9]{1,9}$/.test(term)) {
+        return res.status(400).json({ message: "That is not a term." });
+      }
+
       // Attendance and task aggregates are computed in separate LATERAL
       // subqueries. Joining both tables in one GROUP BY multiplies rows
       // (each log x each task) and inflated hours and counts.
@@ -6120,9 +6126,12 @@ app.get(
           WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
         ) tk ON TRUE
         WHERE s.is_active = TRUE
+          AND ($3::text IS NULL
+            OR ($3 = 'none' AND s.term_id IS NULL)
+            OR s.term_id::text = $3)
         ORDER BY s.name ASC
         `,
-        [from, to]
+        [from, to, term || null]
       );
 
       const students = result.rows.map(({ period_hours, period_logs, ...row }) => ({

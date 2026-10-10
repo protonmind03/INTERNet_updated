@@ -33,6 +33,8 @@ import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import AbsenceList from "./AbsenceList";
 import { coordinatorRequest } from "./request";
+import TermSelect from "./TermSelect";
+import { useTermFilter } from "./useTermFilter";
 
 type MonitorRow = {
   student_id: string;
@@ -98,6 +100,8 @@ export default function CoordinatorMonitoring() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reviewingId, setReviewingId] = useState<number | null>(null);
+  // Shared with the Students page, so the choice carries between the two.
+  const { term, setTerm, terms } = useTermFilter(searchParams.get("term"));
 
   const load = useCallback(async () => {
     try {
@@ -108,7 +112,9 @@ export default function CoordinatorMonitoring() {
       if (dateTo) range.set("to", dateTo);
       // A range typed back to front is not sent; the page then shows the whole.
       const ordered = !dateFrom || !dateTo || dateFrom <= dateTo;
-      const query = ordered && range.toString() ? `?${range.toString()}` : "";
+      const params = new URLSearchParams(ordered ? range : undefined);
+      if (term) params.set("term", term);
+      const query = params.toString() ? `?${params.toString()}` : "";
       const [monitoring, discrepancies] = await Promise.all([
         coordinatorRequest<{ students: MonitorRow[] }>(`/api/coordinator/monitoring${query}`),
         coordinatorRequest<{ discrepancies: Discrepancy[] }>("/api/coordinator/discrepancies"),
@@ -121,7 +127,7 @@ export default function CoordinatorMonitoring() {
     } finally {
       setLoading(false);
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, term]);
 
   useEffect(() => {
     const refresh = () => {
@@ -156,10 +162,14 @@ export default function CoordinatorMonitoring() {
     [rows, scope, text]
   );
 
+  const termStudents = useMemo(() => new Set(rows.map((row) => row.student_id)), [rows]);
+
   const visibleFlags = useMemo(
     () =>
       flags.filter(
         (flag) =>
+          // With a term chosen, only the logs of the students listed above.
+          (!term || termStudents.has(flag.student_id)) &&
           (!focusStudent || flag.student_id === focusStudent) &&
           isWithinDateRange(flag.date, dateFrom, dateTo) &&
           (!text ||
@@ -167,7 +177,7 @@ export default function CoordinatorMonitoring() {
               .filter(Boolean)
               .some((value) => String(value).toLowerCase().includes(text)))
       ),
-    [flags, focusStudent, dateFrom, dateTo, text]
+    [flags, focusStudent, dateFrom, dateTo, text, term, termStudents]
   );
 
   const rowPager = usePagination(visibleRows, 20);
@@ -207,6 +217,7 @@ export default function CoordinatorMonitoring() {
                 { value: "attention", label: "Needs attention", count: attentionCount },
               ]}
             />
+            <TermSelect term={term} terms={terms} onChange={setTerm} />
             <DateRangeFilter
               from={dateFrom}
               to={dateTo}

@@ -26,6 +26,8 @@ import { usePagination } from "../../lib/usePagination";
 import ImportStudents from "./ImportStudents";
 import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
+import TermSelect from "./TermSelect";
+import { useTermFilter } from "./useTermFilter";
 import ResetPassword from "./ResetPassword";
 
 type Student = {
@@ -77,8 +79,8 @@ export default function CoordinatorStudents() {
   );
   const [sortBy, setSortBy] = useState<SortBy>("name");
   // One term's students, "none" for those with no term, or "" for everyone.
-  const [term, setTerm] = useState(() => searchParams.get("term") || "");
-  const [terms, setTerms] = useState<{ id: number; name: string; is_closed: boolean }[]>([]);
+  // Shared with Monitoring, so the choice carries between the two pages.
+  const { term, setTerm, terms } = useTermFilter(searchParams.get("term"));
 
   const [editing, setEditing] = useState<Student | "new" | null>(null);
   const [toggling, setToggling] = useState<Student | null>(null);
@@ -120,16 +122,6 @@ export default function CoordinatorStudents() {
       setLoading(false);
     }
   }, [search, status, term]);
-
-  useEffect(() => {
-    coordinatorRequest<{ terms: { id: number; name: string; is_closed: boolean }[] }>(
-      "/api/coordinator/terms"
-    )
-      .then((data) => setTerms(data.terms || []))
-      .catch(() => {
-        // The list still works without the term filter.
-      });
-  }, []);
 
   // Wait for typing to pause before searching.
   useEffect(() => {
@@ -205,25 +197,7 @@ export default function CoordinatorStudents() {
                 { value: "inactive", label: "Deactivated" },
               ]}
             />
-            {terms.length > 0 && (
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                Term
-                <select
-                  value={term}
-                  onChange={(event) => setTerm(event.target.value)}
-                  className="field w-auto"
-                >
-                  <option value="">All terms</option>
-                  {terms.map((item) => (
-                    <option key={item.id} value={String(item.id)}>
-                      {item.name}
-                      {item.is_closed ? " (closed)" : ""}
-                    </option>
-                  ))}
-                  <option value="none">No term</option>
-                </select>
-              </label>
-            )}
+            <TermSelect term={term} terms={terms} onChange={setTerm} />
             <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
               Sort by
               <select
