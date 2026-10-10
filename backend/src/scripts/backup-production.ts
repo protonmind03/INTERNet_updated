@@ -10,16 +10,21 @@ import { findPgDump, option, stamp } from "./pg-tools";
 //   railway run --service Postgres npm run db:backup-production
 //
 // `railway run` supplies the database's own settings, so nothing is typed
-// in and no password appears on screen. The database is reached through its
-// public address (Railway's "TCP proxy"); the address the backend uses,
-// postgres.railway.internal, only works inside Railway.
+// in and no password appears on screen. The address the backend uses,
+// postgres.railway.internal, only works inside Railway, so the database is
+// reached through a tunnel (preferred: add `-- --host localhost --port
+// <tunnel port>`, see DEPLOY.md), or through its public address if one has
+// been switched on.
 //
 // The file goes in backend/backups/ (git-ignored). It holds personal data:
 // keep a copy somewhere other than this computer, and never share it.
 
 function backupProduction() {
-  const host = process.env.RAILWAY_TCP_PROXY_DOMAIN;
-  const port = process.env.RAILWAY_TCP_PROXY_PORT;
+  // --host and --port point at a tunnel opened with
+  // `railway connect Postgres --tunnel-only`; without them the database's
+  // public address is used, if it has one.
+  const host = option("--host") || process.env.RAILWAY_TCP_PROXY_DOMAIN;
+  const port = option("--port") || process.env.RAILWAY_TCP_PROXY_PORT;
   const user = process.env.PGUSER;
   const database = process.env.PGDATABASE;
   const password = process.env.PGPASSWORD;
@@ -33,8 +38,11 @@ function backupProduction() {
   }
   if (!host || !port) {
     throw new Error(
-      "This database has no public address, so it cannot be reached from this computer.\n" +
-        "In Railway: Postgres service > Settings > Networking > add a TCP proxy for port 5432, then run this again."
+      "This database has no public address, which is the safer setting. Reach it through a tunnel instead:\n" +
+        "  1. In a second terminal, in this folder:  railway connect Postgres --tunnel-only\n" +
+        "     Leave it running and note the port it listens on (the number after localhost:).\n" +
+        "  2. Here:  railway run --service Postgres npm run db:backup-production -- --host localhost --port <that port>\n" +
+        "  3. Close the tunnel with Ctrl+C when the backup is done."
     );
   }
 

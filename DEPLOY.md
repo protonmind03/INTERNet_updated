@@ -157,27 +157,40 @@ railway link
 `railway link` asks which project, environment and service: choose the
 project, `production`, and the backend service.
 
-Then, each time you want a backup, from the `backend` folder:
+Then, each time you want a backup, use two terminals in the `backend`
+folder. The database has no public address (the safer setting), so the
+first terminal opens an encrypted tunnel to it:
 
 ```
-railway run --service Postgres npm run db:backup-production
+railway connect Postgres --tunnel-only
 ```
 
-Type it exactly as shown; there is nothing to fill in. It writes
+Leave it running. It says which local port it is listening on. Its output
+may include a connection string with the password in it: read the port
+number, and do not copy or screenshot the rest. In the second terminal,
+with that port number in place of 12345:
+
+```
+railway run --service Postgres npm run db:backup-production -- --host localhost --port 12345
+```
+
+When it finishes, press Ctrl+C in the first terminal to close the tunnel.
+The port is the only thing to fill in. It writes
 `backend/backups/internet-production-<date>-<time>.dump` and prints its
 size. It only reads, and takes seconds.
 
 How it works, and why not a plain `pg_dump` of `DATABASE_PUBLIC_URL`: the
 backend reaches the database at `postgres.railway.internal`, an address
 that exists only inside Railway, so a dump aimed at it from a laptop fails
-with "could not translate host name". The script uses the database's public
-address instead (Railway's TCP proxy) and takes the user, database name and
-password from the Postgres service itself, so none of them is typed or
-shown. **Never paste the connection string into a command or a chat: it
+with "could not translate host name". The script goes through the tunnel
+instead and takes the user, database name and password from the Postgres
+service itself, so none of them is typed or shown. **Never paste the connection string into a command or a chat: it
 contains the database password.**
 
-If it says the database has no public address: Postgres service > Settings
-> Networking > add a TCP proxy for port 5432, then run it again.
+Railway can also give the database a public address (Postgres service >
+Settings > Networking > Add Public Access), after which the command works
+without `--host` and `--port`. Avoid it: anyone with the connection string
+can then reach the database from anywhere.
 
 ### Uploaded files (run by you)
 
