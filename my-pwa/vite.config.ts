@@ -76,6 +76,8 @@ export default defineConfig(({ mode }) => {
               '**/*-latin-ext-*.woff2',
               '**/*-vietnamese-*.woff2',
               'service-worker-killswitch.js',
+              // Only the browser's install dialog uses these.
+              'screenshots/**',
             ],
           },
         })

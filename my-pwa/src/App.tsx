@@ -9,6 +9,7 @@ import Toaster from "./components/Toaster";
 import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ChangePassword from "./pages/ChangePassword";
+import Go from "./pages/Go";
 
 /*
 |--------------------------------------------------------------------------
@@ -187,6 +188,11 @@ function App() {
         <Route
           path="/change-password"
           element={<ChangePassword />}
+        />
+        {/* The installed app's shortcuts: /go/today, /go/tasks, /go/notifications. */}
+        <Route
+          path="/go/:target"
+          element={<Go />}
         />
 
         {/* 
