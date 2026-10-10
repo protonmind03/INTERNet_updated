@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, useNavigate } from "react-router-dom";
 import { LoginScreen, SplashScreen, type Role } from "../brand";
 import { API_URL } from "../lib/api";
 
@@ -42,8 +42,25 @@ function lastRole(): Role {
   }
 }
 
+/** The role already signed in on this device, if its token is still stored. */
+function signedInRole(): Role | null {
+  try {
+    const active = localStorage.getItem("active_role");
+    return ROLES.includes(active as Role) && localStorage.getItem(`${active}_token`)
+      ? (active as Role)
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function Login() {
   const navigate = useNavigate();
+
+  // Read once, when the page opens: someone who is already signed in is
+  // taken to their portal. Signing in on this page must not trigger it, or
+  // the launch screen and the first-login password step would be skipped.
+  const [alreadySignedIn] = useState(signedInRole);
 
   // Set by the session guard when it sends an expired session back here.
   const [notice, setNotice] = useState(() => sessionStorage.getItem("session_notice") || "");
@@ -99,6 +116,8 @@ export default function Login() {
       /* private mode: nothing to clear */
     }
   };
+
+  if (alreadySignedIn) return <Navigate to={HOME[alreadySignedIn]} replace />;
 
   return (
     <>
