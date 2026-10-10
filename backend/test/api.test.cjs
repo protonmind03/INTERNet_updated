@@ -2520,3 +2520,122 @@ test("an audited action writes exactly one row, with who did it", async (t) => {
   const again = await login("student", studentEmail, studentPassword);
   studentToken = again.token;
 });
+
+
+/*
+| Companies
+*/
+
+test("company records are coordinator-only and validated; the old name list is unchanged", async () => {
+  const path = "/api/coordinator/company-records";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+  const list = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.companies));
+  assert.ok(Array.isArray(list.body.unlinked));
+  for (const company of list.body.companies) {
+    for (const key of ["id", "name", "is_active", "active_students", "students", "supervisors"]) {
+      assert.ok(key in company, key);
+    }
+  }
+
+  // The route the announcements page uses still answers with plain names.
+  const names = await jsonRequest("/api/coordinator/companies", { headers: authHeaders(coordinatorToken) });
+  assert.equal(names.response.status, 200);
+  assert.deepEqual(Object.keys(names.body), ["companies"]);
+  assert.ok(names.body.companies.every((name) => typeof name === "string"));
+
+  // Refused before anything is written.
+  const post = (body) => jsonRequest(path, jsonBody(coordinatorToken, "POST", body));
+  assert.equal((await post({})).response.status, 400);
+  assert.equal((await post({ name: "A" })).response.status, 400);
+  assert.equal((await post({ name: "Valid Name", contact_email: "not-an-email" })).response.status, 400);
+  assert.equal((await post({ name: "Valid Name", moa_start: "01/02/2026" })).response.status, 400);
+  assert.equal((await post({ name: "Valid Name", moa_start: "2026-06-01", moa_expiry: "2026-01-01" })).response.status, 400);
+  assert.equal((await post({ name: "Valid Name", slots: -1 })).response.status, 400);
+  assert.equal((await post({ name: "Valid Name", slots: 2.5 })).response.status, 400);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "POST", { name: "Valid Name" }))).response.status, 403);
+
+  // Unknown records.
+  const put = (id, body) => jsonRequest(`${path}/${id}`, jsonBody(coordinatorToken, "PUT", body));
+  assert.equal((await put("999999999", { name: "Valid Name" })).response.status, 404);
+  assert.equal((await put("abc", { name: "Valid Name" })).response.status, 404);
+  const status = (id, body) => jsonRequest(`${path}/${id}/status`, jsonBody(coordinatorToken, "PATCH", body));
+  assert.equal((await status("999999999", { is_active: false })).response.status, 404);
+  assert.equal((await status("1", { is_active: "no" })).response.status, 400);
+  // No route deletes a company.
+  assert.equal((await jsonRequest(`${path}/1`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+});
+
+test("a company record links the accounts that carry its name, and a rename carries them along", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const path = "/api/coordinator/company-records";
+  const headers = authHeaders(coordinatorToken);
+  const records = async () => (await jsonRequest(path, { headers })).body;
+  // The demo student and supervisor both carry this name.
+  const demoName = student.company;
+  assert.ok(demoName, "the demo student has a company");
+
+  let all = await records();
+  let record = all.companies.find((company) => company.name.toLowerCase() === demoName.toLowerCase());
+  if (!record) {
+    assert.ok(all.unlinked.some((item) => item.name.toLowerCase() === demoName.toLowerCase()), "listed as not yet recorded");
+    // Different capitals and outer spaces: still the same company.
+    const created = await jsonRequest(path, jsonBody(coordinatorToken, "POST", {
+      name: `  ${demoName.toUpperCase()}  `,
+      contact_person: "Test Contact",
+      contact_email: "contact@example.com",
+      moa_start: "2026-01-01",
+      moa_expiry: "2027-01-01",
+      slots: 5,
+    }));
+    assert.equal(created.response.status, 201, JSON.stringify(created.body));
+    assert.equal(created.body.company.moa_expiry, "2027-01-01");
+    all = await records();
+    record = all.companies.find((company) => company.id === created.body.company.id);
+  }
+  assert.ok(record.active_students >= 1, "the demo student is counted");
+  assert.ok(record.supervisors >= 1, "the demo supervisor is counted");
+  assert.ok(!all.unlinked.some((item) => item.name.toLowerCase() === demoName.toLowerCase()));
+
+  // The same name again is refused, whatever its capitals.
+  const duplicate = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { name: demoName.toLowerCase() }));
+  assert.equal(duplicate.response.status, 409);
+
+  // Renaming rewrites the name on its people; renaming back restores it.
+  const renamed = `${demoName} (renamed)`;
+  const edit = (name) => jsonRequest(`${path}/${record.id}`, jsonBody(coordinatorToken, "PUT", { name, slots: 5 }));
+  assert.equal((await edit(renamed)).response.status, 200);
+  const profile = () => jsonRequest(`/api/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+  const during = await profile();
+  assert.equal(JSON.stringify(during.body).includes(renamed), true, "the student now shows the new name");
+  assert.equal((await edit(demoName)).response.status, 200);
+  const after = await profile();
+  assert.equal(JSON.stringify(after.body).includes(renamed), false);
+
+  // An account edited to a name with no record becomes unlinked; back again, linked.
+  const editStudent = (company) => jsonRequest(
+    `/api/coordinator/students/${encodeURIComponent(student.student_id)}`,
+    jsonBody(coordinatorToken, "PUT", { name: student.name, email: student.email, program: student.program, company })
+  );
+  assert.equal((await editStudent("Somewhere With No Record")).response.status, 200);
+  all = await records();
+  assert.ok(all.unlinked.some((item) => item.name === "Somewhere With No Record"));
+  assert.equal((await editStudent(demoName)).response.status, 200);
+  all = await records();
+  assert.ok(!all.unlinked.some((item) => item.name === "Somewhere With No Record"));
+  assert.ok(all.companies.find((company) => company.id === record.id).active_students >= 1);
+
+  // Inactive and active again.
+  const off = await jsonRequest(`${path}/${record.id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: false }));
+  assert.equal(off.body.company.is_active, false);
+  const on = await jsonRequest(`${path}/${record.id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: true }));
+  assert.equal(on.body.company.is_active, true);
+});

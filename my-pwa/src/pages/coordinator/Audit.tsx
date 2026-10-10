@@ -48,6 +48,7 @@ const GROUPS = [
   { value: "absence", label: "Absences" },
   { value: "account", label: "Accounts" },
   { value: "interns", label: "Reassignments" },
+  { value: "company", label: "Companies" },
   { value: "complaint", label: "Complaints" },
   { value: "announcement", label: "Announcements" },
   { value: "requirement", label: "Requirements" },
@@ -79,6 +80,10 @@ const ACTIONS: Record<string, string> = {
   "account.import": "Imported students from a file",
   "account.password_reset": "Reset an account's password",
   "interns.reassign": "Moved interns to another supervisor",
+  "company.create": "Added a company",
+  "company.edit": "Edited a company",
+  "company.activate": "Marked a company active",
+  "company.deactivate": "Marked a company inactive",
   "complaint.status": "Changed a complaint's status",
   "announcement.send": "Sent an announcement",
   "announcement.withdraw": "Withdrew an announcement",
@@ -109,6 +114,9 @@ const DETAIL_LABELS: Record<string, string> = {
   created: "Created",
   failed: "Failed",
   days: "Days",
+  moa_start: "Agreement starts",
+  moa_expiry: "Agreement ends",
+  slots: "Intern places",
   isActive: "Active",
   is_active: "Active",
 };
@@ -312,7 +320,7 @@ export default function CoordinatorAudit() {
                   </tbody>
                 </table>
               </div>
-              <Pagination state={pager} noun="record" />
+              <Pagination state={pager} noun="entry" plural="entries" />
             </>
           )}
         </Card>

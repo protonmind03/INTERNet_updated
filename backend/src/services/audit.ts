@@ -200,6 +200,30 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("supervisorId"),
     keep: ["to"],
   },
+  // Companies
+  {
+    method: "POST",
+    path: "/api/coordinator/company-records",
+    action: "company.create",
+    entityType: "company",
+    entityId: (source) => nested(source.result.company, "id"),
+    keep: ["name", "moa_start", "moa_expiry", "slots"],
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/company-records/:id",
+    action: "company.edit",
+    entityType: "company",
+    entityId: param("id"),
+    keep: ["name", "moa_start", "moa_expiry", "slots"],
+  },
+  {
+    method: "PATCH",
+    path: "/api/coordinator/company-records/:id/status",
+    action: (source) => (source.body.is_active ? "company.activate" : "company.deactivate"),
+    entityType: "company",
+    entityId: param("id"),
+  },
   // Complaints, announcements, requirements, schedules
   {
     method: "PATCH",

@@ -1322,6 +1322,272 @@ export function registerExtensionRoutes(
 
   /*
   |--------------------------------------------------------------------------
+  | COMPANIES
+  |--------------------------------------------------------------------------
+  |
+  | Host companies as records: contact details, the agreement's dates and
+  | how many interns each takes. Students, supervisors and complaints are
+  | linked to a company by the name typed on them (migration 020 keeps the
+  | link in step), so the text everyone already sees stays as it is.
+  |
+  | The older GET /api/coordinator/companies, further down, still answers
+  | with a plain list of names for the announcements page. These routes use
+  | a different address so that answer does not change.
+  |
+  */
+
+  type CompanyInput = {
+    name: string;
+    address: string | null;
+    contact_person: string | null;
+    contact_email: string | null;
+    contact_phone: string | null;
+    moa_start: string | null;
+    moa_expiry: string | null;
+    slots: number | null;
+  };
+
+  /** Reads and checks a company from a request; returns the reason it is refused, if it is. */
+  function readCompany(body: unknown): { company: CompanyInput } | { problem: string } {
+    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const optional = (value: unknown, max: number) => text(value).slice(0, max) || null;
+
+    const name = text(input.name);
+    if (name.length < 2 || name.length > 150) {
+      return { problem: "Give the company a name (2 to 150 characters)." };
+    }
+    const contactEmail = optional(input.contact_email, 200);
+    if (contactEmail && !EMAIL_PATTERN.test(contactEmail)) {
+      return { problem: "That contact email does not look right." };
+    }
+    const moaStart = optional(input.moa_start, 10);
+    const moaExpiry = optional(input.moa_expiry, 10);
+    for (const date of [moaStart, moaExpiry]) {
+      if (date && (!DATE_PATTERN.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`)))) {
+        return { problem: "Agreement dates must be written as YYYY-MM-DD." };
+      }
+    }
+    if (moaStart && moaExpiry && moaExpiry < moaStart) {
+      return { problem: "The agreement cannot end before it starts." };
+    }
+    let slots: number | null = null;
+    if (input.slots !== undefined && input.slots !== null && input.slots !== "") {
+      slots = Number(input.slots);
+      if (!Number.isInteger(slots) || slots < 0 || slots > 10000) {
+        return { problem: "Slots must be a whole number, 0 or more." };
+      }
+    }
+    return {
+      company: {
+        name,
+        address: optional(input.address, 300),
+        contact_person: optional(input.contact_person, 150),
+        contact_email: contactEmail,
+        contact_phone: optional(input.contact_phone, 40),
+        moa_start: moaStart,
+        moa_expiry: moaExpiry,
+        slots,
+      },
+    };
+  }
+
+  const COMPANY_COLUMNS = `
+    c.id, c.name, c.address, c.contact_person, c.contact_email, c.contact_phone,
+    TO_CHAR(c.moa_start, 'YYYY-MM-DD') AS moa_start,
+    TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
+    c.slots, c.is_active, c.created_at, c.updated_at
+  `;
+
+  app.get("/api/coordinator/company-records", requireCoordinator, async (_req, res) => {
+    try {
+      const [companies, unlinked] = await Promise.all([
+        pool.query(
+          `
+          SELECT ${COMPANY_COLUMNS},
+                 (SELECT COUNT(*)::int FROM students s
+                   WHERE s.company_id = c.id AND s.is_active = TRUE) AS active_students,
+                 (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id) AS students,
+                 (SELECT COUNT(*)::int FROM supervisors p
+                   WHERE p.company_id = c.id AND p.is_active = TRUE) AS supervisors
+          FROM companies c
+          ORDER BY c.is_active DESC, LOWER(c.name)
+          `
+        ),
+        // Names typed on accounts that match no company record yet.
+        pool.query<{ name: string; people: number }>(
+          `
+          SELECT MIN(TRIM(company)) AS name, COUNT(*)::int AS people
+          FROM (
+            SELECT company FROM students WHERE company_id IS NULL AND is_active = TRUE
+            UNION ALL
+            SELECT company FROM supervisors WHERE company_id IS NULL AND is_active = TRUE
+          ) typed
+          WHERE company IS NOT NULL AND TRIM(company) <> ''
+          GROUP BY LOWER(TRIM(company))
+          ORDER BY LOWER(MIN(TRIM(company)))
+          `
+        ),
+      ]);
+      return res.json({ companies: companies.rows, unlinked: unlinked.rows });
+    } catch (error) {
+      console.error("GET COMPANY RECORDS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load companies." });
+    }
+  });
+
+  /** Links accounts and complaints whose typed company matches this record's name. */
+  async function linkTypedNames(client: { query: typeof pool.query }, companyId: number, name: string) {
+    for (const [table, column] of [
+      ["students", "company"],
+      ["supervisors", "company"],
+      ["complaints", "company_name"],
+    ]) {
+      await client.query(
+        `UPDATE ${table} SET company_id = $1
+         WHERE company_id IS DISTINCT FROM $1 AND LOWER(TRIM(${column})) = LOWER(TRIM($2))`,
+        [companyId, name]
+      );
+    }
+  }
+
+  app.post("/api/coordinator/company-records", requireCoordinator, async (req, res) => {
+    const read = readCompany(req.body);
+    if ("problem" in read) return res.status(400).json({ message: read.problem });
+    const company = read.company;
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const duplicate = await client.query(
+        `SELECT 1 FROM companies WHERE LOWER(TRIM(name)) = LOWER(TRIM($1))`,
+        [company.name]
+      );
+      if (duplicate.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "There is already a company with that name." });
+      }
+      const saved = await client.query(
+        `
+        INSERT INTO companies
+          (name, address, contact_person, contact_email, contact_phone, moa_start, moa_expiry, slots)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING id
+        `,
+        [
+          company.name, company.address, company.contact_person, company.contact_email,
+          company.contact_phone, company.moa_start, company.moa_expiry, company.slots,
+        ]
+      );
+      // Accounts that already carry this name become its people.
+      await linkTypedNames(client, saved.rows[0].id, company.name);
+      const result = await client.query(
+        `SELECT ${COMPANY_COLUMNS} FROM companies c WHERE c.id = $1`,
+        [saved.rows[0].id]
+      );
+      await client.query("COMMIT");
+      return res.status(201).json({ message: "Company added.", company: result.rows[0] });
+    } catch (error) {
+      await quietly("COMPANY CREATE ROLLBACK ERROR", () => client.query("ROLLBACK"));
+      console.error("CREATE COMPANY ERROR:", error);
+      return res.status(500).json({ message: "Failed to add the company." });
+    } finally {
+      client.release();
+    }
+  });
+
+  app.put("/api/coordinator/company-records/:id", requireCoordinator, async (req, res) => {
+    if (!/^\d+$/.test(String(req.params.id))) {
+      return res.status(404).json({ message: "Company not found." });
+    }
+    const read = readCompany(req.body);
+    if ("problem" in read) return res.status(400).json({ message: read.problem });
+    const company = read.company;
+    const id = Number(req.params.id);
+
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const current = await client.query<{ name: string }>(
+        `SELECT name FROM companies WHERE id = $1 FOR UPDATE`,
+        [id]
+      );
+      if (current.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Company not found." });
+      }
+      const duplicate = await client.query(
+        `SELECT 1 FROM companies WHERE id <> $1 AND LOWER(TRIM(name)) = LOWER(TRIM($2))`,
+        [id, company.name]
+      );
+      if (duplicate.rows.length > 0) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({ message: "There is already a company with that name." });
+      }
+      await client.query(
+        `
+        UPDATE companies SET
+          name = $2, address = $3, contact_person = $4, contact_email = $5,
+          contact_phone = $6, moa_start = $7, moa_expiry = $8, slots = $9, updated_at = NOW()
+        WHERE id = $1
+        `,
+        [
+          id, company.name, company.address, company.contact_person, company.contact_email,
+          company.contact_phone, company.moa_start, company.moa_expiry, company.slots,
+        ]
+      );
+      // A renamed company takes its people with it: the name typed on each of
+      // them is rewritten, which is what every other screen shows.
+      if (current.rows[0].name.trim() !== company.name) {
+        await client.query(`UPDATE students SET company = $2 WHERE company_id = $1`, [id, company.name]);
+        await client.query(`UPDATE supervisors SET company = $2 WHERE company_id = $1`, [id, company.name]);
+        await client.query(`UPDATE complaints SET company_name = $2 WHERE company_id = $1`, [id, company.name]);
+      }
+      await linkTypedNames(client, id, company.name);
+      const result = await client.query(
+        `SELECT ${COMPANY_COLUMNS} FROM companies c WHERE c.id = $1`,
+        [id]
+      );
+      await client.query("COMMIT");
+      return res.json({ message: "Company updated.", company: result.rows[0] });
+    } catch (error) {
+      await quietly("COMPANY UPDATE ROLLBACK ERROR", () => client.query("ROLLBACK"));
+      console.error("UPDATE COMPANY ERROR:", error);
+      return res.status(500).json({ message: "Failed to update the company." });
+    } finally {
+      client.release();
+    }
+  });
+
+  // A company is never deleted: its students' records refer to it. One that
+  // no longer hosts interns is marked inactive and drops out of the pickers.
+  app.patch("/api/coordinator/company-records/:id/status", requireCoordinator, async (req, res) => {
+    try {
+      if (!/^\d+$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Company not found." });
+      }
+      if (typeof req.body?.is_active !== "boolean") {
+        return res.status(400).json({ message: "Say whether the company is active." });
+      }
+      const result = await pool.query(
+        `UPDATE companies c SET is_active = $2, updated_at = NOW() WHERE c.id = $1
+         RETURNING ${COMPANY_COLUMNS}`,
+        [Number(req.params.id), req.body.is_active]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Company not found." });
+      }
+      return res.json({
+        message: req.body.is_active ? "Company marked active." : "Company marked inactive.",
+        company: result.rows[0],
+      });
+    } catch (error) {
+      console.error("COMPANY STATUS ERROR:", error);
+      return res.status(500).json({ message: "Failed to update the company." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
   | AUDIT LOG (READ-ONLY)
   |--------------------------------------------------------------------------
   |

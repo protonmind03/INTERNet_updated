@@ -21,6 +21,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
+import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
 import ResetPassword from "./ResetPassword";
 
@@ -598,14 +599,7 @@ function SupervisorDialog({
           </FormField>
         )}
         <FormField label="Company" htmlFor="supervisor-company" optional>
-          <input
-            id="supervisor-company"
-            type="text"
-            maxLength={150}
-            value={form.company}
-            onChange={(event) => set("company")(event.target.value)}
-            className="field"
-          />
+          <CompanyPicker id="supervisor-company" value={form.company} onChange={set("company")} />
         </FormField>
         <FormField label="Department" htmlFor="supervisor-department" optional>
           <input

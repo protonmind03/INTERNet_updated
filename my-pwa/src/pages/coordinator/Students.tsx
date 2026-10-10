@@ -24,6 +24,7 @@ import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import ImportStudents from "./ImportStudents";
+import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
 import ResetPassword from "./ResetPassword";
 
@@ -618,14 +619,7 @@ function StudentDialog({
           </select>
         </FormField>
         <FormField label="Company" htmlFor="student-company" optional>
-          <input
-            id="student-company"
-            type="text"
-            maxLength={150}
-            value={form.company}
-            onChange={(event) => set("company")(event.target.value)}
-            className="field"
-          />
+          <CompanyPicker id="student-company" value={form.company} onChange={set("company")} />
         </FormField>
         <FormField label="Required hours" htmlFor="student-hours">
           <input

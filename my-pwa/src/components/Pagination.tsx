@@ -8,16 +8,19 @@ import type { PaginationState } from "../lib/usePagination";
 export default function Pagination<T>({
   state,
   noun,
+  plural: pluralNoun,
   extra,
 }: {
   state: PaginationState<T>;
   /** What one row is called, for example "log" or "student". */
   noun: string;
+  /** The plural, when it is not just the noun with an "s" ("entries"). */
+  plural?: string;
   /** Extra text shown after the count. */
   extra?: string;
 }) {
   const { page, pageCount, total, from, to, setPage } = state;
-  const plural = total === 1 ? noun : `${noun}s`;
+  const plural = total === 1 ? noun : (pluralNoun ?? `${noun}s`);
 
   // Up to five page numbers, centred on the current page.
   const first = Math.max(1, Math.min(page - 2, pageCount - 4));
