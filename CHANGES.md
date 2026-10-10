@@ -22,8 +22,10 @@
    Localhost connections use PostgreSQL's local non-SSL mode; remote database
    connections retain the backend's TLS setting.
    The frontend API base URL is centralized in `my-pwa/src/lib/api.ts` and can
-   be overridden with `VITE_API_URL`. This workspace uses port 5001 because a
-   different local project copy is already listening on port 5000.
+   be overridden with `VITE_API_URL`. The backend's default port is 5000 and
+   every example uses it. If something else on your machine already uses
+   5000, set `PORT` in `backend/.env` and the same port in
+   `my-pwa/.env.local`; the API tests follow `backend/.env`.
 4. To add repeatable local-only test users and sample OJT schedules/tasks,
    run `npm run db:seed-demo` from `backend`. The command refuses non-loopback
    hosts and any database other than `internet_ojt`.

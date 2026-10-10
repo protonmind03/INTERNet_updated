@@ -1,8 +1,14 @@
 const assert = require("node:assert/strict");
 const { before, test } = require("node:test");
 
+// The API under test: API_BASE_URL if given, otherwise this machine on the
+// port in backend/.env (5000 when that sets none).
+require("dotenv").config({
+  path: require("node:path").join(__dirname, "..", ".env"),
+  quiet: true,
+});
 const apiBaseUrl = new URL(
-  process.env.API_BASE_URL || "http://127.0.0.1:5001"
+  process.env.API_BASE_URL || `http://127.0.0.1:${process.env.PORT || 5000}`
 );
 const allowedLocalHosts = new Set(["localhost", "127.0.0.1", "::1"]);
 

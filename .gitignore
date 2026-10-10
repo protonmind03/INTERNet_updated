@@ -3,7 +3,10 @@ dist/
 
 # Secrets
 .env
-.env.local
+.env.*
+!.env.example
+# Holds no secret: only the settings for `npm run dev:phone`.
+!.env.phone
 *.local
 
 # Uploaded attendance photos, evidence and documents
