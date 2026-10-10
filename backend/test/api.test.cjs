@@ -1822,3 +1822,24 @@ test("a student cannot use their token on another student's routes", async () =>
     );
   }
 });
+test("API answers are marked as not to be stored, except the two public ones", async () => {
+  const stored = (path, token) =>
+    fetch(new URL(path, apiBaseUrl), {
+      headers: token ? authHeaders(token) : {},
+    }).then(async (response) => {
+      await response.body?.cancel();
+      return response.headers.get("cache-control");
+    });
+
+  const id = encodeURIComponent(student.student_id);
+  assert.equal(await stored(`/api/dashboard/${id}`, studentToken), "private, no-store");
+  assert.equal(await stored("/api/coordinator/dashboard", coordinatorToken), "private, no-store");
+  // A refusal says who is not signed in; it is not stored either.
+  assert.equal(await stored(`/api/dashboard/${id}`, null), "private, no-store");
+
+  assert.notEqual(await stored("/api/health", null), "private, no-store");
+  assert.notEqual(await stored("/api/push/vapid-public-key", null), "private, no-store");
+
+  // The live stream keeps its own header.
+  assert.match(await stored("/api/events", coordinatorToken), /no-cache/);
+});

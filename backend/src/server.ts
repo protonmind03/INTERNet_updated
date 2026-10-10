@@ -73,6 +73,17 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// API answers carry personal records, so neither the browser nor anything
+// between it and this server may keep a copy. The two public, non-personal
+// routes are left alone, and the event stream sets its own header.
+const CACHEABLE_PATHS = new Set(["/api/health", "/api/push/vapid-public-key"]);
+app.use("/api", (req, res, next) => {
+  if (!CACHEABLE_PATHS.has(req.originalUrl.split("?")[0])) {
+    res.setHeader("Cache-Control", "private, no-store");
+  }
+  next();
+});
+
 // In production, never send raw server/database error text to clients.
 // Handlers include `error: error.message` in 500 responses for local
 // debugging; this strips it before the response leaves the server.
