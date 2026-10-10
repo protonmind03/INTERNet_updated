@@ -43,7 +43,7 @@ jobs:
       JWT_SECRET: ci-only-signing-key-never-used-outside-this-workflow
       PORT: "5000"
       FRONTEND_URL: http://localhost:5173
-      PRIVATE_UPLOAD_DIR: ${{ runner.temp }}/private-uploads
+      PRIVATE_UPLOAD_DIR: /tmp/internet-ci-uploads
       API_BASE_URL: http://127.0.0.1:5000
 
     steps:
