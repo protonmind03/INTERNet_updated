@@ -224,7 +224,12 @@ export default function LivenessCamera({
       // Lights the face in three colours and reads what comes back.
       const runFlash = async () => {
         const order: FlashColour[] = ["red", "green", "blue"];
-        order.sort(() => Math.random() - 0.5);
+        // Fisher-Yates: every order is equally likely, which sorting by a
+        // random comparison does not give.
+        for (let index = order.length - 1; index > 0; index -= 1) {
+          const other = Math.floor(Math.random() * (index + 1));
+          [order[index], order[other]] = [order[other], order[index]];
+        }
         const readings: Partial<Record<FlashColour, Rgb>> = {};
         for (const colour of order) {
           if (cancelled) return;
