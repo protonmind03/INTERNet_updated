@@ -7,8 +7,8 @@ import { ConfirmDialog, CountBadge } from "../components/ui";
 import { API_URL, withCoordinatorAuth } from "../lib/api";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
-import type { NotificationItem } from "../lib/useNotifications";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { coordinatorNotificationTarget } from "../pages/coordinator/notificationTargets";
 
 /*
 |--------------------------------------------------------------------------
@@ -52,16 +52,6 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
   },
 ];
 
-/** The page a coordinator notification is about, inferred from its title. */
-function notificationPath(item: NotificationItem): string {
-  const title = item.title.toLowerCase();
-  if (title.includes("complaint")) return "/coordinator/complaints";
-  if (title.includes("attendance")) return "/coordinator/monitoring";
-  if (title.includes("feedback") || title.includes("evaluation")) {
-    return "/coordinator/evaluations";
-  }
-  return "";
-}
 
 type SearchResult = {
   type: "student" | "supervisor" | "complaint";
@@ -248,7 +238,8 @@ export default function CoordinatorLayout({
           <div className="ml-auto">
             <NotificationBell
               role="coordinator"
-              resolvePath={notificationPath}
+              viewAllPath="/coordinator/notifications"
+              resolvePath={(item) => coordinatorNotificationTarget(item).path}
               buttonClassName="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
             />
           </div>

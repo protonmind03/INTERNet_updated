@@ -197,7 +197,7 @@ const pushTargets: Record<
     },
   },
   coordinator: {
-    fallback: "/coordinator/dashboard",
+    fallback: "/coordinator/notifications",
     byType: {
       attendance: "/coordinator/monitoring",
       document: "/coordinator/documents",

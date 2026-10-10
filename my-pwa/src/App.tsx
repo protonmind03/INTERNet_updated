@@ -62,6 +62,7 @@ import CoordinatorRequirements from "./pages/coordinator/Requirements";
 import CoordinatorDocuments from "./pages/coordinator/Documents";
 import CoordinatorAnnouncements from "./pages/coordinator/Announcements";
 import CoordinatorStudentRecord from "./pages/coordinator/StudentRecord";
+import CoordinatorNotifications from "./pages/coordinator/Notifications";
 
 // The brand kit preview only exists in development builds.
 const BrandPreview = import.meta.env.DEV ? lazy(() => import("./brand/BrandPreview")) : null;
@@ -276,6 +277,11 @@ function App() {
         <Route
           path="/coordinator/announcements"
           element={<CoordinatorAnnouncements />}
+        />
+
+        <Route
+          path="/coordinator/notifications"
+          element={<CoordinatorNotifications />}
         />
 
         {BrandPreview && (
