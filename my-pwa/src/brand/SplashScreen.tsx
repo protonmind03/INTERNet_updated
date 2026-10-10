@@ -107,7 +107,7 @@ export function SplashScreen({ role, progress, leaving = false }: SplashScreenPr
 
 type LaunchGateProps = {
   children: ReactNode;
-  /** Minimum time the splash stays up, ms (long enough for the mark's story to finish once). */
+  /** Longest the splash stays up when no page reports that it is ready, ms. */
   minDuration?: number;
   /** Show only once per browser session (sessionStorage). */
   oncePerSession?: boolean;
@@ -116,8 +116,16 @@ type LaunchGateProps = {
 /**
  * Wrap <App /> with this in main.tsx. Shows the role-aware splash on a cold start, then fades into the app.
  * Pages can end it early: window.dispatchEvent(new Event("inb:ready")).
+ *
+ * Local edit: the landing pages now send "inb:ready" once their first data is
+ * in (lib/launch.ts), so the wait is as long as the load. minDuration is the
+ * fallback for pages that never send it (the login page), lowered from 2300.
+ * A ready signal that arrives almost at once is held to MIN_VISIBLE so the
+ * screen does not flash.
  */
-export function LaunchGate({ children, minDuration = 2300, oncePerSession = true }: LaunchGateProps) {
+const MIN_VISIBLE = 450;
+
+export function LaunchGate({ children, minDuration = 1200, oncePerSession = true }: LaunchGateProps) {
   const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
   const seen = (() => {
     try {
@@ -131,12 +139,19 @@ export function LaunchGate({ children, minDuration = 2300, oncePerSession = true
 
   useEffect(() => {
     if (phase !== "show") return;
+    const shownAt = performance.now();
+    let early = 0;
     const finish = () => setPhase("leave");
+    const ready = () => {
+      window.clearTimeout(early);
+      early = window.setTimeout(finish, Math.max(0, MIN_VISIBLE - (performance.now() - shownAt)));
+    };
     const timer = window.setTimeout(finish, reduce ? 500 : minDuration);
-    window.addEventListener("inb:ready", finish);
+    window.addEventListener("inb:ready", ready);
     return () => {
       window.clearTimeout(timer);
-      window.removeEventListener("inb:ready", finish);
+      window.clearTimeout(early);
+      window.removeEventListener("inb:ready", ready);
     };
   }, [phase, minDuration, reduce]);
 

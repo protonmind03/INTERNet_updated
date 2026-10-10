@@ -15,6 +15,7 @@ import {
 import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate, formatHours, formatLongDate, greetingFor } from "../../lib/format";
+import { useLaunchReady } from "../../lib/launch";
 import { errorText } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 
@@ -74,6 +75,7 @@ export default function CoordinatorDashboard() {
   const [rows, setRows] = useState<MonitorRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  useLaunchReady(!loading);
 
   const load = useCallback(async () => {
     try {

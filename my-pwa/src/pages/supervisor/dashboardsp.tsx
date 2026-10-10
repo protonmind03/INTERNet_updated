@@ -22,6 +22,7 @@ import {
   greetingFor,
   localDateKey,
 } from "../../lib/format";
+import { useLaunchReady } from "../../lib/launch";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import RecordTimeIn from "./RecordTimeIn";
@@ -82,6 +83,7 @@ function useIsWide(): boolean {
 export default function SupervisorDashboard() {
   const supervisor = useAccount("supervisor");
   const work = useSupervisorWork(supervisor?.supervisor_id);
+  useLaunchReady(!work.loading);
   const { queue, interns, loading } = work;
   const wide = useIsWide();
 

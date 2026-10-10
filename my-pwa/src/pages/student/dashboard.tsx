@@ -25,6 +25,7 @@ import {
   greetingFor,
   localDateKey,
 } from "../../lib/format";
+import { useLaunchReady } from "../../lib/launch";
 import { useAccount } from "../../lib/session";
 import { MissedTimeOutNotice } from "./AttendanceCorrections";
 import TodayAttendance from "./TodayAttendance";
@@ -65,6 +66,7 @@ export default function Dashboard() {
   const [weeklyScheduleHours, setWeeklyScheduleHours] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  useLaunchReady(!loading);
 
   const load = useCallback(async () => {
     if (!studentId) return;
