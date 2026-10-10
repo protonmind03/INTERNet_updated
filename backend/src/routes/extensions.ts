@@ -1,6 +1,7 @@
 import { randomInt } from "node:crypto";
 import type express from "express";
 import type { Pool, PoolClient } from "pg";
+import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 
 /*
 |--------------------------------------------------------------------------
@@ -2665,4 +2666,140 @@ export function registerExtensionRoutes(
       }
     }
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | PRIVACY: THE NOTICE, CONSENT, AND "DOWNLOAD MY DATA" (student)
+  |--------------------------------------------------------------------------
+  |
+  | The notice and its version come from services/privacy.ts. A student
+  | agrees to one version; when the notice changes they are asked again.
+  | The export is everything the system holds that is theirs, as one file.
+  |
+  */
+
+  app.get("/api/students/:studentId/privacy", requireRole("student"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (auth.id !== req.params.studentId) {
+        return res.status(403).json({ message: "You can only see your own privacy settings." });
+      }
+      const result = await pool.query<{ privacy_consent_at: string | null; privacy_consent_version: string | null }>(
+        `SELECT privacy_consent_at, privacy_consent_version FROM students WHERE student_id = $1`,
+        [auth.id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Student not found." });
+      const row = result.rows[0];
+      return res.json({
+        notice: PRIVACY_NOTICE,
+        consent_at: row.privacy_consent_at,
+        consent_version: row.privacy_consent_version,
+        // Agreed to the notice as it stands now.
+        current: hasCurrentConsent(row.privacy_consent_version),
+      });
+    } catch (error) {
+      console.error("GET PRIVACY ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the privacy notice." });
+    }
+  });
+
+  app.post(
+    "/api/students/:studentId/privacy/consent",
+    requireRole("student"),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        if (auth.id !== req.params.studentId) {
+          return res.status(403).json({ message: "You can only agree for yourself." });
+        }
+        // The version read is sent back, so nobody agrees to wording they were not shown.
+        if (req.body?.version !== PRIVACY_NOTICE.version) {
+          return res.status(409).json({
+            message: "The privacy notice has changed. Read it again before agreeing.",
+          });
+        }
+        // The first agreement to a version keeps its time.
+        const result = await pool.query<{ privacy_consent_at: string; privacy_consent_version: string }>(
+          `UPDATE students
+           SET privacy_consent_at = CASE
+                 WHEN privacy_consent_version IS NOT DISTINCT FROM $2 AND privacy_consent_at IS NOT NULL
+                 THEN privacy_consent_at ELSE NOW() END,
+               privacy_consent_version = $2
+           WHERE student_id = $1
+           RETURNING privacy_consent_at, privacy_consent_version`,
+          [auth.id, PRIVACY_NOTICE.version]
+        );
+        if (result.rows.length === 0) return res.status(404).json({ message: "Student not found." });
+        return res.json({
+          message: "Thank you. Your agreement has been recorded.",
+          consent_at: result.rows[0].privacy_consent_at,
+          consent_version: result.rows[0].privacy_consent_version,
+          current: true,
+        });
+      } catch (error) {
+        console.error("PRIVACY CONSENT ERROR:", error);
+        return res.status(500).json({ message: "Failed to record your agreement." });
+      }
+    }
+  );
+
+  app.get("/api/students/:studentId/data-export", requireRole("student"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (auth.id !== req.params.studentId) {
+        return res.status(403).json({ message: "You can only download your own data." });
+      }
+      const mine = (sql: string) => pool.query(sql, [auth.id]).then((result) => result.rows);
+      const [profile, attendance, absences, tasks, documents, journals, evaluations, complaints,
+        complaintMessages, schedule, notifications] = await Promise.all([
+        mine(`SELECT * FROM students WHERE student_id = $1`),
+        mine(`SELECT * FROM attendance WHERE student_id = $1 ORDER BY date, id`),
+        mine(`SELECT * FROM absences WHERE student_id = $1 ORDER BY date, id`),
+        mine(`SELECT * FROM tasks WHERE student_id = $1 ORDER BY created_at, id`),
+        mine(`SELECT * FROM documents WHERE student_id = $1 ORDER BY uploaded_at, id`),
+        mine(`SELECT * FROM journals WHERE student_id = $1 ORDER BY week_start`),
+        // Evaluations of the student, and the ones the student wrote.
+        mine(`SELECT * FROM evaluations
+              WHERE student_id = $1 OR (evaluator_type = 'student' AND evaluator_id = $1)
+              ORDER BY created_at, id`),
+        // Concerns the student reported; not ones other people reported.
+        mine(`SELECT * FROM complaints WHERE student_id = $1 ORDER BY created_at, id`),
+        mine(`SELECT m.* FROM complaint_messages m
+              JOIN complaints c ON c.id = m.complaint_id
+              WHERE c.student_id = $1 ORDER BY m.created_at, m.id`),
+        mine(`SELECT * FROM ojt_schedule WHERE student_id = $1 AND is_active = TRUE ORDER BY id`),
+        mine(`SELECT * FROM notifications WHERE student_id = $1 ORDER BY created_at, id`),
+      ]);
+      if (profile.length === 0) return res.status(404).json({ message: "Student not found." });
+
+      // Never the password, nor what only the sign-in machinery uses.
+      const { password: _password, auth_version: _version, must_change_password: _must, ...account } =
+        profile[0] as Record<string, unknown>;
+
+      const today = todayInManila();
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="internet-my-data-${today}.json"`
+      );
+      return res.json({
+        about:
+          "Everything INTERNet holds that is yours, as of the date below. Photos and uploaded files are listed by name; open them in the app to see them.",
+        exported_on: today,
+        account,
+        attendance,
+        absences,
+        tasks,
+        documents,
+        journals,
+        evaluations,
+        complaints,
+        complaint_messages: complaintMessages,
+        schedule,
+        notifications,
+      });
+    } catch (error) {
+      console.error("DATA EXPORT ERROR:", error);
+      return res.status(500).json({ message: "Failed to prepare your data." });
+    }
+  });
 }

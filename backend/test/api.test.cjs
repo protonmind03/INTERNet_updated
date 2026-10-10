@@ -3505,3 +3505,130 @@ test("a student whose checklist is complete asks for a review once, and the coor
     await pool.end();
   }
 });
+
+/*
+| Privacy notice, consent and "Download my data"
+*/
+
+test("the privacy rules: the notice, what counts as agreement, and the two switches", () => {
+  require("tsx/cjs");
+  const { PRIVACY_NOTICE, hasCurrentConsent, consentRequired, photoRetentionDays } = require("../src/services/privacy.ts");
+
+  assert.match(PRIVACY_NOTICE.version, /^[\w.-]{1,40}$/);
+  assert.ok(PRIVACY_NOTICE.sections.length >= 4);
+  for (const section of PRIVACY_NOTICE.sections) assert.ok(section.heading && section.body.length > 20);
+  // Wording nobody has approved must say so, and approved wording must have no gaps left in it.
+  const gaps = PRIVACY_NOTICE.sections.some((section) => /\[[A-Z][^\]]*\]/.test(section.body));
+  assert.equal(PRIVACY_NOTICE.placeholder || !gaps, true, "a notice with bracketed gaps must be marked a placeholder");
+  if (/^draft/i.test(PRIVACY_NOTICE.version)) assert.equal(PRIVACY_NOTICE.placeholder, true);
+
+  // Agreement counts only for the notice as it stands now.
+  assert.equal(hasCurrentConsent(PRIVACY_NOTICE.version), true);
+  for (const other of [null, undefined, "", "an-older-version"]) assert.equal(hasCurrentConsent(other), false);
+
+  // Both switches are off unless set, exactly.
+  assert.equal(consentRequired({}), false);
+  assert.equal(consentRequired({ PRIVACY_CONSENT_REQUIRED: "false" }), false);
+  assert.equal(consentRequired({ PRIVACY_CONSENT_REQUIRED: "1" }), false);
+  assert.equal(consentRequired({ PRIVACY_CONSENT_REQUIRED: "true" }), true);
+  for (const off of [undefined, "", "0", "7", "29", "-90", "90 days", "ninety", "1e3", "36.5"]) {
+    assert.equal(photoRetentionDays({ PHOTO_RETENTION_DAYS: off }), null, String(off));
+  }
+  assert.equal(photoRetentionDays({ PHOTO_RETENTION_DAYS: "30" }), 30);
+  assert.equal(photoRetentionDays({ PHOTO_RETENTION_DAYS: " 365 " }), 365);
+});
+
+test("the privacy notice, consent and data download are the student's own", async () => {
+  const supervisor = await supervisorSession();
+  const id = encodeURIComponent(student.student_id);
+  for (const [method, path] of [["GET", "privacy"], ["POST", "privacy/consent"], ["GET", "data-export"]]) {
+    const send = (token, who = id) =>
+      jsonRequest(`/api/students/${who}/${path}`, method === "GET" ? { headers: token ? authHeaders(token) : {} } : jsonBody(token, "POST", {}));
+    assert.equal((await jsonRequest(`/api/students/${id}/${path}`, { method })).response.status, 401, path);
+    assert.equal((await send(coordinatorToken)).response.status, 403, path);
+    assert.equal((await send(supervisor.token)).response.status, 403, path);
+    assert.equal((await send(studentToken, "SOMEONE-ELSE")).response.status, 403, path);
+  }
+
+  const { response, body } = await jsonRequest(`/api/students/${id}/privacy`, { headers: authHeaders(studentToken) });
+  assert.equal(response.status, 200);
+  assert.equal(typeof body.notice.version, "string");
+  assert.equal(typeof body.notice.placeholder, "boolean");
+  assert.ok(body.notice.sections.length >= 4);
+  assert.equal(body.current, body.consent_version === body.notice.version);
+
+  // Agreeing to a version that was not the one shown is refused, and records nothing.
+  for (const bad of [{}, { version: "something-older" }, { version: 1 }]) {
+    const refused = await jsonRequest(`/api/students/${id}/privacy/consent`, jsonBody(studentToken, "POST", bad));
+    assert.equal(refused.response.status, 409, JSON.stringify(bad));
+  }
+  const after = await jsonRequest(`/api/students/${id}/privacy`, { headers: authHeaders(studentToken) });
+  assert.deepEqual([after.body.consent_at, after.body.consent_version], [body.consent_at, body.consent_version]);
+});
+
+test("the data download holds the student's records and never a password", async () => {
+  const id = encodeURIComponent(student.student_id);
+  const response = await fetch(new URL(`/api/students/${id}/data-export`, apiBaseUrl), { headers: authHeaders(studentToken) });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-disposition"), /^attachment; filename="internet-my-data-\d{4}-\d{2}-\d{2}\.json"$/);
+  assert.match(response.headers.get("cache-control"), /no-store/);
+  const raw = await response.text();
+  const data = JSON.parse(raw);
+  for (const key of ["account", "attendance", "absences", "tasks", "documents", "journals", "evaluations", "complaints", "complaint_messages", "schedule", "notifications"]) {
+    assert.ok(key in data, key);
+  }
+  assert.equal(data.account.student_id, student.student_id);
+  assert.equal(data.account.email, student.email);
+  for (const secret of ["password", "auth_version", "must_change_password"]) {
+    assert.equal(raw.includes(`"${secret}":`), false, `${secret} must not be in the download`);
+  }
+  // Only this student's rows.
+  for (const key of ["attendance", "absences", "tasks", "documents", "journals", "complaints", "schedule", "notifications"]) {
+    for (const row of data[key]) assert.equal(row.student_id, student.student_id, key);
+  }
+  // It agrees with what the app itself shows.
+  const own = await jsonRequest(`/api/attendance/${id}`, { headers: authHeaders(studentToken) });
+  assert.equal(data.attendance.length, own.body.attendance.length);
+});
+
+test("agreeing to the privacy notice is recorded once and kept", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const id = encodeURIComponent(student.student_id);
+  const pool = localTestPool();
+  const read = async () => (await jsonRequest(`/api/students/${id}/privacy`, { headers: authHeaders(studentToken) })).body;
+  const before = await pool.query(`SELECT privacy_consent_at, privacy_consent_version FROM students WHERE student_id = $1`, [student.student_id]);
+  try {
+    await pool.query(`UPDATE students SET privacy_consent_at = NULL, privacy_consent_version = NULL WHERE student_id = $1`, [student.student_id]);
+    const fresh = await read();
+    assert.deepEqual([fresh.current, fresh.consent_at, fresh.consent_version], [false, null, null]);
+
+    const agree = () => jsonRequest(`/api/students/${id}/privacy/consent`, jsonBody(studentToken, "POST", { version: fresh.notice.version }));
+    const first = await agree();
+    assert.equal(first.response.status, 200, JSON.stringify(first.body));
+    assert.equal(first.body.current, true);
+    assert.equal(first.body.consent_version, fresh.notice.version);
+    assert.ok(first.body.consent_at);
+    // Agreeing again keeps the first time.
+    const second = await agree();
+    assert.equal(second.body.consent_at, first.body.consent_at);
+    assert.equal((await read()).current, true);
+
+    // An agreement to an older notice is no longer current, and agreeing again takes a new time.
+    await pool.query(`UPDATE students SET privacy_consent_version = 'an-older-version', privacy_consent_at = '2001-01-01' WHERE student_id = $1`, [student.student_id]);
+    assert.equal((await read()).current, false);
+    const renewed = await agree();
+    assert.equal(renewed.body.current, true);
+    assert.notEqual(new Date(renewed.body.consent_at).getFullYear(), 2001);
+
+    // It is in the data download.
+    const download = await jsonRequest(`/api/students/${id}/data-export`, { headers: authHeaders(studentToken) });
+    assert.equal(download.body.account.privacy_consent_version, fresh.notice.version);
+  } finally {
+    await pool.query(`UPDATE students SET privacy_consent_at = $2, privacy_consent_version = $3 WHERE student_id = $1`,
+      [student.student_id, before.rows[0].privacy_consent_at, before.rows[0].privacy_consent_version]);
+    await pool.end();
+  }
+});

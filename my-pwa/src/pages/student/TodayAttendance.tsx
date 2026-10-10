@@ -11,14 +11,17 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import { formatDuration, formatHours, formatLongDate, formatTime } from "../../lib/format";
+import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
 import { useOnline } from "../../lib/useOnline";
+import { PrivacyNoticeDialog } from "./Privacy";
 import {
   workedMinutes,
   type AttendanceController,
   type LivenessChallenge,
 } from "./useAttendance";
+import { usePrivacy } from "./usePrivacy";
 
 /*
 |--------------------------------------------------------------------------
@@ -53,6 +56,14 @@ export default function TodayAttendance({
 
   const [now, setNow] = useState(() => new Date());
   const [timeInOpen, setTimeInOpen] = useState(false);
+  // The first time-in is the first photo, so the privacy notice comes
+  // first. If the notice could not be loaded, the time-in goes ahead.
+  const privacy = usePrivacy(useAccount("student")?.student_id);
+  const [consentOpen, setConsentOpen] = useState(false);
+  const startTimeIn = () => {
+    if (privacy.state && !privacy.state.current) setConsentOpen(true);
+    else setTimeInOpen(true);
+  };
   const [pending, setPending] = useState<Pending>(null);
   // What the student did today, asked for at time-out and kept as a draft
   // until it is sent.
@@ -202,7 +213,7 @@ export default function TodayAttendance({
                 size="lg"
                 icon="camera"
                 disabled={!online}
-                onClick={() => setTimeInOpen(true)}
+                onClick={startTimeIn}
               >
                 Time in
               </Button>
@@ -289,6 +300,18 @@ export default function TodayAttendance({
         loadChallenge={attendance.livenessChallenge}
         onSubmit={attendance.timeIn}
       />
+
+      {consentOpen && privacy.state && (
+        <PrivacyNoticeDialog
+          notice={privacy.state.notice}
+          onClose={() => setConsentOpen(false)}
+          onAgree={async () => {
+            await privacy.agree();
+            setConsentOpen(false);
+            setTimeInOpen(true);
+          }}
+        />
+      )}
 
       <ConfirmDialog
         open={pending === "break"}

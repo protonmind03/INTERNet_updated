@@ -10,6 +10,7 @@ import { getInitials } from "../../lib/format";
 import { updateStoredAccount, useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import ContactDetails, { CoordinatorCard, type Contact, type Coordinator } from "./ContactDetails";
+import { PrivacyCard } from "./Privacy";
 
 type StudentProfile = {
   student_id: string;
@@ -210,6 +211,8 @@ export default function StudentProfilePage() {
           <CoordinatorCard coordinator={coordinator} />
 
           {studentId && <PasswordForm role="student" accountId={studentId} />}
+
+          {studentId && <PrivacyCard studentId={studentId} />}
 
           <InstallApp />
         </div>

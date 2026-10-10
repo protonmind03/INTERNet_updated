@@ -25,6 +25,7 @@ import {
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { startTimeOutReminderScheduler } from "./services/timeOutReminders";
+import { consentRequired, hasCurrentConsent } from "./services/privacy";
 import { auditMiddleware } from "./services/audit";
 import {
   buildListQuery,
@@ -2245,6 +2246,22 @@ app.post(
         return res.status(400).json({
           message: "An attendance photo is required to record time-in.",
         });
+      }
+      // The app asks for agreement to the privacy notice before the first
+      // photo. The server insists on it too only when told to (see
+      // services/privacy.ts), so an older copy of the app keeps working.
+      if (consentRequired()) {
+        const consent = await pool.query<{ privacy_consent_version: string | null }>(
+          `SELECT privacy_consent_version FROM students WHERE student_id = $1`,
+          [auth.id]
+        );
+        if (!hasCurrentConsent(consent.rows[0]?.privacy_consent_version)) {
+          return res.status(403).json({
+            code: "CONSENT_REQUIRED",
+            message:
+              "Read and agree to the privacy notice before timing in. Reload the app if you are not shown it.",
+          });
+        }
       }
       if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
         return res.status(400).json({

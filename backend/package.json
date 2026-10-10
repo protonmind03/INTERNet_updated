@@ -17,6 +17,7 @@
     "db:backfill-companies": "tsx src/scripts/backfill-companies.ts",
     "db:fk-orphans": "tsx src/scripts/fk-orphans.ts",
     "db:fk-validate": "tsx src/scripts/fk-validate.ts",
+    "privacy:purge-photos": "tsx src/scripts/purge-photos.ts",
     "test": "node --test test/*.test.cjs"
   },
   "keywords": [],
