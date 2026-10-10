@@ -4,8 +4,9 @@ The single tracker for the multi-phase work. Items are ticked as they are
 finished. Findings behind each adjustment are in `docs/AUDIT-2026-10.md`;
 platform steps are in `docs/PLATFORM-CHANGES.md`.
 
-Status: **Phase 1 built and pushed on 2026-10-10.** Phases 2 to 5 are not
-started.
+Status: **Phase 1 pushed on 2026-10-10. Phase 2 built and committed
+locally on 2026-10-10, not pushed.** Waiting at the Phase 2 gate. Phases 3
+to 5 are not started.
 
 ## Rules
 
@@ -209,7 +210,7 @@ All confirmed in Phase 0 (audit, "Already implemented").
 Data-safety rule: the service worker never caches API responses. Offline
 data lives in IndexedDB, keyed by role and account, purged on sign-out.
 
-- [ ] **2.1 Adopt `vite-plugin-pwa` (`^1.3.0`).** `injectManifest`, output
+- [x] **2.1 Adopt `vite-plugin-pwa` (`^1.3.0`).** `injectManifest`, output
   `/service-worker.js`, `injectRegister: false`, `manifest: false`. Port
   the push, `notificationclick` and badge handlers unchanged. Precache the
   build, `index.html` and `offline.html`; exclude `mediapipe/**` and
@@ -218,44 +219,75 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
   API-origin requests. Commit `public/service-worker-killswitch.js` and
   document its use. *First step:* confirm the plugin's Vite 8 support in
   the installed package before relying on it (rule 17).
-- [ ] **2.2 Update prompt.** No `skipWaiting()` on install. A waiting
+- [x] **2.2 Update prompt.** No `skipWaiting()` on install. A waiting
   worker shows "Update available — Reload"; the click posts
   `SKIP_WAITING` and the page reloads on `controllerchange`. Check for
   updates when the page becomes visible.
-- [ ] **2.3 Offline read-only data.** `lib/offlineStore.ts` (IndexedDB)
+- [x] **2.3 Offline read-only data.** `lib/offlineStore.ts` (IndexedDB)
   with per-user copies of: student dashboard, attendance, schedule, tasks,
   notifications; supervisor interns and review count. Offline shows the
   copy with "Showing saved data from <time>". No files, photos or event
   data.
-- [ ] **2.4 Purge.** Sign-out, session-guard invalidation and the forced
+- [x] **2.4 Purge.** Sign-out, session-guard invalidation and the forced
   password sign-out delete that account's IndexedDB data, drafts and
   queue. A shared-device test procedure is documented.
-- [ ] **2.5 Draft autosave** per account for: time-in note, task
+- [x] **2.5 Draft autosave** per account for: time-in note, task
   submission notes, complaint description, absence reason (and the
   accomplishment field once 4.S1 exists).
-- [ ] **2.6 Offline break / back / time-out queue.** Migration:
+- [x] **2.6 Offline break / back / time-out queue.** Migration:
   `attendance.recorded_offline` and a `client_request_id` ledger. Routes
   take optional `occurred_at` and `client_request_id` with the validation
   in the brief; repeats return the original success. Frontend queues in
   IndexedDB and replays on `online`, on `visibilitychange`, and through
   Background Sync where available. `ReviewDetail` shows "Recorded while
   offline". **[DECISION D6]**
-- [ ] **2.7 Offline time-in.** Default: online only, with an explanation
+- [x] **2.7 Offline time-in.** Default: online only, with an explanation
   and a pointer to the supervisor's "Record time-in". **[DECISION D7]**
-- [ ] **2.8 Manifest.** `id`, `lang`, `dir`, `categories`,
+- [x] **2.8 Manifest.** `id`, `lang`, `dir`, `categories`,
   `launch_handler`; remove `orientation`; `screenshots` (placeholders,
   listed for the owner to replace); `shortcuts` through a role-aware
   `/go/:target` route; `mobile-web-app-capable` meta.
-- [ ] **2.9 Install experience.** `lib/useInstallPrompt.ts` (moved out of
+- [x] **2.9 Install experience.** `lib/useInstallPrompt.ts` (moved out of
   the kit's `LoginScreen.tsx`); an install entry on login and each Profile
   page, hidden when standalone; an iOS "Add to Home Screen" guide,
   dismissible; `PushNotificationSettings` explains the iOS install
   requirement.
-- [ ] **2.10 Wake lock** while `LivenessCamera` runs; re-acquired on
+- [x] **2.10 Wake lock** while `LivenessCamera` runs; re-acquired on
   visibility, released on unmount, silent where unsupported.
-- [ ] **2.11 Persistent storage.** `navigator.storage.persist()` once after
+- [x] **2.11 Persistent storage.** `navigator.storage.persist()` once after
   install.
 - [x] **2.12 Push URLs.** Already present (audit item 4). Nothing to do.
+
+**How Phase 2 turned out differently from the list above**
+- 2.1: page loads fall back to the saved app first and to `offline.html`
+  only as a last resort, because offline reading (2.3) needs the app
+  itself to open. The worker is registered only in a build, not in
+  `npm run dev`. The kill switch is a build flag (`SW_KILLSWITCH=true`), so
+  using it needs no code change.
+- 2.1 and 2.2 share one file and are one commit; so are 2.3 and 2.4, and
+  2.9 and 2.11.
+- 2.3: also covers the student's company and absences, and the
+  supervisor's notifications, because their pages showed an error offline
+  without them. Nothing is kept for the coordinator.
+- 2.4: testing found the erase could be cut short by the reload that
+  follows an ended session. Ending a session now waits for it, and the app
+  also clears leftovers at start-up.
+- 2.5: the "accomplishment" field does not exist yet (item 4.S1), so it has
+  no draft.
+- 2.6: **Background Sync is not used.** The worker cannot read the sign-in
+  token and the token was not moved to where it could. Waiting steps are
+  sent the next time the app is open and online. Say if you want this
+  revisited.
+- 2.6: the end-to-end test writes a real log, so it runs only with
+  `ALLOW_TEST_WRITES=true` (set in CI).
+- 2.7: built as decision D7's recommendation (no offline time-in). There is
+  no `OFFLINE_TIME_IN` variable.
+- 2.8: the screenshots are real ones from a local build with the demo
+  accounts, not placeholders.
+- None of Phase 2 has been tried on a real phone. The checklist is in
+  `DEPLOY.md`, "Phone checks after a Phase 2 deploy".
+- D6 and D7 were built with the recommended answers and not explicitly
+  confirmed: 12 hours (changeable with a setting), and no offline time-in.
 
 **Gate:** report, push plan (backend first), device test checklist.
 
@@ -406,9 +438,10 @@ screenshots)
 - **D5: answered 2026-10-10, as recommended.** The wipe route's test. Delete it with the route, or
   replace it with a test that the route now returns 404? *Recommend:*
   replace it, which keeps rule 13 intact.
-- **D6. Offline action max age.** *Recommend:* 12 hours
+- **D6: built as recommended, awaiting your confirmation.** Offline action max age. *Recommend:* 12 hours
   (`OFFLINE_ACTION_MAX_AGE_HOURS`, default 12).
-- **D7. Offline time-in.** Build it or not; if yes, the sync window in
+- **D7: built as recommended (no offline time-in), awaiting your
+  confirmation.** Offline time-in. Build it or not; if yes, the sync window in
   hours. *Recommend:* do not build it. The camera check is the proof of
   presence, and a delayed sync weakens it.
 - **D8. Terms.** Structure (for example school year + semester) and what

@@ -339,8 +339,14 @@ limitations, or evaluation criteria. If your instructor's template asks
 for any of these, they need to be written by the group. Limitations that
 are true of the system today, for a scope section:
 
-- It works online only. The service worker handles push notifications; it
-  does not cache pages for offline use.
+- Most of the system needs a connection. Since October 2026 the app
+  itself opens offline, a student or supervisor can read the last saved
+  copy of a few records (marked with the time it was saved), text being
+  typed is kept as a draft, and a break, return from break or time-out
+  pressed offline is kept on the phone and sent later, marked "recorded
+  while offline" for the supervisor. Time-in, every upload, and all of the
+  coordinator's work need a connection. If the paper says the system is
+  "online only" or "works offline", neither is accurate; use this wording.
 - A student's time-in photo is taken by the app after a short camera check
   (blink, smile or turn, on prompts the server chooses); a photo chosen
   from the device is refused. The check runs in the student's browser and

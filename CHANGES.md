@@ -727,3 +727,118 @@ GitHub are in `docs/PLATFORM-CHANGES.md`.
 
 **Tests:** 63, all passing (53 before this phase), on a fresh database and
 on one restored from a dump.
+## 17. Phase 2: installable, and usable with a poor connection (10 October 2026)
+
+The second phase of `docs/IMPLEMENTATION-PLAN.md`. One additive migration
+(017). The backend has to be deployed before the frontend; the steps are in
+`docs/PLATFORM-CHANGES.md`.
+
+**The rule everything here follows:** the service worker keeps the app's
+own files and nothing else. No answer from the API is ever stored by it.
+What may be kept of a person's records is decided in
+`my-pwa/src/lib/offlineStore.ts`, per account, in the browser's IndexedDB,
+and is erased when that account's session ends.
+
+**The service worker**
+- It is now built by `vite-plugin-pwa` from `my-pwa/src/service-worker.ts`
+  to the same address as before, `/service-worker.js`. It keeps the app's
+  own files (77 files, about 1.5 MB) so the app opens with no connection,
+  and keeps the face-tracking files after their first download.
+  Notifications, the tap on a notification and the icon badge work as
+  before.
+- Page loads still go to the network first. With no connection the saved
+  app opens; the plain "You're offline" page is now the last resort. This
+  differs from the plan's wording ("offline.html as fallback") on purpose:
+  offline reading needs the app itself to open.
+- **Updates ask first.** A new version installs in the background and
+  waits. The app shows "Update available" with a **Reload** action and
+  only then switches over. It also checks for an update when brought back
+  to the front.
+- The worker exists only in a build. `npm run dev` has none; test it with
+  `npm run build` then `npm run preview`.
+- If a release ever leaves devices stuck, `SW_KILLSWITCH=true` on Vercel
+  publishes a worker that removes itself and its caches everywhere
+  (`DEPLOY.md`).
+
+**Offline reading**
+- When the server cannot be reached, these show their last saved copy with
+  "Showing saved data from <time>": a student's dashboard, attendance,
+  schedule, company, tasks, absences and notifications; a supervisor's
+  intern list, review count and notifications.
+- Nothing is kept for the coordinator. No photo or file is kept for anyone.
+- A request the server answers with a refusal is never replaced by a copy.
+- Signing out, an ended session and the forced password change erase that
+  account's saved records, drafts and waiting steps. Ending a session now
+  waits for the erase before reloading, and the app clears anything left
+  by an account that is no longer signed in each time it starts.
+
+**Drafts**
+- Kept while typed, per account: the time-in note, a task's submission
+  note (per task), an absence reason, and the description of a report
+  (student and supervisor). Sending the text, or emptying the field,
+  removes the draft.
+
+**Break, back-to-work and time-out with no connection**
+- The step is kept on the phone with the time the button was pressed and
+  sent when the connection is back: at start-up, when the phone reports it
+  is online, and when the app is brought forward. Until then the day shows
+  the step as taken and says how many steps are waiting.
+- The server (`PUT /api/attendance/:id/break`, `/break-end`, `/time-out`)
+  accepts two optional fields, `occurred_at` and `client_request_id`. It
+  refuses a time more than two minutes in the future, older than
+  `OFFLINE_ACTION_MAX_AGE_HOURS` (default 12), or before a step already on
+  the log. The same step sent twice is recorded once. Without the two
+  fields the routes behave exactly as before.
+- Such a log is marked `recorded_offline`, and the supervisor's review
+  says "Recorded while offline".
+- **Time-in is not accepted offline** (decision D7). With no connection the
+  button is held back and the panel explains why and points to the
+  supervisor's in-person time-in.
+- Background Sync is not used, which differs from the plan. It would run in
+  the service worker, which cannot read the sign-in token, and the token
+  was not moved to where the worker could read it. The steps are sent the
+  next time the app is open and online.
+
+**Installing**
+- The browser's install offer is caught at start-up, so every page can use
+  it. Each Profile page has an Install card; the sign-in page keeps its
+  button.
+- iPhone and iPad get the Home Screen steps (a closable card on the sign-in
+  page, and on Profile), and the notification prompt explains that on those
+  devices notifications need the app on the Home Screen first.
+- The manifest has an id, language, categories, three shortcuts
+  (`/go/today`, `/go/tasks`, `/go/notifications`, each sent to the right
+  page for the signed-in role) and four screenshots for the install dialog.
+  The screenshots were taken from a local build with the demo accounts;
+  replace the files in `my-pwa/public/screenshots/` (same sizes) if you
+  want different ones. The fixed portrait orientation is removed.
+- Once installed, the browser is asked to keep the app's saved data.
+- The screen stays on during the camera check.
+
+**Brand kit file edited this round**
+- `LoginScreen.tsx`: its install hook moved to `lib/useInstallPrompt.ts`.
+
+**What was checked, and how**
+- 66 API tests pass (63 before), including the rules for an offline time
+  and a full offline break, return and time-out. That last test writes a
+  real log, so it runs only with `ALLOW_TEST_WRITES=true`, which CI sets.
+- In a real browser against the production build: the worker and its
+  caches (nothing from the API in any cache), offline reading on each
+  covered page, erasure at the end of a session, drafts, the offline queue
+  from button press to the supervisor's note, the update prompt, the kill
+  switch, the manifest as Chrome reads it (no errors, installable), the
+  shortcut links for each role, the install entries, and the wake lock.
+
+**Not checked: needs real devices**
+- Everything above was run in desktop Chrome with a simulated phone. None
+  of it has been tried on an actual Android phone or iPhone. The checklist
+  is in `DEPLOY.md`, "Phone checks after a Phase 2 deploy".
+- The iPhone paths were exercised only by pretending to be an iPhone:
+  Safari's own behaviour (Add to Home Screen, storage limits, notifications
+  after installing) is untested.
+- Push notifications cannot be tested in production until the three
+  `WEB_PUSH_*` variables are set on Railway.
+
+**Statements in earlier sections that no longer hold**
+- "It works online only. The service worker ... does not cache pages for
+  offline use" (`PAPER-CORRECTIONS.md`, section E; corrected there).

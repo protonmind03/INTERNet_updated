@@ -257,6 +257,59 @@ deploy.
 If a key has orphans, do not delete rows to make it pass; send the report
 and decide what those rows should point at first.
 
+## Phone checks after a Phase 2 deploy
+
+These were tested in desktop Chrome with a simulated phone, not on real
+devices. Do them once on an Android phone (Chrome) and once on an iPhone
+(Safari), with a test student account.
+
+**Installing**
+1. Android: open the site, sign in, open Profile. An "Install INTERNet"
+   card shows; install from it. The icon appears on the home screen and
+   opens without the browser's address bar.
+2. iPhone: the sign-in page shows "Add INTERNet to your Home Screen".
+   Follow the steps. Open the app from the Home Screen icon.
+3. Long-press the icon (Android): Today's attendance, Tasks and
+   Notifications are listed, and each opens the right page.
+
+**Offline**
+4. Open Today, Attendance, Tasks and Schedule once with a connection.
+5. Turn on airplane mode and reopen the app. It opens, and each of those
+   pages shows "Showing saved data from <time>".
+6. Time in with a connection. Then, in airplane mode, press Start break.
+   The app says it is saved on the phone and the panel says 1 step is
+   waiting. Close and reopen the app: the break still shows.
+7. Turn airplane mode off. Within a few seconds the app says the step was
+   sent. As the supervisor, open that log: it says "Recorded while
+   offline", and the break time is when the button was pressed.
+8. In airplane mode with no log today, the Time in button is unavailable
+   and the panel explains why.
+
+**Camera**
+9. Time in on each phone. The camera check runs, and the screen does not
+   dim while you follow the prompts.
+
+**Updates**
+10. With the app open, deploy any change. Leave the app, wait a minute and
+    come back to it: "Update available" shows. Press Reload: the app
+    reloads once and the message is gone.
+
+**A shared phone** (the data-safety check)
+11. Sign in as student A, open the pages in step 4, type a few words in a
+    report description without sending it, then sign out.
+12. Turn on airplane mode. Open the app: it must show the sign-in page and
+    nothing of student A.
+13. Turn airplane mode off, sign in as student B, open Report: the
+    description field must be empty.
+
+**Notifications** (only once the three `WEB_PUSH_*` variables are set)
+14. Android: accept the notification prompt, then have a supervisor verify
+    a log. A notification arrives with the app closed; tapping it opens the
+    right page.
+15. iPhone: the prompt appears only in the app opened from the Home Screen.
+
+Write down any step that does not behave as described, with the phone and browser used.
+
 ## Checks after deploying
 
 - `https://<backend>/api/health` returns `{"status":"ok"}`.

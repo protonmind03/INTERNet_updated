@@ -61,17 +61,46 @@ If the backend URL ever changes: update `connect-src` in
 
 ## Phase 2
 
-One additive migration. Backend first, then frontend.
+One additive migration (`017_offline_actions.sql`: one new column on
+`attendance`, one new table). **Two pushes: backend first, then frontend.**
+The reason: the new frontend sends the time a break or time-out was pressed
+offline. A backend that does not know those fields would ignore them and
+record the time the request arrived instead, with no error. The other
+direction is safe: the old frontend works unchanged on the new backend.
+
+Both live in one repository and every push rebuilds both hosts, so the
+split is by commit, in the order they were made:
+
+- **First push, up to commit `c590501`:** the CI fix, the new service
+  worker, offline reading, drafts, and the backend change with its
+  migration. The frontend parts in this push do not depend on the new
+  backend, so they are safe to go out with it.
+- **Second push, the rest:** the phone-side queue (the one commit that
+  needs the new backend), the time-in message, the manifest, the wake lock,
+  the install entries and the documents.
 
 | When | Platform | Change | Why |
 |---|---|---|---|
-| Before the push | Railway | Fresh Postgres backup. | The push contains a migration. |
-| Optional | Railway → Variables | `OFFLINE_ACTION_MAX_AGE_HOURS`: a number of hours. Unset means 12. | How old a queued break or time-out may be when it syncs. |
-| Only if decision D7 is yes | Railway → Variables | `OFFLINE_TIME_IN`: `true` to allow offline time-in. Unset or `false` means off. | Feature flag. |
-| Before the frontend push | Railway | Wait for the backend deploy and check `https://<backend>/api/health`. | The old frontend keeps working on the new schema; the new frontend needs the new backend. |
-| Before the push | Vercel → Settings → General | Confirm the Build Command is still the default (so `prebuild` copies the face-tracking files) and the Node.js version is 20 or newer. | The service worker build runs inside `npm run build`. |
-| After the deploy | Browser devtools → Application | Manifest shows no errors; a service worker is active at `/service-worker.js`; Cache Storage holds nothing from the API origin. | Installability and the data-safety rule. |
-| If something goes wrong | Vercel (a commit you ask for) | Deploy `public/service-worker-killswitch.js` in place of the worker (procedure documented in item 2.1). | Unregisters the worker and clears caches on every device. |
+| Before the first push | Railway (run by you) | Take a database backup (`DEPLOY.md` > Backups > Database) and keep the file. Tell me it is done. | The push runs a migration. No backup of production exists yet. |
+| Before the first push | Railway → Postgres → Data, or `railway connect` (run by you) | Optional but useful: `SELECT version();` and tell me the major version. | CI and my local tests use PostgreSQL 18; this confirms production is not older in a way that matters. |
+| First push | GitHub → Actions | The run for the pushed commit should be green (it now includes the CI fix). | First real CI run. |
+| After the first push | Railway → backend → Deployments | The deploy log shows `Applying 017_offline_actions.sql...` then `Applied`. Then open `https://internetupdated-production.up.railway.app/api/health`. Tell me it answers. | Confirms the migration ran and the backend is up before the frontend goes out. |
+| After CI is green | Railway → backend → Settings → Source | Turn on **Wait for CI** (decision D3). | From here a failing test blocks the backend deploy. |
+| Second push | Vercel → Deployments | The Production deployment succeeds. | The service worker is built during `npm run build`. |
+| After the second push | Browser devtools → Application | Manifest: no errors. Service Workers: `/service-worker.js` is activated. Cache Storage: every entry is from `internet-psu.vercel.app`, none from the Railway address. | Installability, and the rule that no API answer is stored. |
+| After the second push | A phone | The checklist in `DEPLOY.md`, "Phone checks after a Phase 2 deploy". | None of this has run on a real device. |
+| Optional | Railway → Variables | `OFFLINE_ACTION_MAX_AGE_HOURS`: a number from 1 to 72. Unset means 12. | How old a break or time-out recorded offline may be when it arrives. |
+| Optional, recommended | Railway → Variables | `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_SUBJECT`. Generate the pair with `npx web-push generate-vapid-keys` (run by you; the private key is a secret, paste it only into Railway). Subject: `mailto:` followed by a contact address. Set all three or none. | Push notifications are off in production without them, and the install work in this phase builds on them. |
+| Emergency only | Vercel → Settings → Environment Variables | `SW_KILLSWITCH` = `true` for Production, then redeploy. Remove it and redeploy when fixed. | Removes the service worker and its caches from every device (`DEPLOY.md`). |
+
+People who already have the site open will see "Update available" after the
+second push. Until they press Reload they keep the old version, which works
+with the new backend.
+
+New variables this phase: `OFFLINE_ACTION_MAX_AGE_HOURS` (Railway, optional)
+and `SW_KILLSWITCH` (Vercel, emergency only). Both do nothing when unset.
+
+Not added: `OFFLINE_TIME_IN`. Offline time-in was not built (decision D7).
 
 ## Phase 3
 
@@ -116,7 +145,7 @@ All optional; unset means today's behaviour.
 | Variable | Platform | Phase | Default when unset |
 |---|---|---|---|
 | `OFFLINE_ACTION_MAX_AGE_HOURS` | Railway | 2 | 12 |
-| `OFFLINE_TIME_IN` | Railway | 2 (if approved) | off |
+| `SW_KILLSWITCH` | Vercel | 2 | off (emergency only) |
 | `SUPERVISOR_DIGEST_TIME` | Railway | 4 | `07:30` |
 | `TIMEOUT_REMINDER_HOURS` | Railway | 4 | per decision D11 |
 | `PHOTO_RETENTION_DAYS` | Railway | 4 | purge off |
