@@ -163,6 +163,26 @@ the local upload folder into `backend/backups/`. It refuses any database
 that is not on this machine. Options: `-- --out <folder>` and
 `-- --pg-bin <folder with pg_dump>`.
 
+## Validating the foreign keys (optional, run by you)
+
+Migration 006 added 15 foreign keys as `NOT VALID`: the database enforces
+them for every new or changed row, but has never checked the rows that
+existed before. Two scripts deal with those rows. Neither is part of the
+deploy.
+
+1. Take a database backup (above).
+2. Report, read-only, from the `backend` folder:
+   `railway run npm run db:fk-orphans`
+   It lists each unvalidated key and how many rows point at a missing
+   parent.
+3. Dry run: `railway run npm run db:fk-validate` prints the statements it
+   would run.
+4. Apply: `railway run npm run db:fk-validate -- --confirm` validates only
+   the keys with zero orphans and skips the rest. It is safe to run again.
+
+If a key has orphans, do not delete rows to make it pass; send the report
+and decide what those rows should point at first.
+
 ## Checks after deploying
 
 - `https://<backend>/api/health` returns `{"status":"ok"}`.
