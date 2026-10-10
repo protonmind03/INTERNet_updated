@@ -6,6 +6,7 @@ import { ErrorNotice } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { useAccount } from "../../lib/session";
+import { useHolidays } from "../../lib/useHolidays";
 import { logDateKey, useAttendance } from "./useAttendance";
 
 /** The student's printable Daily Time Record. */
@@ -14,6 +15,7 @@ export default function TimeRecord() {
   const attendance = useAttendance(student?.student_id);
   const [supervisor, setSupervisor] = useState("");
   const [absences, setAbsences] = useState<DtrAbsence[]>([]);
+  const holidays = useHolidays("student");
 
   const studentId = student?.student_id;
   useEffect(() => {
@@ -66,6 +68,7 @@ export default function TimeRecord() {
         }}
         logs={attendance.logs.map((log) => ({ ...log, date: logDateKey(log) }))}
         absences={absences}
+        holidays={holidays}
       />
     </StudentLayout>
   );

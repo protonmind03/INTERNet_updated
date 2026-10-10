@@ -265,6 +265,34 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     from: (source) => ({ reactivated: source.result.reactivated }),
   },
+  // Holidays
+  {
+    method: "POST",
+    path: "/api/coordinator/holidays",
+    action: "holiday.create",
+    entityType: "holiday",
+    entityId: (source) => nested(source.result.holiday, "id"),
+    keep: ["date", "name"],
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/holidays/:id",
+    action: "holiday.edit",
+    entityType: "holiday",
+    entityId: param("id"),
+    keep: ["date", "name"],
+  },
+  {
+    method: "DELETE",
+    path: "/api/coordinator/holidays/:id",
+    action: "holiday.remove",
+    entityType: "holiday",
+    entityId: param("id"),
+    from: (source) => ({
+      date: nested(source.result.holiday, "date"),
+      name: nested(source.result.holiday, "name"),
+    }),
+  },
   // Complaints, announcements, requirements, schedules
   {
     method: "PATCH",

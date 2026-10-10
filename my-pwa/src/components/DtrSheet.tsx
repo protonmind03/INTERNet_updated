@@ -17,6 +17,8 @@ export type DtrLog = {
 
 export type DtrAbsence = { date: string; status: string };
 
+export type DtrHoliday = { date: string; name: string };
+
 export type DtrPerson = {
   name: string;
   studentId: string;
@@ -45,12 +47,15 @@ export default function DtrSheet({
   person,
   logs,
   absences = [],
+  holidays = [],
   loading,
 }: {
   person: DtrPerson;
   logs: DtrLog[];
   /** Absences the student filed, shown on the days they cover. */
   absences?: DtrAbsence[];
+  /** Days nobody was expected to report, named on the days they fall. */
+  holidays?: DtrHoliday[];
   loading: boolean;
 }) {
   const months = useMemo(() => {
@@ -70,6 +75,7 @@ export default function DtrSheet({
     const absentOn = new Map(
       absences.map((absence) => [String(absence.date).slice(0, 10), absence.status])
     );
+    const holidayOn = new Map(holidays.map((holiday) => [holiday.date, holiday.name]));
     return Array.from({ length: days }, (_, offset) => {
       const day = offset + 1;
       const key = `${month}-${String(day).padStart(2, "0")}`;
@@ -77,10 +83,18 @@ export default function DtrSheet({
         weekday: "short",
       });
       const log = byDate.get(key);
-      // A day with a log is not an absence, whatever was filed.
-      return { key, day, weekday, log, absence: log ? undefined : absentOn.get(key) };
+      // A day with a log is not an absence, whatever was filed. A holiday
+      // someone worked keeps its log and is still named.
+      return {
+        key,
+        day,
+        weekday,
+        log,
+        absence: log ? undefined : absentOn.get(key),
+        holiday: holidayOn.get(key),
+      };
     });
-  }, [logs, absences, month]);
+  }, [logs, absences, holidays, month]);
 
   const verified = rows.reduce(
     (sum, row) => sum + (row.log?.status === "Verified" ? Number(row.log.hours) || 0 : 0),
@@ -94,6 +108,7 @@ export default function DtrSheet({
   const daysPresent = rows.filter((row) => row.log).length;
   const excused = rows.filter((row) => row.absence === "Excused").length;
   const unexcused = rows.filter((row) => row.absence === "Unexcused").length;
+  const holidayCount = rows.filter((row) => row.holiday).length;
 
   return (
     <div className="space-y-4">
@@ -154,7 +169,7 @@ export default function DtrSheet({
                 <Fragment key={row.key}>
                 <tr
                   className={`${row.log?.accomplishments ? "" : "border-b border-slate-200"} ${
-                    row.log || row.absence ? "" : "text-slate-400"
+                    row.log || row.absence || row.holiday ? "" : "text-slate-400"
                   }`}
                 >
                   <td className="tabular whitespace-nowrap py-1.5 pr-2">
@@ -177,9 +192,14 @@ export default function DtrSheet({
                   <td className="tabular whitespace-nowrap px-2 py-1.5 text-right">
                     {row.log && row.log.hours !== null ? formatHours(row.log.hours) : ""}
                   </td>
-                  <td className="whitespace-nowrap py-1.5 pl-2">
+                  <td className="py-1.5 pl-2">
+                    {row.holiday && (
+                      <span className="block text-slate-600">Holiday: {row.holiday}</span>
+                    )}
                     {row.log?.status ||
-                      (row.absence === "Excused"
+                      (row.holiday
+                        ? ""
+                        : row.absence === "Excused"
                         ? "Absent, excused"
                         : row.absence === "Unexcused"
                           ? "Absent, unexcused"
@@ -215,6 +235,8 @@ export default function DtrSheet({
           {daysPresent} {daysPresent === 1 ? "day" : "days"} logged.
           {excused + unexcused > 0 &&
             ` Absences: ${excused} excused, ${unexcused} unexcused.`}
+          {holidayCount > 0 &&
+            ` ${holidayCount} ${holidayCount === 1 ? "holiday" : "holidays"} this month.`}
           {unverified > 0 &&
             ` ${formatHours(unverified)} more are logged but not verified, and are not counted above.`}
         </p>

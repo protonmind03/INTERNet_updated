@@ -11,10 +11,18 @@ import {
 } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import { daysUntil, dueLabel, formatDate, formatHours } from "../../lib/format";
+import {
+  daysUntil,
+  dueLabel,
+  formatDate,
+  formatHours,
+  formatLongDate,
+  localDateKey,
+} from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText } from "../../lib/toast";
+import { useHolidays } from "../../lib/useHolidays";
 
 type ScheduleDay = {
   id: number;
@@ -49,6 +57,19 @@ const WEEK = [
   "Sunday",
 ] as const;
 
+/** This week's date for each weekday, Monday first, as "YYYY-MM-DD". */
+function thisWeekDates(now: Date): Map<string, string> {
+  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  return new Map(
+    WEEK.map((day, offset) => {
+      const date = new Date(monday);
+      date.setDate(monday.getDate() + offset);
+      return [day, localDateKey(date)];
+    })
+  );
+}
+
 /** "08:00:00" from the database becomes "8:00 AM". */
 function formatClockTime(time: string | null): string {
   if (!time) return "";
@@ -68,6 +89,7 @@ export default function OjtSchedule() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const holidays = useHolidays("student");
 
   const load = useCallback(async () => {
     if (!studentId) return;
@@ -111,6 +133,17 @@ export default function OjtSchedule() {
   const byDay = useMemo(() => new Map(schedule.map((item) => [item.day, item])), [schedule]);
   const weeklyHours = schedule.reduce((sum, item) => sum + (Number(item.hours) || 0), 0);
   const todayShift = byDay.get(today);
+
+  // The weekly list is any week; holidays are dates. So each weekday is
+  // matched to its date this week, and a holiday on it is named there.
+  const todayKey = localDateKey(new Date());
+  const holidayOn = useMemo(
+    () => new Map(holidays.map((holiday) => [holiday.date, holiday.name])),
+    [holidays]
+  );
+  const weekDates = useMemo(() => thisWeekDates(new Date(`${todayKey}T00:00:00`)), [todayKey]);
+  const todayHoliday = holidayOn.get(todayKey);
+  const upcomingHolidays = holidays.filter((holiday) => holiday.date >= todayKey).slice(0, 5);
 
   const deadlines = useMemo(
     () =>
@@ -157,6 +190,7 @@ export default function OjtSchedule() {
                   {WEEK.map((day) => {
                     const shift = byDay.get(day);
                     const isToday = day === today;
+                    const holiday = holidayOn.get(weekDates.get(day) || "");
                     return (
                       <li
                         key={day}
@@ -167,7 +201,7 @@ export default function OjtSchedule() {
                         <div className="w-24 shrink-0">
                           <p
                             className={`text-sm font-semibold ${
-                              shift ? "text-slate-900" : "text-slate-400"
+                              shift || holiday ? "text-slate-900" : "text-slate-400"
                             }`}
                           >
                             {day}
@@ -176,7 +210,19 @@ export default function OjtSchedule() {
                             <p className="text-xs font-semibold text-psu-700">Today</p>
                           )}
                         </div>
-                        {shift ? (
+                        {holiday ? (
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium text-slate-800">
+                              Holiday this week: {holiday}
+                            </p>
+                            {shift && (
+                              <p className="tabular text-sm text-slate-500">
+                                Usually {formatClockTime(shift.start_time)} –{" "}
+                                {formatClockTime(shift.end_time)}
+                              </p>
+                            )}
+                          </div>
+                        ) : shift ? (
                           <>
                             <div className="min-w-0 flex-1">
                               <p className="tabular text-sm text-slate-800">
@@ -209,6 +255,16 @@ export default function OjtSchedule() {
               <h2 className="text-sm font-semibold text-slate-900">Today</h2>
               {loading ? (
                 <Skeleton className="mt-3 h-12 w-full" />
+              ) : todayHoliday ? (
+                <>
+                  <p className="mt-2 text-xl font-bold tracking-tight text-slate-900">
+                    {todayHoliday}
+                  </p>
+                  <p className="mt-0.5 text-sm text-slate-600">
+                    Today is a holiday, so you are not expected to report. If your company has
+                    you work, time in as usual and the hours count.
+                  </p>
+                </>
               ) : todayShift ? (
                 <>
                   <p className="tabular mt-2 text-xl font-bold tracking-tight text-slate-900">
@@ -232,6 +288,22 @@ export default function OjtSchedule() {
                 </p>
               )}
             </Card>
+
+            {upcomingHolidays.length > 0 && (
+              <Card className="p-4 sm:p-5">
+                <h2 className="text-sm font-semibold text-slate-900">Upcoming holidays</h2>
+                <ul className="mt-3 space-y-2.5 text-sm">
+                  {upcomingHolidays.map((holiday) => (
+                    <li key={holiday.id}>
+                      <p className="font-medium text-slate-900">{holiday.name}</p>
+                      <p className="tabular text-slate-600">
+                        {holiday.date === todayKey ? "Today" : formatLongDate(holiday.date)}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            )}
 
             <Card className="p-4 sm:p-5">
               <h2 className="text-sm font-semibold text-slate-900">Host company</h2>

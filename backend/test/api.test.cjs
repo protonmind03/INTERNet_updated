@@ -3133,3 +3133,86 @@ test("the reminder notification opens the student's time log", () => {
   const { notificationLink } = require("../src/services/notificationLinks.ts");
   assert.equal(notificationLink("student", "attendance", "Did you forget to time out?"), "/daily-log");
 });
+
+/*
+| Holidays
+*/
+
+test("everyone signed in can read the holidays; only the coordinator can change them", async () => {
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest("/api/holidays")).response.status, 401);
+  for (const token of [studentToken, supervisor.token, coordinatorToken]) {
+    const { response, body } = await jsonRequest("/api/holidays", { headers: authHeaders(token) });
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(body.holidays));
+    for (const item of body.holidays) {
+      assert.deepEqual(Object.keys(item).sort(), ["date", "id", "name"]);
+      assert.match(item.date, /^\d{4}-\d{2}-\d{2}$/);
+    }
+    const dates = body.holidays.map((item) => item.date);
+    assert.deepEqual(dates, [...dates].sort(), "in date order");
+  }
+
+  const path = "/api/coordinator/holidays";
+  const post = (body, token = coordinatorToken) => jsonRequest(path, jsonBody(token, "POST", body));
+  for (const token of [studentToken, supervisor.token]) {
+    assert.equal((await post({ date: "2031-01-01", name: "New Year's Day" }, token)).response.status, 403);
+  }
+  for (const bad of [{}, { date: "2031-01-01" }, { name: "No date" }, { date: "01/01/2031", name: "Wrong form" },
+    { date: "2031-13-45", name: "No such day" }, { date: "2031-01-01", name: "X" }, { date: "2031-01-01", name: "x".repeat(101) },
+    { date: 20310101, name: "Not text" }]) {
+    assert.equal((await post(bad)).response.status, 400, JSON.stringify(bad).slice(0, 50));
+  }
+  for (const id of ["999999999", "abc"]) {
+    assert.equal((await jsonRequest(`${path}/${id}`, jsonBody(coordinatorToken, "PUT", { date: "2031-01-01", name: "New Year's Day" }))).response.status, 404, id);
+    assert.equal((await jsonRequest(`${path}/${id}`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404, id);
+  }
+});
+
+test("a holiday is added, edited and removed, one per date", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const path = "/api/coordinator/holidays";
+  const send = (method, suffix, body) => jsonRequest(`${path}${suffix}`, jsonBody(coordinatorToken, method, body));
+  const listed = async () => (await jsonRequest("/api/holidays", { headers: authHeaders(studentToken) })).body.holidays;
+  // Two dates far ahead that nothing else uses; clear what an earlier failed run left.
+  for (const left of (await listed()).filter((item) => ["2099-12-30", "2099-12-31"].includes(item.date))) {
+    await send("DELETE", `/${left.id}`, {});
+  }
+
+  const added = await send("POST", "", { date: "2099-12-30", name: "  Rizal Day  " });
+  assert.equal(added.response.status, 201, JSON.stringify(added.body));
+  assert.deepEqual({ date: added.body.holiday.date, name: added.body.holiday.name }, { date: "2099-12-30", name: "Rizal Day" });
+  const id = added.body.holiday.id;
+  try {
+    // One holiday per date.
+    assert.equal((await send("POST", "", { date: "2099-12-30", name: "Another name" })).response.status, 409);
+    assert.ok((await listed()).some((item) => item.id === id && item.name === "Rizal Day"));
+
+    const other = await send("POST", "", { date: "2099-12-31", name: "Last day of the year" });
+    assert.equal(other.response.status, 201);
+    try {
+      // Cannot be moved onto a date that has one.
+      assert.equal((await send("PUT", `/${id}`, { date: "2099-12-31", name: "Rizal Day" })).response.status, 409);
+    } finally {
+      assert.equal((await send("DELETE", `/${other.body.holiday.id}`, {})).response.status, 200);
+    }
+    const edited = await send("PUT", `/${id}`, { date: "2099-12-31", name: "Rizal Day (moved)" });
+    assert.equal(edited.response.status, 200);
+    assert.deepEqual(edited.body.holiday, { id, date: "2099-12-31", name: "Rizal Day (moved)" });
+  } finally {
+    const removed = await send("DELETE", `/${id}`, {});
+    assert.equal(removed.response.status, 200);
+  }
+  assert.ok(!(await listed()).some((item) => item.id === id));
+
+  // Each change is in the audit log.
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const audit = await jsonRequest("/api/coordinator/audit?action=holiday&limit=20", { headers: authHeaders(coordinatorToken) });
+  const actions = audit.body.entries.filter((entry) => String(entry.entity_id) === String(id)).map((entry) => entry.action);
+  for (const action of ["holiday.create", "holiday.edit", "holiday.remove"]) assert.ok(actions.includes(action), action);
+  const removal = audit.body.entries.find((entry) => String(entry.entity_id) === String(id) && entry.action === "holiday.remove");
+  assert.deepEqual(removal.details, { date: "2099-12-31", name: "Rizal Day (moved)" });
+});

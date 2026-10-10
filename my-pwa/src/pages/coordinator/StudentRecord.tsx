@@ -28,6 +28,7 @@ import {
 } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
+import { useHolidays } from "../../lib/useHolidays";
 import { usePagination } from "../../lib/usePagination";
 import { coordinatorRequest, downloadSubmittedDocument } from "./request";
 
@@ -146,6 +147,7 @@ export default function StudentRecord() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
+  const holidays = useHolidays("coordinator");
   const [rejecting, setRejecting] = useState<Pending | null>(null);
 
   const load = useCallback(async () => {
@@ -554,6 +556,7 @@ export default function StudentRecord() {
                 }}
                 logs={data.attendance}
                 absences={data.absences}
+                holidays={holidays}
               />
             )}
           </>

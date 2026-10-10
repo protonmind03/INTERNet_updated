@@ -4,12 +4,14 @@ import Icon from "../../components/Icon";
 import { Card, EmptyState, ErrorNotice } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { useAccount } from "../../lib/session";
+import { useHolidays } from "../../lib/useHolidays";
 import { useSupervisorWork } from "./useSupervisorWork";
 
 /** An intern's printable Daily Time Record, for the supervisor to sign. */
 export default function SupervisorTimeRecord() {
   const supervisor = useAccount("supervisor");
   const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "attendance", "absences"]);
+  const holidays = useHolidays("supervisor");
   const [params, setParams] = useSearchParams();
   const studentId = params.get("student") || "";
   const intern = work.interns.find((item) => item.student_id === studentId);
@@ -62,6 +64,7 @@ export default function SupervisorTimeRecord() {
             }}
             logs={work.attendance.filter((entry) => entry.student_id === intern.student_id)}
             absences={work.absences.filter((entry) => entry.student_id === intern.student_id)}
+            holidays={holidays}
           />
         ) : (
           !work.loading && (

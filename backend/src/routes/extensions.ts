@@ -2078,4 +2078,111 @@ export function registerExtensionRoutes(
       }
     }
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | HOLIDAYS
+  |--------------------------------------------------------------------------
+  |
+  | Days nobody is expected to report. The coordinator keeps the list, one
+  | holiday per date; everyone signed in can read it, and the schedule and
+  | the Daily Time Record show it. A holiday does not stop anyone timing in:
+  | some companies work through them, and those hours still count.
+  |
+  */
+
+  function readHoliday(body: unknown): { holiday: { date: string; name: string } } | { problem: string } {
+    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const date = text(input.date);
+    const name = text(input.name);
+    if (!DATE_PATTERN.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+      return { problem: "A holiday needs a date, written as YYYY-MM-DD." };
+    }
+    if (name.length < 2 || name.length > 100) {
+      return { problem: "Give the holiday a name (2 to 100 characters)." };
+    }
+    return { holiday: { date, name } };
+  }
+
+  const HOLIDAY_COLUMNS = `h.id, TO_CHAR(h.holiday_date, 'YYYY-MM-DD') AS date, h.name`;
+
+  app.get(
+    "/api/holidays",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (_req, res) => {
+      try {
+        const result = await pool.query(
+          `SELECT ${HOLIDAY_COLUMNS} FROM holidays h ORDER BY h.holiday_date, h.id`
+        );
+        return res.json({ holidays: result.rows });
+      } catch (error) {
+        console.error("GET HOLIDAYS ERROR:", error);
+        return res.status(500).json({ message: "Failed to load the holidays." });
+      }
+    }
+  );
+
+  app.post("/api/coordinator/holidays", requireCoordinator, async (req, res) => {
+    try {
+      const read = readHoliday(req.body);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const result = await pool.query(
+        `INSERT INTO holidays AS h (holiday_date, name, created_by) VALUES ($1, $2, $3)
+         ON CONFLICT (holiday_date) DO NOTHING
+         RETURNING ${HOLIDAY_COLUMNS}`,
+        [read.holiday.date, read.holiday.name, (req as AuthedRequest).auth!.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({ message: "There is already a holiday on that date." });
+      }
+      return res.status(201).json({ message: "Holiday added.", holiday: result.rows[0] });
+    } catch (error) {
+      console.error("CREATE HOLIDAY ERROR:", error);
+      return res.status(500).json({ message: "Failed to add the holiday." });
+    }
+  });
+
+  app.put("/api/coordinator/holidays/:id", requireCoordinator, async (req, res) => {
+    try {
+      if (!/^\d{1,9}$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Holiday not found." });
+      }
+      const read = readHoliday(req.body);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const taken = await pool.query(
+        `SELECT 1 FROM holidays WHERE holiday_date = $2 AND id <> $1`,
+        [Number(req.params.id), read.holiday.date]
+      );
+      if (taken.rows.length > 0) {
+        return res.status(409).json({ message: "There is already a holiday on that date." });
+      }
+      const result = await pool.query(
+        `UPDATE holidays h SET holiday_date = $2, name = $3 WHERE h.id = $1
+         RETURNING ${HOLIDAY_COLUMNS}`,
+        [Number(req.params.id), read.holiday.date, read.holiday.name]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Holiday not found." });
+      return res.json({ message: "Holiday updated.", holiday: result.rows[0] });
+    } catch (error) {
+      console.error("UPDATE HOLIDAY ERROR:", error);
+      return res.status(500).json({ message: "Failed to update the holiday." });
+    }
+  });
+
+  app.delete("/api/coordinator/holidays/:id", requireCoordinator, async (req, res) => {
+    try {
+      if (!/^\d{1,9}$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Holiday not found." });
+      }
+      const result = await pool.query(
+        `DELETE FROM holidays h WHERE h.id = $1 RETURNING ${HOLIDAY_COLUMNS}`,
+        [Number(req.params.id)]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Holiday not found." });
+      return res.json({ message: "Holiday removed.", holiday: result.rows[0] });
+    } catch (error) {
+      console.error("DELETE HOLIDAY ERROR:", error);
+      return res.status(500).json({ message: "Failed to remove the holiday." });
+    }
+  });
 }
