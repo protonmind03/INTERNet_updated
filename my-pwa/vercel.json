@@ -10,7 +10,7 @@
         { "key": "Permissions-Policy", "value": "camera=(self), geolocation=(), microphone=()" },
         {
           "key": "Content-Security-Policy-Report-Only",
-          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://internetupdated-production.up.railway.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+          "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob:; font-src 'self'; connect-src 'self' https://internetupdated-production.up.railway.app https://internetupdated-staging.up.railway.app; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
         }
       ]
     },
