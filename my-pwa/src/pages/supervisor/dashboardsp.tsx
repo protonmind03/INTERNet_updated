@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Icon, { type IconName } from "../../components/Icon";
 import {
   Button,
@@ -26,11 +26,15 @@ import { useLaunchReady } from "../../lib/launch";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { useFocus } from "../../lib/useFocusRecord";
+import { finalEvaluationPath, useFinalDue, type FinalDue } from "./finalDue";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 
-type Filter = "all" | QueueItem["kind"];
+/** A row of the queue: something to decide, or a final evaluation to write. */
+type ReviewItem = QueueItem | FinalDue;
+
+type Filter = "all" | ReviewItem["kind"];
 
 /** The kinds that can be decided several at a time. */
 type BulkKind = "attendance" | "document" | "absence";
@@ -59,12 +63,13 @@ const BULK: Record<BulkKind, { title: (count: number) => string; message: string
   },
 };
 
-const KIND_ICON: Record<QueueItem["kind"], IconName> = {
+const KIND_ICON: Record<ReviewItem["kind"], IconName> = {
   attendance: "clock",
   task: "tasks",
   document: "document",
   absence: "calendar",
   journal: "note",
+  final: "star",
 };
 
 /** How long an item has been waiting, in plain words. */
@@ -79,7 +84,8 @@ function waitingText(since: string): string {
   return days === 1 ? "Yesterday" : `${days} days ago`;
 }
 
-function titleOf(item: QueueItem): string {
+function titleOf(item: ReviewItem): string {
+  if (item.kind === "final") return "Final evaluation due";
   if (item.kind === "attendance") return `Attendance · ${formatDayDate(item.entry.date)}`;
   if (item.kind === "task") return item.entry.title;
   if (item.kind === "absence") return `Absence · ${formatDayDate(item.entry.date)}`;
@@ -87,7 +93,13 @@ function titleOf(item: QueueItem): string {
   return item.entry.doc_type;
 }
 
-function summaryOf(item: QueueItem): string {
+function summaryOf(item: ReviewItem): string {
+  if (item.kind === "final") {
+    const { hours_rendered, required_hours } = item.entry;
+    return hours_rendered >= required_hours
+      ? `${formatHours(required_hours)} completed`
+      : `${formatHours(hours_rendered)} of ${formatHours(required_hours)}`;
+  }
   if (item.kind === "attendance") {
     return item.entry.time_out
       ? `${formatHours(item.entry.hours)} logged`
@@ -117,7 +129,12 @@ export default function SupervisorDashboard() {
   const supervisor = useAccount("supervisor");
   const work = useSupervisorWork(supervisor?.supervisor_id);
   useLaunchReady(!work.loading);
-  const { queue, interns, loading } = work;
+  const { interns, loading } = work;
+  const navigate = useNavigate();
+  // Interns close to finishing with no final evaluation come after what
+  // is waiting to be decided: they are a reminder, not a decision.
+  const finalDue = useFinalDue(interns);
+  const queue = useMemo<ReviewItem[]>(() => [...work.queue, ...finalDue], [work.queue, finalDue]);
   const wide = useIsWide();
 
   const [filter, setFilter] = useState<Filter>("all");
@@ -164,6 +181,7 @@ export default function SupervisorDashboard() {
       document: scoped.filter((item) => item.kind === "document").length,
       absence: scoped.filter((item) => item.kind === "absence").length,
       journal: scoped.filter((item) => item.kind === "journal").length,
+      final: scoped.filter((item) => item.kind === "final").length,
     }),
     [scoped]
   );
@@ -380,6 +398,10 @@ export default function SupervisorDashboard() {
                 { value: "document", label: "Documents", count: counts.document },
                 { value: "absence", label: "Absences", count: counts.absence },
                 { value: "journal", label: "Journals", count: counts.journal },
+                // Shown only when there is one: most days there is none.
+                ...(counts.final > 0 || filter === "final"
+                  ? [{ value: "final" as const, label: "Final evaluations", count: counts.final }]
+                  : []),
               ]}
             />
           </div>
@@ -428,7 +450,11 @@ export default function SupervisorDashboard() {
                     <li key={item.key}>
                       <button
                         type="button"
-                        onClick={() => setSelectedKey(item.key)}
+                        onClick={() =>
+                          item.kind === "final"
+                            ? navigate(finalEvaluationPath(item.entry.student_id))
+                            : setSelectedKey(item.key)
+                        }
                         aria-current={active ? "true" : undefined}
                         className={`relative flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
                           active
@@ -454,7 +480,8 @@ export default function SupervisorDashboard() {
                             {titleOf(item)}
                           </span>
                           <span className="mt-0.5 block text-xs text-slate-500">
-                            {summaryOf(item)} · {waitingText(item.waitingSince)}
+                            {summaryOf(item)}
+                            {item.kind !== "final" && ` · ${waitingText(item.waitingSince)}`}
                           </span>
                         </span>
                         <Icon
@@ -483,7 +510,11 @@ export default function SupervisorDashboard() {
           <div className="hidden lg:block">
             {selected ? (
               <Card key={selected.key} className="animate-page-in p-6">
-                <ReviewDetail item={selected} work={work} onDecided={moveOn} shortcuts />
+                {selected.kind === "final" ? (
+                  <FinalDueDetail item={selected} />
+                ) : (
+                  <ReviewDetail item={selected} work={work} onDecided={moveOn} shortcuts />
+                )}
               </Card>
             ) : (
               !loading && <InternOverview work={work} />
@@ -508,12 +539,14 @@ export default function SupervisorDashboard() {
 
       {/* DETAIL (phones): a sheet over the list */}
       <Modal
-        open={!wide && Boolean(selected)}
+        open={!wide && Boolean(selected) && selected?.kind !== "final"}
         onClose={() => setSelectedKey(null)}
         title={selected ? selected.entry.student_name : ""}
         size="lg"
       >
-        {selected && <ReviewDetail item={selected} work={work} onDecided={moveOn} />}
+        {selected && selected.kind !== "final" && (
+          <ReviewDetail item={selected} work={work} onDecided={moveOn} />
+        )}
       </Modal>
 
       <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />
@@ -538,6 +571,33 @@ export default function SupervisorDashboard() {
         </ul>
       </ConfirmDialog>
     </SupervisorLayout>
+  );
+}
+
+/** Beside the queue on a wide screen: why the intern is listed, and the way to the form. */
+function FinalDueDetail({ item }: { item: FinalDue }) {
+  const { student_id, student_name, hours_rendered, required_hours } = item.entry;
+  const left = Math.max(0, required_hours - hours_rendered);
+  return (
+    <div>
+      <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">
+        Final evaluation due
+      </p>
+      <h2 className="mt-1 text-lg font-semibold text-slate-900">{student_name}</h2>
+      <p className="mt-2 text-sm text-slate-700">
+        {left === 0
+          ? `${student_name} has completed the required ${formatHours(required_hours)}.`
+          : `${student_name} has ${formatHours(hours_rendered)} of ${formatHours(required_hours)} verified, with ${formatHours(left)} to go.`}{" "}
+        Their final evaluation has not been written yet. They need it to finish their OJT.
+      </p>
+      <Link
+        to={finalEvaluationPath(student_id)}
+        className="mt-4 inline-flex h-10 items-center gap-2 rounded-lg bg-psu-700 px-4 text-sm font-semibold text-white hover:bg-psu-800"
+      >
+        <Icon name="star" size={16} />
+        Write the final evaluation
+      </Link>
+    </div>
   );
 }
 

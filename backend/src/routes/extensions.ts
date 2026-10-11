@@ -3246,6 +3246,26 @@ export function registerExtensionRoutes(
     }
   });
 
+  // Which of the supervisor's own interns already have a final evaluation,
+  // in one answer, so the Review queue does not ask once per intern.
+  app.get("/api/supervisor/final-evaluations", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const result = await pool.query<{ student_id: string }>(
+        `SELECT TRIM(e.student_id::text) AS student_id
+         FROM final_evaluations e
+         JOIN students s ON TRIM(s.student_id::text) = TRIM(e.student_id::text)
+         WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+         ORDER BY 1`,
+        [auth.id]
+      );
+      return res.json({ student_ids: result.rows.map((row) => row.student_id) });
+    } catch (error) {
+      console.error("LIST FINAL EVALUATIONS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the final evaluations." });
+    }
+  });
+
   app.get(
     "/api/final-evaluations/:studentId",
     requireRole(["student", "supervisor", "coordinator"]),

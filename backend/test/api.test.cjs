@@ -5018,3 +5018,33 @@ test("notifications come a page at a time when asked, with the totals, and whole
   const signedOut = await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}?limit=20`);
   assert.equal(signedOut.response.status, 401);
 });
+
+/*
+| Round 2, Phase 1B: the supervisor portal
+*/
+
+test("a supervisor is told in one answer which of their interns have a final evaluation", async () => {
+  const supervisor = await supervisorSession();
+  const path = "/api/supervisor/final-evaluations";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 403);
+
+  const list = await jsonRequest(path, { headers: authHeaders(supervisor.token) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.student_ids));
+  assert.equal(new Set(list.body.student_ids).size, list.body.student_ids.length, "each intern once");
+
+  // It agrees with asking about each intern, and names nobody else's.
+  const interns = await jsonRequest(
+    `/api/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}/interns`,
+    { headers: authHeaders(supervisor.token) }
+  );
+  const mine = interns.body.interns.map((intern) => String(intern.student_id).trim());
+  for (const id of list.body.student_ids) assert.ok(mine.includes(id), `${id} is one of their interns`);
+  for (const id of mine) {
+    const one = await jsonRequest(`/api/final-evaluations/${encodeURIComponent(id)}`, { headers: authHeaders(supervisor.token) });
+    assert.equal(one.response.status, 200);
+    assert.equal(list.body.student_ids.includes(id), one.body.evaluation !== null, id);
+  }
+});

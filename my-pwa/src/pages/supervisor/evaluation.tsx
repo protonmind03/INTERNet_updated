@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
 import {
   Button,
@@ -36,7 +37,10 @@ export default function SupervisorEvaluation() {
   const supervisor = useAccount("supervisor");
   const { interns, loading: internsLoading } = useSupervisorWork(supervisor?.supervisor_id, ["interns"]);
 
-  const [studentId, setStudentId] = useState("");
+  // "?intern=" in the address opens the page on that intern (the Review
+  // queue's "Final evaluation due" does this).
+  const [params] = useSearchParams();
+  const [studentId, setStudentId] = useState(() => params.get("intern") || "");
   const [category, setCategory] = useState<string>(EVALUATION_CATEGORIES[0]);
   const [rating, setRating] = useState(0);
   const [comments, setComments] = useState("");
@@ -52,8 +56,10 @@ export default function SupervisorEvaluation() {
   const [historyError, setHistoryError] = useState("");
 
   // With a single intern there is nothing to choose.
-  const chosen = studentId || (interns.length === 1 ? interns[0].student_id : "");
-  const chosenIntern = interns.find((intern) => intern.student_id === chosen);
+  const wanted = studentId || (interns.length === 1 ? interns[0].student_id : "");
+  const chosenIntern = interns.find((intern) => intern.student_id === wanted);
+  // An id from the address that is not one of this supervisor's interns chooses nobody.
+  const chosen = chosenIntern ? wanted : "";
 
   const loadHistory = useCallback(async (id: string) => {
     setHistoryLoading(true);
