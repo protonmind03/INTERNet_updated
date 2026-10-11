@@ -2,6 +2,7 @@ import { randomInt } from "node:crypto";
 import type express from "express";
 import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
+import { categoriesFor } from "../services/notificationPreferences";
 
 /*
 |--------------------------------------------------------------------------
@@ -3170,4 +3171,83 @@ export function registerExtensionRoutes(
       return res.status(500).json({ message: "Failed to save the final evaluation." });
     }
   });
+
+  /*
+  |--------------------------------------------------------------------------
+  | NOTIFICATION PREFERENCES (everyone, for themselves)
+  |--------------------------------------------------------------------------
+  |
+  | See services/notificationPreferences.ts. In-app notifications are not
+  | affected by anything here.
+  |
+  */
+
+  app.get(
+    "/api/notification-preferences",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        const stored = await pool.query<{ category: string; push: boolean; email: boolean }>(
+          `SELECT category, push, email FROM notification_preferences WHERE role = $1 AND account_id = $2`,
+          [auth.role, auth.id]
+        );
+        const chosen = new Map(stored.rows.map((row) => [row.category, row]));
+        return res.json({
+          categories: categoriesFor(auth.role).map((category) => ({
+            ...category,
+            push: category.has_push ? (chosen.get(category.key)?.push ?? true) : false,
+            email: category.has_email ? (chosen.get(category.key)?.email ?? true) : false,
+          })),
+        });
+      } catch (error) {
+        console.error("GET NOTIFICATION PREFERENCES ERROR:", error);
+        return res.status(500).json({ message: "Failed to load your notification choices." });
+      }
+    }
+  );
+
+  app.put(
+    "/api/notification-preferences",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        const category = categoriesFor(auth.role).find((item) => item.key === req.body?.category);
+        if (!category) {
+          return res.status(400).json({ message: "Choose one of the listed kinds of notification." });
+        }
+        const { push, email } = (req.body ?? {}) as { push?: unknown; email?: unknown };
+        if ((push !== undefined && typeof push !== "boolean") || (email !== undefined && typeof email !== "boolean")) {
+          return res.status(400).json({ message: "Each choice is on or off." });
+        }
+        if (push === undefined && email === undefined) {
+          return res.status(400).json({ message: "Say what to change." });
+        }
+        if ((push !== undefined && !category.has_push) || (email !== undefined && !category.has_email)) {
+          return res.status(400).json({ message: "That kind of notification is not sent that way." });
+        }
+        // What is not sent is left as it was.
+        const result = await pool.query<{ push: boolean; email: boolean }>(
+          `INSERT INTO notification_preferences AS p (role, account_id, category, push, email)
+           VALUES ($1, $2, $3, COALESCE($4, TRUE), COALESCE($5, TRUE))
+           ON CONFLICT (role, account_id, category) DO UPDATE
+             SET push = COALESCE($4, p.push), email = COALESCE($5, p.email), updated_at = NOW()
+           RETURNING push, email`,
+          [auth.role, auth.id, category.key, push ?? null, email ?? null]
+        );
+        return res.json({
+          message: "Saved.",
+          category: {
+            ...category,
+            push: category.has_push ? result.rows[0].push : false,
+            email: category.has_email ? result.rows[0].email : false,
+          },
+        });
+      } catch (error) {
+        console.error("SAVE NOTIFICATION PREFERENCE ERROR:", error);
+        return res.status(500).json({ message: "Failed to save your choice." });
+      }
+    }
+  );
 }

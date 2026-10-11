@@ -3964,3 +3964,82 @@ test("a final evaluation rates every criterion once per student and keeps the fo
     await pool.end();
   }
 });
+
+/*
+| Notification preferences
+*/
+
+test("the notification rules: which category a type falls in, and what each role is offered", () => {
+  require("tsx/cjs");
+  const { categoryOf, categoriesFor } = require("../src/services/notificationPreferences.ts");
+  assert.equal(categoryOf("attendance"), "attendance");
+  assert.equal(categoryOf("comment"), "task");
+  assert.equal(categoryOf("TASK"), "task");
+  for (const other of ["info", "warning", "complaint", "", undefined, null]) assert.equal(categoryOf(other), "other");
+  // A student is not offered the summary email; staff are, and it has no push.
+  assert.equal(categoriesFor("student").some((item) => item.key === "digest"), false);
+  for (const role of ["supervisor", "coordinator"]) {
+    const digest = categoriesFor(role).find((item) => item.key === "digest");
+    assert.deepEqual([digest.has_push, digest.has_email], [false, true]);
+  }
+  for (const role of ["student", "supervisor", "coordinator"]) {
+    assert.ok(categoriesFor(role).some((item) => item.key === "other"), "nothing is left without a category");
+  }
+});
+
+test("each person keeps their own notification choices, and they default to on", async (t) => {
+  const supervisor = await supervisorSession();
+  const path = "/api/notification-preferences";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { method: "PUT" })).response.status, 401);
+  const read = async (token) => (await jsonRequest(path, { headers: authHeaders(token) })).body.categories;
+  const put = (body, token = studentToken) => jsonRequest(path, jsonBody(token, "PUT", body));
+
+  for (const token of [studentToken, supervisor.token, coordinatorToken]) {
+    for (const item of await read(token)) {
+      assert.deepEqual(Object.keys(item).sort(), ["about", "email", "has_email", "has_push", "key", "label", "push"]);
+      // A switch that does not exist is never reported as on.
+      if (!item.has_push) assert.equal(item.push, false);
+      if (!item.has_email) assert.equal(item.email, false);
+    }
+  }
+  for (const bad of [{}, { category: "attendance" }, { category: "nonsense", push: false }, { category: "attendance", push: "no" },
+    { category: "attendance", email: false }, { category: "digest", email: false }]) {
+    assert.equal((await put(bad)).response.status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await put({ category: "digest", push: false }, supervisor.token)).response.status, 400, "the summary email is not pushed");
+
+  if (process.env.ALLOW_TEST_WRITES !== "true") return;
+  const pool = localTestPool();
+  const clear = () => pool.query(`DELETE FROM notification_preferences WHERE account_id IN ($1, $2)`, [student.student_id, supervisor.supervisor.supervisor_id]);
+  await clear();
+  try {
+    const find = (list, key) => list.find((item) => item.key === key);
+    assert.equal(find(await read(studentToken), "task").push, true, "on until turned off");
+    const off = await put({ category: "task", push: false });
+    assert.equal(off.response.status, 200, JSON.stringify(off.body));
+    assert.deepEqual([off.body.category.push, off.body.category.email], [false, true], "the other switch is left alone");
+    await put({ category: "task", email: false });
+    const mine = find(await read(studentToken), "task");
+    assert.deepEqual([mine.push, mine.email], [false, false]);
+    // Someone else's choices are their own.
+    assert.equal(find(await read(supervisor.token), "task").push, true);
+    assert.equal((await put({ category: "digest", email: false }, supervisor.token)).body.category.email, false);
+
+    require("tsx/cjs");
+    const { allowsChannel } = require("../src/services/notificationPreferences.ts");
+    assert.equal(await allowsChannel(pool, "student", student.student_id, "task", "push"), false);
+    assert.equal(await allowsChannel(pool, "student", student.student_id, "attendance", "push"), true);
+    assert.equal(await allowsChannel(pool, "supervisor", supervisor.supervisor.supervisor_id, "digest", "email"), false);
+
+    // Turned off or not, the notification itself is still written.
+    const before = (await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) })).body.notifications.length;
+    await pool.query(`INSERT INTO notifications (student_id, title, message, type, is_read) VALUES ($1, 'Preference check', 'Still here.', 'task', FALSE)`, [student.student_id]);
+    const after = (await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) })).body.notifications;
+    assert.ok(after.length >= Math.min(before + 1, after.length) && after.some((item) => item.title === "Preference check"));
+    await pool.query(`DELETE FROM notifications WHERE title = 'Preference check'`);
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});

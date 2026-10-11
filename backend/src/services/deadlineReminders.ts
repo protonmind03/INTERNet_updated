@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { isSmtpConfigured, sendEmail } from "./mailer";
+import { allowsChannel } from "./notificationPreferences";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -126,13 +127,17 @@ export function startDeadlineReminderScheduler(
 
           if (emailDue) {
             try {
-              await sendEmail({
-                to: reminder.student_email,
-                subject: isDue
-                  ? `Task deadline: ${reminder.title}`
-                  : `Task due in 24 hours: ${reminder.title}`,
-                text: `Hello ${reminder.student_name},\n\n${deadlineText}\nPlease sign in to INTERNet to review your task.`,
-              });
+              // A student who turned task emails off still gets the in-app
+              // reminder above; the email is counted as dealt with.
+              if (await allowsChannel(pool, "student", reminder.student_id, "task", "email")) {
+                await sendEmail({
+                  to: reminder.student_email,
+                  subject: isDue
+                    ? `Task deadline: ${reminder.title}`
+                    : `Task due in 24 hours: ${reminder.title}`,
+                  text: `Hello ${reminder.student_name},\n\n${deadlineText}\nPlease sign in to INTERNet to review your task.`,
+                });
+              }
               await client.query(
                 `UPDATE task_deadline_reminders
                  SET email_sent_at = NOW() WHERE id = $1`,

@@ -26,6 +26,7 @@ import {
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { startTimeOutReminderScheduler } from "./services/timeOutReminders";
 import { consentRequired, hasCurrentConsent } from "./services/privacy";
+import { allowsChannel, categoryOf } from "./services/notificationPreferences";
 import { auditMiddleware } from "./services/audit";
 import {
   buildListQuery,
@@ -1209,10 +1210,14 @@ async function createNotification(options: {
     publishNotification(recipient, payload);
   }
 
+  // Kept in the app whatever the person chose; pushed only if they want
+  // this kind of notification on their devices.
   if (isWebPushConfigured()) {
-    void sendWebPush(recipient, payload).catch((error) => {
-      console.error("WEB PUSH DELIVERY ERROR:", error);
-    });
+    void allowsChannel(pool, recipient.role, recipient.id, categoryOf(payload.type), "push")
+      .then((wanted) => (wanted ? sendWebPush(recipient, payload) : undefined))
+      .catch((error) => {
+        console.error("WEB PUSH DELIVERY ERROR:", error);
+      });
   }
 }
 
