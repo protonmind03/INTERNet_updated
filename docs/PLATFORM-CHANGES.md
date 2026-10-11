@@ -289,6 +289,49 @@ is unchanged). Nothing to set on Vercel or Railway.
 | On "push" | Railway staging, Vercel Preview | Nothing to do by hand. Either may finish first. | Two additive backend changes: `GET /api/supervisor/final-evaluations`, and a `coordinator` field on the supervisor's own profile. Until the backend has them, the new frontend simply shows no "Final evaluation due" item and no coordinator line. New notifications say "concern"; the older frontend still links them correctly, because their links are stored by the server. |
 | On "make it live" | Railway production (run by you) | The same backup as for Phase 0 and 1A; this phase adds no migration of its own. | The release still carries 035 and 036. |
 
+### Phase 1C: coordinator console (built 2026-10-12, on localhost)
+
+No migration, no new variable, no new backend address (so `vercel.json`
+is unchanged). Nothing to set on Vercel or Railway.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| On "push" | Railway staging, Vercel Preview | Nothing by hand. **The backend should finish first this time**: wait for Railway's deploy to go green before opening the test site's dashboard. | The new dashboard and the Analytics cards ask for `/api/coordinator/actions` and `/api/coordinator/kpis`. Against an older backend the dashboard shows "Could not load the dashboard" and the cards say they could not be worked out, until the backend is up. Nothing is damaged; it clears by itself. |
+| On "make it live" | Railway production, Vercel Production | The same order: the merge deploys both; open the live dashboard only after Railway is green. | As above. |
+| After either | The site, as coordinator | Audit log > Export CSV. Open the file in a spreadsheet and check the times are Philippine time and names with "ñ" read correctly. | The export was checked only by a test and in a browser here. |
+
+### Phases 0 to 1C together: everything to do on a platform
+
+One list for the release that carries Phase 0, 1A, 1B and 1C. Only the
+first block is required; the rest switch on things that are off today and
+can wait.
+
+**Required**
+
+| When | Platform | Change |
+|---|---|---|
+| On "push" | Railway staging | Nothing by hand. Migration 036 runs by itself. Wait for the deploy to go green before testing the site. |
+| On "push" | Vercel Preview | Nothing by hand. |
+| Before "make it live" | Railway production (run by you) | A fresh database backup through the tunnel, as in `DEPLOY.md`, and tell me it is done. The release carries migrations 035 and 036. |
+| On "make it live" | Railway production, Vercel Production | Nothing by hand. Wait for Railway to go green before opening the live dashboard. |
+
+**Optional: each is off until you do it, and safe to leave off**
+
+| What it switches on | Platform | Change |
+|---|---|---|
+| Email (password recovery, reminders, the two summary emails) | Your DNS host, then Railway (staging first) | The provider's DKIM, SPF and DMARC records on a domain you own; then `EMAIL_PROVIDER` = `resend`, `EMAIL_API_KEY` (a secret) and `SMTP_FROM`. Steps in `DEPLOY.md` > "Email". |
+| Browser push | Any terminal, then Railway (each environment its own pair) | `npx web-push generate-vapid-keys`; then `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` (a secret) and `WEB_PUSH_SUBJECT`. All three or none. |
+
+**Asked of you once, nothing depends on it yet**
+
+| What | Where | Change |
+|---|---|---|
+| A backup of the uploaded files | Railway backend shell, then your machine | `npm run uploads:backup` in `railway ssh`; download the archive it names; delete it from the server. Never tried on the host: tell me what each step printed. |
+| The read-only orphan report | Your machine, through the tunnel | `railway run --service Postgres npm run db:fk-orphans PORT`. Send me the table. Do not run `db:fk-validate` yet. |
+
+No setting changes on Vercel in any of these phases, and `vercel.json` is
+unchanged since the enforced policy: no new backend address was added.
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.

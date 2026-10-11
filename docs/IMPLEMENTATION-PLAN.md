@@ -628,24 +628,63 @@ Different from the description, or decided where it left room:
 
 ### Phase 1C: coordinator console
 
-No migrations. The KPI targets are fixed constants this phase.
+No migrations. The KPI targets are fixed constants this phase. Built
+2026-10-12 on localhost.
 
-- [ ] **1C.1 Dashboard: one Action list,** grouped by who acts (You,
+Built on the default, awaiting confirmation: the six targets (90%, 95%,
+2 days, 80%, 0, 0), in `backend/src/services/kpiDefinitions.ts`.
+
+Different from the description, or decided where it left room:
+
+- 1C.1: a new endpoint, `GET /api/coordinator/actions`, rather than more
+  fields on the dashboard's. It also carries the progress bands, the
+  supervisors' queues and "scheduled, not yet in", which were the other
+  things the page added up from every student's row.
+- 1C.1: with a term chosen, the rows about students and supervisors count
+  that term's students. Concerns and agreements are not tied to a term and
+  are always all counted. The weekly email calls the same function with
+  no term and is unchanged.
+- 1C.2: "one shared module" is on the server. The frontend and the backend
+  are separate packages with no shared code, so the names, definitions and
+  targets are sent with each figure and the screens keep no copy.
+- 1C.2: every card is compared with the figure four weeks earlier.
+- 1C.2: a past week on a card's chart is worked out from today's
+  schedules, term dates and agreement dates, because those are not kept
+  as they were. The dated records (attendance, decisions, documents,
+  concerns) are right for the week they are counted in. The page says so.
+- 1C.2: "Attendance on scheduled days" counts a filed absence as not
+  attended, and leaves today out. "Median time to decision" counts logs a
+  supervisor decided, not ones the coordinator decided.
+- 1C.2: on Analytics the period tiles (hours, logs, students who logged,
+  share verified) became one sentence above the charts, so nothing they
+  showed was lost.
+- 1C.3: the server already searched the joined name and already compared
+  dates in Asia/Manila. Added: `person` (who did it, by name or id, and
+  nothing else), `entity_type`, `entity_id`, and a refusal of a date that
+  is not a real day (it used to answer 500).
+- 1C.4: a repeated read by the same person of the same record within ten
+  minutes is one entry. Without that, every reload of a student's record,
+  and every photo on it, would be a row.
+- 1C.4: an uploaded file (an attendance photo, a task attachment) is
+  logged as `document.view` with record kind "upload" and the file's
+  stored name; the entry does not say whose it is.
+
+- [x] **1C.1 Dashboard: one Action list,** grouped by who acts (You,
   Supervisors, Students), counted on the server, in place of Alerts,
   "Needs attention" and "Students to check on". Top to bottom: today's
   attendance, the Action list, KPI cards, the hours trend, progress bands,
   supervisor queues. The weekly email is unchanged.
-- [ ] **1C.2 KPI cards** on Dashboard and Analytics: value, target, eight
+- [x] **1C.2 KPI cards** on Dashboard and Analytics: value, target, eight
   weeks as a sparkline, change, colour only when the target is missed, a
   definition, and a link to the list behind it. Six cards, computed on
   the server; definitions and targets in one module.
-- [ ] **1C.3 Audit log filters:** dropdowns for Category, Actor role,
+- [x] **1C.3 Audit log filters:** dropdowns for Category, Actor role,
   Person and Record, date presets, all in the address; "Export CSV" on
   the server; dates in Asia/Manila, with a test at 23:30.
-- [ ] **1C.4 Audit coverage:** privacy consent, data export, a coordinator
+- [x] **1C.4 Audit coverage:** privacy consent, data export, a coordinator
   opening a student's document or upload, and a coordinator opening a
   student record.
-- [ ] **1C.5 Schedule tab** on the coordinator's student record, using the
+- [x] **1C.5 Schedule tab** on the coordinator's student record, using the
   editor from the Requirements page, which stays with a note.
 
 ## Still open

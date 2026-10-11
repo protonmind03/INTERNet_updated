@@ -1416,3 +1416,59 @@ widths, and with the menus and the dialog open: clean.
 
 **Not checked:** on a real phone. The queue item with several interns at
 different hours (the test data has one intern).
+
+## 27. Round 2, Phase 1C: the coordinator's console (12 October 2026)
+
+On `ui-redesign`, on localhost. No migration.
+
+- **One action list (1C.1).** The dashboard's three overlapping lists are
+  one, grouped by who acts: You (concerns, flagged logs, students with no
+  supervisor, agreements ending), Supervisors (slow reviews, logs and
+  tasks waiting), Students (not turning up, at risk, overdue tasks). Each
+  row is a count, a reason and a link to the list. The page runs today's
+  attendance (now with "scheduled, not yet in"), the action list, the key
+  figures, the hours trend, progress, and the supervisors' queues. It is
+  all counted on the server (`GET /api/coordinator/actions`); the page no
+  longer downloads every student's row. The weekly email is unchanged.
+- **Key figures with targets (1C.2).** Six cards on the dashboard and on
+  Analytics: on track to finish (90%), attendance on scheduled days (95%),
+  median time to a supervisor's decision (2 days), requirements complete
+  past half the hours (80%), concerns open more than 7 days (0),
+  agreements ending within 30 days (0). A card shows the value, the
+  target, eight weeks as a line, the change from four weeks earlier and
+  what it was counted from; "?" states the definition; the title opens
+  the list. A card is red only when its target is missed. Worked out by
+  `GET /api/coordinator/kpis`; the names, definitions and targets are in
+  `services/kpiDefinitions.ts`.
+- **Audit filters and export (1C.3).** Dropdowns for category, who did
+  it, record kind, and when (Today, This week, This term, Custom), with
+  a person search and a record ID. Every filter is in the address.
+  "Export CSV" downloads the filtered entries in Philippine time, at most
+  10,000, and the export is itself logged.
+- **Audit coverage (1C.4).** Logged now: agreeing to the privacy notice,
+  downloading one's own data, and a coordinator opening a student's
+  record, a document or an uploaded file. Reads are written after the
+  answer is sent, and a repeat within ten minutes is one entry.
+- **Schedule on the record (1C.5).** A Schedule tab on the coordinator's
+  student record, with the editor from the Requirements page, which stays.
+
+**Found on the way:** a date such as 2026-13-40 made the audit list answer
+with a server error; it is now refused. The exported file had no date in
+its name, because a page cannot read the name a server on another address
+gives a file; the page names it now. With more than 99 unread the bell's
+badge and its spoken name disagreed.
+
+**What was checked:** 131 API tests (126 before). New: each figure on
+made-up rows and dates, including what changes a week earlier; the action
+list against the dashboard, Monitoring and the alerts, and term by term;
+the audit rules for the new entries; a read logged once in ten minutes
+and again after eleven; entries at 23:30 and 00:30 Manila time each on
+their own day; the export's content and its own log entry. 17 end-to-end
+tests (14 before): the dashboard and its cards, the audit filters, the
+export download, the schedule tab. The automated accessibility check on
+all 47 pages at both widths: clean.
+
+**Not checked:** the figures against a real programme's data (the test
+data has one student, so most cards have little to count); the exported
+file opened in a spreadsheet; the dashboard's speed with hundreds of
+students.

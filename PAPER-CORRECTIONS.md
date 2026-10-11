@@ -360,7 +360,8 @@ are true of the system today, for a scope section:
   API (or SMTP), from a domain the programme owns; the system does not run
   its own mail server.
 - Coordinator dashboard, monitoring, and analytics figures load on request
-  and are not live.
+  and are not live. The dashboard's lists and figures are counted by the
+  server each time the page is opened.
 - On Monitoring, the coordinator's date range shows each student's hours
   and logs inside the dates and filters the flagged logs. Progress toward
   the required hours is always for the whole placement.
@@ -476,3 +477,43 @@ are true of the system today, for a scope section:
   account menu. The system does not assign supervisors to coordinators:
   with more than one coordinator, the one shown is the longest-serving
   active coordinator.
+- The coordinator's dashboard, since October 2026, is in this order:
+  today's attendance (timed in, on the clock, absent, scheduled but not
+  yet in); one "Action list"; six key figures; verified hours over 14
+  days; progress toward required hours; what waits with each supervisor.
+  The Action list replaces the three lists the dashboard used to show
+  (alerts, "Needs attention" and "Students to check on") and groups what
+  needs doing by who has to do it: the coordinator, the supervisors, the
+  students. A description or screenshot of the older dashboard is out of
+  date.
+- The dashboard and Analytics show six key figures, each against a
+  target: students on track to finish within the term (90%); attendance
+  on scheduled days over the last 4 weeks (95%); the median time from a
+  student's time-out to the supervisor's decision (2 days or less);
+  requirements complete among students past half their hours (80%); open
+  concerns older than 7 days (none); agreements ending within 30 days
+  (none). If the paper describes these:
+  - the targets are defaults chosen for the system, fixed in the code.
+    They are not the university's policy and a coordinator cannot change
+    them yet. Do not present them as institutional standards;
+  - "on track" is an estimate from each student's schedule, not a
+    prediction of what a student will do;
+  - the small eight-week chart on each card is worked out from today's
+    schedules and end dates, because the system does not keep those as
+    they were. It is a guide to direction, not a historical record;
+  - the figures describe the programme. The system does not act on them:
+    nothing is blocked, flagged or sent when a target is missed.
+- The audit log also records a student agreeing to the privacy notice, a
+  student downloading a copy of their data, and a coordinator opening a
+  student's record, a submitted document or an uploaded photo. Opening
+  the same thing again within ten minutes is one entry. It does not
+  record supervisors or students viewing records, or anyone signing in.
+  If the paper says the system logs "all access" or "every view", that is
+  more than it does.
+- The coordinator can filter the audit log by category, by who did it,
+  by person, by record and by date, and can download the filtered entries
+  as a CSV file (at most 10,000 at a time). The download is itself an
+  entry in the log. Dates are Philippine dates.
+- A student's weekly schedule is edited by the coordinator on the
+  student's record (a Schedule tab), and still on the Requirements page.
+  It is set one student at a time.
