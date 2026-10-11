@@ -18,6 +18,7 @@
     "db:fk-orphans": "tsx src/scripts/fk-orphans.ts",
     "db:fk-validate": "tsx src/scripts/fk-validate.ts",
     "privacy:purge-photos": "tsx src/scripts/purge-photos.ts",
+    "uploads:backup": "tsx src/scripts/backup-uploads.ts",
     "test": "node --test test/*.test.cjs"
   },
   "keywords": [],
