@@ -31,6 +31,33 @@ import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 
 type Filter = "all" | QueueItem["kind"];
 
+/** The kinds that can be decided several at a time. */
+type BulkKind = "attendance" | "document" | "absence";
+
+const BULK: Record<BulkKind, { title: (count: number) => string; message: string; confirm: string; done: (count: number) => string }> = {
+  attendance: {
+    title: (count) => `Verify ${count} attendance logs?`,
+    message:
+      "Every pending log that has a time-out will be marked verified. Logs you want to reject should be reviewed one by one first.",
+    confirm: "Verify all",
+    done: (count) => `${count} attendance ${count === 1 ? "log" : "logs"} verified.`,
+  },
+  document: {
+    title: (count) => `Approve ${count} documents?`,
+    message:
+      "Every document waiting for you will be marked approved. Do this only for files you have already opened; one you want to reject should be reviewed by itself first.",
+    confirm: "Approve all",
+    done: (count) => `${count} ${count === 1 ? "document" : "documents"} approved.`,
+  },
+  absence: {
+    title: (count) => `Excuse ${count} absences?`,
+    message:
+      "Every absence waiting for you will be marked excused. One you do not accept should be reviewed by itself first.",
+    confirm: "Excuse all",
+    done: (count) => `${count} ${count === 1 ? "absence" : "absences"} excused.`,
+  },
+};
+
 const KIND_ICON: Record<QueueItem["kind"], IconName> = {
   attendance: "clock",
   task: "tasks",
@@ -95,7 +122,7 @@ export default function SupervisorDashboard() {
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState("");
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
-  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [confirmBulk, setConfirmBulk] = useState<BulkKind | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [recording, setRecording] = useState(false);
 
@@ -157,6 +184,40 @@ export default function SupervisorDashboard() {
     [scoped]
   );
 
+  // Documents and absences waiting, which can be accepted in one go.
+  const waitingDocuments = useMemo(
+    () => scoped.filter((item): item is Extract<QueueItem, { kind: "document" }> => item.kind === "document"),
+    [scoped]
+  );
+  const waitingAbsences = useMemo(
+    () => scoped.filter((item): item is Extract<QueueItem, { kind: "absence" }> => item.kind === "absence"),
+    [scoped]
+  );
+  /** What the open confirmation would decide: who, and what. */
+  const bulkRows: { key: string; name: string; what: string; id: number }[] =
+    confirmBulk === "attendance"
+      ? verifiable.map((item) => ({
+          key: item.key,
+          id: item.entry.id,
+          name: item.entry.student_name,
+          what: `${formatDate(item.entry.date)} · ${formatHours(item.entry.hours)}`,
+        }))
+      : confirmBulk === "document"
+        ? waitingDocuments.map((item) => ({
+            key: item.key,
+            id: item.entry.id,
+            name: item.entry.student_name,
+            what: item.entry.doc_type,
+          }))
+        : confirmBulk === "absence"
+          ? waitingAbsences.map((item) => ({
+              key: item.key,
+              id: item.entry.id,
+              name: item.entry.student_name,
+              what: formatDate(item.entry.date),
+            }))
+          : [];
+
   const moveOn = () => {
     // The reviewed item leaves the queue on reload; open the one after it.
     const index = visible.findIndex((item) => item.key === selected?.key);
@@ -195,20 +256,24 @@ export default function SupervisorDashboard() {
     return () => document.removeEventListener("keydown", onKey);
   }, [wide, visible, selected?.key]);
 
-  const verifyAll = async () => {
+  const decideAll = async () => {
+    if (!confirmBulk) return;
+    const kind = confirmBulk;
+    const ids = bulkRows.map((row) => row.id);
     setBulkBusy(true);
     try {
-      const { done, failure } = await work.verifyMany(verifiable.map((item) => item.entry.id));
+      const { done, failure } =
+        kind === "attendance" ? await work.verifyMany(ids) : await work.decideMany(kind, ids);
       if (failure) {
-        toast.error(`${done} verified, then it stopped: ${failure}`);
+        toast.error(`${done} of ${ids.length} saved, then it stopped: ${failure}`);
       } else {
-        toast.success(`${done} attendance ${done === 1 ? "log" : "logs"} verified.`);
+        toast.success(BULK[kind].done(done));
       }
     } catch (error) {
-      toast.error(errorText(error, "The logs could not be verified."));
+      toast.error(errorText(error, "They could not be saved."));
     } finally {
       setBulkBusy(false);
-      setConfirmBulk(false);
+      setConfirmBulk(null);
       setSelectedKey(null);
     }
   };
@@ -230,8 +295,18 @@ export default function SupervisorDashboard() {
       actions={
         <>
           {verifiable.length > 1 && (
-            <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk(true)}>
+            <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("attendance")}>
               Verify {verifiable.length} completed logs
+            </Button>
+          )}
+          {waitingDocuments.length > 1 && (
+            <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("document")}>
+              Approve {waitingDocuments.length} documents
+            </Button>
+          )}
+          {waitingAbsences.length > 1 && (
+            <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("absence")}>
+              Excuse {waitingAbsences.length} absences
             </Button>
           )}
           {interns.length > 0 && (
@@ -441,22 +516,20 @@ export default function SupervisorDashboard() {
       <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />
 
       <ConfirmDialog
-        open={confirmBulk}
-        title={`Verify ${verifiable.length} attendance logs?`}
-        message="Every pending log that has a time-out will be marked verified. Logs you want to reject should be reviewed one by one first."
-        confirmLabel="Verify all"
+        open={confirmBulk !== null}
+        title={confirmBulk ? BULK[confirmBulk].title(bulkRows.length) : ""}
+        message={confirmBulk ? BULK[confirmBulk].message : ""}
+        confirmLabel={confirmBulk ? BULK[confirmBulk].confirm : "Confirm"}
         busy={bulkBusy}
         busyProcess="verify"
-        onConfirm={() => void verifyAll()}
-        onCancel={() => setConfirmBulk(false)}
+        onConfirm={() => void decideAll()}
+        onCancel={() => setConfirmBulk(null)}
       >
         <ul className="max-h-48 space-y-1.5 overflow-y-auto text-sm text-slate-700">
-          {verifiable.map((item) => (
-            <li key={item.key} className="flex justify-between gap-3">
-              <span className="truncate">{item.entry.student_name}</span>
-              <span className="tabular shrink-0 text-slate-500">
-                {formatDate(item.entry.date)} · {formatHours(item.entry.hours)}
-              </span>
+          {bulkRows.map((row) => (
+            <li key={row.key} className="flex justify-between gap-3">
+              <span className="truncate">{row.name}</span>
+              <span className="tabular shrink-0 truncate text-slate-500">{row.what}</span>
             </li>
           ))}
         </ul>

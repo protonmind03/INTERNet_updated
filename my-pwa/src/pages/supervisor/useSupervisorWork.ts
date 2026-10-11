@@ -461,6 +461,46 @@ export function useSupervisorWork(
     [load]
   );
 
+  /**
+   * Approves several waiting documents, or excuses several waiting
+   * absences, one after another. Stops at the first one that is refused
+   * and says how far it got; reloads once at the end.
+   */
+  const decideMany = useCallback(
+    async (
+      kind: "document" | "absence",
+      ids: number[]
+    ): Promise<{ done: number; failure: string }> => {
+      let done = 0;
+      let failure = "";
+      for (const id of ids) {
+        try {
+          await (kind === "document"
+            ? sendJson(
+                "PATCH",
+                `/api/documents/${id}/review`,
+                { status: "Approved", review_notes: "" },
+                "A document could not be saved."
+              )
+            : sendJson(
+                "PATCH",
+                `/api/absences/${id}/review`,
+                { status: "Excused", notes: "" },
+                "An absence could not be saved."
+              ));
+          done += 1;
+        } catch (decideError) {
+          failure = errorText(decideError, "One could not be saved.");
+          break;
+        }
+      }
+      await load();
+      notifyDataChanged();
+      return { done, failure };
+    },
+    [load]
+  );
+
   const decideTask = useCallback(
     (id: number, status: "Reviewed" | "In Progress", notes: string, rating: number | null) =>
       change(() =>
@@ -551,6 +591,7 @@ export function useSupervisorWork(
     correctTimes,
     recordTimeIn,
     verifyMany,
+    decideMany,
     decideTask,
     undoTask,
     decideDocument,
