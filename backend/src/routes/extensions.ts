@@ -2802,4 +2802,147 @@ export function registerExtensionRoutes(
       return res.status(500).json({ message: "Failed to prepare your data." });
     }
   });
+
+  /*
+  |--------------------------------------------------------------------------
+  | TIME RECORD CERTIFICATION (supervisor)
+  |--------------------------------------------------------------------------
+  |
+  | Once a month's logs are all settled, the supervisor certifies that
+  | month of the Daily Time Record. The printed record then carries their
+  | name, the date, and the hours certified. One per student per month;
+  | the supervisor can withdraw it (to certify again after a correction).
+  |
+  | A month can be certified only when it has at least one log and none of
+  | its logs is still open or waiting for a decision.
+  |
+  */
+
+  const DTR_COLUMNS = `
+    c.id, c.student_id, c.month, c.certified_by, c.certified_by_name,
+    c.verified_hours::float AS verified_hours, c.days_logged, c.certified_at
+  `;
+
+  app.get(
+    "/api/dtr-certifications/:studentId",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        const id = String(req.params.studentId);
+        if (auth.role === "student" && auth.id !== id) {
+          return res.status(403).json({ message: "You can only see your own time record." });
+        }
+        if (auth.role === "supervisor") {
+          const assigned = await pool.query(
+            `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+            [id, auth.id]
+          );
+          if (assigned.rows.length === 0) {
+            return res.status(403).json({ message: "You can only view your own interns." });
+          }
+        }
+        const result = await pool.query(
+          `SELECT ${DTR_COLUMNS} FROM dtr_certifications c WHERE c.student_id = $1 ORDER BY c.month DESC`,
+          [id]
+        );
+        return res.json({ certifications: result.rows });
+      } catch (error) {
+        console.error("GET DTR CERTIFICATIONS ERROR:", error);
+        return res.status(500).json({ message: "Failed to load the certifications." });
+      }
+    }
+  );
+
+  app.post("/api/dtr-certifications", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const studentId = text(req.body?.student_id);
+      const month = text(req.body?.month);
+      if (!studentId) return res.status(400).json({ message: "Choose the intern." });
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+        return res.status(400).json({ message: "Name the month as YYYY-MM." });
+      }
+      if (month > todayInManila().slice(0, 7)) {
+        return res.status(400).json({ message: "That month has not started yet." });
+      }
+      const owner = await pool.query<{ name: string; supervisor_name: string }>(
+        `SELECT s.name, sup.name AS supervisor_name
+         FROM students s JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+         WHERE s.student_id = $1 AND s.supervisor_id = $2`,
+        [studentId, auth.id]
+      );
+      if (owner.rows.length === 0) {
+        return res.status(403).json({ message: "You can only certify your own interns' records." });
+      }
+
+      const logs = await pool.query<{ total: number; unsettled: number; verified_hours: number }>(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(*) FILTER (WHERE status = 'Pending' OR time_out IS NULL)::int AS unsettled,
+                COALESCE(SUM(hours) FILTER (WHERE status = 'Verified'), 0)::float AS verified_hours
+         FROM attendance
+         WHERE student_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2`,
+        [studentId, month]
+      );
+      const { total, unsettled, verified_hours: verifiedHours } = logs.rows[0];
+      if (total === 0) {
+        return res.status(409).json({ message: "There are no logs in that month to certify." });
+      }
+      if (unsettled > 0) {
+        return res.status(409).json({
+          message: `${unsettled} ${unsettled === 1 ? "log in that month is" : "logs in that month are"} still open or waiting for your decision. Settle ${unsettled === 1 ? "it" : "them"} first.`,
+        });
+      }
+
+      const result = await pool.query(
+        `INSERT INTO dtr_certifications AS c
+           (student_id, month, certified_by, certified_by_name, verified_hours, days_logged)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (student_id, month) DO NOTHING
+         RETURNING ${DTR_COLUMNS}`,
+        [studentId, month, auth.id, owner.rows[0].supervisor_name, verifiedHours, total]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({ message: "That month is already certified." });
+      }
+      await quietly("DTR CERTIFIED NOTIFICATION ERROR", () =>
+        createNotification({
+          studentId,
+          link: "/time-record",
+          title: "Time record certified",
+          message: `${owner.rows[0].supervisor_name} certified your time record for ${month}: ${verifiedHours} verified hours.`,
+          type: "attendance",
+        })
+      );
+      return res.status(201).json({ message: "Time record certified.", certification: result.rows[0] });
+    } catch (error) {
+      console.error("CERTIFY DTR ERROR:", error);
+      return res.status(500).json({ message: "Failed to certify the time record." });
+    }
+  });
+
+  // Withdrawn by the supervisor who can certify it, for example to certify
+  // again after correcting a log.
+  app.delete("/api/dtr-certifications/:id", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      if (!/^\d{1,9}$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Certification not found." });
+      }
+      const result = await pool.query(
+        `DELETE FROM dtr_certifications c
+         USING students s
+         WHERE c.id = $1 AND s.student_id = c.student_id AND s.supervisor_id = $2
+         RETURNING ${DTR_COLUMNS}`,
+        [Number(req.params.id), auth.id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Certification not found." });
+      }
+      return res.json({ message: "Certification withdrawn.", certification: result.rows[0] });
+    } catch (error) {
+      console.error("WITHDRAW DTR CERTIFICATION ERROR:", error);
+      return res.status(500).json({ message: "Failed to withdraw the certification." });
+    }
+  });
 }

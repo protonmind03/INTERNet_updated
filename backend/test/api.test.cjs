@@ -3734,3 +3734,99 @@ test("a correction recomputes the hours, tells the intern, and is closed once th
     await pool.end();
   }
 });
+
+/*
+| Time record certification
+*/
+
+test("a time record's certifications are read by the people on it, and certified only by the supervisor", async () => {
+  const supervisor = await supervisorSession();
+  const id = encodeURIComponent(student.student_id);
+  const path = `/api/dtr-certifications/${id}`;
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  for (const token of [studentToken, supervisor.token, coordinatorToken]) {
+    const { response, body } = await jsonRequest(path, { headers: authHeaders(token) });
+    assert.equal(response.status, 200);
+    assert.ok(Array.isArray(body.certifications));
+  }
+  assert.equal((await jsonRequest("/api/dtr-certifications/SOMEONE-ELSE", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/dtr-certifications/SOMEONE-ELSE", { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+  const certify = (body, token = supervisor.token) => jsonRequest("/api/dtr-certifications", jsonBody(token, "POST", body));
+  const good = { student_id: student.student_id, month: "2001-04" };
+  assert.equal((await certify(good, studentToken)).response.status, 403);
+  assert.equal((await certify(good, coordinatorToken)).response.status, 403);
+  for (const bad of [{}, { month: "2001-04" }, { ...good, month: "April 2001" }, { ...good, month: "2001-13" }, { ...good, month: "2099-01" }]) {
+    assert.equal((await certify(bad)).response.status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await certify({ student_id: "SOMEONE-ELSE", month: "2001-04" })).response.status, 403);
+  // A month with no logs has nothing to certify.
+  assert.equal((await certify({ student_id: student.student_id, month: "1999-01" })).response.status, 409);
+  for (const target of ["999999999", "abc"]) {
+    assert.equal((await jsonRequest(`/api/dtr-certifications/${target}`, jsonBody(supervisor.token, "DELETE", {}))).response.status, 404, target);
+  }
+  assert.equal((await jsonRequest("/api/dtr-certifications/1", jsonBody(studentToken, "DELETE", {}))).response.status, 403);
+});
+
+test("a month is certified once, only when its logs are settled, and can be withdrawn", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const pool = localTestPool();
+  const month = "2001-04";
+  const clear = async () => {
+    await pool.query(`DELETE FROM dtr_certifications WHERE student_id = $1 AND month = $2`, [student.student_id, month]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND TO_CHAR(date, 'YYYY-MM') = $2`, [student.student_id, month]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 AND title = 'Time record certified'`, [student.student_id]);
+  };
+  await clear();
+  try {
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES
+        ($1, '2001-04-02', '2001-04-02 08:00', '2001-04-02 17:00', 8, 'Verified'),
+        ($1, '2001-04-03', '2001-04-03 08:00', '2001-04-03 16:30', 7.5, 'Verified'),
+        ($1, '2001-04-04', '2001-04-04 08:00', '2001-04-04 17:00', 8, 'Rejected'),
+        ($1, '2001-04-05', '2001-04-05 08:00', '2001-04-05 17:00', 8, 'Pending')`,
+      [student.student_id]
+    );
+    const certify = () => jsonRequest("/api/dtr-certifications", jsonBody(supervisor.token, "POST", { student_id: student.student_id, month }));
+
+    // One log still waiting: not yet.
+    const early = await certify();
+    assert.equal(early.response.status, 409);
+    assert.match(early.body.message, /1 log in that month is still open or waiting/);
+    await pool.query(`UPDATE attendance SET status = 'Verified' WHERE student_id = $1 AND date = '2001-04-05'`, [student.student_id]);
+
+    const done = await certify();
+    assert.equal(done.response.status, 201, JSON.stringify(done.body));
+    const certification = done.body.certification;
+    // Verified hours only; the rejected day is logged but not counted.
+    assert.deepEqual(
+      [certification.month, certification.verified_hours, certification.days_logged, certification.certified_by_name],
+      [month, 23.5, 4, supervisor.supervisor.name]
+    );
+    assert.equal((await certify()).response.status, 409, "one certification per month");
+
+    // The student sees it and is told.
+    const seen = await jsonRequest(`/api/dtr-certifications/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+    assert.ok(seen.body.certifications.some((item) => item.id === certification.id));
+    const notes = await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+    assert.equal(notes.body.notifications.find((item) => item.title === "Time record certified")?.link, "/time-record");
+
+    // Withdrawn, then certified again.
+    const withdrawn = await jsonRequest(`/api/dtr-certifications/${certification.id}`, jsonBody(supervisor.token, "DELETE", {}));
+    assert.equal(withdrawn.response.status, 200);
+    assert.equal((await jsonRequest(`/api/dtr-certifications/${certification.id}`, jsonBody(supervisor.token, "DELETE", {}))).response.status, 404);
+    assert.equal((await certify()).response.status, 201);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=dtr&limit=10", { headers: authHeaders(coordinatorToken) });
+    const actions = audit.body.entries.filter((entry) => entry.entity_id === student.student_id).slice(0, 3).map((entry) => entry.action);
+    assert.deepEqual(actions, ["dtr.certify", "dtr.withdraw", "dtr.certify"]);
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});

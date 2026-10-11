@@ -4,6 +4,8 @@ import Icon from "../../components/Icon";
 import { Card, EmptyState, ErrorNotice } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { useAccount } from "../../lib/session";
+import { toast } from "../../lib/toast";
+import { changeDtrCertification, useDtrCertifications } from "../../lib/useDtrCertifications";
 import { useHolidays } from "../../lib/useHolidays";
 import { useSupervisorWork } from "./useSupervisorWork";
 
@@ -15,6 +17,7 @@ export default function SupervisorTimeRecord() {
   const [params, setParams] = useSearchParams();
   const studentId = params.get("student") || "";
   const intern = work.interns.find((item) => item.student_id === studentId);
+  const dtr = useDtrCertifications("supervisor", intern?.student_id);
 
   return (
     <SupervisorLayout
@@ -65,6 +68,17 @@ export default function SupervisorTimeRecord() {
             logs={work.attendance.filter((entry) => entry.student_id === intern.student_id)}
             absences={work.absences.filter((entry) => entry.student_id === intern.student_id)}
             holidays={holidays}
+            certifications={dtr.certifications}
+            onCertify={async (month) => {
+              toast.success(
+                await changeDtrCertification({ certify: { student_id: intern.student_id, month } })
+              );
+              await dtr.reload();
+            }}
+            onWithdraw={async (id) => {
+              toast.success(await changeDtrCertification({ withdraw: id }));
+              await dtr.reload();
+            }}
           />
         ) : (
           !work.loading && (

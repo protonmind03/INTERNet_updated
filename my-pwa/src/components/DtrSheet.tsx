@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { Button, Card } from "./ui";
-import { formatHours, formatTime } from "../lib/format";
+import { formatHours, formatLongDate, formatTime } from "../lib/format";
+import { errorText, toast } from "../lib/toast";
 
 export type DtrLog = {
   id: number;
@@ -18,6 +19,15 @@ export type DtrLog = {
 export type DtrAbsence = { date: string; status: string };
 
 export type DtrHoliday = { date: string; name: string };
+
+/** A month the supervisor has certified. */
+export type DtrCertified = {
+  id: number;
+  month: string;
+  certified_by_name: string;
+  verified_hours: number;
+  certified_at: string;
+};
 
 export type DtrPerson = {
   name: string;
@@ -48,6 +58,9 @@ export default function DtrSheet({
   logs,
   absences = [],
   holidays = [],
+  certifications = [],
+  onCertify,
+  onWithdraw,
   loading,
 }: {
   person: DtrPerson;
@@ -56,6 +69,12 @@ export default function DtrSheet({
   absences?: DtrAbsence[];
   /** Days nobody was expected to report, named on the days they fall. */
   holidays?: DtrHoliday[];
+  /** Months the supervisor has certified; the one shown is printed on the sheet. */
+  certifications?: DtrCertified[];
+  /** Given on the supervisor's copy: certifies the month shown. */
+  onCertify?: (month: string) => Promise<void>;
+  /** Given on the supervisor's copy: withdraws a certification. */
+  onWithdraw?: (id: number) => Promise<void>;
   loading: boolean;
 }) {
   const months = useMemo(() => {
@@ -110,6 +129,23 @@ export default function DtrSheet({
   const unexcused = rows.filter((row) => row.absence === "Unexcused").length;
   const holidayCount = rows.filter((row) => row.holiday).length;
 
+  const certified = certifications.find((item) => item.month === month);
+  // A month can be certified once it has a log and none is open or undecided.
+  const unsettled = rows.filter(
+    (row) => row.log && (row.log.status === "Pending" || !row.log.time_out)
+  ).length;
+  const [certifying, setCertifying] = useState(false);
+  const runCertification = async (work: () => Promise<void>) => {
+    setCertifying(true);
+    try {
+      await work();
+    } catch (certifyError) {
+      toast.error(errorText(certifyError, "The time record could not be updated."));
+    } finally {
+      setCertifying(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3 print:hidden">
@@ -134,6 +170,47 @@ export default function DtrSheet({
           In the print dialog you can also choose "Save as PDF".
         </p>
       </div>
+
+      {onCertify && !loading && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 print:hidden">
+          {certified ? (
+            <>
+              <p className="min-w-0 flex-1 text-sm text-slate-700">
+                You certified {monthLabel(month)} on {formatLongDate(certified.certified_at)}.
+              </p>
+              {onWithdraw && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  busy={certifying}
+                  onClick={() => void runCertification(() => onWithdraw(certified.id))}
+                >
+                  Withdraw certification
+                </Button>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="min-w-0 flex-1 text-sm text-slate-700">
+                {daysPresent === 0
+                  ? `There are no logs in ${monthLabel(month)} to certify.`
+                  : unsettled > 0
+                    ? `${unsettled} ${unsettled === 1 ? "log is" : "logs are"} still open or waiting for your decision. Settle ${unsettled === 1 ? "it" : "them"} to certify this month.`
+                    : `Every log in ${monthLabel(month)} is settled. Certifying puts your name and the date on the printed record.`}
+              </p>
+              <Button
+                size="sm"
+                icon="check"
+                disabled={daysPresent === 0 || unsettled > 0}
+                busy={certifying}
+                onClick={() => void runCertification(() => onCertify(month))}
+              >
+                Certify this month
+              </Button>
+            </>
+          )}
+        </div>
+      )}
 
       <Card className="p-5 sm:p-8 print:border-0 print:p-0">
         <div className="text-center">
@@ -240,6 +317,16 @@ export default function DtrSheet({
           {unverified > 0 &&
             ` ${formatHours(unverified)} more are logged but not verified, and are not counted above.`}
         </p>
+
+        {certified && (
+          <p className="mt-4 border-l-2 border-emerald-500 pl-3 text-sm text-slate-800">
+            Certified correct by {certified.certified_by_name}, company supervisor, on{" "}
+            {formatLongDate(certified.certified_at)}: {formatHours(certified.verified_hours)}{" "}
+            verified.
+            {Math.abs(certified.verified_hours - verified) > 0.005 &&
+              " The verified hours have changed since then."}
+          </p>
+        )}
 
         <div className="mt-12 grid gap-10 sm:grid-cols-2 print:grid-cols-2">
           <Signature label="Student trainee" name={person.name} />

@@ -28,6 +28,7 @@ import {
 } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
+import { useDtrCertifications } from "../../lib/useDtrCertifications";
 import { useHolidays } from "../../lib/useHolidays";
 import { usePagination } from "../../lib/usePagination";
 import { coordinatorRequest, downloadSubmittedDocument } from "./request";
@@ -170,6 +171,7 @@ export default function StudentRecord() {
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("overview");
   const holidays = useHolidays("coordinator");
+  const { certifications } = useDtrCertifications("coordinator", studentId || undefined);
   const [rejecting, setRejecting] = useState<Pending | null>(null);
 
   const load = useCallback(async () => {
@@ -636,6 +638,7 @@ export default function StudentRecord() {
                 logs={data.attendance}
                 absences={data.absences}
                 holidays={holidays}
+                certifications={certifications}
               />
             )}
           </>

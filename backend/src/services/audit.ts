@@ -288,6 +288,24 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     from: (source) => ({ reactivated: source.result.reactivated }),
   },
+  // Time record certification
+  {
+    method: "POST",
+    path: "/api/dtr-certifications",
+    action: "dtr.certify",
+    entityType: "student",
+    entityId: (source) => source.body.student_id,
+    keep: ["month"],
+    from: (source) => ({ verified_hours: nested(source.result.certification, "verified_hours") }),
+  },
+  {
+    method: "DELETE",
+    path: "/api/dtr-certifications/:id",
+    action: "dtr.withdraw",
+    entityType: "student",
+    entityId: (source) => nested(source.result.certification, "student_id"),
+    from: (source) => ({ month: nested(source.result.certification, "month") }),
+  },
   // Weekly journals
   {
     method: "PATCH",

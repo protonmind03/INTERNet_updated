@@ -6,6 +6,7 @@ import { ErrorNotice } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { useAccount } from "../../lib/session";
+import { useDtrCertifications } from "../../lib/useDtrCertifications";
 import { useHolidays } from "../../lib/useHolidays";
 import { logDateKey, useAttendance } from "./useAttendance";
 
@@ -18,6 +19,7 @@ export default function TimeRecord() {
   const holidays = useHolidays("student");
 
   const studentId = student?.student_id;
+  const { certifications } = useDtrCertifications("student", studentId);
   useEffect(() => {
     if (!studentId) return;
     let active = true;
@@ -69,6 +71,7 @@ export default function TimeRecord() {
         logs={attendance.logs.map((log) => ({ ...log, date: logDateKey(log) }))}
         absences={absences}
         holidays={holidays}
+        certifications={certifications}
       />
     </StudentLayout>
   );
