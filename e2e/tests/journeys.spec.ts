@@ -281,3 +281,39 @@ test.describe("the student's menu", () => {
     );
   });
 });
+
+test.describe("the supervisor's menu, and one word for a concern", () => {
+  test("Concerns is under the account menu with the coordinator's contact, and announcements are under the bell", async ({ page }) => {
+    await signIn(page, "supervisor");
+    const bar = page.getByRole("navigation", { name: "Main" }).first();
+    await expect(bar.getByRole("link", { name: "Evaluations" })).toBeVisible();
+    await expect(bar.getByRole("link", { name: /Incidents|Concerns/ })).toHaveCount(0);
+
+    await page.getByRole("button", { name: /Account menu/ }).click();
+    await expect(page.getByText("Your OJT coordinator")).toBeVisible();
+    await expect(page.getByRole("link", { name: /@/ })).toHaveAttribute("href", /^mailto:/);
+    await expect(page.getByRole("button", { name: "Announcements", exact: true })).toHaveCount(0);
+    await page.getByRole("button", { name: "Concerns", exact: true }).click();
+    await expect(page).toHaveURL(/\/supervisor\/complaints$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Concerns" })).toBeVisible();
+    await page.getByRole("button", { name: "Report a concern" }).click();
+    await expect(page.getByRole("dialog", { name: "Report a concern" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: /^Notifications/ }).click();
+    await page.getByRole("tab", { name: "Announcements" }).click();
+    await expect(page.getByRole("tabpanel")).toBeVisible();
+    // Out of the menu, still a page.
+    await page.goto("/supervisor/announcements");
+    await expect(page).toHaveTitle(/^Announcements/);
+  });
+
+  test("the coordinator's page and sidebar say Concerns, at the same address", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await signIn(page, "coordinator");
+    await page.getByRole("link", { name: /^Concerns/ }).first().click();
+    await expect(page).toHaveURL(/\/coordinator\/complaints$/);
+    await expect(page.getByRole("heading", { level: 1, name: "Concerns" })).toBeVisible();
+    await expect(page.getByText(/complaint/i)).toHaveCount(0);
+  });
+});
