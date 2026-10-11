@@ -5076,3 +5076,219 @@ test("a supervisor's profile names the coordinator to write to, and nothing else
   assert.equal((await jsonRequest(`/api/supervisors/${id}-other/profile`, { headers: authHeaders(supervisor.token) })).response.status, 403);
   assert.equal((await jsonRequest(`/api/supervisors/${id}/profile`, { headers: authHeaders(studentToken) })).response.status, 403);
 });
+
+/*
+| Round 2, Phase 1C: the coordinator's console
+*/
+
+test("each key figure is worked out from dated rows, and its target says which side is good", () => {
+  require("tsx/cjs");
+  const kpis = require("../src/services/kpis.ts");
+  const { KPI_DEFINITIONS, meetsTarget } = require("../src/services/kpiDefinitions.ts");
+  const week = { Monday: 8, Tuesday: 8, Wednesday: 8, Thursday: 8, Friday: 8 };
+  const none = new Set();
+  // Friday 9 October 2026.
+  const today = "2026-10-09";
+  const student = (over = {}) => ({
+    required_hours: 100, schedule: week, term_end: "2026-12-18", since: "2026-09-01",
+    verified: [], logged: new Set(), approved: new Map(), ...over,
+  });
+
+  // On track: one finishes in time, one cannot before the term ends, one has nothing scheduled.
+  const fits = student({ verified: [{ date: "2026-10-01", hours: 60 }] });
+  const late = student({ term_end: "2026-10-12" });
+  const idle = student({ schedule: {} });
+  assert.deepEqual(kpis.onTrackAt(today, [fits, late, idle], none), { value: 33.3, basis: "1 of 3 students" });
+  // Hours verified after the day asked about do not count for that day.
+  const finishedLater = student({ term_end: "2026-10-12", verified: [{ date: "2026-10-08", hours: 100 }] });
+  assert.equal(kpis.onTrackAt(today, [finishedLater], none).value, 100);
+  assert.equal(kpis.onTrackAt("2026-10-07", [finishedLater], none).value, 0);
+  assert.equal(kpis.onTrackAt(today, [], none).value, null);
+
+  // Attendance: the 28 days before today hold 20 weekdays (11 Sep to 8 Oct); 19 were attended.
+  const days = [];
+  for (let back = 1; back <= 28; back += 1) days.push(kpis.addDays(today, -back));
+  const weekdays = days.filter((day) => ![0, 6].includes(new Date(`${day}T00:00:00Z`).getUTCDay()));
+  assert.equal(weekdays.length, 20);
+  const present = student({ logged: new Set(weekdays.slice(1)) });
+  assert.deepEqual(kpis.attendanceRateAt(today, [present], none), { value: 95, basis: "19 of 20 scheduled days" });
+  // A holiday is not a scheduled day; a weekend log adds nothing; today is not counted.
+  assert.equal(kpis.attendanceRateAt(today, [present], new Set([weekdays[0]])).value, 100);
+  assert.equal(kpis.attendanceRateAt(today, [student({ logged: new Set([today, "2026-10-04"]) })], none).value, 0);
+  // Nothing is expected before a student's first day.
+  const newcomer = student({ since: "2026-10-07", logged: new Set(["2026-10-07", "2026-10-08"]) });
+  assert.deepEqual(kpis.attendanceRateAt(today, [newcomer], none), { value: 100, basis: "2 of 2 scheduled days" });
+  assert.equal(kpis.attendanceRateAt(today, [student({ since: null })], none).value, null);
+
+  // Review time: the middle value, of decisions made inside the window only.
+  const decisions = [
+    { decided_on: "2026-10-08", days: 0.5 },
+    { decided_on: "2026-10-01", days: 4 },
+    { decided_on: "2026-09-20", days: 1.5 },
+    { decided_on: "2026-08-01", days: 30 },
+  ];
+  assert.deepEqual(kpis.reviewTimeAt(today, decisions), { value: 1.5, basis: "3 logs decided" });
+  assert.equal(kpis.reviewTimeAt(today, decisions.slice(0, 2)).value, 2.3);
+  assert.equal(kpis.reviewTimeAt("2026-07-01", decisions).value, null);
+
+  // Requirements: only students past half their hours are asked for them.
+  const names = ["Endorsement letter", "Medical certificate"];
+  const half = [{ date: "2026-09-15", hours: 50 }];
+  const complete = student({ verified: half, approved: new Map([["Endorsement letter", "2026-09-01"], ["Medical certificate", "2026-10-02"]]) });
+  const missingOne = student({ verified: half, approved: new Map([["Endorsement letter", "2026-09-01"]]) });
+  const early = student({ verified: [{ date: "2026-09-15", hours: 49 }] });
+  assert.deepEqual(kpis.requirementsCompleteAt(today, [complete, missingOne, early], names), { value: 50, basis: "1 of 2 students past 50%" });
+  // A week earlier the second document had not been approved yet.
+  assert.equal(kpis.requirementsCompleteAt("2026-10-01", [complete], names).value, 0);
+  assert.equal(kpis.requirementsCompleteAt(today, [early], names).value, null);
+  assert.equal(kpis.requirementsCompleteAt(today, [missingOne], []).value, 100);
+
+  // Concerns: open, and reported more than 7 days ago.
+  const concerns = [
+    { created_on: "2026-09-20", closed_on: null },
+    { created_on: "2026-09-20", closed_on: "2026-10-05" },
+    { created_on: "2026-10-05", closed_on: null },
+    { created_on: "2026-10-02", closed_on: null },
+  ];
+  assert.deepEqual(kpis.oldConcernsAt(today, concerns), { value: 1, basis: "3 open in all" });
+  // On 4 October the second one was still open, and old.
+  assert.equal(kpis.oldConcernsAt("2026-10-04", concerns).value, 2);
+  // Exactly 7 days old is not yet "older than 7 days".
+  assert.equal(kpis.oldConcernsAt(today, [{ created_on: "2026-10-02", closed_on: null }]).value, 0);
+  assert.equal(kpis.oldConcernsAt(today, [{ created_on: "2026-10-01", closed_on: null }]).value, 1);
+
+  // Agreements: ended, or ending within 30 days.
+  assert.equal(kpis.agreementsEndingAt(today, ["2026-01-01", "2026-11-08", "2026-11-09", "2027-06-30"]).value, 2);
+
+  // The whole set: six figures in the stated order, eight weekly points ending today.
+  const all = kpis.computeKpis(today, { students: [fits, late, idle], holidays: none, decisions, requirements: names, concerns, expiries: ["2026-11-01"] });
+  assert.deepEqual(all.map((kpi) => kpi.key), ["on_track", "attendance_rate", "review_time", "requirements_complete", "old_concerns", "agreements_ending"]);
+  for (const kpi of all) {
+    assert.equal(kpi.series.length, 8, kpi.key);
+    assert.equal(kpi.series[7].date, today);
+    assert.equal(kpi.series[0].date, "2026-08-21");
+    assert.equal(kpi.series[7].value, kpi.value, `${kpi.key}: the last point is the value`);
+    assert.equal(kpi.previous, kpi.series[3].value, `${kpi.key}: compared with 4 weeks earlier`);
+    assert.ok(kpi.label && kpi.definition && kpi.link.startsWith("/coordinator/"), kpi.key);
+  }
+  const of = (key) => all.find((kpi) => kpi.key === key);
+  assert.deepEqual([of("on_track").value, of("on_track").target, of("on_track").met], [33.3, 90, false]);
+  assert.deepEqual([of("review_time").value, of("review_time").target, of("review_time").met], [1.5, 2, true]);
+  assert.deepEqual([of("old_concerns").value, of("old_concerns").met], [1, false]);
+  assert.deepEqual([of("agreements_ending").value, of("agreements_ending").met], [1, false]);
+
+  // The targets, and which side of each is good.
+  assert.deepEqual(KPI_DEFINITIONS.map((item) => [item.key, item.target, item.direction]), [
+    ["on_track", 90, "atLeast"],
+    ["attendance_rate", 95, "atLeast"],
+    ["review_time", 2, "atMost"],
+    ["requirements_complete", 80, "atLeast"],
+    ["old_concerns", 0, "atMost"],
+    ["agreements_ending", 0, "atMost"],
+  ]);
+  const [onTrack, , reviewTime] = KPI_DEFINITIONS;
+  assert.deepEqual([meetsTarget(onTrack, 90), meetsTarget(onTrack, 89.9), meetsTarget(onTrack, null)], [true, false, null]);
+  assert.deepEqual([meetsTarget(reviewTime, 2), meetsTarget(reviewTime, 2.1)], [true, false]);
+});
+
+test("the key figures and the action list are the coordinator's, take a term, and agree with the pages behind them", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const get = async (path) => {
+    const result = await jsonRequest(path, { headers });
+    assert.equal(result.response.status, 200, `${path}: ${JSON.stringify(result.body).slice(0, 160)}`);
+    return result.body;
+  };
+  const supervisor = await supervisorSession();
+  for (const path of ["/api/coordinator/kpis", "/api/coordinator/actions"]) {
+    assert.equal((await jsonRequest(path)).response.status, 401, path);
+    assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403, path);
+    assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403, path);
+    assert.equal((await jsonRequest(`${path}?term=abc`, { headers })).response.status, 400, path);
+    assert.equal((await jsonRequest(`${path}?term=1;DROP`, { headers })).response.status, 400, path);
+  }
+
+  // The six figures, from the real records.
+  const kpis = await get("/api/coordinator/kpis");
+  assert.match(kpis.as_of, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(kpis.kpis.length, 6);
+  for (const kpi of kpis.kpis) {
+    assert.equal(kpi.series.length, 8, kpi.key);
+    assert.equal(kpi.series[7].date, kpis.as_of);
+    assert.ok(kpi.value === null || typeof kpi.value === "number", kpi.key);
+    assert.equal(kpi.met, kpi.value === null ? null : kpi.direction === "atLeast" ? kpi.value >= kpi.target : kpi.value <= kpi.target, kpi.key);
+    if (kpi.unit === "percent" && kpi.value !== null) assert.ok(kpi.value >= 0 && kpi.value <= 100, kpi.key);
+    assert.equal(typeof kpi.basis, "string");
+  }
+  const kpi = (key, list = kpis.kpis) => list.find((item) => item.key === key);
+
+  // The action list, against the pages its rows open.
+  const actions = await get("/api/coordinator/actions");
+  assert.deepEqual(actions.groups.map((group) => group.who), ["you", "supervisors", "students"]);
+  const rows = Object.fromEntries(actions.groups.flatMap((group) => group.rows).map((row) => [row.key, row]));
+  for (const row of Object.values(rows)) {
+    assert.ok(row.count > 0, `${row.key}: only rows with something to do are listed`);
+    assert.ok(row.label && row.reason && row.link.startsWith("/coordinator/"), row.key);
+  }
+  const count = (key) => rows[key]?.count ?? 0;
+  const dashboard = await get("/api/coordinator/dashboard");
+  const monitoring = (await get("/api/coordinator/monitoring")).students;
+  const alerts = (await get("/api/coordinator/alerts")).alerts;
+  const alertCount = (key) => alerts.find((item) => item.key === key)?.items.length ?? 0;
+  assert.equal(count("concerns"), dashboard.pendingComplaints);
+  assert.equal(count("flagged_logs"), dashboard.flaggedAttendance);
+  assert.equal(count("pending_logs"), dashboard.pendingAttendance);
+  assert.equal(count("pending_tasks"), dashboard.tasks.awaitingReview);
+  assert.equal(count("unassigned"), monitoring.filter((row) => !row.supervisor_name).length);
+  assert.equal(count("overdue_tasks"), monitoring.filter((row) => row.overdue_tasks > 0).length);
+  assert.equal(count("slow_reviews"), alertCount("slow_supervisors"));
+  assert.equal(count("agreements"), alertCount("moa_expiring"));
+  assert.equal(count("missed_days"), alertCount("missed_days"));
+  assert.equal(count("at_risk"), alertCount("at_risk"));
+  // Two of the figures count the same things as two of the rows.
+  assert.equal(kpi("agreements_ending").value, alertCount("moa_expiring"));
+  const atRisk = (await get("/api/coordinator/report")).students.filter((row) => row.at_risk).length;
+  if (monitoring.length > 0) {
+    assert.equal(kpi("on_track").value, Math.round(((monitoring.length - atRisk) / monitoring.length) * 1000) / 10);
+  }
+
+  // Progress and the supervisors' queues: what the dashboard used to add up from every row.
+  assert.equal(actions.progress.students, monitoring.length);
+  assert.equal(actions.progress.not_started, monitoring.filter((row) => row.completion <= 0).length);
+  assert.equal(actions.progress.under_half, monitoring.filter((row) => row.completion > 0 && row.completion < 50).length);
+  assert.equal(actions.progress.past_half, monitoring.filter((row) => row.completion >= 50 && row.completion < 100).length);
+  assert.equal(actions.progress.completed, monitoring.filter((row) => row.completion >= 100).length);
+  const queues = new Map();
+  for (const row of monitoring) {
+    if (!row.supervisor_name) continue;
+    const queue = queues.get(row.supervisor_name) ?? { interns: 0, logs: 0, tasks: 0 };
+    queues.set(row.supervisor_name, { interns: queue.interns + 1, logs: queue.logs + row.pending_logs, tasks: queue.tasks + row.tasks_awaiting_review });
+  }
+  assert.equal(actions.supervisor_queues.length, queues.size);
+  for (const queue of actions.supervisor_queues) {
+    assert.deepEqual({ interns: queue.interns, logs: queue.logs, tasks: queue.tasks }, queues.get(queue.name), queue.name);
+    assert.equal(queue.waiting, queue.logs + queue.tasks);
+  }
+  assert.ok(actions.scheduled_not_in >= 0 && actions.scheduled_not_in <= monitoring.length);
+
+  // One term at a time: the terms add up to the whole, and links carry the term.
+  const terms = ["none", ...(await get("/api/coordinator/terms")).terms.map((item) => String(item.id))];
+  let students = 0;
+  let pendingLogs = 0;
+  for (const term of terms) {
+    const scoped = await get(`/api/coordinator/actions?term=${term}`);
+    const listed = (await get(`/api/coordinator/monitoring?term=${term}`)).students;
+    assert.equal(scoped.progress.students, listed.length, `term ${term}`);
+    students += scoped.progress.students;
+    const scopedRows = scoped.groups.flatMap((group) => group.rows);
+    pendingLogs += scopedRows.find((row) => row.key === "pending_logs")?.count ?? 0;
+    for (const row of scopedRows.filter((item) => /monitoring|students/.test(item.link))) {
+      assert.match(row.link, new RegExp(`[?&]term=${term}$`), row.key);
+    }
+    const scopedKpis = (await get(`/api/coordinator/kpis?term=${term}`)).kpis;
+    assert.equal(scopedKpis.length, 6);
+    // Agreements belong to companies: the same whichever term is chosen.
+    assert.equal(kpi("agreements_ending", scopedKpis).value, kpi("agreements_ending").value);
+  }
+  assert.equal(students, actions.progress.students);
+  assert.equal(pendingLogs, count("pending_logs"));
+});

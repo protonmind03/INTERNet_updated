@@ -149,7 +149,7 @@ type StudentFacts = {
 };
 
 /** The facts both the projections and the alerts start from, for active students. */
-async function loadStudents(
+export async function loadStudents(
   pool: Pool,
   scope: { studentId?: string; supervisorId?: string; termId?: number | "none" }
 ) {
@@ -234,27 +234,39 @@ export type Alert = {
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Everything the coordinator should be told about, each kind only when it has something. */
-export async function coordinatorAlerts(pool: Pool, now: Date = new Date()): Promise<Alert[]> {
+/**
+ * Everything the coordinator should be told about, each kind only when it
+ * has something. With `termId` the three kinds that are about students
+ * (slow reviews, missed days, at risk) count only that term's students;
+ * agreements belong to companies and are always all listed. Without it,
+ * as the weekly email calls it, everything is counted.
+ */
+export async function coordinatorAlerts(
+  pool: Pool,
+  now: Date = new Date(),
+  termId?: number | "none"
+): Promise<Alert[]> {
   const { date: today } = manilaClock(now);
+  const term = termId === undefined ? null : String(termId);
+  const inTerm = `($3::text IS NULL OR ($3 = 'none' AND s.term_id IS NULL) OR s.term_id::text = $3)`;
   const [slow, agreements, facts] = await Promise.all([
     pool.query<{ supervisor_id: string; name: string; waiting: number; oldest_days: number }>(
       `
       WITH waiting AS (
         SELECT s.supervisor_id, a.time_out AS since FROM attendance a JOIN students s ON s.student_id = a.student_id
-          WHERE s.is_active = TRUE AND a.status = 'Pending' AND a.time_out IS NOT NULL
+          WHERE s.is_active = TRUE AND ${inTerm} AND a.status = 'Pending' AND a.time_out IS NOT NULL
         UNION ALL
         SELECT s.supervisor_id, COALESCE(t.submitted_at, t.created_at) FROM tasks t JOIN students s ON s.student_id = t.student_id
-          WHERE s.is_active = TRUE AND t.status = 'Submitted'
+          WHERE s.is_active = TRUE AND ${inTerm} AND t.status = 'Submitted'
         UNION ALL
         SELECT s.supervisor_id, d.uploaded_at FROM documents d JOIN students s ON s.student_id = d.student_id
-          WHERE s.is_active = TRUE AND d.status = 'Pending'
+          WHERE s.is_active = TRUE AND ${inTerm} AND d.status = 'Pending'
         UNION ALL
         SELECT s.supervisor_id, b.created_at FROM absences b JOIN students s ON s.student_id = b.student_id
-          WHERE s.is_active = TRUE AND b.status = 'Pending'
+          WHERE s.is_active = TRUE AND ${inTerm} AND b.status = 'Pending'
         UNION ALL
         SELECT s.supervisor_id, j.submitted_at FROM journals j JOIN students s ON s.student_id = j.student_id
-          WHERE s.is_active = TRUE AND j.status = 'Submitted'
+          WHERE s.is_active = TRUE AND ${inTerm} AND j.status = 'Submitted'
       )
       SELECT sup.supervisor_id, sup.name, COUNT(*)::int AS waiting,
              FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz AT TIME ZONE 'Asia/Manila') - MIN(w.since)) / 86400)::int AS oldest_days
@@ -264,7 +276,7 @@ export async function coordinatorAlerts(pool: Pool, now: Date = new Date()): Pro
       GROUP BY sup.supervisor_id, sup.name
       ORDER BY oldest_days DESC, sup.name
       `,
-      [now.toISOString(), SLOW_REVIEW_DAYS]
+      [now.toISOString(), SLOW_REVIEW_DAYS, term]
     ),
     pool.query<{ id: number; name: string; moa_expiry: string; days: number }>(
       `SELECT c.id, c.name, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
@@ -274,7 +286,7 @@ export async function coordinatorAlerts(pool: Pool, now: Date = new Date()): Pro
        ORDER BY c.moa_expiry, c.name`,
       [today, MOA_WARNING_DAYS]
     ),
-    loadStudents(pool, {}),
+    loadStudents(pool, { termId }),
   ]);
 
   const ids = facts.students.map((row) => row.student_id);

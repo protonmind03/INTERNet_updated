@@ -30,6 +30,7 @@ import { allowsChannel, categoryOf } from "./services/notificationPreferences";
 import { startDigestScheduler } from "./services/digests";
 import { sendCoordinatorDigests } from "./services/insights";
 import { auditMiddleware } from "./services/audit";
+import { registerConsoleRoutes } from "./routes/console";
 import {
   buildListQuery,
   readListRequest,
@@ -9158,6 +9159,8 @@ app.get(
 | resets and complaint replies live in routes/extensions.ts.
 |
 */
+
+registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
 
 registerExtensionRoutes(app, {
   pool,
