@@ -687,6 +687,32 @@ Different from the description, or decided where it left room:
 - [x] **1C.5 Schedule tab** on the coordinator's student record, using the
   editor from the Requirements page, which stays with a note.
 
+### Phase 2: College, Program, Major, Block, and one filter bar
+
+Two migrations (037, 038) and a backfill script. A production backup is
+needed before this goes live.
+
+- [ ] **2.1 Migration 037: academic structure.** colleges, programs,
+  majors, blocks; students gain program_id, major_id, block_id (NOT VALID
+  foreign keys). students.program stays the displayed text; a trigger sets
+  program_id from it. Closing a term marks its blocks inactive; reopening
+  restores them.
+- [ ] **2.2 Migration 038: seed PSU Lingayen,** six colleges with their
+  programs and majors, ON CONFLICT DO NOTHING.
+- [ ] **2.3 Backfill script** `backfill-programs.ts`: a dry run by default,
+  links only what a mapping file written by a person maps.
+- [ ] **2.4 Coordinator page "Programs":** colleges, programs, majors and
+  blocks per term, with audit rules.
+- [ ] **2.5 Student form and import:** College, Program, Major, Block
+  pickers; the import and its dry run take the same four columns.
+- [ ] **2.6 Shared filter bar** (Term, College, Program, Block, Company,
+  Supervisor, At risk) on Dashboard, Monitoring, Analytics, Students,
+  Documents, Evaluations and the Audit log; the routes filter in SQL.
+- [ ] **2.7 Supervisor filter:** "Program and block" where the interns
+  span more than one.
+- [ ] **2.8 Analytics and exports** gain program and block columns, and
+  tables by program and by block.
+
 ## Still open
 
 Not built, and noted where each was decided:
