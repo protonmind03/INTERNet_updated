@@ -1723,7 +1723,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -5459,6 +5459,395 @@ test("audit filters: a day is the day in the Philippines, a person is found by n
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'audit.export'`)).rows[0].n, 1);
   } finally {
     await pool.query(`DELETE FROM audit_log WHERE entity_type = 'manila_test' OR action = 'audit.export'`);
+    await pool.end();
+  }
+});
+
+/*
+| Round 2, Phase 2: colleges, programs, majors, blocks, and the shared filters
+*/
+
+test("a student's place is worked out the same from pickers and from a file's columns", () => {
+  require("tsx/cjs");
+  const { resolvePlacement } = require("../src/services/academics.ts");
+  const catalogue = {
+    colleges: [
+      { id: 1, name: "College of Computing Sciences", short_name: "CCS", is_active: true },
+      { id: 2, name: "College of Teacher Education", short_name: "CTE", is_active: true },
+    ],
+    programs: [
+      { id: 10, college_id: 1, name: "BS Information Technology", short_code: "BSIT", ojt_applies: true, is_active: true },
+      { id: 11, college_id: 1, name: "BS Mathematics", short_code: "BSMath", ojt_applies: true, is_active: true },
+      { id: 12, college_id: 2, name: "Bachelor of Secondary Education", short_code: "BSEd", ojt_applies: true, is_active: true },
+    ],
+    majors: [
+      { id: 20, program_id: 11, name: "Statistics", is_active: true },
+      { id: 21, program_id: 11, name: "Pure Mathematics", is_active: true },
+    ],
+    blocks: [
+      { id: 30, program_id: 10, major_id: null, year_level: 4, section: "A", term_id: 1, is_active: true, name: "BSIT 4A", term_name: "Old", term_closed: true },
+      { id: 31, program_id: 10, major_id: null, year_level: 4, section: "A", term_id: 2, is_active: true, name: "BSIT 4A", term_name: "Now", term_closed: false },
+      { id: 32, program_id: 11, major_id: 20, year_level: 4, section: "A", term_id: 2, is_active: true, name: "BSMath 4A", term_name: "Now", term_closed: false },
+      { id: 33, program_id: 10, major_id: null, year_level: 4, section: "B", term_id: 2, is_active: false, name: "BSIT 4B", term_name: "Now", term_closed: false },
+    ],
+  };
+  const place = (input) => resolvePlacement(catalogue, input);
+
+  // From a file: a program by short code or name, whatever the capitals; a block by its name.
+  assert.deepEqual(place({ program: "bsit" }), { program_id: 10, major_id: null, block_id: null, program_text: "BS Information Technology" });
+  assert.deepEqual(place({ program: " BS information technology " }).program_id, 10);
+  // The same block name in a closed and an open term means the open one.
+  assert.deepEqual(place({ college: "ccs", program: "BSIT", block: "bsit4a" }), { program_id: 10, major_id: null, block_id: 31, program_text: "BS Information Technology" });
+  // A block of one major brings the major with it.
+  assert.deepEqual(place({ program: "BSMath", block: "BSMath 4A" }), { program_id: 11, major_id: 20, block_id: 32, program_text: "BS Mathematics" });
+  assert.deepEqual(place({ program: "BSMath", major: "statistics" }).major_id, 20);
+
+  // What does not fit is refused, in words a person can act on.
+  assert.match(place({ college: "CTE", program: "BSIT" }).problem, /is not a program of the College of Teacher Education/);
+  assert.match(place({ college: "College of Magic", program: "BSIT" }).problem, /no college named "College of Magic"/);
+  assert.match(place({ program: "BSIT", major: "Statistics" }).problem, /has no major named "Statistics"/);
+  assert.match(place({ program: "BSIT", block: "BSIT 9Z" }).problem, /no active block named "BSIT 9Z"/);
+  assert.match(place({ program: "BSIT", block: "BSIT 4B" }).problem, /no active block/, "an inactive block is not offered");
+  assert.match(place({ program: "BSMath", major: "Pure Mathematics", block: "BSMath 4A" }).problem, /another major/);
+  assert.match(place({ program: "BS Info Tech", block: "BSIT 4A" }).problem, /is not a program's name or short code/);
+  assert.match(place({ major: "Statistics" }).problem, /needs a program/);
+
+  // Free text alone is kept as typed, as it always was, and says so.
+  assert.deepEqual(place({ program: "BS Info Tech" }), {
+    program_id: null, major_id: null, block_id: null, program_text: "BS Info Tech",
+    note: '"BS Info Tech" is not one of the listed programs; it is kept as text.',
+  });
+  assert.deepEqual(place({}), { program_id: null, major_id: null, block_id: null, program_text: null });
+
+  // From the pickers: ids, checked against each other.
+  assert.deepEqual(place({ program_id: 11, major_id: 21, block_id: null }), { program_id: 11, major_id: 21, block_id: null, program_text: "BS Mathematics" });
+  assert.deepEqual(place({ program_id: "10", block_id: "31", program: "anything typed" }).program_text, "BS Information Technology");
+  assert.match(place({ program_id: 10, major_id: 20 }).problem, /Statistics is not a major of BS Information Technology/);
+  assert.match(place({ program_id: 10, block_id: 32 }).problem, /BSMath 4A is not a block of BS Information Technology/);
+  assert.match(place({ program_id: 999 }).problem, /does not exist/);
+  assert.match(place({ program_id: "x" }).problem, /not a program/);
+  // Cleared pickers with text that is a program's code: linked all the same.
+  assert.deepEqual(place({ program_id: null, major_id: null, block_id: null, program: "BSED" }).program_id, 12);
+});
+
+test("filter values are bound as parameters, and no filter means no change to the query", () => {
+  require("tsx/cjs");
+  const scope = require("../src/services/studentScope.ts");
+  assert.deepEqual(scope.readStudentFilters({}), { filters: {} });
+  assert.deepEqual(scope.readStudentFilters({ term: "none", college: "2", program: "7", block: "none", company: "4", supervisor: "SUP-1" }), {
+    filters: { term: "none", college: 2, program: 7, block: "none", company: 4, supervisor: "SUP-1" },
+  });
+  for (const [name, bad] of [["term", "x"], ["college", "1;DROP"], ["program", "-1"], ["block", "A"], ["company", "1.5"]]) {
+    assert.ok(scope.readStudentFilters({ [name]: bad }).problem, `${name}=${bad} is refused`);
+  }
+  // Nothing chosen: nothing added, nothing bound.
+  assert.equal(scope.filterConditions({}), "");
+  assert.equal(scope.filterOfStudent({}, "d.student_id"), "");
+  assert.deepEqual(scope.bindFilters("SELECT 1 WHERE x = $1", ["a"], {}), { text: "SELECT 1 WHERE x = $1", values: ["a"] });
+  // A hostile supervisor id never reaches the SQL text.
+  const filters = { program: 7, supervisor: "x' OR '1'='1" };
+  const sql = `SELECT * FROM students s WHERE s.name ILIKE $1${scope.filterConditions(filters)} AND 1 = 1${scope.filterOfStudent(filters, "a.student_id")}`;
+  const bound = scope.bindFilters(sql, ["%a%"], filters);
+  assert.ok(!bound.text.includes("OR '1'"));
+  assert.ok(!/:f_/.test(bound.text), "every marker became a parameter");
+  // Each value is bound once, after the query's own parameter, however often it is used.
+  assert.deepEqual(bound.values, ["%a%", 7, "x' OR '1'='1"]);
+  assert.equal(bound.text.split("$2::int").length - 1, 2);
+  assert.equal(bound.text.split("$3::text").length - 1, 2);
+  assert.throws(() => scope.filterOfStudent(filters, "a.student_id; DROP TABLE x"));
+  assert.equal(scope.filtersAsQuery({ term: "3", program: 7, block: "none" }), "term=3&program=7&block=none");
+});
+
+test("the seeded colleges and programs are listed, for a coordinator only", async () => {
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest("/api/coordinator/academics")).response.status, 401);
+  assert.equal((await jsonRequest("/api/coordinator/academics", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/academics", { headers: authHeaders(supervisor.token) })).response.status, 403);
+  const { response, body } = await jsonRequest("/api/coordinator/academics", { headers: authHeaders(coordinatorToken) });
+  assert.equal(response.status, 200);
+  const colleges = body.colleges.map((item) => item.name);
+  for (const name of [
+    "College of Arts, Sciences, and Letters", "College of Business and Public Administration", "College of Computing Sciences",
+    "College of Hospitality and Tourism Management", "College of Teacher Education", "College of Industrial Technology",
+  ]) assert.ok(colleges.includes(name), name);
+  const code = (short) => body.programs.find((item) => item.short_code === short);
+  for (const short of ["ABEL", "ABEcon", "BSBio", "BSND", "BSSW", "BPA", "BSBA", "BSCS", "BSIT", "BSMath", "BSHM", "BSEd", "BTLEd", "BTVTEd", "BIT"]) {
+    assert.ok(code(short), short);
+    assert.equal(code(short).ojt_applies, true, short);
+  }
+  assert.equal(body.colleges.find((item) => item.id === code("BSIT").college_id).name, "College of Computing Sciences");
+  const majorsOf = (short) => body.majors.filter((item) => item.program_id === code(short).id).map((item) => item.name).sort();
+  assert.deepEqual(majorsOf("BSBA"), ["Financial Management", "Operations Management"]);
+  assert.deepEqual(majorsOf("BSMath"), ["CIT", "Pure Mathematics", "Statistics"]);
+  assert.equal(majorsOf("BIT").length, 9);
+  assert.equal(typeof body.active_students_without_block, "number");
+});
+
+test("every coordinator list refuses a filter that is not an id, and an id of nothing matches no student", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const routes = [
+    "/api/coordinator/students", "/api/coordinator/monitoring", "/api/coordinator/dashboard", "/api/coordinator/actions",
+    "/api/coordinator/kpis", "/api/coordinator/analytics", "/api/coordinator/documents", "/api/coordinator/evaluations",
+    "/api/coordinator/report", "/api/projections", "/api/coordinator/audit",
+  ];
+  for (const path of routes) {
+    for (const bad of ["college=abc", "program=1;DROP", "block=A", "company=-3", "term=x"]) {
+      assert.equal((await jsonRequest(`${path}?${bad}`, { headers })).response.status, 400, `${path}?${bad}`);
+    }
+    for (const nothing of ["college=999999999", "program=999999999", "block=999999999", "company=999999999", "supervisor=NO-SUCH-SUPERVISOR", "program=999999999&block=none&supervisor=none"]) {
+      const result = await jsonRequest(`${path}?${nothing}`, { headers });
+      assert.equal(result.response.status, 200, `${path}?${nothing}: ${JSON.stringify(result.body).slice(0, 120)}`);
+    }
+  }
+  const none = (path) => jsonRequest(`${path}?program=999999999`, { headers }).then((result) => result.body);
+  assert.deepEqual((await none("/api/coordinator/students")).students, []);
+  assert.deepEqual((await none("/api/coordinator/monitoring")).students, []);
+  assert.equal((await none("/api/coordinator/dashboard")).students.active, 0);
+  assert.equal((await none("/api/coordinator/actions")).progress.students, 0);
+  assert.equal((await none("/api/coordinator/kpis")).kpis[0].value, null);
+  assert.equal((await none("/api/coordinator/analytics")).progress.students, 0);
+  assert.deepEqual((await none("/api/coordinator/documents")).students, []);
+  assert.deepEqual((await none("/api/coordinator/documents")).documents, []);
+  assert.deepEqual((await none("/api/coordinator/evaluations")).evaluations, []);
+  const report = await none("/api/coordinator/report");
+  assert.deepEqual([report.students, report.companies, report.programs, report.blocks], [[], [], [], []]);
+  assert.deepEqual((await none("/api/projections")).projections, []);
+  assert.equal((await none("/api/coordinator/audit")).total, 0);
+  // A student's own projection is theirs whatever is put in the address.
+  const mine = await jsonRequest("/api/projections?program=999999999", { headers: authHeaders(studentToken) });
+  assert.equal(mine.body.projections.length, 1);
+});
+
+test("programs and blocks are made and changed, students are placed in them, and every list filters by them", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const headers = authHeaders(coordinatorToken);
+  const stamp = String(Date.now()).slice(-7);
+  const send = (method, path, payload) => jsonRequest(path, jsonBody(coordinatorToken, method, payload));
+  const get = async (path) => {
+    const result = await jsonRequest(path, { headers });
+    assert.equal(result.response.status, 200, `${path}: ${JSON.stringify(result.body).slice(0, 160)}`);
+    return result.body;
+  };
+  const pool = localTestPool();
+  const sid = (n) => `P2-${stamp}-${n}`;
+  const made = { college: null, other: null, program: null, sister: null, major: null, block: null, term: null };
+  try {
+    /* ---- the structure ---- */
+    const college = await send("POST", "/api/coordinator/colleges", { name: `Test College ${stamp}`, short_name: `TC${stamp}` });
+    assert.equal(college.response.status, 201, JSON.stringify(college.body));
+    made.college = college.body.college.id;
+    assert.equal((await send("POST", "/api/coordinator/colleges", { name: `  test college ${stamp} ` })).response.status, 409, "one college per name, whatever the capitals");
+    assert.equal((await send("POST", "/api/coordinator/colleges", { name: "x" })).response.status, 400);
+    const other = await send("POST", "/api/coordinator/colleges", { name: `Other College ${stamp}` });
+    made.other = other.body.college.id;
+
+    const program = await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `BS Testing ${stamp}`, short_code: `BST${stamp}` });
+    assert.equal(program.response.status, 201, JSON.stringify(program.body));
+    made.program = program.body.program.id;
+    assert.equal(program.body.program.ojt_applies, true);
+    assert.equal((await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `Another ${stamp}`, short_code: `bst${stamp}` })).response.status, 409, "a short code is one of a kind");
+    assert.equal((await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `BS Testing ${stamp}`, short_code: `ZZ${stamp}` })).response.status, 409);
+    assert.equal((await send("POST", "/api/coordinator/programs", { name: `No College ${stamp}`, short_code: `NC${stamp}` })).response.status, 400);
+    assert.equal((await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `Spaced ${stamp}`, short_code: "B S" })).response.status, 400);
+    const sister = await send("POST", "/api/coordinator/programs", { college_id: made.other, name: `BS Sister ${stamp}`, short_code: `BSS${stamp}` });
+    made.sister = sister.body.program.id;
+    // The switch, and a rename; what is not sent is kept.
+    const switched = await send("PUT", `/api/coordinator/programs/${made.program}`, { ojt_applies: false });
+    assert.deepEqual([switched.body.program.ojt_applies, switched.body.program.name], [false, `BS Testing ${stamp}`]);
+    await send("PUT", `/api/coordinator/programs/${made.program}`, { ojt_applies: true });
+    assert.equal((await send("PUT", "/api/coordinator/programs/999999999", { name: "Nobody" })).response.status, 404);
+
+    const major = await send("POST", "/api/coordinator/majors", { program_id: made.program, name: "Quality" });
+    assert.equal(major.response.status, 201);
+    made.major = major.body.major.id;
+    assert.equal((await send("POST", "/api/coordinator/majors", { program_id: made.program, name: " quality " })).response.status, 409);
+    const sisterMajor = (await send("POST", "/api/coordinator/majors", { program_id: made.sister, name: "Elsewhere" })).body.major.id;
+
+    const term = await send("POST", "/api/coordinator/terms", { name: `Block Term ${stamp}`, start_date: "2031-01-06", end_date: "2031-05-30" });
+    assert.equal(term.response.status, 201, JSON.stringify(term.body));
+    made.term = term.body.term?.id ?? (await pool.query(`SELECT id FROM terms WHERE name = $1`, [`Block Term ${stamp}`])).rows[0].id;
+
+    const block = await send("POST", "/api/coordinator/blocks", { program_id: made.program, year_level: 4, section: "a", term_id: made.term });
+    assert.equal(block.response.status, 201, JSON.stringify(block.body));
+    made.block = block.body.block.id;
+    assert.equal(block.body.block.name, `BST${stamp} 4A`, "the short code, the year and the section");
+    assert.equal((await send("POST", "/api/coordinator/blocks", { program_id: made.program, year_level: 4, section: "A", term_id: made.term })).response.status, 409, "the same block twice");
+    assert.equal((await send("POST", "/api/coordinator/blocks", { program_id: made.program, year_level: 9, section: "A" })).response.status, 400);
+    assert.equal((await send("POST", "/api/coordinator/blocks", { program_id: made.program, year_level: 4, section: "B", major_id: sisterMajor })).response.status, 400, "a major of another program");
+    const blockB = (await send("POST", "/api/coordinator/blocks", { program_id: made.program, year_level: 4, section: "B", term_id: made.term, major_id: made.major })).body.block;
+    const edited = await send("PUT", `/api/coordinator/blocks/${blockB.id}`, { section: "C" });
+    assert.deepEqual([edited.body.block.name, edited.body.block.major_id, edited.body.block.term_id], [`BST${stamp} 4C`, made.major, made.term], "what an edit leaves out is kept");
+
+    /* ---- students: the import, then the form ---- */
+    const rows = [
+      { student_id: sid(1), name: "Block One", email: `p2-${stamp}-1@filter.test`, college: `TC${stamp}`, program: `bst${stamp}`, block: `bst${stamp} 4a` },
+      { student_id: sid(2), name: "Block Two", email: `p2-${stamp}-2@filter.test`, program: `BS Testing ${stamp}`, major: "quality", block: `BST${stamp} 4C` },
+      { student_id: sid(3), name: "No Block", email: `p2-${stamp}-3@filter.test`, program: `BST${stamp}` },
+      { student_id: sid(4), name: "Wrong College", email: `p2-${stamp}-4@filter.test`, college: `Other College ${stamp}`, program: `BST${stamp}` },
+      { student_id: sid(5), name: "Wrong Major", email: `p2-${stamp}-5@filter.test`, program: `BST${stamp}`, major: "Elsewhere" },
+      { student_id: sid(6), name: "No Such Block", email: `p2-${stamp}-6@filter.test`, program: `BST${stamp}`, block: `BST${stamp} 1Z` },
+      { student_id: sid(7), name: "Free Text", email: `p2-${stamp}-7@filter.test`, program: "BS Something Unlisted" },
+      { student_id: sid(8), name: "Text With Block", email: `p2-${stamp}-8@filter.test`, program: "BS Something Unlisted", block: `BST${stamp} 4A` },
+    ];
+    const dry = await send("POST", "/api/coordinator/students/import", { students: rows, dry_run: true });
+    assert.equal(dry.response.status, 200, JSON.stringify(dry.body).slice(0, 200));
+    const said = (list, n) => list.find((item) => item.student_id === sid(n));
+    assert.deepEqual(dry.body.results.map((item) => item.status), ["ok", "ok", "ok", "error", "error", "error", "ok", "error"]);
+    assert.match(said(dry.body.results, 4).message, /is not a program of the Other College/);
+    assert.match(said(dry.body.results, 5).message, /has no major named "Elsewhere"/);
+    assert.match(said(dry.body.results, 6).message, /no active block named/);
+    assert.match(said(dry.body.results, 7).message, /Ready to import\. "BS Something Unlisted" is not one of the listed programs; it is kept as text\./);
+    assert.match(said(dry.body.results, 8).message, /not a program's name or short code/);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM students WHERE student_id LIKE $1`, [`P2-${stamp}-%`])).rows[0].n, 0, "a dry run creates nothing");
+
+    const imported = await send("POST", "/api/coordinator/students/import", { students: rows });
+    assert.equal(imported.body.created, 4);
+    const placed = async (n) => (await pool.query(`SELECT program, program_id, major_id, block_id FROM students WHERE student_id = $1`, [sid(n)])).rows[0];
+    assert.deepEqual(await placed(1), { program: `BS Testing ${stamp}`, program_id: made.program, major_id: null, block_id: made.block });
+    assert.deepEqual(await placed(2), { program: `BS Testing ${stamp}`, program_id: made.program, major_id: made.major, block_id: blockB.id });
+    assert.deepEqual(await placed(3), { program: `BS Testing ${stamp}`, program_id: made.program, major_id: null, block_id: null });
+    assert.deepEqual(await placed(7), { program: "BS Something Unlisted", program_id: null, major_id: null, block_id: null });
+
+    // The form: ids from the pickers.
+    const password = "FilterTest123!x";
+    const form = await send("POST", "/api/coordinator/students", { student_id: sid(9), email: `p2-${stamp}-9@filter.test`, password, name: "Sister Nine", program_id: made.sister, major_id: sisterMajor });
+    assert.equal(form.response.status, 201, JSON.stringify(form.body));
+    assert.deepEqual(await placed(9), { program: `BS Sister ${stamp}`, program_id: made.sister, major_id: sisterMajor, block_id: null });
+    assert.equal((await send("POST", "/api/coordinator/students", { student_id: sid(10), email: `p2-${stamp}-10@filter.test`, password, name: "Bad", program_id: made.program, major_id: sisterMajor })).response.status, 400);
+    // An older form: text only. It links itself when the text is a program's code.
+    const older = await send("POST", "/api/coordinator/students", { student_id: sid(11), email: `p2-${stamp}-11@filter.test`, password, name: "Older Form", program: `bst${stamp}` });
+    assert.equal(older.response.status, 201);
+    assert.equal((await placed(11)).program_id, made.program);
+    // An edit that sends no ids leaves the place alone; one that sends them moves the student.
+    assert.equal((await send("PUT", `/api/coordinator/students/${sid(2)}`, { name: "Block Two Renamed" })).response.status, 200);
+    assert.deepEqual(await placed(2), { program: `BS Testing ${stamp}`, program_id: made.program, major_id: made.major, block_id: blockB.id });
+    assert.equal((await send("PUT", `/api/coordinator/students/${sid(2)}`, { program_id: made.program, major_id: made.major, block_id: made.block })).response.status, 200);
+    assert.equal((await placed(2)).block_id, made.block);
+    assert.equal((await send("PUT", `/api/coordinator/students/${sid(2)}`, { program_id: made.program, major_id: null, block_id: blockB.id })).response.status, 200, "a block of a major brings the major");
+    assert.deepEqual([(await placed(2)).major_id, (await placed(2)).block_id], [made.major, blockB.id]);
+    assert.equal((await send("PUT", `/api/coordinator/students/${sid(2)}`, { program_id: made.sister, major_id: null, block_id: made.block })).response.status, 400, "a block of another program");
+
+    // Students with no block, and adding them to one.
+    const inBlock = await get(`/api/coordinator/blocks/${made.block}/students`);
+    assert.deepEqual(inBlock.students.map((item) => item.student_id), [sid(1)]);
+    const candidates = inBlock.candidates.map((item) => item.student_id);
+    assert.ok(candidates.includes(sid(3)) && candidates.includes(sid(11)) && candidates.includes(sid(7)), "of this program, or of none yet");
+    assert.ok(!candidates.includes(sid(9)), "not a student of another program");
+    const added = await send("POST", `/api/coordinator/blocks/${made.block}/students`, { student_ids: [sid(3), sid(7), sid(9), "NOBODY"] });
+    assert.deepEqual([added.body.count, added.body.skipped], [2, 2]);
+    assert.deepEqual(await placed(3), { program: `BS Testing ${stamp}`, program_id: made.program, major_id: null, block_id: made.block });
+    // Linked to the program now; the text they were given stays as typed.
+    assert.deepEqual(await placed(7), { program: "BS Something Unlisted", program_id: made.program, major_id: null, block_id: made.block });
+    assert.equal((await placed(9)).program_id, made.sister, "left where they were");
+    // Saving that student again, with the same text, does not undo the link.
+    assert.equal((await send("PUT", `/api/coordinator/students/${sid(7)}`, { name: "Free Text Renamed", program: "BS Something Unlisted" })).response.status, 200);
+    assert.equal((await placed(7)).program_id, made.program);
+
+    /* ---- every list, by each filter ---- */
+    // Where they are now: 1, 3, 7 in block A; 2 in block C (a major's); 11 in the program with no block; 9 in the sister program.
+    const ours = (list) => list.filter((value) => String(value).startsWith(`P2-${stamp}-`)).sort();
+    // A new student is put in the term today falls in, when there is one (migration 021).
+    const theirTerm = (await pool.query(`SELECT term_id FROM students WHERE student_id = $1`, [sid(1)])).rows[0].term_id ?? "none";
+    const want = {
+      [`program=${made.program}`]: [sid(1), sid(11), sid(2), sid(3), sid(7)].sort(),
+      [`college=${made.college}`]: [sid(1), sid(11), sid(2), sid(3), sid(7)].sort(),
+      [`college=${made.other}`]: [sid(9)],
+      [`block=${made.block}`]: [sid(1), sid(3), sid(7)],
+      [`program=${made.program}&block=none`]: [sid(11)],
+      [`college=${made.college}&program=${made.program}&block=${blockB.id}`]: [sid(2)],
+      [`program=${made.sister}&block=${made.block}`]: [],
+      [`program=${made.program}&supervisor=none`]: [sid(1), sid(11), sid(2), sid(3), sid(7)].sort(),
+      [`program=${made.program}&supervisor=NOBODY`]: [],
+      [`program=${made.program}&term=${theirTerm}`]: [sid(1), sid(11), sid(2), sid(3), sid(7)].sort(),
+      [`program=${made.program}&term=${made.term}`]: [],
+      [`program=${made.program}&company=999999999`]: [],
+    };
+    for (const [query, ids] of Object.entries(want)) {
+      const students = await get(`/api/coordinator/students?${query}`);
+      assert.deepEqual(ours(students.students.map((row) => row.student_id)), ids, `students?${query}`);
+      assert.deepEqual(ours((await get(`/api/coordinator/monitoring?${query}`)).students.map((row) => row.student_id)), ids, `monitoring?${query}`);
+      assert.deepEqual(ours((await get(`/api/coordinator/report?${query}`)).students.map((row) => row.student_id)), ids, `report?${query}`);
+      assert.deepEqual(ours((await get(`/api/projections?${query}`)).projections.map((row) => row.student_id)), ids, `projections?${query}`);
+      assert.deepEqual(ours((await get(`/api/coordinator/documents?${query}`)).students.map((row) => row.student_id)), ids, `documents?${query}`);
+      assert.equal((await get(`/api/coordinator/dashboard?${query}`)).students.active, ids.length, `dashboard?${query}`);
+      assert.equal((await get(`/api/coordinator/actions?${query}`)).progress.students, ids.length, `actions?${query}`);
+      assert.equal((await get(`/api/coordinator/analytics?${query}`)).progress.students, ids.length, `analytics?${query}`);
+      const onTrack = (await get(`/api/coordinator/kpis?${query}`)).kpis[0];
+      assert.equal(onTrack.basis, ids.length === 0 ? "No active students" : `0 of ${ids.length} ${ids.length === 1 ? "student" : "students"}`, `kpis?${query}`);
+    }
+    // The list says where each student is.
+    const listed = (await get(`/api/coordinator/students?block=${blockB.id}`)).students[0];
+    assert.deepEqual([listed.program_code, listed.major_name, listed.block_name, listed.college_id], [`BST${stamp}`, "Quality", `BST${stamp} 4C`, made.college]);
+    // With paging the filters still apply, and the total is of the filtered list.
+    const paged = await get(`/api/coordinator/students?program=${made.program}&limit=2`);
+    assert.deepEqual([paged.students.length, paged.total], [2, 5]);
+    // The action list's links carry the filters to the page they open.
+    const rowsOf = (await get(`/api/coordinator/actions?program=${made.program}`)).groups.flatMap((group) => group.rows);
+    const unassigned = rowsOf.find((row) => row.key === "unassigned");
+    assert.equal(unassigned.count, 5);
+    assert.equal(unassigned.link, `/coordinator/students?filter=unassigned&program=${made.program}`);
+
+    // The report: the same students summed by program and by block.
+    const report = await get(`/api/coordinator/report?college=${made.college}`);
+    assert.deepEqual(report.programs.map((row) => [row.name, row.students]), [[`BS Testing ${stamp}`, 5]]);
+    assert.deepEqual(report.blocks.map((row) => [row.name, row.students]), [[`BST${stamp} 4A`, 3], [`BST${stamp} 4C`, 1], ["No block", 1]]);
+    const two = report.students.find((row) => row.student_id === sid(2));
+    assert.deepEqual([two.college, two.program_code, two.major, two.block], [`Test College ${stamp}`, `BST${stamp}`, "Quality", `BST${stamp} 4C`]);
+    assert.equal(report.programs.reduce((sum, row) => sum + row.students, 0), report.students.length);
+    assert.equal(report.blocks.reduce((sum, row) => sum + row.students, 0), report.students.length);
+    // Unfiltered, the two tables still add up to every student.
+    const whole = await get("/api/coordinator/report");
+    assert.equal(whole.programs.reduce((sum, row) => sum + row.students, 0), whole.students.length);
+    assert.equal(whole.blocks.reduce((sum, row) => sum + row.students, 0), whole.students.length);
+
+    // The audit log, by the student an entry is about.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const about = await get(`/api/coordinator/audit?block=${made.block}&limit=200`);
+    assert.ok(about.total > 0);
+    for (const entry of about.entries) {
+      const subject = entry.entity_type === "student" ? entry.entity_id : entry.details.student_id;
+      assert.ok([sid(1), sid(3), sid(7)].includes(subject), `${entry.action} about ${subject}`);
+    }
+    assert.ok(about.entries.some((entry) => entry.action === "account.edit" && entry.entity_id === sid(7)));
+    // And the changes to the structure are in it.
+    const logged = async (action, id) =>
+      (await pool.query(`SELECT details FROM audit_log WHERE action = $1 AND entity_id = $2 ORDER BY id DESC LIMIT 1`, [action, String(id)])).rows[0]?.details;
+    assert.deepEqual(await logged("college.create", made.college), { name: `Test College ${stamp}`, short_name: `TC${stamp}` });
+    assert.equal((await logged("program.create", made.program)).short_code, `BST${stamp}`);
+    assert.deepEqual(await logged("program.edit", made.program), { ojt_applies: true });
+    assert.equal((await logged("major.create", made.major)).name, "Quality");
+    assert.equal((await logged("block.create", made.block)).block, `BST${stamp} 4A`);
+    assert.deepEqual(await logged("block.edit", blockB.id), { section: "C", block: `BST${stamp} 4C` });
+    assert.deepEqual(await logged("block.add_students", made.block), { students: 2, left_out: 2 });
+
+    /* ---- a term's blocks close and reopen with it ---- */
+    const quiet = await send("PUT", `/api/coordinator/blocks/${blockB.id}`, { is_active: false });
+    assert.equal(quiet.body.block.is_active, false);
+    const closed = await send("POST", `/api/coordinator/terms/${made.term}/close`, {});
+    assert.equal(closed.response.status, 200, JSON.stringify(closed.body));
+    assert.equal(closed.body.blocks_deactivated, 1, "only the block that was still active");
+    const active = async () => (await pool.query(`SELECT id, is_active FROM blocks WHERE id = ANY($1::int[]) ORDER BY id`, [[made.block, blockB.id]])).rows.map((row) => row.is_active);
+    assert.deepEqual(await active(), [false, false]);
+    assert.equal((await send("POST", `/api/coordinator/blocks/${made.block}/students`, { student_ids: [sid(11)] })).response.status, 409, "an inactive block takes no students");
+    assert.equal((await send("POST", "/api/coordinator/blocks", { program_id: made.program, year_level: 3, section: "A", term_id: made.term })).response.status, 400, "a closed term takes no new block");
+    const reopened = await send("POST", `/api/coordinator/terms/${made.term}/reopen`, {});
+    assert.equal(reopened.body.blocks_reactivated, 1);
+    assert.deepEqual(await active(), [true, false], "the one switched off by hand stays off");
+    // Students keep their block through it all.
+    assert.equal((await placed(1)).block_id, made.block);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id LIKE $1`, [`P2-${stamp}-%`]);
+    await pool.query(`DELETE FROM students WHERE student_id LIKE $1`, [`P2-${stamp}-%`]);
+    const programs = [made.program, made.sister].filter(Boolean);
+    await pool.query(`DELETE FROM blocks WHERE program_id = ANY($1::int[])`, [programs]);
+    await pool.query(`DELETE FROM majors WHERE program_id = ANY($1::int[])`, [programs]);
+    await pool.query(`DELETE FROM programs WHERE id = ANY($1::int[])`, [programs]);
+    await pool.query(`DELETE FROM colleges WHERE id = ANY($1::int[])`, [[made.college, made.other].filter(Boolean)]);
+    if (made.term) await pool.query(`DELETE FROM terms WHERE id = $1`, [made.term]);
+    await pool.query(`DELETE FROM audit_log WHERE entity_id LIKE $1 OR details->>'name' LIKE $2`, [`P2-${stamp}-%`, `%${stamp}%`]);
     await pool.end();
   }
 });

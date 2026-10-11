@@ -22,6 +22,7 @@
 import type { Pool } from "pg";
 import { manilaClock } from "./digests";
 import { loadStudents, projectFinish } from "./insights";
+import { bindFilters, filterConditions, hasFilters, type StudentFilters } from "./studentScope";
 import {
   AGREEMENT_WITHIN_DAYS,
   CONCERN_OLD_AFTER_DAYS,
@@ -219,12 +220,28 @@ export function computeKpis(today: string, inputs: KpiInputs): Kpi[] {
 /** Reads what the figures need for the active students, optionally one term's. */
 export async function loadKpiInputs(
   pool: Pool,
-  termId: number | "none" | undefined,
+  filters: StudentFilters,
   today: string
 ): Promise<KpiInputs> {
-  const facts = await loadStudents(pool, { termId });
+  const facts = await loadStudents(pool, { filters });
   const ids = facts.students.map((row) => row.student_id);
-  const term = termId === undefined ? null : String(termId);
+  // With a filter chosen: the concerns filed by, or about, the chosen students.
+  const concernQuery = bindFilters(
+    `SELECT TO_CHAR(c.created_at, 'YYYY-MM-DD') AS created_on,
+            CASE WHEN c.status IN ('Resolved', 'Dismissed')
+                 THEN TO_CHAR(COALESCE(c.resolved_at, c.updated_at, c.created_at), 'YYYY-MM-DD') END AS closed_on
+     FROM complaints c
+     ${
+       hasFilters(filters)
+         ? `WHERE EXISTS (
+              SELECT 1 FROM students s
+              WHERE s.student_id IN (c.student_id, c.reported_student_id)${filterConditions(filters, "s")}
+            )`
+         : ""
+     }`,
+    [],
+    filters
+  );
   // Far enough back for the oldest point on the chart and the window before it.
   const historyFrom = addDays(today, -(7 * KPI_WEEKS + KPI_WINDOW_DAYS + 7));
 
@@ -255,19 +272,7 @@ export async function loadKpiInputs(
        GROUP BY d.student_id, d.doc_type`,
       [ids]
     ),
-    // With a term chosen: the concerns filed by, or about, that term's students.
-    pool.query<{ created_on: string; closed_on: string | null }>(
-      `SELECT TO_CHAR(c.created_at, 'YYYY-MM-DD') AS created_on,
-              CASE WHEN c.status IN ('Resolved', 'Dismissed')
-                   THEN TO_CHAR(COALESCE(c.resolved_at, c.updated_at, c.created_at), 'YYYY-MM-DD') END AS closed_on
-       FROM complaints c
-       WHERE $1::text IS NULL OR EXISTS (
-         SELECT 1 FROM students s
-         WHERE s.student_id IN (c.student_id, c.reported_student_id)
-           AND (($1 = 'none' AND s.term_id IS NULL) OR s.term_id::text = $1)
-       )`,
-      [term]
-    ),
+    pool.query<{ created_on: string; closed_on: string | null }>(concernQuery.text, concernQuery.values),
     pool.query<{ moa_expiry: string }>(
       `SELECT TO_CHAR(moa_expiry, 'YYYY-MM-DD') AS moa_expiry FROM companies
        WHERE is_active = TRUE AND moa_expiry IS NOT NULL`
@@ -308,9 +313,9 @@ export async function loadKpiInputs(
 
 export async function coordinatorKpis(
   pool: Pool,
-  termId?: number | "none",
+  filters: StudentFilters = {},
   now: Date = new Date()
 ): Promise<{ as_of: string; kpis: Kpi[] }> {
   const { date: today } = manilaClock(now);
-  return { as_of: today, kpis: computeKpis(today, await loadKpiInputs(pool, termId, today)) };
+  return { as_of: today, kpis: computeKpis(today, await loadKpiInputs(pool, filters, today)) };
 }

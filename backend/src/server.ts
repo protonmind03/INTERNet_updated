@@ -3,7 +3,7 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import { Pool } from "pg";
+import { Pool, type QueryResult } from "pg";
 import multer from "multer";
 import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import path from "path";
@@ -30,7 +30,16 @@ import { allowsChannel, categoryOf } from "./services/notificationPreferences";
 import { startDigestScheduler } from "./services/digests";
 import { sendCoordinatorDigests } from "./services/insights";
 import { auditMiddleware } from "./services/audit";
+import { registerAcademicRoutes } from "./routes/academics";
 import { registerConsoleRoutes } from "./routes/console";
+import { loadCatalogue, resolvePlacement } from "./services/academics";
+import {
+  bindFilters,
+  filterConditions,
+  filterOfStudent,
+  readStudentFilters,
+  type StudentFilters,
+} from "./services/studentScope";
 import {
   buildListQuery,
   readListRequest,
@@ -3451,7 +3460,7 @@ app.get(
       */
 
       const result =
-        await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id"], status: "status", date: "date" }, 
+        await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id"], status: "status", date: "date" },
           `
           SELECT
             a.id,
@@ -5408,10 +5417,9 @@ app.get(
       const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
       const status = req.query.status as string | undefined;
       // Optional: one term's students (its id), or "none" for those with no term.
-      const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
-      if (term && term !== "none" && !/^[0-9]{1,9}$/.test(term)) {
-        return res.status(400).json({ message: "That is not a term." });
-      }
+      // Also optional: college, program, block, company, supervisor.
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
 
       // How a paged list is ordered. Without paging the order is by name, as before.
       const order =
@@ -5421,13 +5429,18 @@ app.get(
             ? "supervisor_name ASC, name ASC, student_id ASC"
             : "name ASC, student_id ASC";
 
-      const result = await listQuery(req, { order }, 
+      const bound = scope.bind(
         `
         SELECT
           s.id, s.student_id, s.email, s.name, s.program, s.company,
           s.supervisor_id, sup.name AS supervisor_name,
           s.required_hours, s.is_active, s.coordinator_id,
           s.term_id, term.name AS term_name,
+          s.program_id, s.major_id, s.block_id,
+          prog.short_code AS program_code, prog.college_id,
+          major.name AS major_name,
+          CASE WHEN blk.id IS NULL THEN NULL
+               ELSE blkprog.short_code || ' ' || blk.year_level || UPPER(TRIM(blk.section)) END AS block_name,
           COALESCE((
             SELECT SUM(a.hours) FROM attendance a
             WHERE a.student_id::text = s.student_id::text AND a.status = 'Verified'
@@ -5441,19 +5454,21 @@ app.get(
         LEFT JOIN supervisors sup
           ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
         LEFT JOIN terms term ON term.id = s.term_id
+        LEFT JOIN programs prog ON prog.id = s.program_id
+        LEFT JOIN majors major ON major.id = s.major_id
+        LEFT JOIN blocks blk ON blk.id = s.block_id
+        LEFT JOIN programs blkprog ON blkprog.id = blk.program_id
         WHERE (s.name ILIKE $1 OR s.email ILIKE $1 OR s.student_id::text ILIKE $1 OR s.company ILIKE $1 OR s.program ILIKE $1)
         AND ($2::text IS NULL
           OR ($2 = 'active' AND s.is_active = TRUE)
           OR ($2 = 'inactive' AND s.is_active = FALSE)
           -- Active students nobody is supervising.
-          OR ($2 = 'unassigned' AND s.is_active = TRUE AND sup.supervisor_id IS NULL))
-        AND ($3::text IS NULL
-          OR ($3 = 'none' AND s.term_id IS NULL)
-          OR s.term_id::text = $3)
+          OR ($2 = 'unassigned' AND s.is_active = TRUE AND sup.supervisor_id IS NULL))${scope.sql}
         ORDER BY s.name ASC
         `,
-        [q, status || null, term || null]
+        [q, status || null]
       );
+      const result = await listQuery(req, { order }, bound.text, bound.values);
 
       return res.json({ students: result.rows, ...result.page });
     } catch (error) {
@@ -5606,6 +5621,16 @@ app.post(
       if (hoursIssue) {
         return res.status(400).json({ message: hoursIssue });
       }
+      // The pickers send ids; an older form sends only the program as text.
+      const placement = resolvePlacement(await loadCatalogue(pool), {
+        program_id: req.body.program_id,
+        major_id: req.body.major_id,
+        block_id: req.body.block_id,
+        program: typeof program === "string" ? program : "",
+      });
+      if ("problem" in placement) {
+        return res.status(400).json({ message: placement.problem });
+      }
 
       const hashed = await hashPassword(password);
 
@@ -5613,20 +5638,25 @@ app.post(
       const result = await pool.query(
         `
         INSERT INTO students
-          (student_id, email, password, name, program, company, supervisor_id, required_hours, is_active, coordinator_id, must_change_password)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, TRUE)
-        RETURNING id, student_id, email, name, program, company, supervisor_id, required_hours, is_active
+          (student_id, email, password, name, program, company, supervisor_id, required_hours, is_active, coordinator_id, must_change_password,
+           program_id, major_id, block_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, TRUE, $10, $11, $12)
+        RETURNING id, student_id, email, name, program, company, supervisor_id, required_hours, is_active,
+                  program_id, major_id, block_id
         `,
         [
           student_id,
           email,
           hashed,
           name,
-          program || null,
+          placement.program_text,
           company || null,
           supervisor_id || null,
           required_hours || 180,
           (req as AuthedRequest).auth?.id || null,
+          placement.program_id,
+          placement.major_id,
+          placement.block_id,
         ]
       );
 
@@ -5697,6 +5727,23 @@ app.put(
       const sent = (field: string) =>
         Object.prototype.hasOwnProperty.call(req.body ?? {}, field);
 
+      // The pickers: when any of the three ids is sent, the student's place
+      // is worked out again from them (and from the program text, for an
+      // older row with no program chosen). An edit that sends none of them
+      // leaves the program, major and block links as they are.
+      const placing = sent("program_id") || sent("major_id") || sent("block_id");
+      const placement = placing
+        ? resolvePlacement(await loadCatalogue(pool), {
+            program_id: req.body.program_id,
+            major_id: req.body.major_id,
+            block_id: req.body.block_id,
+            program: typeof program === "string" ? program : "",
+          })
+        : null;
+      if (placement && "problem" in placement) {
+        return res.status(400).json({ message: placement.problem });
+      }
+
       const result = await pool.query(
         `
         UPDATE students SET
@@ -5705,14 +5752,19 @@ app.put(
           program = CASE WHEN $9::boolean THEN $3::text ELSE program END,
           company = CASE WHEN $10::boolean THEN $4::text ELSE company END,
           supervisor_id = CASE WHEN $8::boolean THEN $5 ELSE supervisor_id END,
-          required_hours = COALESCE($6, required_hours)
+          required_hours = COALESCE($6, required_hours),
+          program_id = CASE WHEN $11::boolean THEN $12::int ELSE program_id END,
+          major_id = CASE WHEN $11::boolean THEN $13::int ELSE major_id END,
+          block_id = CASE WHEN $11::boolean THEN $14::int ELSE block_id END
         WHERE student_id = $7
-        RETURNING id, student_id, email, name, program, company, supervisor_id, required_hours, is_active
+        RETURNING id, student_id, email, name, program, company, supervisor_id, required_hours, is_active,
+                  program_id, major_id, block_id
         `,
         [
           name || null,
           email || null,
-          program || null,
+          // A chosen program's name is the text that is displayed.
+          placement ? placement.program_text : program || null,
           company || null,
           supervisor_id || null,
           required_hours ? Math.round(Number(required_hours)) : null,
@@ -5720,8 +5772,12 @@ app.put(
           // Only reassign (or unassign) when the request names a supervisor
           // field; an edit that omits it keeps the current supervisor.
           sent("supervisor_id"),
-          sent("program"),
+          sent("program") || placing,
           sent("company"),
+          placing,
+          placement?.program_id ?? null,
+          placement?.major_id ?? null,
+          placement?.block_id ?? null,
         ]
       );
 
@@ -5841,7 +5897,7 @@ app.get(
     try {
       const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
 
-      const result = await listQuery(req, { order: "name ASC, supervisor_id ASC" }, 
+      const result = await listQuery(req, { order: "name ASC, supervisor_id ASC" },
         `
         SELECT
           sup.id, sup.supervisor_id, sup.email, sup.name, sup.company,
@@ -6177,7 +6233,7 @@ app.get(
         typeof req.query.student_id === "string" && req.query.student_id.trim()
           ? req.query.student_id.trim()
           : null;
-      const result = await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id", "company", "supervisor_name"], status: "status", date: "date" }, 
+      const result = await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id", "company", "supervisor_name"], status: "status", date: "date" },
         `
         SELECT
           a.id,
@@ -6233,23 +6289,46 @@ app.get(
 |
 |   sql        added to a condition on the students alias `s`
 |   plain      the same, for a query on `students` with no alias
+|   query      runs a query that uses them, binding the filter values
 |   ofStudent  for a table with only a student_id column: "<column> is one
 |              of this term's students"
 |
 */
 
-type TermScope = { term: string; sql: string; plain: string; ofStudent: (column: string) => string };
+type StudentScope = {
+  filters: StudentFilters;
+  /** Conditions on the students table under alias "s", each starting " AND ". */
+  sql: string;
+  /** The same, for a query on `students` with no alias. */
+  plain: string;
+  /** For a table with only a student id: "<column> is one of the chosen students". */
+  ofStudent: (column: string) => string;
+  /** Turns the filter markers in a query into numbered parameters after its own. */
+  bind: (sql: string, params?: readonly unknown[]) => { text: string; values: unknown[] };
+  /** Runs a query that uses the conditions above. */
+  query: (sql: string, params?: readonly unknown[]) => Promise<QueryResult<any>>;
+};
 
-function termScope(value: unknown): TermScope | null {
-  const term = typeof value === "string" ? value.trim() : "";
-  if (term && term !== "none" && !/^[0-9]{1,9}$/.test(term)) return null;
-  const condition = !term ? "" : term === "none" ? "term_id IS NULL" : `term_id = ${Number(term)}`;
+/**
+ * The coordinator's filters for a request (services/studentScope.ts): term,
+ * college, program, block, company and supervisor, all optional. With none
+ * of them every fragment is empty and a query is exactly what it was.
+ */
+function studentScope(query: unknown): StudentScope | { problem: string } {
+  const read = readStudentFilters((query ?? {}) as Record<string, unknown>);
+  if ("problem" in read) return read;
+  const { filters } = read;
+  const bind = (sql: string, params: readonly unknown[] = []) => bindFilters(sql, params, filters);
   return {
-    term,
-    sql: condition ? ` AND s.${condition}` : "",
-    plain: condition ? ` AND ${condition}` : "",
-    ofStudent: (column) =>
-      condition ? ` AND ${column} IN (SELECT student_id FROM students WHERE ${condition})` : "",
+    filters,
+    sql: filterConditions(filters, "s"),
+    plain: filterConditions(filters, ""),
+    ofStudent: (column) => filterOfStudent(filters, column),
+    bind,
+    query: (sql, params = []) => {
+      const bound = bind(sql, params);
+      return pool.query(bound.text, bound.values);
+    },
   };
 }
 
@@ -6258,8 +6337,8 @@ app.get(
   requireCoordinator,
   async (req, res) => {
     try {
-      const scope = termScope(req.query.term);
-      if (!scope) return res.status(400).json({ message: "That is not a term." });
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
 
       const [
         studentCount,
@@ -6272,26 +6351,26 @@ app.get(
         todayStats,
         hoursTrend,
       ] = await Promise.all([
-        pool.query(
+        scope.query(
           `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM students WHERE TRUE${scope.plain}`
         ),
-        pool.query(
+        scope.query(
           `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM supervisors`
         ),
-        pool.query(
+        scope.query(
           `SELECT COUNT(*) AS count FROM attendance a
            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
            WHERE a.status = 'Pending'`
         ),
-        pool.query(
+        scope.query(
           `SELECT COUNT(*) AS count FROM attendance a
            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
            WHERE ${flaggedLogCondition("a")}`
         ),
-        pool.query(
+        scope.query(
           `SELECT COUNT(*) AS count FROM complaints WHERE status = 'Pending'`
         ),
-        pool.query(
+        scope.query(
           `
           SELECT
             COUNT(*) FILTER (WHERE status = 'Submitted') AS awaiting_review,
@@ -6301,14 +6380,14 @@ app.get(
           JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE${scope.sql}
           `
         ),
-        pool.query(
+        scope.query(
           `SELECT COALESCE(SUM(a.hours), 0) AS total_hours FROM attendance a
            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
            WHERE a.status = 'Verified'`
         ),
         // Today at a glance: who has timed in, who is still on the clock,
         // who filed an absence, and the hours verified over the past week.
-        pool.query(
+        scope.query(
           `
           SELECT
             (SELECT COUNT(DISTINCT a.student_id) FROM attendance a
@@ -6326,7 +6405,7 @@ app.get(
           `
         ),
         // Verified hours for each of the last 14 days, quiet days included.
-        pool.query(
+        scope.query(
           `
           SELECT
             TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
@@ -6413,21 +6492,22 @@ app.get(
       }
       const hasPeriod = from !== null || to !== null;
 
-      // Optional: one term's students (its id), or "none" for those with no term.
-      const term = typeof req.query.term === "string" ? req.query.term.trim() : "";
-      if (term && term !== "none" && !/^[0-9]{1,9}$/.test(term)) {
-        return res.status(400).json({ message: "That is not a term." });
-      }
+      // Optional: which students (term, college, program, block, company, supervisor).
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
 
       // Attendance and task aggregates are computed in separate LATERAL
       // subqueries. Joining both tables in one GROUP BY multiplies rows
       // (each log x each task) and inflated hours and counts.
-      const result = await pool.query(
+      const result = await scope.query(
         `
         SELECT
           s.student_id, s.name, s.program, s.company, s.required_hours,
           s.completed_at,
           sup.name AS supervisor_name,
+          prog.short_code AS program_code,
+          CASE WHEN blk.id IS NULL THEN NULL
+               ELSE blkprog.short_code || ' ' || blk.year_level || UPPER(TRIM(blk.section)) END AS block_name,
           att.hours_rendered,
           att.pending_logs,
           att.rejected_logs,
@@ -6443,6 +6523,9 @@ app.get(
         FROM students s
         LEFT JOIN supervisors sup
           ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+        LEFT JOIN programs prog ON prog.id = s.program_id
+        LEFT JOIN blocks blk ON blk.id = s.block_id
+        LEFT JOIN programs blkprog ON blkprog.id = blk.program_id
         LEFT JOIN LATERAL (
           SELECT
             COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours_rendered,
@@ -6474,13 +6557,10 @@ app.get(
           FROM tasks t
           WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
         ) tk ON TRUE
-        WHERE s.is_active = TRUE
-          AND ($3::text IS NULL
-            OR ($3 = 'none' AND s.term_id IS NULL)
-            OR s.term_id::text = $3)
+        WHERE s.is_active = TRUE${scope.sql}
         ORDER BY s.name ASC
         `,
-        [from, to, term || null]
+        [from, to]
       );
 
       const students = result.rows.map(({ period_hours, period_logs, ...row }) => ({
@@ -6539,7 +6619,7 @@ app.get(
         });
       }
 
-      const result = await listQuery(req, { order: "created_at DESC, id DESC", date: "created_at" }, 
+      const result = await listQuery(req, { order: "created_at DESC, id DESC", date: "created_at" },
         `
         SELECT
           c.id, c.student_id, c.filed_by_supervisor_id,
@@ -6716,8 +6796,8 @@ app.get(
   requireCoordinator,
   async (req, res) => {
     try {
-      const scope = termScope(req.query.term);
-      if (!scope) return res.status(400).json({ message: "That is not a term." });
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
       const requested = Number(req.query.days);
       const days = ANALYTICS_PERIODS.includes(requested) ? requested : 14;
 
@@ -6734,7 +6814,7 @@ app.get(
       ] = await Promise.all([
         // One row for every day of the period, including days with no logs,
         // so the chart's spacing is true to the calendar.
-        pool.query(
+        scope.query(
           `
           SELECT
             TO_CHAR(d.day, 'YYYY-MM-DD') AS day,
@@ -6754,7 +6834,7 @@ app.get(
           [days]
         ),
         // This period beside the one before it, for the change figures.
-        pool.query(
+        scope.query(
           `
           SELECT
             COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date > CURRENT_DATE - $1::int), 0) AS hours,
@@ -6774,7 +6854,7 @@ app.get(
           `,
           [days]
         ),
-        pool.query(
+        scope.query(
           `
           WITH ${studentProgressCte(scope.sql)}
           SELECT
@@ -6790,7 +6870,7 @@ app.get(
           FROM progress
           `
         ),
-        pool.query(
+        scope.query(
           `
           WITH ${studentProgressCte(scope.sql)}
           SELECT
@@ -6804,7 +6884,7 @@ app.get(
           `
         ),
         // What students said about the company they trained at.
-        pool.query(
+        scope.query(
           `
           SELECT
             LOWER(TRIM(s.company)) AS company_key,
@@ -6816,7 +6896,7 @@ app.get(
           GROUP BY LOWER(TRIM(s.company))
           `
         ),
-        pool.query(
+        scope.query(
           `
           SELECT LOWER(TRIM(company_name)) AS company_key, COUNT(*) AS complaints
           FROM complaints
@@ -6824,7 +6904,7 @@ app.get(
           GROUP BY LOWER(TRIM(company_name))
           `
         ),
-        pool.query(
+        scope.query(
           `
           SELECT
             category,
@@ -6836,7 +6916,7 @@ app.get(
           ORDER BY COUNT(*) DESC, category ASC
           `
         ),
-        pool.query(
+        scope.query(
           `
           SELECT
             t.status,
@@ -6849,7 +6929,7 @@ app.get(
           GROUP BY t.status
           `
         ),
-        pool.query(
+        scope.query(
           `
           SELECT
             e.evaluator_type,
@@ -7432,12 +7512,15 @@ app.get(
   requireCoordinator,
   async (req, res) => {
     try {
-      const result = await pool.query(
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
+      const result = await scope.query(
         `
-        SELECT e.*, s.name AS student_name, s.company,
+        SELECT e.*, s.name AS student_name, s.company, s.program,
                (e.evaluator_type = 'teacher' AND e.evaluator_id = $1) AS mine
         FROM evaluations e
         LEFT JOIN students s ON s.student_id::text = e.student_id::text
+        WHERE TRUE${scope.ofStudent("e.student_id")}
         ORDER BY e.created_at DESC
         LIMIT 200
         `,
@@ -8798,8 +8881,9 @@ app.get(
   requireCoordinator,
   async (req, res) => {
     try {
-      const [documents, progress, requirements] = await Promise.all([
-        listQuery(req, { order: "uploaded_at DESC, id DESC", search: ["student_name", "student_id", "doc_type", "original_filename", "company"], status: "status", date: "uploaded_at" }, 
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
+      const listed = scope.bind(
           `
           SELECT d.id, d.student_id, s.name AS student_name, s.program,
                  s.company, sup.name AS supervisor_name, d.doc_type,
@@ -8808,11 +8892,14 @@ app.get(
           FROM documents d
           LEFT JOIN students s ON s.student_id = d.student_id
           LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+          WHERE TRUE${scope.ofStudent("d.student_id")}
           ORDER BY d.uploaded_at DESC, d.id DESC
           LIMIT 500
           `
-        ),
-        pool.query(
+      );
+      const [documents, progress, requirements] = await Promise.all([
+        listQuery(req, { order: "uploaded_at DESC, id DESC", search: ["student_name", "student_id", "doc_type", "original_filename", "company"], status: "status", date: "uploaded_at" }, listed.text, listed.values),
+        scope.query(
           `
           SELECT s.student_id, s.name, s.program, s.company,
                  sup.name AS supervisor_name,
@@ -8834,7 +8921,7 @@ app.get(
            AND d.doc_type IN (
              SELECT name FROM ojt_requirements WHERE is_active = TRUE
            )
-          WHERE s.is_active = TRUE
+          WHERE s.is_active = TRUE${scope.sql}
           GROUP BY s.student_id, s.name, s.program, s.company, sup.name
           ORDER BY s.name
           `
@@ -9166,6 +9253,7 @@ app.get(
 */
 
 registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
+registerAcademicRoutes(app, { pool, requireCoordinator });
 
 registerExtensionRoutes(app, {
   pool,

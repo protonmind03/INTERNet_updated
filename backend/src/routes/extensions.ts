@@ -3,7 +3,9 @@ import type express from "express";
 import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
+import { loadCatalogue, resolvePlacement } from "../services/academics";
 import { manilaClock } from "../services/digests";
+import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
 
 /*
@@ -794,6 +796,13 @@ export function registerExtensionRoutes(
   | already taken, and creates nothing: the coordinator sees what would
   | happen to each row before anything is written.
   |
+  | A row may place the student with four optional columns: college,
+  | program, major, block. A program is found by its name or short code, a
+  | block by its name ("BSIT 4A"). A row that names a college, major or
+  | block that does not fit is refused with the reason. A program that is
+  | not one of the listed ones, on a row with none of the other three, is
+  | kept as text, as it always was, and the row says so.
+  |
   */
 
   const MAX_IMPORT_ROWS = 200;
@@ -820,6 +829,7 @@ export function registerExtensionRoutes(
     const knownSupervisors = new Map(
       supervisors.rows.map((row) => [row.supervisor_id, row.name])
     );
+    const catalogue = await loadCatalogue(pool);
 
     const results: {
       row: number;
@@ -858,6 +868,17 @@ export function registerExtensionRoutes(
         fail(`No active supervisor has the ID "${supervisorId}".`);
         continue;
       }
+      const placement = resolvePlacement(catalogue, {
+        college: text(entry.college),
+        program: text(entry.program),
+        major: text(entry.major),
+        block: text(entry.block),
+      });
+      if ("problem" in placement) {
+        fail(placement.problem);
+        continue;
+      }
+      const placementNote = placement.note ? ` ${placement.note}` : "";
 
       const supplied = typeof entry.password === "string" ? entry.password : "";
       const password = supplied || generatePassword();
@@ -880,7 +901,7 @@ export function registerExtensionRoutes(
         );
         if (taken.rows.length > 0) fail("A student with that ID or email already exists.");
         else {
-          results.push({ row: index + 1, student_id: studentId, name, status: "ok", message: "Ready to import." });
+          results.push({ row: index + 1, student_id: studentId, name, status: "ok", message: `Ready to import.${placementNote}` });
         }
         continue;
       }
@@ -890,19 +911,23 @@ export function registerExtensionRoutes(
           `
           INSERT INTO students
             (student_id, email, password, name, program, company, supervisor_id,
-             required_hours, is_active, coordinator_id, must_change_password)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, TRUE)
+             required_hours, is_active, coordinator_id, must_change_password,
+             program_id, major_id, block_id)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, TRUE, $9, TRUE, $10, $11, $12)
           `,
           [
             studentId,
             email,
             await hashPassword(password),
             name,
-            text(entry.program) || null,
+            placement.program_text,
             text(entry.company) || null,
             supervisorId || null,
             Math.round(requiredHours),
             coordinatorId,
+            placement.program_id,
+            placement.major_id,
+            placement.block_id,
           ]
         );
         results.push({
@@ -910,7 +935,7 @@ export function registerExtensionRoutes(
           student_id: studentId,
           name,
           status: "created",
-          message: "Created.",
+          message: `Created.${placementNote}`,
           password,
         });
 
@@ -2144,13 +2169,18 @@ export function registerExtensionRoutes(
   |                Manila's date before it is compared, so an entry made at
   |                23:30 belongs to that day and one at 00:30 to the next.
   |   q            looks in the person, their id and the record id at once
+  |   term, college, program, block, company, supervisor
+  |                the entries ABOUT those students: ones whose record is a
+  |                student among them, or that name one of them in their
+  |                details. An entry about, say, an attendance log is found
+  |                only if its details name the student.
   |
   */
 
   /** Reads the audit filters, or says what is wrong with them. */
   function auditFilters(query: Record<string, unknown>):
     | { problem: string }
-    | { where: string; joins: string; values: string[]; summary: Record<string, string> } {
+    | { where: string; joins: string; values: unknown[]; summary: Record<string, string> } {
     const action = text(query.action).slice(0, 60);
     const actorRole = text(query.actor_role);
     const search = text(query.q).slice(0, 100);
@@ -2175,6 +2205,11 @@ export function registerExtensionRoutes(
     if (entityType && !/^[a-z_]+$/.test(entityType)) {
       return { problem: "That is not a kind of record." };
     }
+    const subject = readStudentFilters(query);
+    if ("problem" in subject) return subject;
+    const chosen = hasFilters(subject.filters)
+      ? `(SELECT student_id FROM students WHERE TRUE${filterConditions(subject.filters, "")})`
+      : "";
 
     const summary: Record<string, string> = {};
     for (const [key, value] of Object.entries({
@@ -2182,9 +2217,11 @@ export function registerExtensionRoutes(
     })) {
       if (value) summary[key] = value;
     }
-    return {
-      // "attendance" matches every attendance action; "attendance.approve" one.
-      where: `
+    for (const [key, value] of Object.entries(subject.filters)) {
+      if (value !== undefined) summary[key] = String(value);
+    }
+    const bound = bindFilters(
+      `
         WHERE ($1 = '' OR a.action = $1 OR a.action LIKE $1 || '.%')
           AND ($2 = '' OR a.actor_role = $2)
           AND ($3 = '' OR (a.created_at AT TIME ZONE 'Asia/Manila')::date >= $3::date)
@@ -2198,14 +2235,26 @@ export function registerExtensionRoutes(
             OR COALESCE(st.name, sup.name, co.name, '') ILIKE '%' || $6 || '%')
           AND ($7 = '' OR a.entity_type = $7)
           AND ($8 = '' OR a.entity_id = $8)
+          ${
+            chosen
+              ? `AND ((a.entity_type = 'student' AND a.entity_id IN ${chosen})
+                   OR (a.details->>'student_id') IN ${chosen})`
+              : ""
+          }
       `,
+      [action, actorRole, from, to, search, person, entityType, entityId],
+      subject.filters
+    );
+    return {
+      // "attendance" matches every attendance action; "attendance.approve" one.
+      where: bound.text,
       joins: `
         FROM audit_log a
         LEFT JOIN students st ON a.actor_role = 'student' AND st.student_id::text = a.actor_id
         LEFT JOIN supervisors sup ON a.actor_role = 'supervisor' AND sup.supervisor_id::text = a.actor_id
         LEFT JOIN coordinators co ON a.actor_role = 'coordinator' AND co.coordinator_id::text = a.actor_id
       `,
-      values: [action, actorRole, from, to, search, person, entityType, entityId],
+      values: bound.values,
       summary,
     };
   }
@@ -2285,7 +2334,7 @@ export function registerExtensionRoutes(
                  a.action, a.entity_type, a.entity_id, a.details, a.created_at
           ${joins} ${filters}
           ORDER BY a.created_at DESC, a.id DESC
-          LIMIT $9 OFFSET $10
+          LIMIT $${values.length + 1} OFFSET $${values.length + 2}
           `,
           [...values, limit, offset]
         ),
@@ -3888,18 +3937,18 @@ export function registerExtensionRoutes(
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
-        let termId: number | "none" | undefined;
-        if (auth.role === "coordinator" && req.query.term !== undefined && req.query.term !== "") {
-          const term = String(req.query.term);
-          if (term !== "none" && !/^\d{1,9}$/.test(term)) {
-            return res.status(400).json({ message: "That is not a term." });
-          }
-          termId = term === "none" ? "none" : Number(term);
+        // The coordinator may narrow it (term, college, program, block,
+        // company, supervisor). A student or supervisor always gets their own.
+        let filters: StudentFilters = {};
+        if (auth.role === "coordinator") {
+          const read = readStudentFilters(req.query as Record<string, unknown>);
+          if ("problem" in read) return res.status(400).json({ message: read.problem });
+          filters = read.filters;
         }
         const projections = await projectionsFor(pool, {
           studentId: auth.role === "student" ? auth.id : undefined,
           supervisorId: auth.role === "supervisor" ? auth.id : undefined,
-          termId,
+          filters,
         });
         return res.json({ projections });
       } catch (error) {
@@ -3919,18 +3968,13 @@ export function registerExtensionRoutes(
   });
 
   // The figures behind the exports: students with their projection, and
-  // companies summed from them, optionally for one term.
+  // the same students summed by company, by program and by block. Takes
+  // the coordinator's filters.
   app.get("/api/coordinator/report", requireCoordinator, async (req, res) => {
     try {
-      let termId: number | "none" | undefined;
-      if (req.query.term !== undefined && req.query.term !== "") {
-        const term = String(req.query.term);
-        if (term !== "none" && !/^\d{1,9}$/.test(term)) {
-          return res.status(400).json({ message: "That is not a term." });
-        }
-        termId = term === "none" ? "none" : Number(term);
-      }
-      return res.json(await programmeReport(pool, termId));
+      const read = readStudentFilters(req.query as Record<string, unknown>);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      return res.json(await programmeReport(pool, read.filters));
     } catch (error) {
       console.error("GET REPORT ERROR:", error);
       return res.status(500).json({ message: "Failed to build the report." });

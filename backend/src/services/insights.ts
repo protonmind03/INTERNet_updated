@@ -26,6 +26,7 @@ import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
 import { clockSetting, manilaClock, sendOnce, type DigestDeps } from "./digests";
+import { bindFilters, filterConditions, type StudentFilters } from "./studentScope";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -151,9 +152,10 @@ type StudentFacts = {
 /** The facts both the projections and the alerts start from, for active students. */
 export async function loadStudents(
   pool: Pool,
-  scope: { studentId?: string; supervisorId?: string; termId?: number | "none" }
+  scope: { studentId?: string; supervisorId?: string; filters?: StudentFilters }
 ) {
-  const students = await pool.query<StudentFacts>(
+  const filters = scope.filters ?? {};
+  const bound = bindFilters(
     `
     SELECT s.student_id, s.name, s.company, s.supervisor_id, s.required_hours,
       (SELECT COALESCE(SUM(a.hours), 0)::float FROM attendance a
@@ -165,12 +167,13 @@ export async function loadStudents(
     LEFT JOIN terms t ON t.id = s.term_id
     WHERE s.is_active = TRUE
       AND ($1::text IS NULL OR s.student_id = $1)
-      AND ($2::text IS NULL OR s.supervisor_id = $2)
-      AND ($3::text IS NULL OR ($3 = 'none' AND s.term_id IS NULL) OR s.term_id::text = $3)
+      AND ($2::text IS NULL OR s.supervisor_id = $2)${filterConditions(filters, "s")}
     ORDER BY s.name
     `,
-    [scope.studentId ?? null, scope.supervisorId ?? null, scope.termId === undefined ? null : String(scope.termId)]
+    [scope.studentId ?? null, scope.supervisorId ?? null],
+    filters
   );
+  const students = await pool.query<StudentFacts>(bound.text, bound.values);
   const ids = students.rows.map((row) => row.student_id);
   const [schedules, holidays] = await Promise.all([
     pool.query<{ student_id: string; day: string; hours: number }>(
@@ -202,7 +205,7 @@ export type StudentProjection = Projection & {
 
 export async function projectionsFor(
   pool: Pool,
-  scope: { studentId?: string; supervisorId?: string; termId?: number | "none" },
+  scope: { studentId?: string; supervisorId?: string; filters?: StudentFilters },
   now: Date = new Date()
 ): Promise<StudentProjection[]> {
   const { date: today } = manilaClock(now);
@@ -236,21 +239,20 @@ const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one :
 
 /**
  * Everything the coordinator should be told about, each kind only when it
- * has something. With `termId` the three kinds that are about students
- * (slow reviews, missed days, at risk) count only that term's students;
- * agreements belong to companies and are always all listed. Without it,
- * as the weekly email calls it, everything is counted.
+ * has something. With `filters` (a term, college, program, block, company
+ * or supervisor) the three kinds that are about students (slow reviews,
+ * missed days, at risk) count only those students; agreements belong to
+ * companies and are always all listed. Without any, as the weekly email
+ * calls it, everything is counted.
  */
 export async function coordinatorAlerts(
   pool: Pool,
   now: Date = new Date(),
-  termId?: number | "none"
+  filters: StudentFilters = {}
 ): Promise<Alert[]> {
   const { date: today } = manilaClock(now);
-  const term = termId === undefined ? null : String(termId);
-  const inTerm = `($3::text IS NULL OR ($3 = 'none' AND s.term_id IS NULL) OR s.term_id::text = $3)`;
-  const [slow, agreements, facts] = await Promise.all([
-    pool.query<{ supervisor_id: string; name: string; waiting: number; oldest_days: number }>(
+  const inTerm = `TRUE${filterConditions(filters, "s")}`;
+  const slowQuery = bindFilters(
       `
       WITH waiting AS (
         SELECT s.supervisor_id, a.time_out AS since FROM attendance a JOIN students s ON s.student_id = a.student_id
@@ -276,7 +278,13 @@ export async function coordinatorAlerts(
       GROUP BY sup.supervisor_id, sup.name
       ORDER BY oldest_days DESC, sup.name
       `,
-      [now.toISOString(), SLOW_REVIEW_DAYS, term]
+    [now.toISOString(), SLOW_REVIEW_DAYS],
+    filters
+  );
+  const [slow, agreements, facts] = await Promise.all([
+    pool.query<{ supervisor_id: string; name: string; waiting: number; oldest_days: number }>(
+      slowQuery.text,
+      slowQuery.values
     ),
     pool.query<{ id: number; name: string; moa_expiry: string; days: number }>(
       `SELECT c.id, c.name, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
@@ -286,7 +294,7 @@ export async function coordinatorAlerts(
        ORDER BY c.moa_expiry, c.name`,
       [today, MOA_WARNING_DAYS]
     ),
-    loadStudents(pool, { termId }),
+    loadStudents(pool, { filters }),
   ]);
 
   const ids = facts.students.map((row) => row.student_id);
@@ -454,6 +462,11 @@ export async function sendCoordinatorDigests(pool: Pool, deps: DigestDeps = {}):
 
 export type ReportStudent = StudentProjection & {
   program: string | null;
+  /** The college, the program's short code, the major and the block, when the student is linked to them. */
+  college: string | null;
+  program_code: string | null;
+  major: string | null;
+  block: string | null;
   supervisor: string | null;
   term: string | null;
   completion: number;
@@ -472,19 +485,69 @@ export type ReportCompany = {
   last_visit: string | null;
 };
 
+/** Students summed under one heading: a program, or a block. */
+export type ReportGroup = {
+  name: string;
+  students: number;
+  verified_hours: number;
+  required_hours: number;
+  average_completion: number;
+  completed: number;
+  at_risk: number;
+};
+
+function summed(groups: Map<string, ReportStudent[]>): ReportGroup[] {
+  const round = (value: number) => Math.round(value * 100) / 100;
+  return [...groups.entries()]
+    .map(([name, rows]) => ({
+      name,
+      students: rows.length,
+      verified_hours: round(rows.reduce((sum, row) => sum + row.verified_hours, 0)),
+      required_hours: round(rows.reduce((sum, row) => sum + row.required_hours, 0)),
+      average_completion: Math.round(rows.reduce((sum, row) => sum + row.completion, 0) / rows.length),
+      completed: rows.filter((row) => row.remaining_hours === 0 && row.required_hours > 0).length,
+      at_risk: rows.filter((row) => row.at_risk).length,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export async function programmeReport(
   pool: Pool,
-  termId?: number | "none",
+  filters: StudentFilters = {},
   now: Date = new Date()
-): Promise<{ students: ReportStudent[]; companies: ReportCompany[] }> {
-  const projections = await projectionsFor(pool, { termId }, now);
+): Promise<{
+  students: ReportStudent[];
+  companies: ReportCompany[];
+  programs: ReportGroup[];
+  blocks: ReportGroup[];
+}> {
+  const projections = await projectionsFor(pool, { filters }, now);
   const ids = projections.map((row) => row.student_id);
   const [extra, records] = await Promise.all([
-    pool.query<{ student_id: string; program: string | null; supervisor: string | null; term: string | null }>(
-      `SELECT s.student_id, s.program, sup.name AS supervisor, t.name AS term
+    pool.query<{
+      student_id: string;
+      program: string | null;
+      supervisor: string | null;
+      term: string | null;
+      college: string | null;
+      program_code: string | null;
+      program_name: string | null;
+      major: string | null;
+      block: string | null;
+    }>(
+      `SELECT s.student_id, s.program, sup.name AS supervisor, t.name AS term,
+              col.name AS college, p.short_code AS program_code, p.name AS program_name,
+              m.name AS major,
+              CASE WHEN b.id IS NULL THEN NULL
+                   ELSE bp.short_code || ' ' || b.year_level || UPPER(TRIM(b.section)) END AS block
        FROM students s
        LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
        LEFT JOIN terms t ON t.id = s.term_id
+       LEFT JOIN programs p ON p.id = s.program_id
+       LEFT JOIN colleges col ON col.id = p.college_id
+       LEFT JOIN majors m ON m.id = s.major_id
+       LEFT JOIN blocks b ON b.id = s.block_id
+       LEFT JOIN programs bp ON bp.id = b.program_id
        WHERE s.student_id = ANY($1::text[])`,
       [ids]
     ),
@@ -500,6 +563,10 @@ export async function programmeReport(
     program: extraOf.get(row.student_id)?.program ?? null,
     supervisor: extraOf.get(row.student_id)?.supervisor ?? null,
     term: extraOf.get(row.student_id)?.term ?? null,
+    college: extraOf.get(row.student_id)?.college ?? null,
+    program_code: extraOf.get(row.student_id)?.program_code ?? null,
+    major: extraOf.get(row.student_id)?.major ?? null,
+    block: extraOf.get(row.student_id)?.block ?? null,
     completion:
       row.required_hours > 0 ? Math.min(100, Math.round((row.verified_hours / row.required_hours) * 100)) : 0,
   }));
@@ -524,5 +591,18 @@ export async function programmeReport(
       last_visit: recordOf.get(company.toLowerCase())?.last_visit ?? null,
     }))
     .sort((a, b) => a.company.localeCompare(b.company));
-  return { students, companies };
+
+  // The same sums by program and by block. A student linked to a program
+  // is counted under its name; one who is not, under the text on their
+  // account, so nobody is left out of the table.
+  const byProgram = new Map<string, ReportStudent[]>();
+  const byBlock = new Map<string, ReportStudent[]>();
+  for (const row of students) {
+    const program =
+      extraOf.get(row.student_id)?.program_name || (row.program || "").trim() || "No program";
+    byProgram.set(program, [...(byProgram.get(program) || []), row]);
+    const block = row.block || "No block";
+    byBlock.set(block, [...(byBlock.get(block) || []), row]);
+  }
+  return { students, companies, programs: summed(byProgram), blocks: summed(byBlock) };
 }

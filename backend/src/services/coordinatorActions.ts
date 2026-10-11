@@ -24,6 +24,7 @@
 import type { Pool } from "pg";
 import { manilaClock } from "./digests";
 import { MISSED_DAYS_ALERT, MOA_WARNING_DAYS, SLOW_REVIEW_DAYS, coordinatorAlerts } from "./insights";
+import { bindFilters, filterConditions, filtersAsQuery, type StudentFilters } from "./studentScope";
 
 export type ActionRow = {
   key: string;
@@ -60,16 +61,20 @@ const word = (count: number, one: string, many: string) => (count === 1 ? one : 
  */
 export async function coordinatorActions(
   pool: Pool,
-  options: { termId?: number | "none"; flagged: string },
+  options: { filters?: StudentFilters; flagged: string },
   now: Date = new Date()
 ): Promise<CoordinatorActions> {
-  const term = options.termId === undefined ? null : String(options.termId);
+  const filters = options.filters ?? {};
   const clock = manilaClock(now);
-  // One term's students, written against "s". $1 is the term, or null for everyone.
-  const inTerm = `($1::text IS NULL OR ($1 = 'none' AND s.term_id IS NULL) OR s.term_id::text = $1)`;
+  // The chosen students, written against "s" (services/studentScope.ts).
+  const inTerm = `TRUE${filterConditions(filters, "s")}`;
+  const run = <Row extends Record<string, unknown>>(sql: string, params: unknown[]) => {
+    const bound = bindFilters(sql, params, filters);
+    return pool.query<Row>(bound.text, bound.values);
+  };
 
   const [counts, queues, alerts] = await Promise.all([
-    pool.query<{
+    run<{
       concerns: number;
       flagged: number;
       unassigned: number;
@@ -106,16 +111,16 @@ export async function coordinatorActions(
         (SELECT COUNT(*)::int FROM tasks t JOIN mine m ON m.student_id = t.student_id
           WHERE t.status = 'Submitted') AS pending_tasks,
         (SELECT COUNT(DISTINCT t.student_id)::int FROM tasks t JOIN mine m ON m.student_id = t.student_id
-          WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < $2::date) AS overdue_students,
+          WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < $1::date) AS overdue_students,
         (SELECT COUNT(*)::int FROM tasks t JOIN mine m ON m.student_id = t.student_id
-          WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < $2::date) AS overdue_tasks,
+          WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < $1::date) AS overdue_tasks,
         (SELECT COUNT(*)::int FROM mine m
-          WHERE NOT EXISTS (SELECT 1 FROM holidays h WHERE h.holiday_date = $2::date)
+          WHERE NOT EXISTS (SELECT 1 FROM holidays h WHERE h.holiday_date = $1::date)
             AND EXISTS (SELECT 1 FROM ojt_schedule o
                         WHERE o.student_id = m.student_id AND o.is_active = TRUE
-                          AND INITCAP(TRIM(o.day)) = $3 AND COALESCE(o.hours, 0) > 0)
-            AND NOT EXISTS (SELECT 1 FROM attendance a WHERE a.student_id = m.student_id AND a.date = $2::date)
-            AND NOT EXISTS (SELECT 1 FROM absences b WHERE b.student_id = m.student_id AND b.date = $2::date)
+                          AND INITCAP(TRIM(o.day)) = $2 AND COALESCE(o.hours, 0) > 0)
+            AND NOT EXISTS (SELECT 1 FROM attendance a WHERE a.student_id = m.student_id AND a.date = $1::date)
+            AND NOT EXISTS (SELECT 1 FROM absences b WHERE b.student_id = m.student_id AND b.date = $1::date)
         ) AS scheduled_not_in,
         (SELECT COUNT(*)::int FROM progress) AS students,
         (SELECT COUNT(*)::int FROM progress WHERE percent <= 0) AS not_started,
@@ -123,9 +128,9 @@ export async function coordinatorActions(
         (SELECT COUNT(*)::int FROM progress WHERE percent >= 50 AND percent < 100) AS past_half,
         (SELECT COUNT(*)::int FROM progress WHERE percent >= 100) AS completed
       `,
-      [term, clock.date, WEEKDAYS[clock.weekday]]
+      [clock.date, WEEKDAYS[clock.weekday]]
     ),
-    pool.query<{ supervisor_id: string; name: string; interns: number; logs: number; tasks: number }>(
+    run<{ supervisor_id: string; name: string; interns: number; logs: number; tasks: number }>(
       `
       SELECT sup.supervisor_id, sup.name, COUNT(*)::int AS interns,
         COALESCE(SUM((SELECT COUNT(*) FROM attendance a
@@ -137,17 +142,18 @@ export async function coordinatorActions(
       WHERE s.is_active = TRUE AND ${inTerm}
       GROUP BY sup.supervisor_id, sup.name
       `,
-      [term]
+      []
     ),
-    coordinatorAlerts(pool, now, options.termId),
+    coordinatorAlerts(pool, now, filters),
   ]);
 
   const count = counts.rows[0];
   const alert = (key: string) => alerts.find((item) => item.key === key)?.items ?? [];
   const names = (items: { label: string }[]) => items.slice(0, 3).map((item) => item.label);
-  // Lists that can show one term's students open on that term.
+  // Lists that can be narrowed the same way open already narrowed.
+  const carried = filtersAsQuery(filters);
   const withTerm = (path: string) =>
-    term === null ? path : `${path}${path.includes("?") ? "&" : "?"}term=${encodeURIComponent(term)}`;
+    carried ? `${path}${path.includes("?") ? "&" : "?"}${carried}` : path;
 
   const slow = alert("slow_supervisors");
   const agreements = alert("moa_expiring");
