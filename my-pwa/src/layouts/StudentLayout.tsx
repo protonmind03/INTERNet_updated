@@ -41,7 +41,6 @@ const SECONDARY_NAV: NavItem[] = [
   { label: "Feedback", path: "/student/feedback", icon: "star" },
   { label: "Report a concern", path: "/report", icon: "flag" },
   { label: "Announcements", path: "/announcements", icon: "megaphone" },
-  { label: "Notifications", path: "/notifications", icon: "bell" },
 ];
 
 const ACCOUNT_NAV: NavItem = { label: "Profile", path: "/profile", icon: "user" };
