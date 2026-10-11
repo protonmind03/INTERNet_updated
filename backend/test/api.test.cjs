@@ -4329,3 +4329,79 @@ test("a second coordinator is created, must change their password, and can be de
     await pool.end();
   }
 });
+
+/*
+| Site visits
+*/
+
+test("site visits are the coordinator's, and each needs a real company, a past date and findings", async () => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/site-visits";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  const list = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.visits));
+  assert.equal((await jsonRequest(`${path}?company_id=abc`, { headers: authHeaders(coordinatorToken) })).response.status, 400);
+  assert.equal((await jsonRequest(`${path}?company_id=999999999`, { headers: authHeaders(coordinatorToken) })).body.visits.length, 0);
+
+  const good = { company_id: 999999999, visit_date: "2026-01-15", findings: "Met the supervisor; interns are well placed." };
+  const post = (body, token = coordinatorToken) => jsonRequest(path, jsonBody(token, "POST", body));
+  assert.equal((await post(good, supervisor.token)).response.status, 403);
+  for (const bad of [{}, { ...good, company_id: "Acme" }, { ...good, company_id: 0 }, { ...good, visit_date: "15/01/2026" },
+    { ...good, visit_date: "2099-01-01" }, { ...good, findings: "Fine." }, { ...good, findings: "x".repeat(3001) },
+    { ...good, follow_up: "x".repeat(1001) }, good]) {
+    assert.equal((await post(bad)).response.status, 400, JSON.stringify(bad).slice(0, 70));
+  }
+  for (const id of ["999999999", "abc"]) {
+    assert.equal((await jsonRequest(`${path}/${id}`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404, id);
+  }
+  assert.equal((await jsonRequest(`${path}/abc`, jsonBody(coordinatorToken, "PUT", good))).response.status, 404);
+});
+
+test("a visit is logged against a company, shows on the company, and can be corrected or removed", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  const path = "/api/coordinator/site-visits";
+  const name = `Visit Test Company ${Date.now()}`;
+  let companyId;
+  try {
+    companyId = (await pool.query(`INSERT INTO companies (name) VALUES ($1) RETURNING id`, [name])).rows[0].id;
+    const record = async () => (await jsonRequest("/api/coordinator/company-records", { headers: authHeaders(coordinatorToken) })).body.companies.find((item) => item.id === companyId);
+    assert.deepEqual([(await record()).visits, (await record()).last_visit], [0, null]);
+
+    const first = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { company_id: companyId, visit_date: "2026-01-15", findings: "  Met the supervisor; interns are well placed.  ", follow_up: "" }));
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    assert.equal(first.body.visit.company, name);
+    assert.equal(first.body.visit.findings, "Met the supervisor; interns are well placed.");
+    assert.equal(first.body.visit.follow_up, null);
+    assert.equal(first.body.visit.visited_by_name, coordinator.name);
+    await jsonRequest(path, jsonBody(coordinatorToken, "POST", { company_id: companyId, visit_date: "2026-03-02", findings: "Second visit: one intern was moved to another desk.", follow_up: "Ask for the new seating plan." }));
+
+    // Newest first, for that company only; the company shows the count and the latest date.
+    const mine = await jsonRequest(`${path}?company_id=${companyId}`, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(mine.body.visits.map((visit) => visit.visit_date), ["2026-03-02", "2026-01-15"]);
+    assert.deepEqual([(await record()).visits, (await record()).last_visit], [2, "2026-03-02"]);
+
+    const edited = await jsonRequest(`${path}/${first.body.visit.id}`, jsonBody(coordinatorToken, "PUT", { company_id: companyId, visit_date: "2026-01-16", findings: "Met the supervisor on the 16th, not the 15th." }));
+    assert.equal(edited.response.status, 200);
+    assert.equal(edited.body.visit.visit_date, "2026-01-16");
+    assert.equal((await jsonRequest(`${path}/${first.body.visit.id}`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 200);
+    assert.equal((await record()).visits, 1);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=site_visit&limit=10", { headers: authHeaders(coordinatorToken) });
+    const actions = audit.body.entries.filter((entry) => String(entry.entity_id) === String(companyId)).map((entry) => entry.action);
+    assert.deepEqual(actions, ["site_visit.remove", "site_visit.edit", "site_visit.log", "site_visit.log"]);
+  } finally {
+    if (companyId) {
+      await pool.query(`DELETE FROM site_visits WHERE company_id = $1`, [companyId]);
+      await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
+    }
+    await pool.end();
+  }
+});

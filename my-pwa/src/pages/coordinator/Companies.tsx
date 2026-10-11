@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Pagination from "../../components/Pagination";
 import {
   Button,
@@ -46,6 +47,9 @@ type Company = {
   active_students: number;
   students: number;
   supervisors: number;
+  /** Missing when the answer comes from a server older than site visits. */
+  visits?: number;
+  last_visit?: string | null;
 };
 
 type Unlinked = { name: string; people: number };
@@ -71,6 +75,7 @@ function needsRenewal(company: Company): boolean {
 }
 
 export default function CoordinatorCompanies() {
+  const navigate = useNavigate();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [unlinked, setUnlinked] = useState<Unlinked[]>([]);
   const [loading, setLoading] = useState(true);
@@ -139,6 +144,11 @@ export default function CoordinatorCompanies() {
 
   const menuFor = (company: Company) => [
     { label: "Edit", icon: "edit" as const, onSelect: () => setEditing(company) },
+    {
+      label: company.visits ? `Site visits (${company.visits})` : "Site visits",
+      icon: "building" as const,
+      onSelect: () => navigate(`/coordinator/site-visits?company=${company.id}`),
+    },
     company.is_active
       ? {
           label: "Mark inactive",
@@ -240,6 +250,7 @@ export default function CoordinatorCompanies() {
                       <p className="truncate text-sm font-semibold text-slate-900">{company.name}</p>
                       <p className="truncate text-xs text-slate-500">
                         {company.contact_person || "No contact"} · {places(company)}
+                        {company.last_visit ? ` · visited ${formatDate(company.last_visit)}` : ""}
                       </p>
                       <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                         <StatusBadge status={agreement(company).label} tone={agreement(company).tone} />
@@ -277,6 +288,11 @@ export default function CoordinatorCompanies() {
                           <p className="text-xs text-slate-500">
                             {[company.contact_email, company.contact_phone].filter(Boolean).join(" · ")}
                           </p>
+                          {company.last_visit && (
+                            <p className="text-xs text-slate-500">
+                              Last visited {formatDate(company.last_visit)}
+                            </p>
+                          )}
                         </td>
                         <td className="px-3 py-3">
                           <StatusBadge status={agreement(company).label} tone={agreement(company).tone} />

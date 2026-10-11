@@ -232,6 +232,31 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("supervisorId"),
     keep: ["to"],
   },
+  // Site visits
+  {
+    method: "POST",
+    path: "/api/coordinator/site-visits",
+    action: "site_visit.log",
+    entityType: "company",
+    entityId: (source) => source.body.company_id,
+    keep: ["visit_date"],
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/site-visits/:id",
+    action: "site_visit.edit",
+    entityType: "company",
+    entityId: (source) => source.body.company_id,
+    keep: ["visit_date"],
+  },
+  {
+    method: "DELETE",
+    path: "/api/coordinator/site-visits/:id",
+    action: "site_visit.remove",
+    entityType: "company",
+    entityId: (source) => nested(source.result.visit, "company_id"),
+    from: (source) => ({ visit_date: nested(source.result.visit, "visit_date") }),
+  },
   // Coordinator accounts
   {
     method: "POST",

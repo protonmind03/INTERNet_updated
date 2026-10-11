@@ -1645,7 +1645,10 @@ export function registerExtensionRoutes(
                    WHERE s.company_id = c.id AND s.is_active = TRUE) AS active_students,
                  (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id) AS students,
                  (SELECT COUNT(*)::int FROM supervisors p
-                   WHERE p.company_id = c.id AND p.is_active = TRUE) AS supervisors
+                   WHERE p.company_id = c.id AND p.is_active = TRUE) AS supervisors,
+                 (SELECT COUNT(*)::int FROM site_visits v WHERE v.company_id = c.id) AS visits,
+                 (SELECT TO_CHAR(MAX(v.visit_date), 'YYYY-MM-DD') FROM site_visits v
+                   WHERE v.company_id = c.id) AS last_visit
           FROM companies c
           ORDER BY c.is_active DESC, LOWER(c.name)
           `
@@ -3565,6 +3568,136 @@ export function registerExtensionRoutes(
       return res.status(500).json({ message: "Failed to update the coordinator account." });
     } finally {
       client.release();
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | SITE VISITS (coordinator)
+  |--------------------------------------------------------------------------
+  |
+  | A log of the coordinator's visits to host companies: when, what was
+  | found, and what needs following up. Any coordinator can read and add
+  | visits; a visit can be corrected or removed afterwards.
+  |
+  */
+
+  function readVisit(
+    body: unknown
+  ): { visit: { companyId: number; date: string; findings: string; followUp: string | null } } | { problem: string } {
+    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const companyId = Number(input.company_id);
+    const date = text(input.visit_date);
+    const findings = text(input.findings);
+    const followUp = text(input.follow_up);
+    if (!Number.isInteger(companyId) || companyId <= 0) {
+      return { problem: "Choose the company that was visited." };
+    }
+    if (!DATE_PATTERN.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
+      return { problem: "Give the date of the visit, written as YYYY-MM-DD." };
+    }
+    if (date > todayInManila()) {
+      return { problem: "A visit is logged after it happens; that date has not come yet." };
+    }
+    if (findings.length < 10 || findings.length > 3000) {
+      return { problem: "Say what you found on the visit (10 to 3000 characters)." };
+    }
+    if (followUp.length > 1000) {
+      return { problem: "Keep the follow-up to 1000 characters." };
+    }
+    return { visit: { companyId, date, findings, followUp: followUp || null } };
+  }
+
+  const VISIT_COLUMNS = `
+    v.id, v.company_id, c.name AS company, TO_CHAR(v.visit_date, 'YYYY-MM-DD') AS visit_date,
+    v.visited_by_name, v.findings, v.follow_up, v.created_at
+  `;
+  const VISIT_FROM = `site_visits v JOIN companies c ON c.id = v.company_id`;
+
+  app.get("/api/coordinator/site-visits", requireCoordinator, async (req, res) => {
+    try {
+      const company = req.query.company_id;
+      if (company !== undefined && !/^\d{1,9}$/.test(String(company))) {
+        return res.status(400).json({ message: "That is not a company." });
+      }
+      const result = await pool.query(
+        `SELECT ${VISIT_COLUMNS} FROM ${VISIT_FROM}
+         WHERE ($1::int IS NULL OR v.company_id = $1::int)
+         ORDER BY v.visit_date DESC, v.id DESC LIMIT 500`,
+        [company === undefined ? null : Number(company)]
+      );
+      return res.json({ visits: result.rows });
+    } catch (error) {
+      console.error("GET SITE VISITS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the site visits." });
+    }
+  });
+
+  app.post("/api/coordinator/site-visits", requireCoordinator, async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const read = readVisit(req.body);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const [company, me] = await Promise.all([
+        pool.query(`SELECT 1 FROM companies WHERE id = $1`, [read.visit.companyId]),
+        pool.query<{ name: string }>(`SELECT name FROM coordinators WHERE coordinator_id = $1`, [auth.id]),
+      ]);
+      if (company.rows.length === 0) {
+        return res.status(400).json({ message: "Choose a company from the Companies page." });
+      }
+      const saved = await pool.query<{ id: number }>(
+        `INSERT INTO site_visits (company_id, visit_date, visited_by, visited_by_name, findings, follow_up)
+         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+        [read.visit.companyId, read.visit.date, auth.id, me.rows[0]?.name || "OJT coordinator", read.visit.findings, read.visit.followUp]
+      );
+      const result = await pool.query(`SELECT ${VISIT_COLUMNS} FROM ${VISIT_FROM} WHERE v.id = $1`, [saved.rows[0].id]);
+      return res.status(201).json({ message: "Visit logged.", visit: result.rows[0] });
+    } catch (error) {
+      console.error("CREATE SITE VISIT ERROR:", error);
+      return res.status(500).json({ message: "Failed to log the visit." });
+    }
+  });
+
+  app.put("/api/coordinator/site-visits/:id", requireCoordinator, async (req, res) => {
+    try {
+      if (!/^\d{1,9}$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Visit not found." });
+      }
+      const read = readVisit(req.body);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const company = await pool.query(`SELECT 1 FROM companies WHERE id = $1`, [read.visit.companyId]);
+      if (company.rows.length === 0) {
+        return res.status(400).json({ message: "Choose a company from the Companies page." });
+      }
+      const updated = await pool.query(
+        `UPDATE site_visits SET company_id = $2, visit_date = $3, findings = $4, follow_up = $5, updated_at = NOW()
+         WHERE id = $1 RETURNING id`,
+        [Number(req.params.id), read.visit.companyId, read.visit.date, read.visit.findings, read.visit.followUp]
+      );
+      if (updated.rows.length === 0) return res.status(404).json({ message: "Visit not found." });
+      const result = await pool.query(`SELECT ${VISIT_COLUMNS} FROM ${VISIT_FROM} WHERE v.id = $1`, [Number(req.params.id)]);
+      return res.json({ message: "Visit updated.", visit: result.rows[0] });
+    } catch (error) {
+      console.error("UPDATE SITE VISIT ERROR:", error);
+      return res.status(500).json({ message: "Failed to update the visit." });
+    }
+  });
+
+  app.delete("/api/coordinator/site-visits/:id", requireCoordinator, async (req, res) => {
+    try {
+      if (!/^\d{1,9}$/.test(String(req.params.id))) {
+        return res.status(404).json({ message: "Visit not found." });
+      }
+      const result = await pool.query<{ company_id: number; visit_date: string }>(
+        `DELETE FROM site_visits WHERE id = $1
+         RETURNING company_id, TO_CHAR(visit_date, 'YYYY-MM-DD') AS visit_date`,
+        [Number(req.params.id)]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Visit not found." });
+      return res.json({ message: "Visit removed.", visit: result.rows[0] });
+    } catch (error) {
+      console.error("DELETE SITE VISIT ERROR:", error);
+      return res.status(500).json({ message: "Failed to remove the visit." });
     }
   });
 }
