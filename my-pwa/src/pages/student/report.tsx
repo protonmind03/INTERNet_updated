@@ -10,7 +10,6 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
-import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { formatDateTime } from "../../lib/format";
@@ -53,7 +52,11 @@ const CATEGORIES: Record<ReportType, string[]> = {
 
 const MAX_EVIDENCE_MB = 5;
 
-export default function ReportComplaint() {
+/**
+ * Reporting a concern to the OJT coordinator, and the concerns already
+ * reported. The "Concerns" tab of the Resolution Center.
+ */
+export default function ConcernsPanel() {
   const student = useAccount("student");
   const studentId = student?.student_id;
 
@@ -85,11 +88,11 @@ export default function ReportComplaint() {
         withStudentAuth()
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Could not load your reports.");
+      if (!response.ok) throw new Error(data.message || "Could not load your concerns.");
       setReports(Array.isArray(data.complaints) ? data.complaints : []);
       setReportsError("");
     } catch (loadError) {
-      setReportsError(errorText(loadError, "Could not load your reports."));
+      setReportsError(errorText(loadError, "Could not load your concerns."));
     } finally {
       setReportsLoading(false);
     }
@@ -147,15 +150,15 @@ export default function ReportComplaint() {
     type === "student"
       ? {
           person: "Student's name",
-          personHint: "The student this report is about",
+          personHint: "The student this concern is about",
           context: "Program and section",
           contextHint: "For example, BS Information Technology 4A",
         }
       : {
           person: "Supervisor's name",
-          personHint: "The supervisor this report is about",
+          personHint: "The supervisor this concern is about",
           context: "Company or host institution",
-          contextHint: "Where the incident happened",
+          contextHint: "Where it happened",
         };
 
   const submit = async (event: React.FormEvent) => {
@@ -198,9 +201,9 @@ export default function ReportComplaint() {
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(data.message || "Your report could not be submitted.");
+        throw new Error(data.message || "Your concern could not be sent.");
       }
-      toast.success("Report submitted. Your OJT coordinator will review it.");
+      toast.success("Concern sent. Your OJT coordinator will review it.");
       discardDescription();
       setDescription("");
       setEvidence(null);
@@ -210,20 +213,22 @@ export default function ReportComplaint() {
       }
       await loadReports();
     } catch (submitError) {
-      setError(errorText(submitError, "Your report could not be submitted."));
+      setError(errorText(submitError, "Your concern could not be sent."));
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <StudentLayout
-      title="Report a concern"
-      subtitle="Tell your OJT coordinator about a problem at your placement."
-    >
       <div className="grid gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <form onSubmit={submit} className="space-y-5 p-4 sm:p-5" noValidate>
+            <div>
+              <h2 className="text-sm font-semibold text-slate-900">Report a concern</h2>
+              <p className="mt-0.5 text-sm text-slate-500">
+                Tell your OJT coordinator about a problem at your placement.
+              </p>
+            </div>
             <fieldset>
               <legend className="mb-2 text-sm font-medium text-slate-700">
                 Who is this about?
@@ -360,7 +365,7 @@ export default function ReportComplaint() {
                 In an emergency, contact your coordinator directly.
               </p>
               <Button type="submit" busy={submitting} doneLabel="Sent" failed={Boolean(error)} busyProcess="report">
-                {submitting ? "Submitting" : "Submit report"}
+                {submitting ? "Sending" : "Send concern"}
               </Button>
             </div>
           </form>
@@ -370,19 +375,19 @@ export default function ReportComplaint() {
           <Card className="p-4 sm:p-5">
             <h2 className="text-sm font-semibold text-slate-900">What happens next</h2>
             <ol className="mt-3 space-y-3 text-sm text-slate-600">
-              <Step number={1}>Your OJT coordinator receives the report.</Step>
+              <Step number={1}>Your OJT coordinator receives your concern.</Step>
               <Step number={2}>They review it, usually within 3 to 5 working days.</Step>
               <Step number={3}>
                 You are notified here when there is a resolution or a follow-up question.
               </Step>
             </ol>
             <p className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-500">
-              Only file reports that are true. False reports may lead to disciplinary action.
+              Only report what is true. A false concern may lead to disciplinary action.
             </p>
           </Card>
 
           <Card>
-            <CardHeader title="Your reports" />
+            <CardHeader title="Your concerns" />
             <div className="mt-3">
               {reportsLoading ? (
                 <SkeletonRows rows={2} />
@@ -391,7 +396,7 @@ export default function ReportComplaint() {
                   <ErrorNotice message={reportsError} onRetry={() => void loadReports()} />
                 </div>
               ) : reports.length === 0 ? (
-                <EmptyState icon="flag" title="You haven't filed any reports" />
+                <EmptyState icon="flag" title="You have not reported a concern" />
               ) : (
                 <ul className="divide-y divide-slate-100 border-t border-slate-100">
                   {reports.map((report) => (
@@ -437,7 +442,6 @@ export default function ReportComplaint() {
           </Card>
         </div>
       </div>
-    </StudentLayout>
   );
 }
 

@@ -19,9 +19,16 @@ import TimeInProvider from "../pages/student/TimeInProvider";
 |--------------------------------------------------------------------------
 |
 | Students mostly use the system on a phone, to time in with a photo. So
-| on small screens the four things they do daily sit in a bottom tab bar
-| and everything else is one tap away under "More". On a desktop the same
-| destinations become a sidebar.
+| on small screens the four things they do daily sit in a bottom tab bar,
+| with Schedule and Weekly journal one tap away under "More". On a desktop
+| the same destinations are a sidebar.
+|
+| What is about the account rather than the day is in the header: the bell
+| (notifications and announcements) and, under the avatar on a phone,
+| Profile, the Resolution Center and Sign out. On a desktop the Resolution
+| Center is a labelled button in the header and Profile and Sign out are
+| at the foot of the sidebar. The next step of the day is the floating
+| button on a phone and a button in the page header on a desktop.
 |
 */
 
@@ -37,11 +44,12 @@ const PRIMARY_NAV: NavItem[] = [
 const SECONDARY_NAV: NavItem[] = [
   { label: "Schedule", path: "/schedule", icon: "calendar" },
   { label: "Weekly journal", path: "/journal", icon: "note" },
-  { label: "Feedback", path: "/student/feedback", icon: "star" },
-  { label: "Report a concern", path: "/report", icon: "flag" },
 ];
 
 const ACCOUNT_NAV: NavItem = { label: "Profile", path: "/profile", icon: "user" };
+
+/** Concerns and evaluations. Reached from the header, not the menu. */
+const RESOLUTION_NAV: NavItem = { label: "Resolution Center", path: "/student/resolution", icon: "flag" };
 
 type LayoutProps = {
   title: string;
@@ -168,6 +176,19 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
             }
             right={
               <>
+                {desktop && (
+                  <NavLink
+                    to={RESOLUTION_NAV.path}
+                    className={({ isActive }) =>
+                      `flex h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold ${
+                        isActive ? "bg-psu-50 text-psu-800" : "text-slate-600 hover:bg-slate-100"
+                      }`
+                    }
+                  >
+                    <Icon name={RESOLUTION_NAV.icon} size={18} />
+                    {RESOLUTION_NAV.label}
+                  </NavLink>
+                )}
                 <NotificationBell
                   role="student"
                   announcementsFor="student"
@@ -204,6 +225,17 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
                         >
                           <Icon name="user" className="text-slate-400" />
                           Profile
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMenuOpen(false);
+                            navigate(RESOLUTION_NAV.path);
+                          }}
+                          className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
+                        >
+                          <Icon name={RESOLUTION_NAV.icon} className="text-slate-400" />
+                          {RESOLUTION_NAV.label}
                         </button>
                         <button
                           type="button"

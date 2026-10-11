@@ -9,7 +9,6 @@ import {
   ErrorNotice,
   SkeletonRows,
 } from "../../components/ui";
-import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDate } from "../../lib/format";
 import { useAccount } from "../../lib/session";
@@ -29,7 +28,11 @@ type Evaluation = {
 
 const RATING_WORDS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
 
-export default function StudentFeedback() {
+/**
+ * How the student was evaluated, and their own rating of the company.
+ * The "Evaluations" tab of the Resolution Center.
+ */
+export default function EvaluationsPanel() {
   const student = useAccount("student");
   const studentId = student?.student_id;
   const final = useFinalEvaluation("student", studentId);
@@ -119,10 +122,6 @@ export default function StudentFeedback() {
   const shown = hovered || rating;
 
   return (
-    <StudentLayout
-      title="Feedback"
-      subtitle="See how you were evaluated, and rate your training experience."
-    >
       <div className="space-y-5">
         {loadError && <ErrorNotice message={loadError} onRetry={() => void load()} />}
 
@@ -177,9 +176,7 @@ export default function StudentFeedback() {
           <div className="space-y-5 lg:col-span-2">
             <Card>
               <form onSubmit={submit} className="p-4 sm:p-5">
-                <h2 className="text-sm font-semibold text-slate-900">
-                  Rate your training experience
-                </h2>
+                <h2 className="text-sm font-semibold text-slate-900">Rate your company</h2>
                 <p className="mt-0.5 text-sm text-slate-500">
                   Your coordinator uses this to assess partner companies.
                 </p>
@@ -240,14 +237,14 @@ export default function StudentFeedback() {
                 )}
 
                 <Button type="submit" busy={submitting} doneLabel="Sent" failed={Boolean(formError)} className="mt-4">
-                  {submitting ? "Sending" : "Send feedback"}
+                  {submitting ? "Sending" : "Send rating"}
                 </Button>
               </form>
             </Card>
 
             {!loading && given.length > 0 && (
               <Card>
-                <CardHeader title="Feedback you sent" />
+                <CardHeader title="Ratings you sent" />
                 <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
                   {given.map((item) => (
                     <EvaluationRow key={item.id} evaluation={item} />
@@ -258,7 +255,6 @@ export default function StudentFeedback() {
           </div>
         </div>
       </div>
-    </StudentLayout>
   );
 }
 

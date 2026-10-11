@@ -15,6 +15,7 @@ import { formatLongDate } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { resolutionPath } from "./resolutionTabs";
 
 /*
 |--------------------------------------------------------------------------
@@ -38,8 +39,8 @@ const LINES: Record<string, { title: string; to: string; go: string }> = {
   attendance: { title: "Attendance logs settled", to: "/daily-log", go: "Go to attendance" },
   documents: { title: "Required documents", to: "/documents", go: "Go to documents" },
   tasks: { title: "Tasks finished", to: "/task", go: "Go to tasks" },
-  evaluation: { title: "Supervisor's evaluation", to: "/student/feedback", go: "See feedback" },
-  feedback: { title: "Your feedback about the company", to: "/student/feedback", go: "Give feedback" },
+  evaluation: { title: "Supervisor's evaluation", to: resolutionPath("evaluations"), go: "See evaluations" },
+  feedback: { title: "Your rating of the company", to: resolutionPath("evaluations"), go: "Rate your company" },
 };
 
 export default function CompletionChecklist({ title = "Completion checklist" }: { title?: string }) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
 import InstallApp from "../../components/InstallApp";
 import NotificationPreferences from "../../components/NotificationPreferences";
@@ -13,6 +14,7 @@ import { errorText, toast } from "../../lib/toast";
 import CompletionChecklist from "./CompletionChecklist";
 import ContactDetails, { CoordinatorCard, type Contact, type Coordinator } from "./ContactDetails";
 import { PrivacyCard } from "./Privacy";
+import { resolutionPath } from "./resolutionTabs";
 
 type StudentProfile = {
   student_id: string;
@@ -214,6 +216,16 @@ export default function StudentProfilePage() {
           )}
 
           <CoordinatorCard coordinator={coordinator} />
+
+          <p className="px-1 text-sm text-slate-600">
+            Something wrong at your placement?{" "}
+            <Link
+              to={resolutionPath("concerns")}
+              className="font-semibold text-psu-700 hover:underline"
+            >
+              Report a concern
+            </Link>
+          </p>
 
           {studentId && <PasswordForm role="student" accountId={studentId} />}
 

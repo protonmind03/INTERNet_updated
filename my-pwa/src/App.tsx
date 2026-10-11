@@ -96,6 +96,17 @@ function PageFallback() {
   );
 }
 
+/**
+ * The old address of a page that is now a tab of the student's Resolution
+ * Center. Whatever else the address carried is kept.
+ */
+function ToResolutionTab({ tab }: { tab: "concerns" | "evaluations" }) {
+  const { search, hash } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set("tab", tab);
+  return <Navigate to={{ pathname: "/student/resolution", search: `?${params}`, hash }} replace />;
+}
+
 /*
 |--------------------------------------------------------------------------
 | STUDENT PAGES
@@ -107,9 +118,8 @@ const DailyLog = page("student", () => import("./pages/student/dailylog"));
 const MyTasks = page("student", () => import("./pages/student/task"));
 const Schedule = page("student", () => import("./pages/student/sched"));
 const Documents = page("student", () => import("./pages/student/document"));
-const Report = page("student", () => import("./pages/student/report"));
 const Notifications = page("student", () => import("./pages/student/notifications"));
-const StudentFeedback = page("student", () => import("./pages/student/Feedback"));
+const ResolutionCenter = page("student", () => import("./pages/student/ResolutionCenter"));
 const StudentTimeRecord = page("student", () => import("./pages/student/TimeRecord"));
 const StudentAnnouncements = page("student", () => import("./pages/student/Announcements"));
 const StudentJournal = page("student", () => import("./pages/student/Journal"));
@@ -237,9 +247,14 @@ function App() {
           element={<Documents />}
         />
 
+        {/* Concerns and evaluations are the two tabs of the Resolution Center. */}
+        <Route
+          path="/student/resolution"
+          element={<ResolutionCenter />}
+        />
         <Route
           path="/report"
-          element={<Report />}
+          element={<ToResolutionTab tab="concerns" />}
         />
 
         <Route
@@ -249,7 +264,7 @@ function App() {
 
         <Route
           path="/student/feedback"
-          element={<StudentFeedback />}
+          element={<ToResolutionTab tab="evaluations" />}
         />
 
         <Route

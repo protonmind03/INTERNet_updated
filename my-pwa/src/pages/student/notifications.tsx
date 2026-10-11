@@ -12,7 +12,7 @@ const KINDS: Record<string, NotificationTarget> = {
   attendance: { icon: "clock", path: "/daily-log" },
   task: { icon: "tasks", path: "/task" },
   document: { icon: "document", path: "/documents" },
-  evaluation: { icon: "star", path: "/student/feedback" },
+  evaluation: { icon: "star", path: "/student/resolution?tab=evaluations" },
   comment: { icon: "note", path: "/task" },
 };
 
@@ -30,7 +30,7 @@ function fromWording(item: NotificationItem): NotificationTarget {
   if (KINDS[item.type]) return KINDS[item.type];
   // Most notifications are stored with a generic type; infer from the title.
   const title = item.title.toLowerCase();
-  if (title.includes("complaint")) return { icon: "flag", path: "/report" };
+  if (title.includes("complaint")) return { icon: "flag", path: "/student/resolution?tab=concerns" };
   if (title.includes("supervisor assigned") || title.includes("schedule")) {
     return { icon: "calendar", path: "/schedule" };
   }
