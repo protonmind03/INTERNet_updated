@@ -4787,7 +4787,7 @@ test("an announcement counts each reader once, from the first time it is on thei
 });
 
 /*
-| Round 2, Phase 0: email through an HTTPS API
+| Round 2, Phase 0: email through an HTTPS API, and single-use camera-check tickets
 */
 
 test("email goes by the provider's API when it is set, by SMTP otherwise, and is off with neither", () => {
@@ -4887,4 +4887,63 @@ test("with no email settings, password recovery still says it is unavailable", a
   });
   assert.equal(reset.response.status, 503);
   assert.match(reset.body.message, /temporarily unavailable/);
+});
+
+test("a camera-check ticket is spent by its first time-in and refused the second time", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  require("tsx/cjs");
+  const { forgetSpentTickets } = require("../src/services/timeOutReminders.ts");
+  const pool = localTestPool();
+  const challenge = await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(studentToken) });
+  assert.equal(challenge.response.status, 200);
+  // The ticket now carries an id of its own.
+  const claims = JSON.parse(Buffer.from(challenge.body.ticket.split(".")[1], "base64url").toString());
+  assert.match(claims.jti, /^[0-9a-f-]{36}$/);
+  const again = await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(studentToken) });
+  assert.notEqual(JSON.parse(Buffer.from(again.body.ticket.split(".")[1], "base64url").toString()).jti, claims.jti);
+
+  const timeIn = (ticket, report) => {
+    const form = new FormData();
+    form.set("student_id", student.student_id);
+    form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "attendance.jpg");
+    form.set("liveness_ticket", ticket);
+    form.set("liveness_report", JSON.stringify(report));
+    return jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(studentToken), body: form });
+  };
+  const passed = { completed: challenge.body.prompts, flash: "passed" };
+  const spentRow = async () => (await pool.query(`SELECT 1 FROM liveness_ticket_uses WHERE jti = $1`, [claims.jti])).rows.length;
+  try {
+    // A report that fails the check does not spend the ticket.
+    assert.equal((await timeIn(challenge.body.ticket, { completed: [], flash: "passed" })).response.status, 400);
+    assert.equal(await spentRow(), 0);
+
+    // First use: recorded, or refused only because today already has a log. Either way the ticket is spent.
+    const first = await timeIn(challenge.body.ticket, passed);
+    assert.ok([201, 409].includes(first.response.status), `${first.response.status} ${JSON.stringify(first.body)}`);
+    assert.notEqual(first.body.code, "LIVENESS_TICKET_USED");
+    assert.equal(await spentRow(), 1);
+
+    // Second use of the same ticket: refused as a spent ticket, before anything else is looked at.
+    const second = await timeIn(challenge.body.ticket, passed);
+    assert.equal(second.response.status, 409);
+    assert.equal(second.body.code, "LIVENESS_TICKET_USED");
+    assert.match(second.body.message, /already used/);
+
+    // A fresh ticket is its own: it gets past the spent-ticket check.
+    const other = await timeIn(again.body.ticket, { completed: again.body.prompts, flash: "passed" });
+    assert.notEqual(other.body.code, "LIVENESS_TICKET_USED");
+
+    // The record of a spent ticket is kept for a day, then removed.
+    await pool.query(`INSERT INTO liveness_ticket_uses (jti, used_at) VALUES ('test-old-ticket', NOW() - INTERVAL '25 hours'), ('test-recent-ticket', NOW() - INTERVAL '23 hours') ON CONFLICT DO NOTHING`);
+    assert.ok((await forgetSpentTickets(pool)) >= 1);
+    const left = (await pool.query(`SELECT jti FROM liveness_ticket_uses WHERE jti LIKE 'test-%'`)).rows.map((row) => row.jti);
+    assert.deepEqual(left, ["test-recent-ticket"]);
+    assert.equal(await spentRow(), 1, "today's spent ticket is kept");
+  } finally {
+    await pool.query(`DELETE FROM liveness_ticket_uses WHERE jti LIKE 'test-%'`);
+    await pool.end();
+  }
 });

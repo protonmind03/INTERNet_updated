@@ -94,6 +94,19 @@ export async function sendTimeOutReminders(
   return reminded;
 }
 
+/**
+ * A camera-check ticket lasts ten minutes, so the record that one was
+ * spent is needed no longer than that. Rows older than a day are removed
+ * here, on the same round as the reminders. Returns how many went.
+ */
+export async function forgetSpentTickets(pool: Pool, now: Date = new Date()): Promise<number> {
+  const result = await pool.query(
+    `DELETE FROM liveness_ticket_uses WHERE used_at < $1::timestamptz - INTERVAL '1 day'`,
+    [now.toISOString()]
+  );
+  return result.rowCount ?? 0;
+}
+
 export function startTimeOutReminderScheduler(
   pool: Pool,
   createNotification: NotificationWriter
@@ -103,6 +116,7 @@ export function startTimeOutReminderScheduler(
     running = true;
     try {
       await sendTimeOutReminders(pool, createNotification);
+      await forgetSpentTickets(pool);
     } catch (error) {
       console.error("TIME-OUT REMINDER SCHEDULER ERROR:", error);
     } finally {

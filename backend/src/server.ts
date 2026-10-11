@@ -5,7 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { Pool } from "pg";
 import multer from "multer";
-import { createHash, randomBytes, randomInt } from "node:crypto";
+import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
 import path from "path";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -2147,7 +2147,7 @@ function readLivenessReport(
   studentId: string,
   ticket: unknown,
   rawReport: unknown
-): { report: LivenessReport } | { problem: string } {
+): { report: LivenessReport; ticketId: string } | { problem: string } {
   const refusal = {
     problem:
       "Finish the camera check to time in. If it will not work on your device, ask your supervisor to record your time-in.",
@@ -2194,6 +2194,11 @@ function readLivenessReport(
       : null;
 
   return {
+    // A ticket issued before tickets had ids is known by its own fingerprint.
+    ticketId:
+      typeof claims.jti === "string" && claims.jti
+        ? claims.jti
+        : createHash("sha256").update(ticket).digest("hex"),
     report: {
       completed: [...new Set(completed)],
       flash,
@@ -2215,6 +2220,8 @@ app.post(
     const ticket = jwt.sign({ purpose: "liveness", prompts, spare }, JWT_SECRET, {
       subject: auth.id,
       expiresIn: `${LIVENESS_TICKET_MINUTES}m`,
+      // What marks this ticket as spent once a time-in has used it.
+      jwtid: randomUUID(),
     });
     return res.json({ ticket, prompts, spare });
   }
@@ -2232,6 +2239,8 @@ app.post(
   upload.single("image"),
   async (req, res) => {
     let uploadedFileName: string | undefined;
+    // Set once this request has spent its camera-check ticket.
+    let spentTicket: string | undefined;
     try {
       const auth = (req as AuthedRequest).auth;
       const {
@@ -2287,6 +2296,19 @@ app.post(
       if ("problem" in liveness) {
         return res.status(400).json({ message: liveness.problem });
       }
+      // One camera check, one time-in: the ticket is spent here, and a
+      // second request carrying it is refused whatever else it holds.
+      const spent = await pool.query(
+        `INSERT INTO liveness_ticket_uses (jti) VALUES ($1) ON CONFLICT (jti) DO NOTHING RETURNING jti`,
+        [liveness.ticketId]
+      );
+      if (spent.rows.length === 0) {
+        return res.status(409).json({
+          code: "LIVENESS_TICKET_USED",
+          message: "This camera check was already used for a time-in. Run it again to time in.",
+        });
+      }
+      spentTicket = liveness.ticketId;
 
       /*
       |--------------------------------------------------------------------------
@@ -2493,6 +2515,13 @@ app.post(
         return res.status(409).json({
           message: "You already logged attendance today.",
         });
+      }
+      // The time-in failed on the server's side, not the student's: give
+      // the ticket back so the same camera check can be sent again.
+      if (spentTicket) {
+        await pool
+          .query(`DELETE FROM liveness_ticket_uses WHERE jti = $1`, [spentTicket])
+          .catch(() => undefined);
       }
       console.error(
         "TIME-IN ERROR:",
