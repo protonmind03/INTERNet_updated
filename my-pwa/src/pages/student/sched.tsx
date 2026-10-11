@@ -21,7 +21,9 @@ import {
 } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
-import { errorText } from "../../lib/toast";
+import { downloadCalendar, scheduleCalendar } from "../../lib/ics";
+import { errorText, toast } from "../../lib/toast";
+import { useProjections } from "../../lib/useProjections";
 import { useHolidays } from "../../lib/useHolidays";
 
 type ScheduleDay = {
@@ -145,6 +147,27 @@ export default function OjtSchedule() {
   const todayHoliday = holidayOn.get(todayKey);
   const upcomingHolidays = holidays.filter((holiday) => holiday.date >= todayKey).slice(0, 5);
 
+  // The schedule as a file for the phone's own calendar: repeating up to
+  // the projected finish (or half a year when that is not known), with
+  // the holidays left out. It is a copy; a changed schedule is exported again.
+  const projection = [...useProjections("student").values()][0];
+  const addToCalendar = () => {
+    const halfYear = new Date(`${todayKey}T00:00:00`);
+    halfYear.setDate(halfYear.getDate() + 182);
+    downloadCalendar(
+      "internet-ojt-schedule.ics",
+      scheduleCalendar({
+        shifts: schedule,
+        holidays,
+        company: company?.name || student?.company || "",
+        today: todayKey,
+        until: projection?.projected_finish || localDateKey(halfYear),
+        stamp: `${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
+      })
+    );
+    toast.success("Schedule saved as a calendar file. Open it to add it to your calendar.");
+  };
+
   const deadlines = useMemo(
     () =>
       tasks
@@ -168,6 +191,18 @@ export default function OjtSchedule() {
           <Card className="lg:col-span-2">
             <CardHeader
               title="Weekly schedule"
+              action={
+                !loading && schedule.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={addToCalendar}
+                    className="inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
+                  >
+                    <Icon name="calendar" size={15} />
+                    Add to calendar
+                  </button>
+                ) : undefined
+              }
               description={
                 loading
                   ? undefined
