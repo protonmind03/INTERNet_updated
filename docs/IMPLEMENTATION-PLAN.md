@@ -580,6 +580,29 @@ Different from the description, each for a stated reason:
   (Schedule, Weekly journal); avatar menu: Profile, Resolution Center,
   Sign out.
 
+### Phase 1B: supervisor portal reorganisation, and one name per concept
+
+No migrations.
+
+- [ ] **1B.1 Supervisor bell.** The same bell as the student's: paging,
+  Unread, and an Announcements tab that records "seen". Announcements
+  leaves the account menu; `/supervisor/announcements` stays.
+- [ ] **1B.2 Concerns in the account menu.** "Incidents" leaves the top
+  bar and becomes "Concerns" beside Profile. Same address.
+- [ ] **1B.3 "Final evaluation due" in the Review queue,** for an intern
+  within 40 hours of their required hours, or past them, with no final
+  evaluation. It opens Evaluations with that intern chosen. Evaluations
+  stays in the top bar until Phase 4.
+- [ ] **1B.4 Usability.** Capture method and "recorded offline" marks on
+  attendance rows; "Correct the times" in the row menu; the supervisor's
+  coordinator in the account menu.
+- [ ] **1B.5 One name per concept,** all three portals: "concern", "Time
+  record", "Evaluations". Server notification titles change where the
+  word appears; links and title guessing match old and new wording. Audit
+  action names stay; their labels change. Database names stay.
+- [ ] **1B.6 Redundant code.** The brand kit's own toast system is out of
+  the production build.
+
 ## Still open
 
 Not built, and noted where each was decided:
