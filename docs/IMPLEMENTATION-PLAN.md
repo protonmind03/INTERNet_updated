@@ -23,16 +23,20 @@ server paging, and the term filter covers the Students page only.
 ## Rules
 
 **Git**
-1. All work is on `main`. No feature branches. No commits to `ui-redesign`,
-   and that branch is never deleted.
-2. Each session starts with `git checkout main` and
-   `git pull --ff-only origin main`. If the fast-forward fails, stop.
+1. **Work is on `ui-redesign`; `main` is production** (changed by the owner
+   on 2026-10-11; until then all work was on `main`). Pushing `ui-redesign`
+   updates the test site only. `main` moves only when the owner says "make
+   it live": it is fast-forwarded to `ui-redesign` and pushed, which deploys
+   Vercel and Railway. No other branches. Neither branch is ever deleted.
+2. Each session starts with `git checkout ui-redesign` and
+   `git pull --ff-only origin ui-redesign`. If the fast-forward fails, stop.
 3. One item = one local commit, with a conventional message
    (`fix(student): ...`).
 4. **Review on localhost first** (added 2026-10-10). Work is built and
    committed locally. At each gate the owner is told how to see it on
    localhost, and it goes live only after they have looked and said so.
-4a. **Never push unless told "push".** Each phase gate gives a push plan:
+4a. **Never push unless told "push"** (for `ui-redesign`) **or "make it
+   live"** (for `main`). Each phase gate gives a push plan:
    the commits, the platform changes to apply first, whether a backup is
    needed, and the order (variables, backend, frontend). When backend and
    frontend must go separately, backend first, then wait for a healthy
