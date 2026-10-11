@@ -534,6 +534,30 @@ item one commit; stop at the end of every phase.
   deadline reminder's one-minute round: a day-old row does not need
   checking every minute.
 
+### Phase 1A: student portal reorganisation
+
+No migrations. Frontend, except the notification lists' paging (1A.5).
+
+- [ ] **1A.1 Shared time-in actions.** One provider holds the day's
+  attendance, the privacy step, the camera dialog and the break, back and
+  time-out confirmations; the Attendance card uses it. No change in
+  behaviour.
+- [ ] **1A.2 Today page.** The attendance card leaves Today; a one-line
+  status takes its place, with a next-step button in the header on desktop.
+- [ ] **1A.3 Floating action button** on phones: the next step, hidden on
+  Attendance and Profile, while a dialog is open and once the day is done;
+  a badge for steps waiting offline; its own layer.
+- [ ] **1A.4 Notifications out of the navigation.** `/notifications` stays.
+- [ ] **1A.5 Bell panel.** Paged notification lists on the server; the bell
+  loads twenty at a time, has All and Unread, and an Announcements tab that
+  records "seen" as the page does. Announcements leaves the navigation.
+- [ ] **1A.6 Completion into Profile.** `/student/completion` stays.
+- [ ] **1A.7 Resolution Center** at `/student/resolution`: Concerns and
+  Evaluations. `/report` and `/student/feedback` redirect.
+- [ ] **1A.8 Navigation:** Today, Attendance, Tasks, Documents, More
+  (Schedule, Weekly journal); avatar menu: Profile, Resolution Center,
+  Sign out.
+
 ## Still open
 
 Not built, and noted where each was decided:
