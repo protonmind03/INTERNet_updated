@@ -1225,7 +1225,23 @@ On `ui-redesign`. No migrations.
   waiting, reviewed and returned, and by intern. Deciding a journal still
   happens in the Review queue.
 
-**What was checked:** 116 API tests, including one that checks each term's
+- **Students and Complaints are paged by the server.** Each page asks for
+  one page of rows instead of loading the whole list. On Students the
+  server also does the ordering (name, least progress, supervisor) and the
+  "No supervisor" filter. The other long lists are unchanged; the plan's
+  "Still open" says which and why.
+- **A notification opens the record it is about.** When the writer of a
+  notification names the record, its link now carries it
+  (`?focus=task-12`): a student lands on that task or that day's log,
+  outlined for a few seconds, with the list turned to its page; a
+  supervisor's queue opens on that item; a coordinator's complaint opens.
+  A record that has since gone just shows the page.
+
+**What was checked:** 118 API tests, including ones that check each term's
 dashboard and Analytics figures against Monitoring and that the terms add
-up to the whole. In a browser: the picker on the dashboard, the choice
-carrying to Analytics and Monitoring, and the Journals page on a phone.
+up to the whole, that every order of the student list holds across pages
+with nobody lost or repeated, and which links name a record. In a browser:
+the term picker and its carrying between pages, the Journals page on a
+phone, the Students page turning pages with 46 students in the test
+database, and record links landing on a task, on a log on the second page
+of the list, and on a queue item.

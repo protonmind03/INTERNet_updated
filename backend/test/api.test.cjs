@@ -2355,11 +2355,16 @@ test("notification lists carry the page and record for each notification", async
     const mine = await jsonRequest(lists[0][0], { headers: authHeaders(studentToken) });
     const verified = mine.body.notifications.find((item) => item.title === "Attendance verified");
     if (verified) {
-      assert.equal(verified.link, "/daily-log");
+      // To the page, and since October 2026 to the log itself when the writer names it.
+      assert.match(verified.link, /^\/daily-log(\?focus=attendance-\d+)?$/);
     }
     const recorded = mine.body.notifications.find((item) => item.title === "Time-in recorded by your supervisor");
     if (recorded) {
-      assert.equal(recorded.link, "/daily-log");
+      // To the log itself; a row written before October 2026 has the page alone.
+      assert.ok(
+        [`/daily-log?focus=attendance-${recorded.entity_id}`, "/daily-log"].includes(recorded.link),
+        recorded.link
+      );
       assert.equal(recorded.entity_type, "attendance");
       assert.match(String(recorded.entity_id), /^\d+$/);
     }
@@ -3352,7 +3357,7 @@ test("a journal goes from the student to the supervisor and back, and closes onc
     assert.equal(told?.link, "/journal");
     const supervisorNotes = await jsonRequest(`/api/notifications/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) });
     const asked = supervisorNotes.body.notifications.find((item) => item.title === "Weekly journal submitted");
-    assert.equal(asked?.link, "/supervisor/dashboard");
+    assert.equal(asked?.link, `/supervisor/dashboard?focus=journal-${journal.id}`);
 
     // The decisions are in the audit log; the student's own writing is not.
     await new Promise((resolve) => setTimeout(resolve, 400));
@@ -3722,7 +3727,7 @@ test("a correction recomputes the hours, tells the intern, and is closed once th
     assert.equal(own.body.attendance.find((log) => log.id === id).time_correction_reason, "Left at 4:30.");
     const notes = await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
     const told = notes.body.notifications.find((item) => item.title === "Attendance times corrected");
-    assert.equal(told?.link, "/daily-log");
+    assert.equal(told?.link, `/daily-log?focus=attendance-${id}`);
     assert.match(told.message, /Left at 4:30\./);
 
     // Before and after are in the audit log.
@@ -4702,4 +4707,35 @@ test("the student list can be ordered and narrowed to unsupervised students, a p
   assert.deepEqual([none.students.length, none.total], [0, 0]);
   const inTerm = await list("?status=active&term=none&limit=200&sort=progress");
   assert.ok(inTerm.students.every((row) => row.is_active && row.term_id === null));
+});
+
+/*
+| Notifications that open one particular record
+*/
+
+test("a notification's link names the record when its page can show that record", () => {
+  require("tsx/cjs");
+  const { notificationLink, withRecord } = require("../src/services/notificationLinks.ts");
+  const link = (role, type, title, entity) => notificationLink(role, type, title, entity);
+
+  // A student's log and task; a supervisor's queue item of any kind; a coordinator's complaint.
+  assert.equal(link("student", "attendance", "Attendance verified", { type: "attendance", id: 41 }), "/daily-log?focus=attendance-41");
+  assert.equal(link("student", "info", "New task assigned", { type: "task", id: 7 }), "/task?focus=task-7");
+  assert.equal(link("supervisor", "task", "Task submitted for review", { type: "task", id: 7 }), "/supervisor/dashboard?focus=task-7");
+  assert.equal(link("supervisor", "document", "Document submitted for review", { type: "document", id: 3 }), "/supervisor/dashboard?focus=document-3");
+  assert.equal(link("supervisor", "info", "Weekly journal submitted", { type: "journal", id: 9 }), "/supervisor/dashboard?focus=journal-9");
+  assert.equal(link("coordinator", "warning", "New complaint filed", { type: "complaint", id: 12 }), "/coordinator/complaints?focus=complaint-12");
+
+  // No record named: the page alone, as before.
+  assert.equal(link("student", "attendance", "Attendance verified"), "/daily-log");
+  // A record whose page is a different one from where the notification leads: the page alone.
+  assert.equal(link("supervisor", "task", "Task past its deadline", { type: "task", id: 7 }), "/supervisor/tasks");
+  assert.equal(link("student", "document", "Document approved", { type: "document", id: 3 }), "/documents");
+  // A coordinator's notification about a student still opens that student's record.
+  assert.equal(link("coordinator", "info", "Completion review requested", { type: "student", id: "2021-0001" }), "/coordinator/students/2021-0001");
+  // An id that is not a plain one is never put in a link.
+  for (const bad of ["12&x=1", "a b", "../etc", ""]) {
+    assert.equal(withRecord("student", "/task", { type: "task", id: bad }), "/task", JSON.stringify(bad));
+  }
+  assert.equal(withRecord("student", "/task", { type: "TASK", id: 5 }), "/task?focus=task-5");
 });

@@ -18,6 +18,7 @@ import { notifyDataChanged } from "../../lib/navCounts";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { recordId, useFocusRecord } from "../../lib/useFocusRecord";
 import { useDraft } from "../../lib/useDraft";
 
 type TaskStatus = "Pending" | "In Progress" | "Submitted" | "Reviewed";
@@ -56,7 +57,9 @@ export default function MyTasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filter, setFilter] = useState<Filter>("todo");
+  // A notification about one task opens the list on that task, whatever its state.
+  const focus = useFocusRecord(!loading);
+  const [filter, setFilter] = useState<Filter>(focus ? "all" : "todo");
   const [submitting, setSubmitting] = useState<Task | null>(null);
 
   const load = useCallback(async () => {
@@ -172,7 +175,7 @@ export default function MyTasks() {
         ) : (
           <ul className="space-y-3">
             {visible.map((task) => (
-              <li key={task.id}>
+              <li key={task.id} id={recordId("task", task.id)}>
                 <TaskCard
                   task={task}
                   onSubmit={() => setSubmitting(task)}

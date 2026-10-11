@@ -20,6 +20,7 @@ import { downloadProtectedUpload } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
+import { focusId, useFocus } from "../../lib/useFocusRecord";
 import { serverPagination } from "../../lib/usePagination";
 import { coordinatorRequest } from "./request";
 
@@ -64,7 +65,9 @@ export default function CoordinatorComplaints() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState(() => searchParams.get("q") || "");
   const [filter, setFilter] = useState<Filter>("all");
-  const [openId, setOpenId] = useState<number | null>(null);
+  // A notification about one complaint opens it, if it is on the page shown.
+  const focused = focusId(useFocus(), "complaint");
+  const [openId, setOpenId] = useState<number | null>(focused ? Number(focused) : null);
 
   // The server searches, filters and pages; only one page is here.
   const [page, setPage] = useState(1);

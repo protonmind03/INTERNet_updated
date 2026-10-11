@@ -98,9 +98,41 @@ export function notificationLink(
     if (role === "supervisor") return "/supervisor/announcements";
     return "/coordinator/announcements";
   }
-  if (role === "student") return studentLink(kind, words);
-  if (role === "supervisor") return supervisorLink(kind, words);
-  return coordinatorLink(kind, words, entity);
+  if (role === "student") return withRecord(role, studentLink(kind, words), entity);
+  if (role === "supervisor") return withRecord(role, supervisorLink(kind, words), entity);
+  return withRecord(role, coordinatorLink(kind, words, entity), entity);
+}
+
+/*
+| The pages that can show one particular record, by who is looking and
+| what kind of record it is. When a notification names a record of that
+| kind and leads to that page, the link also says which record
+| (`?focus=task-12`), and the page brings it into view or opens it.
+*/
+const RECORD_PAGES: Record<NotificationRole, Record<string, string>> = {
+  student: { attendance: "/daily-log", task: "/task" },
+  // The review queue holds every kind the supervisor decides.
+  supervisor: {
+    attendance: "/supervisor/dashboard",
+    task: "/supervisor/dashboard",
+    document: "/supervisor/dashboard",
+    absence: "/supervisor/dashboard",
+    journal: "/supervisor/dashboard",
+  },
+  coordinator: { complaint: "/coordinator/complaints" },
+};
+
+/** Adds the record to a link when the page it leads to can show that record. */
+export function withRecord(
+  role: NotificationRole,
+  link: string,
+  entity?: NotificationEntity
+): string {
+  if (!entity) return link;
+  const type = String(entity.type).toLowerCase();
+  const id = String(entity.id);
+  if (RECORD_PAGES[role][type] !== link || !/^[\w-]{1,80}$/.test(id)) return link;
+  return `${link}?focus=${type}-${id}`;
 }
 
 /**

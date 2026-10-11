@@ -495,14 +495,24 @@ Not built, and noted where each was decided:
 - The three optional items (`.ics` export, per-intern summary PDF,
   announcement read receipts): skipped, D12.
 - Enforcing the content security policy (5.7): ready, waiting for the word.
-- From Phase 3: the pages still load whole lists (only the audit log pages
-  on the server); a notification opens the right page but not one
-  particular record; the company backfill script cannot yet reach the
-  hosted database.
+- Server paging: Students, Complaints and the audit log page on the
+  server. Still loading whole lists and paging in the browser: the
+  Supervisors page (its move-interns dialog needs every supervisor, and
+  the list is short by nature), the coordinator's Documents page (one
+  answer feeds two views), Monitoring's flagged logs, and the supervisor's
+  attendance list (the review queue is built from the same full list).
+- Record links: a student's log and task, any item in a supervisor's
+  queue, and a coordinator's complaint open from their notification. Other
+  kinds (a student's document, a coordinator's attendance or document
+  notice) still open the page only, and only notifications whose writer
+  names the record carry one.
+- The company backfill script cannot yet reach the hosted database.
 
 Closed since the list was first written (2026-10-11, on `ui-redesign`):
 - The term filter now covers the dashboard and Analytics as well.
 - A supervisor has a Journals page for reading back every journal.
+- The Students and Complaints pages are paged by the server.
+- A notification that names a record opens that record.
 
 Needed from the owner:
 - The university's final evaluation criteria and scale (D13), entered on

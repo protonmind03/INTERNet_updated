@@ -25,6 +25,7 @@ import {
 import { useLaunchReady } from "../../lib/launch";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { useFocus } from "../../lib/useFocusRecord";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
@@ -121,7 +122,9 @@ export default function SupervisorDashboard() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState("");
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  // A notification about one item opens the queue on it (its key is "task-12").
+  const focus = useFocus();
+  const [selectedKey, setSelectedKey] = useState<string | null>(focus);
   const [confirmBulk, setConfirmBulk] = useState<BulkKind | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [recording, setRecording] = useState(false);

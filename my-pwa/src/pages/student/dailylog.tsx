@@ -25,6 +25,8 @@ import {
   localDateKey,
 } from "../../lib/format";
 import { useAccount } from "../../lib/session";
+import { focusId, recordId, useFocus, useFocusRecord } from "../../lib/useFocusRecord";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { usePagination } from "../../lib/usePagination";
 import Absences from "./Absences";
 import {
@@ -103,6 +105,29 @@ export default function DailyLog() {
   const filtered = filter !== "All" || search.trim() !== "" || dateFrom !== "" || dateTo !== "";
 
   const pager = usePagination(visibleLogs, 15);
+
+  // A notification about one log: turn to the page it is on, then outline it.
+  // Each log is drawn twice, as a card and as a table row; only the one in view is marked.
+  const desktop = useMediaQuery("(min-width: 768px)");
+  const focusedLog = focusId(useFocus(), "attendance");
+  const focusedAt = focusedLog
+    ? visibleLogs.findIndex((log) => String(log.id) === focusedLog)
+    : -1;
+  const turnTo = pager.setPage;
+  const [turned, setTurned] = useState(false);
+  useEffect(() => {
+    if (focusedAt < 0 || turned) return;
+    let active = true;
+    void Promise.resolve().then(() => {
+      if (!active) return;
+      turnTo(Math.floor(focusedAt / 15) + 1);
+      setTurned(true);
+    });
+    return () => {
+      active = false;
+    };
+  }, [focusedAt, turned, turnTo]);
+  useFocusRecord(turned);
 
   const clearFilters = () => {
     setFilter("All");
@@ -226,7 +251,7 @@ export default function DailyLog() {
               {/* Phones: one card per day */}
               <ul className="divide-y divide-slate-100 md:hidden">
                 {pager.pageItems.map((log) => (
-                  <li key={log.id} className="px-4 py-4">
+                  <li key={log.id} id={desktop ? undefined : recordId("attendance", log.id)} className="px-4 py-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">
@@ -284,7 +309,7 @@ export default function DailyLog() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {pager.pageItems.map((log) => (
-                      <tr key={log.id} className="align-top hover:bg-slate-50">
+                      <tr key={log.id} id={desktop ? recordId("attendance", log.id) : undefined} className="align-top hover:bg-slate-50">
                         <td className="whitespace-nowrap px-5 py-3.5 font-medium text-slate-900">
                           {formatDayDate(logDateKey(log))}
                         </td>
