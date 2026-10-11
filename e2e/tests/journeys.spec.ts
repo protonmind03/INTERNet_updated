@@ -398,3 +398,78 @@ test.describe("the coordinator's console", () => {
     await expect(page).toHaveURL(/\/coordinator\/students\/.+\?tab=schedule$/);
   });
 });
+
+test.describe("programs, blocks and the filter bar", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("a block is made, a student is placed in it from their form, and the lists filter by it", async ({ page }) => {
+    const stamp = String(Date.now()).slice(-5);
+    const section = `T${stamp}`;
+    await signIn(page, "coordinator");
+
+    // The Programs page lists what the migration seeded.
+    await page.getByRole("link", { name: "Programs", exact: true }).click();
+    await expect(page).toHaveURL(/\/coordinator\/programs$/);
+    await expect(page.getByRole("heading", { name: /College of Computing Sciences/ })).toBeVisible();
+    await expect(page.getByText("BS Information Technology", { exact: true }).first()).toBeVisible();
+    await expect(page.getByLabel("OJT applies to BS Information Technology")).toBeChecked();
+
+    // A college is added from the page.
+    await page.getByRole("button", { name: "Add college" }).click();
+    const collegeDialog = page.getByRole("dialog", { name: "Add a college" });
+    await collegeDialog.locator("#academic-name").fill(`College of Testing ${stamp}`);
+    await collegeDialog.getByRole("button", { name: "Save" }).click();
+    await expect(page.getByRole("heading", { name: new RegExp(`College of Testing ${stamp}`) })).toBeVisible();
+
+    // A block, named from its program, year and section.
+    await page.getByRole("button", { name: "Add block" }).click();
+    const blockDialog = page.getByRole("dialog", { name: "Add a block" });
+    await blockDialog.locator("#academic-program").selectOption({ label: "BSIT: BS Information Technology" });
+    await blockDialog.locator("#academic-section").fill(section.toLowerCase());
+    await expect(blockDialog.getByText(`BSIT 4${section}`)).toBeVisible();
+    await blockDialog.getByRole("button", { name: "Save" }).click();
+    const blockName = `BSIT 4${section}`;
+    await expect(page.getByRole("rowheader", { name: new RegExp(blockName) })).toBeVisible();
+
+    // The student form: each picker narrows the next.
+    await page.goto(`/coordinator/students?q=${encodeURIComponent(ACCOUNTS.student.email)}`);
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    const form = page.getByRole("dialog");
+    // By id: a label that says "(optional)" is not exactly its field's name.
+    await form.locator("#student-college").selectOption({ label: "College of Computing Sciences" });
+    const programs = await form.locator("#student-program-id option").allTextContents();
+    expect(programs.some((option) => option.startsWith("BSIT"))).toBe(true);
+    expect(programs.some((option) => option.startsWith("BSHM"))).toBe(false);
+    await form.locator("#student-program-id").selectOption({ label: "BSIT: BS Information Technology" });
+    await form.locator("#student-block").selectOption({ label: blockName });
+    await form.getByRole("button", { name: /Save/ }).click();
+    await expect(form).toBeHidden();
+    await expect(page.getByRole("cell", { name: new RegExp(blockName) })).toBeVisible();
+
+    // The filter bar: the choice goes into the address and narrows the list.
+    await page.goto("/coordinator/students");
+    const bar = page.getByRole("region", { name: "Which students" });
+    await bar.getByLabel("Program").selectOption({ label: "BSIT: BS Information Technology" });
+    await expect(page).toHaveURL(/program=\d+/);
+    await bar.getByLabel("Block").selectOption({ label: blockName });
+    await expect(page).toHaveURL(/block=\d+/);
+    await expect(page.getByRole("row")).toHaveCount(2);
+    await expect(page.getByRole("cell", { name: new RegExp(blockName) })).toBeVisible();
+    // It carries to another page from the menu, and Analytics sums by program and block.
+    await page.getByRole("link", { name: "Analytics", exact: true }).click();
+    await expect(page).toHaveURL(/\/coordinator\/analytics\?.*block=\d+/);
+    await expect(page.getByRole("heading", { name: "By program" })).toBeVisible();
+    await expect(page.getByRole("rowheader", { name: blockName })).toBeVisible();
+    await page.getByRole("region", { name: "Which students" }).getByRole("button", { name: "Clear filters" }).click();
+    await expect(page).toHaveURL(/\/coordinator\/analytics$/);
+  });
+
+  test("a supervisor with interns of one program and block is not asked to choose between them", async ({ page }) => {
+    await signIn(page, "supervisor");
+    await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /^Program and block/ })).toHaveCount(0);
+    await page.goto("/supervisor/attendance");
+    await expect(page.getByRole("combobox", { name: /^Intern/ })).toBeVisible();
+    await expect(page.getByRole("combobox", { name: /^Program and block/ })).toHaveCount(0);
+  });
+});
