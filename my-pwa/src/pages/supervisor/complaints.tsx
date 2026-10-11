@@ -60,11 +60,11 @@ export default function SupervisorComplaints() {
         withSupervisorAuth()
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Could not load your reports.");
+      if (!response.ok) throw new Error(data.message || "Could not load your concerns.");
       setComplaints(Array.isArray(data.complaints) ? data.complaints : []);
       setError("");
     } catch (loadError) {
-      setError(errorText(loadError, "Could not load your reports."));
+      setError(errorText(loadError, "Could not load your concerns."));
     } finally {
       setLoading(false);
     }
@@ -89,11 +89,11 @@ export default function SupervisorComplaints() {
 
   return (
     <SupervisorLayout
-      title="Incidents"
+      title="Concerns"
       subtitle="Report a concern about an intern to the OJT coordinator, and follow what happens to it."
       actions={
         <Button icon="plus" onClick={() => setFiling(true)}>
-          Report an incident
+          Report a concern
         </Button>
       }
     >
@@ -106,8 +106,8 @@ export default function SupervisorComplaints() {
           ) : complaints.length === 0 ? (
             <EmptyState
               icon="flag"
-              title="No incidents reported"
-              description="Reports you send to the OJT coordinator are listed here with their status."
+              title="No concerns reported"
+              description="Concerns you report to the OJT coordinator are listed here with their status."
             />
           ) : (
             <ul className="divide-y divide-slate-100">
@@ -247,13 +247,13 @@ function FileDialog({
         withSupervisorAuth({ method: "POST", body: form })
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "The report could not be sent.");
-      toast.success("Report sent to the OJT coordinator.");
+      if (!response.ok) throw new Error(data.message || "The concern could not be sent.");
+      toast.success("Concern sent to the OJT coordinator.");
       discardDescription();
       reset();
       onFiled();
     } catch (submitError) {
-      setError(errorText(submitError, "The report could not be sent."));
+      setError(errorText(submitError, "The concern could not be sent."));
     } finally {
       setSaving(false);
     }
@@ -263,7 +263,7 @@ function FileDialog({
     <Modal
       open={open}
       onClose={close}
-      title="Report an incident"
+      title="Report a concern"
       description="This goes to the OJT coordinator."
       locked={saving}
       footer={
@@ -272,7 +272,7 @@ function FileDialog({
             Cancel
           </Button>
           <Button type="submit" form="incident-form" busy={saving} failed={Boolean(error)}>
-            {saving ? "Sending" : "Send report"}
+            {saving ? "Sending" : "Send concern"}
           </Button>
         </>
       }

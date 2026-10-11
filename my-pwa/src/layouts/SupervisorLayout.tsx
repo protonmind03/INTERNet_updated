@@ -19,6 +19,10 @@ import { signOut as endSession, useAccount } from "../lib/session";
 | uses a single top navigation bar that keeps the full width for lists and
 | review panes, with "Review" as the first stop.
 |
+| The bar holds the pages of daily work. What is used now and then is
+| under the account menu (Profile, Concerns), and notifications and
+| announcements are both under the bell.
+|
 */
 
 const NAV = [
@@ -29,8 +33,10 @@ const NAV = [
   { label: "Documents", path: "/supervisor/documents" },
   { label: "Journals", path: "/supervisor/journals" },
   { label: "Evaluations", path: "/supervisor/evaluation" },
-  { label: "Incidents", path: "/supervisor/complaints" },
 ];
+
+/** In the account menu, beside Profile: used now and then, not daily. */
+const CONCERNS_PATH = "/supervisor/complaints";
 
 export default function SupervisorLayout({
   title,
@@ -157,6 +163,17 @@ export default function SupervisorLayout({
                   >
                     <Icon name="user" className="text-slate-400" />
                     Profile and password
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMenuOpen(false);
+                      navigate(CONCERNS_PATH);
+                    }}
+                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
+                  >
+                    <Icon name="flag" className="text-slate-400" />
+                    Concerns
                   </button>
                   <button
                     type="button"
