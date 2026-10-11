@@ -187,7 +187,7 @@ export default function CoordinatorAnnouncements() {
                 onChange={(event) => setMessage(event.target.value)}
                 className="field resize-none"
               />
-              <p className="mt-1 text-right text-xs text-slate-400">{message.length} / 2000</p>
+              <p className="mt-1 text-right text-xs text-slate-500">{message.length} / 2000</p>
             </FormField>
 
             <FormError message={error} />

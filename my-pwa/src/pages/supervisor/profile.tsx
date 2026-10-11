@@ -200,7 +200,7 @@ export default function SupervisorProfilePage() {
                     htmlFor="profile-department"
                     className="mb-1.5 block text-sm font-medium text-slate-700"
                   >
-                    Department <span className="font-normal text-slate-400">(optional)</span>
+                    Department <span className="font-normal text-slate-500">(optional)</span>
                   </label>
                   <input
                     id="profile-department"

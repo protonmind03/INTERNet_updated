@@ -221,7 +221,7 @@ export default function StudentFeedback() {
                   htmlFor="feedback-comments"
                   className="mb-1.5 mt-4 block text-sm font-medium text-slate-700"
                 >
-                  Comments <span className="font-normal text-slate-400">(optional)</span>
+                  Comments <span className="font-normal text-slate-500">(optional)</span>
                 </label>
                 <textarea
                   id="feedback-comments"

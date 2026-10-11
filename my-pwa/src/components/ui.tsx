@@ -336,7 +336,7 @@ export function ProgressBar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={Math.round(clamped)}
-      aria-label={label}
+      aria-label={label ?? `${Math.round(clamped)} percent`}
       className={`h-2 w-full overflow-hidden rounded-full bg-slate-100 ${className}`}
     >
       <div
@@ -560,7 +560,7 @@ export function Modal({
             aria-label="Close"
             onClick={onClose}
             disabled={locked}
-            className="-mr-1.5 -mt-1 shrink-0 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
+            className="-mr-1.5 -mt-1 shrink-0 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-600 disabled:opacity-40"
           >
             <Icon name="close" />
           </button>
@@ -652,7 +652,7 @@ export function FormField({
     <div className={className}>
       <label htmlFor={htmlFor} className="mb-1.5 block text-sm font-medium text-slate-700">
         {label}
-        {optional && <span className="font-normal text-slate-400"> (optional)</span>}
+        {optional && <span className="font-normal text-slate-500"> (optional)</span>}
       </label>
       {children}
       {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
@@ -693,7 +693,7 @@ export function SearchField({
       <Icon
         name="search"
         size={16}
-        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+        className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
       />
       <input
         type="search"
@@ -960,7 +960,7 @@ export function FilterChips<T extends string>({
             {option.count !== undefined && (
               <span
                 className={`tabular rounded-full px-1.5 text-xs ${
-                  active ? "bg-white/20" : "bg-slate-100 text-slate-500"
+                  active ? "bg-white/20" : "bg-slate-100 text-slate-600"
                 }`}
               >
                 {option.count}

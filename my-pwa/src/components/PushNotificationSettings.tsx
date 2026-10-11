@@ -243,7 +243,7 @@ export default function PushNotificationSettings() {
             type="button"
             aria-label="Dismiss"
             onClick={dismiss}
-            className="text-slate-400 hover:text-slate-700"
+            className="text-slate-500 hover:text-slate-700"
           >
             ×
           </button>
@@ -287,7 +287,7 @@ export default function PushNotificationSettings() {
           type="button"
           aria-label="Dismiss browser notification prompt"
           onClick={dismiss}
-          className="text-slate-400 hover:text-slate-700"
+          className="text-slate-500 hover:text-slate-700"
         >
           ×
         </button>

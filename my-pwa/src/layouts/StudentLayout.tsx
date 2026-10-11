@@ -170,12 +170,12 @@ export default function StudentLayout({
                   <div className="relative" ref={menuRef}>
                     <button
                       type="button"
-                      aria-label="Account menu"
                       aria-expanded={menuOpen}
                       onClick={() => setMenuOpen((open) => !open)}
                       className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10"
                     >
                       <Avatar name={student.name} />
+                      <span className="sr-only">Account menu for {student.name}</span>
                     </button>
                     {menuOpen && (
                       <div className="absolute right-0 top-full z-40 mt-2 w-60 origin-top-right animate-pop-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">

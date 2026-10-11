@@ -281,7 +281,7 @@ export function ResubmitDialog({
 
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700">
-            Replacement photo <span className="font-normal text-slate-400">(optional)</span>
+            Replacement photo <span className="font-normal text-slate-500">(optional)</span>
           </p>
           <input
             ref={inputRef}

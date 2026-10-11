@@ -89,7 +89,7 @@ export default function Toaster() {
                   className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${
                     dark
                       ? "text-white/70 hover:bg-white/10 hover:text-white"
-                      : "text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                      : "text-slate-500 hover:bg-slate-100 hover:text-slate-600"
                   }`}
                 >
                   <Icon name="close" size={15} />

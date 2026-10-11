@@ -719,7 +719,7 @@ function CompanyTable({ companies }: { companies: AnalyticsData["companies"] }) 
   }
   const rating = (company: AnalyticsData["companies"][number]) =>
     company.averageRating === null ? (
-      <span className="text-slate-400">No ratings</span>
+      <span className="text-slate-500">No ratings</span>
     ) : (
       <span className="inline-flex items-center gap-1">
         <Icon name="star" size={14} className="fill-gold-400 text-gold-500" />
@@ -796,7 +796,7 @@ function CompanyTable({ companies }: { companies: AnalyticsData["companies"] }) 
                 <td className="whitespace-nowrap px-3 py-3">{rating(company)}</td>
                 <td
                   className={`tabular px-5 py-3 text-right ${
-                    company.complaints > 0 ? "font-semibold text-slate-900" : "text-slate-400"
+                    company.complaints > 0 ? "font-semibold text-slate-900" : "text-slate-500"
                   }`}
                 >
                   {company.complaints}

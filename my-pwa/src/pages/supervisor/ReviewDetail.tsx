@@ -453,7 +453,7 @@ function TaskDetail({ entry, work, onDecided, shortcuts }: DetailProps<TaskEntry
         extra={
           <div>
             <p className="mb-1 text-sm font-medium text-slate-700">
-              Rating <span className="font-normal text-slate-400">(optional)</span>
+              Rating <span className="font-normal text-slate-500">(optional)</span>
             </p>
             <StarInput value={rating} onChange={setRating} label="Rating for this task" clearable />
           </div>
@@ -812,7 +812,7 @@ function Decision({
           >
             {noteLabel}
             {noteAlwaysVisible && (
-              <span className="font-normal text-slate-400"> (optional when approving)</span>
+              <span className="font-normal text-slate-500"> (optional when approving)</span>
             )}
           </label>
           <textarea
@@ -828,7 +828,7 @@ function Decision({
             placeholder={notePlaceholder}
             className="field resize-none"
           />
-          <p className="mt-1 text-right text-xs text-slate-400">{note.length} / 1000</p>
+          <p className="mt-1 text-right text-xs text-slate-500">{note.length} / 1000</p>
         </div>
       )}
 

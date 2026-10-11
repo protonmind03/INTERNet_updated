@@ -42,7 +42,7 @@ export default function AttendancePhoto({
       <p className="mb-1.5 text-xs font-medium text-slate-500">Time-in photo</p>
       <div className="flex min-h-40 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
         {!path ? (
-          <p className="px-4 text-sm text-slate-500">No photo was attached.</p>
+          <p className="px-4 text-sm text-slate-600">No photo was attached.</p>
         ) : failed ? (
           <p className="px-4 text-sm text-slate-500">The photo could not be loaded.</p>
         ) : url ? (

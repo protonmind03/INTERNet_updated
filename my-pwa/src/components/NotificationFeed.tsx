@@ -120,7 +120,7 @@ export default function NotificationFeed({
                         <span className="mt-0.5 block text-sm text-slate-600">
                           {item.message}
                         </span>
-                        <span className="mt-1 block text-xs text-slate-400">
+                        <span className="mt-1 block text-xs text-slate-600">
                           {formatDateTime(item.created_at)}
                         </span>
                       </span>

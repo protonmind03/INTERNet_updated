@@ -165,7 +165,7 @@ export default function DailyLog() {
                 <Icon
                   name="search"
                   size={16}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
                 />
                 <input
                   type="search"
@@ -386,7 +386,7 @@ function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolea
     !log.time_correction_reason &&
     !bySupervisor
   ) {
-    return inline ? <span className="text-slate-400">—</span> : null;
+    return inline ? <span className="text-slate-500">—</span> : null;
   }
   const rejected = log.status === "Rejected" || log.status === "Flagged";
   return (

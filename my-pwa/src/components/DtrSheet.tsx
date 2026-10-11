@@ -229,7 +229,7 @@ export default function DtrSheet({
           {person.supervisor && <Line label="Supervisor" value={person.supervisor} />}
         </dl>
 
-        <div className="mt-5 overflow-x-auto">
+        <div className="mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="Time record table">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-y border-slate-300 text-xs text-slate-600">
@@ -246,7 +246,7 @@ export default function DtrSheet({
                 <Fragment key={row.key}>
                 <tr
                   className={`${row.log?.accomplishments ? "" : "border-b border-slate-200"} ${
-                    row.log || row.absence || row.holiday ? "" : "text-slate-400"
+                    row.log || row.absence || row.holiday ? "" : "text-slate-500"
                   }`}
                 >
                   <td className="tabular whitespace-nowrap py-1.5 pr-2">

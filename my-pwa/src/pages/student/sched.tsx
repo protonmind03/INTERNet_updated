@@ -201,7 +201,7 @@ export default function OjtSchedule() {
                         <div className="w-24 shrink-0">
                           <p
                             className={`text-sm font-semibold ${
-                              shift || holiday ? "text-slate-900" : "text-slate-400"
+                              shift || holiday ? "text-slate-900" : "text-slate-600"
                             }`}
                           >
                             {day}
@@ -240,7 +240,7 @@ export default function OjtSchedule() {
                             </p>
                           </>
                         ) : (
-                          <p className="flex-1 text-sm text-slate-400">Day off</p>
+                          <p className="flex-1 text-sm text-slate-600">Day off</p>
                         )}
                       </li>
                     );
@@ -313,7 +313,7 @@ export default function OjtSchedule() {
                   <Skeleton className="h-4 w-1/2" />
                 </div>
               ) : (
-                <dl className="mt-3 space-y-3 text-sm">
+                <div className="mt-3 space-y-3 text-sm">
                   <Detail icon="building" label="Company">
                     {company?.name || student?.company || "Not assigned yet"}
                   </Detail>
@@ -336,7 +336,7 @@ export default function OjtSchedule() {
                       </a>
                     </Detail>
                   )}
-                </dl>
+                </div>
               )}
             </Card>
           </div>
@@ -412,8 +412,8 @@ function Detail({
     <div className="flex items-start gap-3">
       <Icon name={icon} size={17} className="mt-0.5 shrink-0 text-slate-400" />
       <div className="min-w-0">
-        <dt className="text-xs text-slate-500">{label}</dt>
-        <dd className="font-medium text-slate-900">{children}</dd>
+        <p className="text-xs text-slate-500">{label}</p>
+        <div className="font-medium text-slate-900">{children}</div>
       </div>
     </div>
   );

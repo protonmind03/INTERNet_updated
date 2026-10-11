@@ -123,7 +123,7 @@ export function ColumnChart({
 
         {axis && (
           <div
-            className="tabular relative mr-2 w-9 shrink-0 text-right text-[11px] text-slate-400"
+            className="tabular relative mr-2 w-9 shrink-0 text-right text-[11px] text-slate-500"
             style={{ height }}
             aria-hidden="true"
           >

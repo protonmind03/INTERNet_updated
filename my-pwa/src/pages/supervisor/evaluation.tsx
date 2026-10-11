@@ -278,7 +278,7 @@ export default function SupervisorEvaluation() {
                 htmlFor="evaluation-comments"
                 className="mb-1.5 block text-sm font-medium text-slate-700"
               >
-                Comments <span className="font-normal text-slate-400">(optional)</span>
+                Comments <span className="font-normal text-slate-500">(optional)</span>
               </label>
               <textarea
                 id="evaluation-comments"
@@ -353,7 +353,7 @@ export default function SupervisorEvaluation() {
                           <dd className="tabular shrink-0 font-medium text-slate-900">
                             {item.average.toFixed(1)}
                             {item.count > 1 && (
-                              <span className="font-normal text-slate-400"> · {item.count}</span>
+                              <span className="font-normal text-slate-500"> · {item.count}</span>
                             )}
                           </dd>
                         </div>

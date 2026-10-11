@@ -508,7 +508,7 @@ function TaskDialog({
             htmlFor="task-description"
             className="mb-1.5 block text-sm font-medium text-slate-700"
           >
-            Instructions <span className="font-normal text-slate-400">(optional)</span>
+            Instructions <span className="font-normal text-slate-500">(optional)</span>
           </label>
           <textarea
             id="task-description"
@@ -557,7 +557,7 @@ function TaskDialog({
 
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700">
-            Attachment <span className="font-normal text-slate-400">(optional)</span>
+            Attachment <span className="font-normal text-slate-500">(optional)</span>
           </p>
           <input
             ref={fileInput}
@@ -580,7 +580,7 @@ function TaskDialog({
                 onClick={() => setFile(null)}
                 disabled={saving}
                 aria-label="Remove chosen file"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-600"
               >
                 <Icon name="close" size={16} />
               </button>

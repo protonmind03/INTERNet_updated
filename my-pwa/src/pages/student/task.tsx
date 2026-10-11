@@ -238,7 +238,7 @@ function TaskCard({
         </p>
       )}
 
-      <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+      <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
         <Meta icon="calendar">
           <span
             className={
@@ -252,12 +252,12 @@ function TaskCard({
             {open ? dueLabel(task.due_date) : `Due ${formatDate(task.due_date)}`}
           </span>
           {open && task.due_date && (
-            <span className="text-slate-400"> · {formatDate(task.due_date)}</span>
+            <span className="text-slate-500"> · {formatDate(task.due_date)}</span>
           )}
         </Meta>
         {task.assigned_by && <Meta icon="user">{task.assigned_by}</Meta>}
         {task.priority && <Meta icon="flag">{task.priority} priority</Meta>}
-      </dl>
+      </div>
 
       {task.attachment_file && (
         <button
@@ -502,7 +502,7 @@ function SubmitDialog({
 
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700">
-            Attachment <span className="font-normal text-slate-400">(optional)</span>
+            Attachment <span className="font-normal text-slate-500">(optional)</span>
           </p>
           <input
             ref={fileInput}
@@ -524,7 +524,7 @@ function SubmitDialog({
                 onClick={() => setFile(null)}
                 disabled={saving}
                 aria-label="Remove attachment"
-                className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-600"
               >
                 <Icon name="close" size={16} />
               </button>

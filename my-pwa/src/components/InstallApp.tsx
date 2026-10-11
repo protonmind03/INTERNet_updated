@@ -89,7 +89,7 @@ export function IosInstallGuide() {
           type="button"
           aria-label="Close"
           onClick={dismiss}
-          className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          className="-mr-1 -mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-100 hover:text-slate-600"
         >
           <Icon name="close" size={15} />
         </button>

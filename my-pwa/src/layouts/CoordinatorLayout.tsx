@@ -115,7 +115,7 @@ export default function CoordinatorLayout({
       <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 pb-4 pt-4">
         {NAV_GROUPS.map((group) => (
           <div key={group.label}>
-            <p className="mb-1.5 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <p className="mb-1.5 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
               {group.label}
               <span aria-hidden="true" className="h-px flex-1 bg-slate-200/80" />
             </p>
@@ -140,7 +140,7 @@ export default function CoordinatorLayout({
                       )}
                       <Icon
                         name={item.icon}
-                        className={isActive ? "text-psu-700" : "text-slate-400"}
+                        className={isActive ? "text-psu-700" : "text-slate-500"}
                       />
                       <span className="flex-1">{item.label}</span>
                       <CountBadge count={counts[item.path]} />
@@ -169,7 +169,7 @@ export default function CoordinatorLayout({
             <span className="block truncate text-sm font-semibold text-slate-900">
               {coordinator.name}
             </span>
-            <span className="block truncate text-xs text-slate-500">
+            <span className="block truncate text-xs text-slate-600">
               {coordinator.department || "OJT Coordinator"}
             </span>
           </span>
@@ -207,7 +207,7 @@ export default function CoordinatorLayout({
               type="button"
               aria-label="Close menu"
               onClick={() => setDrawerOpen(false)}
-              className="absolute right-3 top-4 rounded-lg p-1.5 text-slate-400 hover:bg-slate-100"
+              className="absolute right-3 top-4 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
             >
               <Icon name="close" />
             </button>
@@ -464,7 +464,7 @@ function GlobalSearch() {
                   </span>
                   <span className="block truncate text-xs text-slate-500">{result.detail}</span>
                 </span>
-                <span className="shrink-0 text-xs capitalize text-slate-400">
+                <span className="shrink-0 text-xs capitalize text-slate-500">
                   {result.type}
                 </span>
               </button>

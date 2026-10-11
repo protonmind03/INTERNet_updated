@@ -181,7 +181,7 @@ function detailText(details: Record<string, unknown>): string {
 
 /** The record an entry is about; a student's opens their page. */
 function Subject({ entry }: { entry: Entry }) {
-  if (!entry.entity_id) return <span className="text-slate-400">None</span>;
+  if (!entry.entity_id) return <span className="text-slate-500">None</span>;
   if (entry.entity_type === "student") {
     return (
       <Link
@@ -351,7 +351,7 @@ export default function CoordinatorAudit() {
                           <Subject entry={entry} />
                         </td>
                         <td className="max-w-xs break-words px-5 py-3 text-xs text-slate-600">
-                          {detailText(entry.details) || <span className="text-slate-400">None</span>}
+                          {detailText(entry.details) || <span className="text-slate-500">None</span>}
                         </td>
                       </tr>
                     ))}

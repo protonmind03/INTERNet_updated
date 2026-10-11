@@ -63,7 +63,7 @@ export default function SupervisorInterns() {
             <Icon
               name="search"
               size={16}
-              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
             />
             <input
               type="search"
@@ -386,7 +386,7 @@ function Section({
   return (
     <section>
       <h3 className="text-sm font-semibold text-slate-900">
-        {title} <span className="font-normal text-slate-400">({count})</span>
+        {title} <span className="font-normal text-slate-500">({count})</span>
       </h3>
       {count === 0 ? (
         <p className="mt-2 text-sm text-slate-500">{empty}</p>

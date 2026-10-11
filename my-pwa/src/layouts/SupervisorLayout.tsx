@@ -92,7 +92,7 @@ export default function SupervisorLayout({
     <div className="app-canvas flex min-h-[calc(100dvh-var(--inb-top-inset))] flex-col print:bg-white">
       <header className="surface-brand-bar sticky top-(--inb-top-inset) z-30 text-white shadow-raised print:hidden">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
-          <NavLink to="/supervisor/dashboard" aria-label="INTERNet Supervisor Portal, dashboard" className="flex shrink-0 items-center gap-2.5">
+          <NavLink to="/supervisor/dashboard" className="flex shrink-0 items-center gap-2.5">
             <span className="hidden xl:block">
               <PortalBrand role="supervisor" showTag size="bar" />
             </span>
@@ -122,11 +122,11 @@ export default function SupervisorLayout({
             <div className="relative" ref={menuRef}>
               <button
                 type="button"
-                aria-label="Account menu"
                 aria-expanded={menuOpen}
                 onClick={() => setMenuOpen((open) => !open)}
                 className="flex items-center gap-2 rounded-lg py-1 pl-1 pr-2 hover:bg-white/10"
               >
+                <span className="sr-only">Account menu for {supervisor.name}</span>
                 <span className="flex h-8 w-8 items-center justify-center rounded-full bg-gold-400 text-xs font-bold text-psu-950">
                   {getInitials(supervisor.name, "SV")}
                 </span>

@@ -297,7 +297,7 @@ export default function ReportComplaint() {
 
             <div>
               <p className="mb-1.5 text-sm font-medium text-slate-700">
-                Evidence <span className="font-normal text-slate-400">(optional)</span>
+                Evidence <span className="font-normal text-slate-500">(optional)</span>
               </p>
               <input
                 ref={evidenceInput}
@@ -321,7 +321,7 @@ export default function ReportComplaint() {
                     type="button"
                     onClick={() => setEvidence(null)}
                     aria-label="Remove evidence file"
-                    className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                    className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-600"
                   >
                     <Icon name="close" size={16} />
                   </button>

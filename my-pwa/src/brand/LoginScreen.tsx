@@ -361,7 +361,7 @@ export default function LoginScreen({ onSubmit, onSignedIn, initialRole = "stude
 
           {footer}
           <p className="m-0 text-center text-sm text-slate-500">No account yet? Your OJT coordinator creates one for you.</p>
-          <p className="m-0 text-center text-xs text-slate-400 md:hidden">Pangasinan State University · Lingayen Campus</p>
+          <p className="m-0 text-center text-xs text-slate-500 md:hidden">Pangasinan State University · Lingayen Campus</p>
         </form>
       </main>
     </div>
