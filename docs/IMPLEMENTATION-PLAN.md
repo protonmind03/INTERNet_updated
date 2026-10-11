@@ -626,6 +626,28 @@ Different from the description, or decided where it left room:
 - [x] **1B.6 Redundant code.** The brand kit's own toast system is out of
   the production build.
 
+### Phase 1C: coordinator console
+
+No migrations. The KPI targets are fixed constants this phase.
+
+- [ ] **1C.1 Dashboard: one Action list,** grouped by who acts (You,
+  Supervisors, Students), counted on the server, in place of Alerts,
+  "Needs attention" and "Students to check on". Top to bottom: today's
+  attendance, the Action list, KPI cards, the hours trend, progress bands,
+  supervisor queues. The weekly email is unchanged.
+- [ ] **1C.2 KPI cards** on Dashboard and Analytics: value, target, eight
+  weeks as a sparkline, change, colour only when the target is missed, a
+  definition, and a link to the list behind it. Six cards, computed on
+  the server; definitions and targets in one module.
+- [ ] **1C.3 Audit log filters:** dropdowns for Category, Actor role,
+  Person and Record, date presets, all in the address; "Export CSV" on
+  the server; dates in Asia/Manila, with a test at 23:30.
+- [ ] **1C.4 Audit coverage:** privacy consent, data export, a coordinator
+  opening a student's document or upload, and a coordinator opening a
+  student record.
+- [ ] **1C.5 Schedule tab** on the coordinator's student record, using the
+  editor from the Requirements page, which stays with a note.
+
 ## Still open
 
 Not built, and noted where each was decided:
