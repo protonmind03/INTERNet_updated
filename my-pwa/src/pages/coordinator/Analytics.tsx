@@ -16,13 +16,13 @@ import {
   EmptyState,
   ErrorNotice,
   ProgressBar,
-  StatTile,
 } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
 import { formatDate, formatDateTime, formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
+import KpiCards from "./KpiCards";
 import { fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { coordinatorRequest } from "./request";
 import TermSelect from "./TermSelect";
@@ -409,58 +409,27 @@ export default function CoordinatorAnalytics() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-                <StatTile
-                  label="Verified hours"
-                  value={formatHours(data.period.hours)}
-                  hint={
-                    <Change
-                      current={data.period.hours}
-                      previous={data.period.previousHours}
-                      versus={`the previous ${data.days} days`}
-                    />
-                  }
-                  icon="clock"
-                  tone="gold"
+              {/* The six figures with targets: the same cards as the dashboard. */}
+              <KpiCards term={term} />
+
+              {/* The chosen period in one line; the charts below break it down. */}
+              <p className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-700 shadow-card">
+                <span className="font-semibold text-slate-900">
+                  In the last {data.days} days: {formatHours(data.period.hours)} verified
+                </span>{" "}
+                (
+                <Change
+                  current={data.period.hours}
+                  previous={data.period.previousHours}
+                  versus={`the previous ${data.days} days`}
                 />
-                <StatTile
-                  label="Attendance logs"
-                  value={data.period.logs}
-                  hint={
-                    <Change
-                      current={data.period.logs}
-                      previous={data.period.previousLogs}
-                      versus={`the previous ${data.days} days`}
-                    />
-                  }
-                  icon="calendar"
-                />
-                <StatTile
-                  label="Students who logged"
-                  value={`${data.period.studentsLogged} of ${data.progress.students}`}
-                  hint={
-                    data.progress.students > 0
-                      ? `${Math.round((data.period.studentsLogged / data.progress.students) * 100)}% of active students`
-                      : "No active students"
-                  }
-                  icon="users"
-                />
-                <StatTile
-                  label="Logs verified"
-                  value={
-                    data.period.logs > 0
-                      ? `${Math.round((data.period.verified / data.period.logs) * 100)}%`
-                      : "–"
-                  }
-                  hint={
-                    data.period.logs > 0
-                      ? `${data.period.pending} waiting · ${data.period.rejected} rejected`
-                      : "No logs in this period"
-                  }
-                  icon="check-circle"
-                  tone={data.period.pending + data.period.rejected > 0 ? "waiting" : "good"}
-                />
-              </div>
+                ), from {data.period.logs} attendance {data.period.logs === 1 ? "log" : "logs"} by{" "}
+                {data.period.studentsLogged} of {data.progress.students} active{" "}
+                {data.progress.students === 1 ? "student" : "students"}.{" "}
+                {data.period.logs > 0
+                  ? `${Math.round((data.period.verified / data.period.logs) * 100)}% of those logs are verified, ${data.period.pending} waiting and ${data.period.rejected} rejected.`
+                  : "No logs in this period."}
+              </p>
 
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
                 <Card className="min-w-0 lg:col-span-2">
