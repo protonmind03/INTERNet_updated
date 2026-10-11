@@ -1102,8 +1102,9 @@ export function registerExtensionRoutes(
   app.get("/api/coordinator/announcements", requireCoordinator, async (_req, res) => {
     try {
       const result = await pool.query(
-        `SELECT id, title, message, audience, company, recipients, created_at
-         FROM announcements ORDER BY created_at DESC LIMIT 100`
+        `SELECT a.id, a.title, a.message, a.audience, a.company, a.recipients, a.created_at,
+                (SELECT COUNT(*)::int FROM announcement_reads r WHERE r.announcement_id = a.id) AS read_count
+         FROM announcements a ORDER BY a.created_at DESC LIMIT 100`
       );
       return res.json({ announcements: result.rows });
     } catch (error) {
@@ -1224,6 +1225,9 @@ export function registerExtensionRoutes(
       if (removed.rows.length === 0) {
         return res.status(404).json({ message: "Announcement not found." });
       }
+      await quietly("REMOVE ANNOUNCEMENT READS ERROR", () =>
+        pool.query(`DELETE FROM announcement_reads WHERE announcement_id = $1`, [req.params.id])
+      );
       const notices = await pool.query(
         `DELETE FROM notifications
          WHERE type = 'announcement' AND title = $1 AND message = $2`,
@@ -1551,6 +1555,18 @@ export function registerExtensionRoutes(
         `,
         [auth.role === "student" ? "students" : "supervisors", auth.id]
       );
+      // Having the list is having seen what is on it. Recorded once each;
+      // a failure to record it never keeps the list from the reader.
+      if (result.rows.length > 0) {
+        await quietly("RECORD ANNOUNCEMENT READS ERROR", () =>
+          pool.query(
+            `INSERT INTO announcement_reads (announcement_id, role, account_id)
+             SELECT id, $2, $3 FROM UNNEST($1::int[]) AS id
+             ON CONFLICT (announcement_id, role, account_id) DO NOTHING`,
+            [result.rows.map((row) => row.id), auth.role, auth.id]
+          )
+        );
+      }
       return res.json({ announcements: result.rows });
     } catch (error) {
       console.error("GET MY ANNOUNCEMENTS ERROR:", error);

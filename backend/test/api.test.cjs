@@ -4739,3 +4739,49 @@ test("a notification's link names the record when its page can show that record"
   }
   assert.equal(withRecord("student", "/task", { type: "TASK", id: 5 }), "/task?focus=task-5");
 });
+
+/*
+| Read receipts on announcements
+*/
+
+test("an announcement counts each reader once, from the first time it is on their list", async (t) => {
+  // The coordinator's list always carries the count.
+  const list = async () => (await jsonRequest("/api/coordinator/announcements", { headers: authHeaders(coordinatorToken) })).body.announcements;
+  for (const item of await list()) {
+    assert.equal(typeof item.read_count, "number");
+    assert.ok(item.read_count >= 0);
+  }
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const title = `Read receipt check ${Date.now()}`;
+  const sent = await jsonRequest("/api/coordinator/announcements", jsonBody(coordinatorToken, "POST", { title, message: "For everyone.", audience: "everyone" }));
+  assert.ok(sent.response.ok, JSON.stringify(sent.body));
+  const id = sent.body.announcement.id;
+  const count = async () => (await list()).find((item) => item.id === id)?.read_count;
+  const open = (token) => jsonRequest("/api/announcements", { headers: authHeaders(token) });
+  try {
+    assert.equal(await count(), 0, "sending it is not reading it");
+    // The reader's own list is unchanged: no receipt details in it.
+    const mine = await open(studentToken);
+    assert.deepEqual(Object.keys(mine.body.announcements.find((item) => item.id === id)).sort(), ["created_at", "id", "message", "title"]);
+    assert.equal(await count(), 1);
+    await open(studentToken);
+    await open(studentToken);
+    assert.equal(await count(), 1, "the same reader is counted once");
+    await open(supervisor.token);
+    assert.equal(await count(), 2, "a second reader is a second receipt");
+  } finally {
+    const gone = await jsonRequest(`/api/coordinator/announcements/${id}`, jsonBody(coordinatorToken, "DELETE", {}));
+    assert.ok(gone.response.ok);
+  }
+  // Withdrawn: its receipts go with it.
+  const pool = localTestPool();
+  try {
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM announcement_reads WHERE announcement_id = $1`, [id])).rows[0].n, 0);
+  } finally {
+    await pool.end();
+  }
+});

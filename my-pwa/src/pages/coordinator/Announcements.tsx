@@ -26,6 +26,8 @@ type Announcement = {
   /** Set when it went to one host company only. */
   company: string | null;
   recipients: number;
+  /** How many of them have had it on their Announcements page. Missing from an older server. */
+  read_count?: number;
   created_at: string;
 };
 
@@ -232,6 +234,7 @@ export default function CoordinatorAnnouncements() {
                     <p className="mt-2 text-xs text-slate-500">
                       {formatDateTime(item.created_at)} · sent to {item.recipients}{" "}
                       {item.recipients === 1 ? "person" : "people"}
+                      {item.read_count !== undefined && ` · seen by ${item.read_count}`}
                       {item.company && ` at ${item.company}`}
                     </p>
                     <button
