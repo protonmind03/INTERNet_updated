@@ -10,6 +10,7 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { getInitials } from "../../lib/format";
 import { updateStoredAccount, useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import CompletionChecklist from "./CompletionChecklist";
 import ContactDetails, { CoordinatorCard, type Contact, type Coordinator } from "./ContactDetails";
 import { PrivacyCard } from "./Privacy";
 
@@ -141,6 +142,9 @@ export default function StudentProfilePage() {
         </Card>
 
         <div className="space-y-5 lg:col-span-2">
+          {/* What is left before the OJT is done, and the request for a review. */}
+          <CompletionChecklist />
+
           <Card>
             <form onSubmit={saveProfile} className="p-4 sm:p-5" noValidate>
               <h2 className="text-sm font-semibold text-slate-900">Account details</h2>
