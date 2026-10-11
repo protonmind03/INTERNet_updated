@@ -424,9 +424,8 @@ export default function CoordinatorAudit() {
         const data = await response.json().catch(() => ({}));
         throw new Error(data.message || "The audit log could not be exported.");
       }
-      const name =
-        /filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "")?.[1] ||
-        "internet-audit-log.csv";
+      // Named here: a page on another address than the server cannot read the name the server gave it.
+      const name = `internet-audit-log-${localDateKey(new Date())}.csv`;
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
