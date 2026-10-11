@@ -31,9 +31,9 @@ import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { useProjections } from "../../lib/useProjections";
 import { MissedTimeOutNotice } from "./AttendanceCorrections";
+import DayStatus, { NextStepButton } from "./DayStatus";
 import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
-import TodayAttendance from "./TodayAttendance";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
 
 type DashboardData = {
@@ -148,8 +148,14 @@ function DashboardPage() {
   const firstName = (student?.name || "").trim().split(/\s+/)[0] || "there";
 
   return (
-    <StudentLayout title="Today" subtitle={`${greetingFor(new Date())}, ${firstName}.`}>
+    <StudentLayout
+      title="Today"
+      subtitle={`${greetingFor(new Date())}, ${firstName}.`}
+      actions={<NextStepButton />}
+    >
       <div className="space-y-5">
+        <DayStatus />
+
         {(attendance.error || error) && (
           <ErrorNotice
             message={attendance.error || error}
@@ -161,8 +167,6 @@ function DashboardPage() {
         )}
 
         <MissedTimeOutNotice attendance={attendance} />
-
-        <TodayAttendance />
 
         {summary?.completedAt && (
           <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
