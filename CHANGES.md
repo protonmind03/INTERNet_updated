@@ -1053,3 +1053,157 @@ it is waiting to be looked at on localhost. The steps for going live are in
 - The API tests against the production copy: it has no demo accounts. This
   is done before the push, with a fresh backup.
 - Anything on a real phone.
+
+## 20. Phase 4, supervisor, coordinator and cross-cutting parts (11 October 2026)
+
+The rest of Phase 4 in `docs/IMPLEMENTATION-PLAN.md`. Six additive
+migrations (029 to 034). Built and committed locally, not pushed.
+
+**Supervisor**
+- **Correct the times on a log.** From a log's review, the supervisor can
+  set time in, break and time out, with a reason. The hours are worked out
+  again and the status is left as it was. The intern is notified and sees
+  the reason on the log; the times before and after are in the audit log.
+  Refused once the coordinator has acknowledged a rejected log.
+- **Decide several at once.** Beside "Verify N completed logs" there is now
+  "Approve N documents" and "Excuse N absences". Each lists what it will
+  decide first, stops at the first refusal and says how far it got.
+- **Certify a month of the time record.** When every log in a month is
+  settled, the supervisor certifies it from the intern's time record. The
+  line (who, when, verified hours) is printed on every copy, and says so if
+  the hours changed afterwards. It can be withdrawn.
+- **Final evaluation.** Once per intern, on the Evaluations page: a rating
+  on every criterion of the coordinator's form, and remarks. It can be
+  changed later. The student sees it on Feedback, the coordinator on the
+  student's record, and the completion checklist now counts it (an
+  ordinary evaluation no longer does).
+- **Daily summary email.** One a morning (07:30 Philippine time, or
+  `SUPERVISOR_DIGEST_TIME`) listing what waits for the supervisor. Not sent
+  when nothing waits, when they turned it off, or without SMTP settings.
+
+**Coordinator**
+- **The final evaluation form.** Evaluations > "Final evaluation form":
+  the form's name, the top of the scale (3 to 10) and the criteria. A
+  changed form is a new one, so a submitted evaluation keeps the criteria
+  it was written on. **The form the system starts with is a sample**, and
+  every screen that shows it says so, until the coordinator saves the
+  university's own.
+- **Coordinator accounts.** People > Coordinators: add one (own password at
+  first sign-in), deactivate or reactivate one, give one a temporary
+  password. Nobody can deactivate or reset their own account here, so one
+  coordinator can always sign in. Accounts are never deleted.
+- **Supervisor import.** Supervisors can be imported from a CSV, like
+  students.
+- **Check before importing.** Both imports now check the file first: every
+  rule runs, including whether an ID or email is taken or repeated in the
+  file, and nothing is created. The dialog shows that result and imports on
+  a second press.
+- **Site visits.** Programme > Site visits logs each visit to a company:
+  the date, what was found, what to follow up. A company's menu opens its
+  visits, and the Companies page shows when each was last visited.
+
+**For everyone**
+- **Notification choices.** Each Profile has a Notifications card: per kind
+  (attendance, tasks, documents, evaluations, announcements, everything
+  else), whether it is also pushed to the person's devices; and, where an
+  email of that kind exists, whether it is sent. Notifications in the app
+  are always kept.
+
+**Where this falls short of the plan**
+- The final evaluation's criteria and scale are a sample, not the
+  university's (decision D13 is still open). Entering them is a few minutes
+  on the form editor.
+- The plan's "cannot deactivate the last active coordinator" is met by the
+  rule that nobody can deactivate themselves: since only an active
+  coordinator can deactivate another, one always remains.
+- The per-intern summary PDF and announcement read receipts were skipped
+  (decision D12).
+- Only two kinds of email exist to switch off: task deadline reminders and
+  the summary emails. Other kinds have a push switch only.
+
+**What was checked**
+- 111 API tests at the end of this part. In a browser against the
+  production build: bulk decisions, correcting times, certifying a month,
+  the final evaluation as supervisor, student and coordinator, the form
+  editor, both imports with their check step, coordinator accounts, site
+  visits and the notification switches.
+
+**Not checked**
+- Any email actually arriving: production has no SMTP settings, and the
+  tests use a stand-in sender.
+- Push respecting the switches on a real device: push is not set up in
+  production.
+
+## 21. Phase 5: projections, alerts, reports and polish (11 October 2026)
+
+No migrations. Built and committed locally, not pushed.
+
+**Projected finish and "at risk"**
+- A student's remaining hours are counted off against their weekly
+  schedule, day by day from tomorrow, skipping holidays. That gives a
+  projected finish date. A student is at risk when it falls after their
+  term ends, or when hours remain and nothing is scheduled.
+- Shown on Monitoring (with an "At risk" filter), on the student's
+  dashboard, and in the supervisor's intern dialog.
+- It is an estimate from the schedule. It does not look at how many hours
+  the student has actually been rendering each week.
+
+**Alerts**
+- The coordinator's dashboard has an Alerts card, shown only when there is
+  something in it: supervisors with reviews waiting more than 3 days,
+  agreements that have ended or end within 30 days, students with 5 or more
+  scheduled days in a row without attendance or a filed absence, and
+  students at risk.
+- The same alerts go out as a weekly email (Monday 07:30 unless
+  `COORDINATOR_DIGEST_DAY` and `COORDINATOR_DIGEST_TIME` say otherwise),
+  only when there is something to report.
+
+**Exports**
+- Monitoring has an Export button: every active student with hours,
+  completion and projected finish, and a summary per company with its
+  agreement end and last visit. It follows the term filter.
+- The Analytics CSV carries both tables; the PDF carries the company
+  summary.
+
+**Accessibility**
+- axe (WCAG 2.1 A and AA) was run on all 45 pages at phone and desktop
+  width. It found six kinds of problem; all are fixed and the run is clean:
+  grey text too faint to read, menu buttons read out without the text they
+  show, progress bars with no name, two lists marked up as something they
+  were not, and a table that could not be scrolled from the keyboard.
+
+**End-to-end tests**
+- A new `e2e` folder holds nine Playwright tests that drive the built site
+  in a real browser: signing in as each role, a refused password, a
+  signed-out visitor, the privacy notice and the camera check starting, the
+  weekly journal across two accounts, a holiday reaching the student, and
+  the completion checklist. CI runs them as a third job.
+
+**Content security policy**
+- The offline page's script moved into its own file. Every page now loads
+  with no violations of the report-only policy. **The policy is still
+  report-only**: switching it to enforcing is a one-line change to
+  `my-pwa/vercel.json`, left for the owner's word.
+
+**Where this falls short of the plan**
+- The projection is not on the coordinator dashboard as a figure of its
+  own; at-risk students are in the Alerts card there.
+- The accessibility run covers each page as it first loads. Dialogs and
+  open menus were not run through it.
+- The fake camera has no face, so the end-to-end time-in test stops at the
+  camera check starting. A full time-in cannot be automated.
+
+**What was checked**
+- 115 API tests, all passing, including one that checks the report against
+  Monitoring, each company row against its students, and each term's
+  report against that term's students.
+- The nine end-to-end tests locally, against the production build.
+- All 45 pages load with no errors and no policy violations.
+- Migrations 001 to 034 on a fresh database, and 017 to 034 on a local
+  restore of the production backup of 10 October: all applied, row counts
+  unchanged.
+
+**Not checked**
+- The end-to-end job on GitHub: it has only been run on this machine. Its
+  first run happens on the next push.
+- Anything on a real phone.

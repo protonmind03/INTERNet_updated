@@ -59,6 +59,11 @@ Optional, each can be added later:
 - `OFFLINE_ACTION_MAX_AGE_HOURS` (default 12, allowed 1 to 72): how old a
   break, back-to-work or time-out recorded while a phone was offline may be
   when it arrives. Older ones are refused.
+- `SUPERVISOR_DIGEST_TIME` (default `07:30`, Philippine time): when the
+  supervisors' daily summary email goes out. Needs the SMTP settings.
+- `COORDINATOR_DIGEST_DAY` (default `MON`) and `COORDINATOR_DIGEST_TIME`
+  (default `07:30`): when the coordinators' weekly summary of alerts goes
+  out. Needs the SMTP settings.
 - `PRIVACY_CONSENT_REQUIRED` (off unless `true`): the server refuses a
   time-in from a student who has not agreed to the current privacy notice.
   The app asks either way. See "Privacy notice and photo retention" below
@@ -110,8 +115,9 @@ the push contains a migration (see Backups).
 
 `.github/workflows/ci.yml` runs on every push: it starts a throwaway
 PostgreSQL, applies the migrations, seeds the demo accounts, starts the API
-and runs the API tests; separately it builds and lints the site. It needs
-no secrets. The result shows on the repository's Actions tab and as a tick
+and runs the API tests; separately it builds and lints the site; and a
+third job drives the built site in a real browser (the tests in `e2e/`).
+It needs no secrets. The result shows on the repository's Actions tab and as a tick
 or cross beside each commit.
 
 By default a failing run does **not** stop a deploy. To make it stop one:
@@ -124,6 +130,21 @@ By default a failing run does **not** stop a deploy. To make it stop one:
   site build.)
 
 Turn these on only after the workflow has passed once on `main`.
+
+### Running the end-to-end tests yourself
+
+They need the API and the built site running on this machine, with the
+demo accounts (`npm run db:seed-demo` in `backend`). They write records
+(a journal, a holiday) and clear them afterwards, and refuse to run against
+anything that is not this machine.
+
+1. In `backend`: `npm run dev`
+2. In `my-pwa`: `npm run build`, then `npm run preview` (the site on port 4173)
+3. In `e2e`: `npm install` once, then `npm test`
+
+If the API is not on port 5000, say where it is first:
+`$env:E2E_API_URL = "http://127.0.0.1:5001"` (PowerShell). The site must
+have been built to call that same address.
 
 ## 4. First login
 

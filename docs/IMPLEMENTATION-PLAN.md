@@ -7,16 +7,13 @@ platform steps are in `docs/PLATFORM-CHANGES.md`.
 Status: **Phases 1 and 2 are pushed and live (2026-10-10).** Phase 2 went
 out in two pushes, backend first, after a production backup that was
 restored and tested locally. Still owed for Phase 2: the phone checks in
-`DEPLOY.md`, on a real Android phone and a real iPhone. Phases 3 to 5 are
-not started.
+`DEPLOY.md`, on a real Android phone and a real iPhone.
 
-**Phase 4, student part, is built and committed locally (2026-10-11), not
-pushed.** Every student item is built except the optional `.ics` export
-(skipped, decision D12). It is waiting for the owner to look at it on
-localhost: this is the gate after Student. Decisions D9 (note required, 15
-characters) and D11 (reminder after 1 hour) were answered as recommended
-on 2026-10-10; D10 was built as recommended (purge off, the notice a
-marked draft).
+**Phases 3, 4 and 5 are built and committed locally (2026-10-11), not
+pushed.** Every item is built except the three optional ones (decision
+D12) and the switch to an enforcing content security policy, which waits
+for the owner's word. The notes under each phase say where the work falls
+short of the list. What is still open is at the end, under "Still open".
 
 **Phase 3 is built and committed locally (2026-10-10), not pushed.** It
 is waiting for the owner to look at it on localhost. Two parts fall short
@@ -400,54 +397,72 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
   scheduled day. In-app (and push where set up), no email.
 
 ### Supervisor
-- [ ] **4.V1 Daily email digest** at `SUPERVISOR_DIGEST_TIME`; idempotent;
+- [x] **4.V1 Daily email digest** at `SUPERVISOR_DIGEST_TIME`; idempotent;
   skipped when nothing waits, when opted out, or without SMTP.
-- [ ] **4.V2 Structured final evaluation.** `evaluation_forms` and
+- [x] **4.V2 Structured final evaluation.** `evaluation_forms` and
   `final_evaluations`. **[DECISION D13]**
-- [ ] **4.V3 Time correction** with a required reason, recomputed hours,
+- [x] **4.V3 Time correction** with a required reason, recomputed hours,
   audit row, student notification; refused on logs the coordinator has
   acknowledged. Tests.
-- [ ] **4.V4 DTR certification.** `dtr_certifications` (unique per student
+- [x] **4.V4 DTR certification.** `dtr_certifications` (unique per student
   and month); only when every log in the month is decided and closed;
   printed on `DtrSheet`.
-- [ ] **4.V5 Bulk decisions** for documents and absences, with the
+- [x] **4.V5 Bulk decisions** for documents and absences, with the
   partial-failure report of bulk verify.
-- [ ] **4.V6 Optional:** per-intern summary PDF. **[DECISION D12]**
+- [ ] **4.V6 Optional:** per-intern summary PDF. **[DECISION D12]** Skipped.
 
 ### Coordinator
-- [ ] **4.C1 Coordinator accounts.** List, create, deactivate, reset; same
+- [x] **4.C1 Coordinator accounts.** List, create, deactivate, reset; same
   password policy and forced change; cannot deactivate self or the last
   active coordinator.
-- [ ] **4.C2 Supervisor CSV import,** mirroring the student import.
-- [ ] **4.C3 Import dry run** (`dry_run=true`) on both imports, shown in
+- [x] **4.C2 Supervisor CSV import,** mirroring the student import.
+- [x] **4.C3 Import dry run** (`dry_run=true`) on both imports, shown in
   the dialog first.
-- [ ] **4.C4 Site visit log.** `site_visits` table and page; visits on the
+- [x] **4.C4 Site visit log.** `site_visits` table and page; visits on the
   company page.
-- [ ] **4.C5 Optional:** read receipts on announcements. **[DECISION D12]**
+- [ ] **4.C5 Optional:** read receipts on announcements. **[DECISION D12]** Skipped.
 
 ### Cross-cutting
-- [ ] **4.X1 Notification preferences.** `notification_preferences` (push
+- [x] **4.X1 Notification preferences.** `notification_preferences` (push
   and email per category), managed from Profile, respected by the
   notification helper and digests. In-app notifications are always kept.
+
+**How the supervisor, coordinator and cross-cutting parts turned out
+differently from the list above**
+- 4.V2: the form starts as a **sample** (seven criteria, scale of 5),
+  marked as one on every screen, until the coordinator saves the
+  university's. D13 is still open. The completion checklist now counts the
+  final evaluation, not any evaluation.
+- 4.V3: the status of a corrected log is left as it was. The latest
+  correction is kept on the log; the history is in the audit log.
+- 4.V4: a certification records the verified hours at that moment and can
+  be withdrawn by the supervisor.
+- 4.C1: "the last active coordinator" is covered by "not yourself": only
+  an active coordinator can deactivate another, so one always remains.
+- 4.X1: only task deadline reminders and the summary emails are emails
+  that can be switched off; every other kind has a push switch only.
+- The owner asked on 2026-10-11 to go on through every remaining part, so
+  the gates after Supervisor and after Coordinator were not stopped at.
+  Everything is still local and waiting to be looked at.
 
 **Gates:** after Student, after Supervisor, after Coordinator and
 cross-cutting.
 
 ## Phase 5: Data-driven analytics and polish
 
-- [ ] **5.1 Pace projection** per active student, shown in Monitoring
+- [x] **5.1 Pace projection** per active student, shown in Monitoring
   ("Projected finish", "At risk" filter), the coordinator dashboard, the
   student dashboard and the supervisor's intern dialog.
-- [ ] **5.2 Alerts and weekly digest.** Dashboard alerts (slow
+- [x] **5.2 Alerts and weekly digest.** Dashboard alerts (slow
   supervisors, MOAs expiring in 30 days, 5+ scheduled days without
   attendance, at-risk students); a weekly coordinator email.
   **[DECISION D14]**
-- [ ] **5.3 Exports** gain projections, company summaries and the term
+- [x] **5.3 Exports** gain projections, company summaries and the term
   filter.
-- [ ] **5.4 Consistency test** extended to the term and company filters.
-- [ ] **5.5 Accessibility.** axe on every page; labels and focus fixed;
+- [x] **5.4 Consistency test** extended to the term and company filters.
+- [x] **5.5 Accessibility.** axe on every page; labels and focus fixed;
   anything not fixed is reported.
-- [ ] **5.6 Playwright end-to-end tests** with a fake camera stream, added
+- [x] **5.6 Playwright end-to-end tests** with a fake camera stream, added
   to CI.
 - [ ] **5.7 Enforcing CSP** in `vercel.json`, once the report-only header
   has shown no real violations. Pushed only on the owner's word.
@@ -456,7 +471,45 @@ cross-cutting.
   would stop working. Move that script to a file (precached with the page
   in 2.1) before enforcing.
 
+**How Phase 5 turned out differently from the list above**
+- 5.1: the projection is from the weekly schedule and the holidays, not
+  from the hours a student has actually been rendering. It is on
+  Monitoring, the student dashboard and the supervisor's intern dialog; on
+  the coordinator dashboard at-risk students are in the Alerts card.
+- 5.2: built on D14's recommendation (3 days) without an explicit answer.
+- 5.3: Monitoring's new Export follows the term filter. The Analytics page
+  itself still has no term filter; its exports carry the all-terms tables.
+- 5.5: axe on all 45 pages at two widths, clean after fixes. Dialogs and
+  open menus were not run through it.
+- 5.6: nine tests in a separate `e2e` folder. The fake camera has no
+  face, so time-in is tested up to the camera check starting.
+- 5.7: **not done, by design.** The offline page's script was moved to a
+  file and every page loads with no report-only violations, so the switch
+  is a one-line change waiting for the owner's word.
+
 **Gate:** final report, complete platform checklist, field test plan.
+
+## Still open
+
+Not built, and noted where each was decided:
+- The three optional items (`.ics` export, per-intern summary PDF,
+  announcement read receipts): skipped, D12.
+- Enforcing the content security policy (5.7): ready, waiting for the word.
+- From Phase 3: the pages still load whole lists (only the audit log pages
+  on the server); the dashboard and Analytics have no term filter; a
+  notification opens the right page but not one particular record; the
+  company backfill script cannot yet reach the hosted database.
+- A supervisor has no page for re-reading journals they already reviewed.
+
+Needed from the owner:
+- The university's final evaluation criteria and scale (D13), entered on
+  Evaluations > Final evaluation form.
+- The approved privacy notice text, the photo retention period and the
+  Data Protection Officer's contact (D10).
+- SMTP settings on Railway, if any email is wanted (password recovery,
+  deadline reminders, both summary emails). Without them none is sent.
+- The Railway plan decision before the trial credit ends (D15).
+- The phone checks in `DEPLOY.md`, on a real Android phone and iPhone.
 
 ## Decisions needed
 
@@ -515,9 +568,9 @@ screenshots)
 - **D12: skipped as recommended for the student part (`.ics`); say if
   you want any.** Optional items: `.ics` export, per-intern summary PDF,
   announcement read receipts. *Recommend:* skip all three for now.
-- **D13. Final evaluation form:** the university's criteria and scale,
+- **D13: built with a marked sample form, awaiting the real one.** Final evaluation form: the university's criteria and scale,
   to be supplied.
-- **D14. Slow-supervisor alert threshold.** *Recommend:* 3 days.
+- **D14: built as recommended (3 days), awaiting your confirmation.** Slow-supervisor alert threshold. *Recommend:* 3 days.
 - **D15: answered 2026-10-10, as recommended.** Take a full backup now
   (database and uploads, steps in `DEPLOY.md`), and move the Railway
   workspace to the paid Hobby plan before the trial credit runs out

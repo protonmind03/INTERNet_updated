@@ -170,24 +170,41 @@ New variables in this part: `PRIVACY_CONSENT_REQUIRED` and
 Not added: `TIMEOUT_REMINDER_HOURS`. The reminder is fixed at one hour
 after the scheduled end (decision D11).
 
-### Supervisor, coordinator and cross-cutting parts (not built yet)
+### Supervisor, coordinator and cross-cutting parts (built locally, not pushed)
 
-Additive migrations in each. A backup before each push.
-
-| When | Platform | Change | Why |
-|---|---|---|---|
-| Before each push | Railway | Fresh Postgres backup. | Migrations. |
-| Optional | Railway → Variables | `SUPERVISOR_DIGEST_TIME`: `HH:MM`, Asia/Manila. Unset means `07:30`. | When the daily supervisor email goes out. |
-| Needed for the digests | Railway → Variables | All five of `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Without all five the digests stay off (as password-recovery email is today). | Email delivery. |
-| | Vercel | No setting changes. | |
+Six more additive migrations: 029 (time correction), 030 (time record
+certifications), 031 (final evaluations, with a sample form), 032
+(notification preferences), 033 (summary email log), 034 (site visits).
 
 ## Phase 5
 
+No migrations. Adds an end-to-end test job to CI.
+
+## The one push for everything built so far
+
+Phases 3, 4 and 5 are all local. They can go out as **one push**:
+migrations 018 to 034, seventeen in all, each additive. Nothing the new
+frontend sends is misread by the old backend, and nothing the new backend
+requires is missing from the old frontend, so the order the two hosts
+finish in does not matter; for those few minutes the new pages answer
+"route not found" and everything that existed keeps working.
+
 | When | Platform | Change | Why |
 |---|---|---|---|
-| Optional | Railway → Variables | `COORDINATOR_DIGEST_DAY` (for example `MON`) and `COORDINATOR_DIGEST_TIME` (`HH:MM`). Unset means the documented defaults. | The weekly coordinator email. |
-| With the CI change | GitHub Actions | CI also runs Playwright; its browsers are cached between runs. No secrets. | End-to-end tests. |
-| On your word | Vercel (a commit to `vercel.json`) | Switch `Content-Security-Policy-Report-Only` to `Content-Security-Policy`. | Only after the report-only header has shown no real violations. |
+| Before the push | Railway (run by you) | A fresh database backup: open the tunnel (`railway connect Postgres --tunnel-only`), then `railway run --service Postgres npm run db:backup-production <tunnel port>`. Tell me it is done, and I will restore it locally, run the seventeen migrations and the tests against it, and only then push. | The push runs migrations. |
+| After the push | GitHub → Actions | All three jobs are green: API tests, frontend build, and the new end-to-end tests. Railway deploys only after they are. **This is the first time the end-to-end job runs on GitHub**; if it fails there for a reason that is about GitHub and not the app, the backend deploy waits until it is fixed. | A failing check blocks the backend. |
+| After the push | Railway → backend → Deploy Logs | `Applied 018` through `Applied 034`, then `Backend running`. | Confirms the migrations ran. |
+| After the push | The live site, as coordinator | Add the term and the holidays; add the companies; open Evaluations > Final evaluation form and enter the university's criteria. | These start empty, or as a sample. |
+| Before real use by students | A code change, by me, when you send the text | The approved privacy notice (see the Student part above). | The notice on screen is a draft. |
+| Optional | Railway → Variables | All five of `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Without all five no email is sent: not password recovery, not deadline reminders, not the summaries. | Email delivery. |
+| Optional, needs SMTP | Railway → Variables | `SUPERVISOR_DIGEST_TIME`: `HH:MM`, Philippine time. Unset means `07:30`. | When the supervisors' daily summary goes out. |
+| Optional, needs SMTP | Railway → Variables | `COORDINATOR_DIGEST_DAY` (`SUN` to `SAT`; unset means `MON`) and `COORDINATOR_DIGEST_TIME` (`HH:MM`; unset means `07:30`). | When the coordinators' weekly summary goes out. |
+| On your word, later | Vercel (a commit to `vercel.json`, by me) | Switch `Content-Security-Policy-Report-Only` to `Content-Security-Policy`. Every page now loads with no violations, so it is ready; it is left off until you say so, because a mistake in it can stop pages loading. | The stricter security header. |
+| | Vercel | No setting changes. | |
+
+New variables in these parts: `SUPERVISOR_DIGEST_TIME`,
+`COORDINATOR_DIGEST_DAY` and `COORDINATOR_DIGEST_TIME` (Railway, all
+optional, all doing nothing without SMTP).
 
 ## Variables introduced by this plan
 
@@ -200,7 +217,7 @@ All optional; unset means today's behaviour.
 | `SUPERVISOR_DIGEST_TIME` | Railway | 4 | `07:30` |
 | `PRIVACY_CONSENT_REQUIRED` | Railway | 4 | off: the app asks, the server does not insist |
 | `PHOTO_RETENTION_DAYS` | Railway | 4 | purge off |
-| `COORDINATOR_DIGEST_DAY`, `COORDINATOR_DIGEST_TIME` | Railway | 5 | documented defaults |
+| `COORDINATOR_DIGEST_DAY`, `COORDINATOR_DIGEST_TIME` | Railway | 5 | `MON`, `07:30` |
 
 No new `VITE_*` variables are planned. If one is added, changing it on
 Vercel needs a redeploy, because it is read when the site is built.

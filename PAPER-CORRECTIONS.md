@@ -365,8 +365,32 @@ are true of the system today, for a scope section:
 - A page that crashes shows a recovery screen and sends the server a short
   report (error text, page path, build). There is no error dashboard; the
   reports are lines in the server log.
-- There is one coordinator account by default and no screen for creating
-  another.
+- There is one coordinator account by default. A coordinator can add,
+  deactivate and reactivate other coordinator accounts; nobody can
+  deactivate their own.
+- The supervisor's final evaluation is filled in on a form whose criteria
+  and scale the coordinator sets. The system ships with a sample form,
+  marked as a sample; the paper should describe the university's own
+  criteria only once they have been entered.
+- A supervisor can correct the times on a log, with a reason the student
+  sees; the times before and after are kept in the audit log. A supervisor
+  can also certify a month of a student's time record. Certifying records
+  who, when and how many verified hours; it is not a digital signature.
+- "Projected finish" is counted from the student's weekly schedule and
+  the holiday list, not from the hours they have actually been rendering.
+  "At risk" means that date is after the term ends, or nothing is
+  scheduled. If the paper calls this a prediction or predictive analytics,
+  that overstates it: it is arithmetic on the schedule.
+- The coordinator's alerts are fixed rules (reviews waiting more than 3
+  days, agreements ending within 30 days, 5 scheduled days without
+  attendance), worked out when the dashboard is opened.
+- Summary emails to supervisors and coordinators exist in the system but
+  are sent only when the server has SMTP settings, which the hosted
+  system does not have at the time of writing.
+- Accessibility was checked with an automated tool (axe, WCAG 2.1 A and
+  AA) on every page as it loads, with no failures left. Automated checks
+  find only part of what the guidelines cover; the paper should not claim
+  the system "is WCAG compliant".
 - On their profile a student can edit their name and email, and add a
   mobile number and an emergency contact. Program, company and required
   hours are set by the coordinator.
