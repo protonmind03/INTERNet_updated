@@ -16,7 +16,7 @@ import {
   readPrivateFile,
   savePrivateFile,
 } from "./services/privateFileStore";
-import { isSmtpConfigured, sendEmail } from "./services/mailer";
+import { isEmailConfigured, sendEmail } from "./services/mailer";
 import {
   publishNotification,
   closeNotificationStreams,
@@ -418,7 +418,7 @@ app.post("/api/auth/password-reset/request", async (req, res) => {
   if (!(role in accountTables) || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
     return res.status(400).json({ message: "Enter a valid role and email address." });
   }
-  if (!isSmtpConfigured() || !process.env.FRONTEND_URL) {
+  if (!isEmailConfigured() || !process.env.FRONTEND_URL) {
     return res.status(503).json({
       message: "Password recovery is temporarily unavailable. Contact your OJT coordinator.",
     });

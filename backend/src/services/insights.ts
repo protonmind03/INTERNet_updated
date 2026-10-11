@@ -23,7 +23,7 @@
 */
 
 import type { Pool } from "pg";
-import { isSmtpConfigured, sendEmail } from "./mailer";
+import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
 import { clockSetting, manilaClock, sendOnce, type DigestDeps } from "./digests";
 
@@ -377,7 +377,7 @@ const DAY_CODES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
  */
 export async function sendCoordinatorDigests(pool: Pool, deps: DigestDeps = {}): Promise<string[]> {
   const env = deps.env ?? process.env;
-  if (!(deps.smtpReady ?? isSmtpConfigured())) return [];
+  if (!(deps.emailReady ?? deps.smtpReady ?? isEmailConfigured())) return [];
   const now = deps.now ?? new Date();
   const clock = manilaClock(now);
   const wanted = DAY_CODES.indexOf((env.COORDINATOR_DIGEST_DAY || "").trim().toUpperCase());

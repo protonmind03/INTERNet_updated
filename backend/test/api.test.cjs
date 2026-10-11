@@ -4785,3 +4785,106 @@ test("an announcement counts each reader once, from the first time it is on thei
     await pool.end();
   }
 });
+
+/*
+| Round 2, Phase 0: email through an HTTPS API
+*/
+
+test("email goes by the provider's API when it is set, by SMTP otherwise, and is off with neither", () => {
+  require("tsx/cjs");
+  const { emailRoute, isEmailConfigured, isSmtpConfigured } = require("../src/services/mailer.ts");
+  const smtp = { SMTP_HOST: "smtp.example.com", SMTP_PORT: "587", SMTP_USER: "u", SMTP_PASSWORD: "p", SMTP_FROM: "INTERNet <no-reply@example.com>" };
+  const api = { EMAIL_PROVIDER: "resend", EMAIL_API_KEY: "re_test_key", SMTP_FROM: "INTERNet <no-reply@example.com>" };
+
+  assert.equal(emailRoute({}), null);
+  assert.equal(isEmailConfigured({}), false);
+  assert.equal(emailRoute(smtp), "smtp");
+  assert.equal(emailRoute(api), "api");
+  // Both set: the API, which is the one that works on the host.
+  assert.equal(emailRoute({ ...smtp, ...api }), "api");
+  assert.equal(emailRoute({ ...api, EMAIL_PROVIDER: " Resend " }), "api", "the provider's name is not case-sensitive");
+
+  // Half-set is not set.
+  assert.equal(emailRoute({ EMAIL_PROVIDER: "resend" }), null);
+  assert.equal(emailRoute({ EMAIL_PROVIDER: "resend", EMAIL_API_KEY: "k" }), null, "there must be a sender address");
+  assert.equal(emailRoute({ ...api, EMAIL_PROVIDER: "carrier-pigeon" }), null, "a provider this server does not know");
+  assert.equal(emailRoute({ ...smtp, EMAIL_PROVIDER: "carrier-pigeon", EMAIL_API_KEY: "k" }), "smtp", "an unknown provider falls back to SMTP");
+  for (const missing of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM"]) {
+    assert.equal(emailRoute({ ...smtp, [missing]: "" }), null, missing);
+  }
+  // The old name still answers, for the code that has not moved to the new one.
+  assert.equal(typeof isSmtpConfigured(), "boolean");
+});
+
+test("the provider adapter sends one request, and says plainly why when it fails", async () => {
+  require("tsx/cjs");
+  const { sendThroughApi } = require("../src/services/mailer.ts");
+  const env = { EMAIL_PROVIDER: "resend", EMAIL_API_KEY: "re_secret_key_123", SMTP_FROM: "INTERNet <no-reply@example.com>" };
+  const email = { to: "student@example.com", subject: "Reset your password", text: "Use this link." };
+  const answer = (status, body) => ({ ok: status >= 200 && status < 300, status, json: async () => body });
+
+  // Success: one POST to the provider, the key in the header only.
+  const calls = [];
+  await sendThroughApi(email, { env, fetcher: async (url, init) => { calls.push({ url, init }); return answer(200, { id: "abc" }); } });
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, "https://api.resend.com/emails");
+  assert.equal(calls[0].init.method, "POST");
+  assert.equal(calls[0].init.headers.Authorization, "Bearer re_secret_key_123");
+  assert.deepEqual(JSON.parse(calls[0].init.body), { from: env.SMTP_FROM, to: ["student@example.com"], subject: email.subject, text: email.text });
+  assert.equal(calls[0].init.body.includes("re_secret_key_123"), false);
+  // An HTML part is sent only when there is one.
+  await sendThroughApi({ ...email, html: "<p>Use this link.</p>" }, { env, fetcher: async (url, init) => { calls.push({ url, init }); return answer(200, {}); } });
+  assert.equal(JSON.parse(calls[1].init.body).html, "<p>Use this link.</p>");
+
+  // A refusal: the status and the provider's reason, never the key or the recipient.
+  for (const [status, body, expected] of [
+    [422, { statusCode: 422, name: "validation_error", message: "The from address is not verified." }, /status 422: The from address is not verified\./],
+    [401, { message: "API key is invalid" }, /status 401: API key is invalid/],
+    [403, { error: { message: "Domain not verified" } }, /status 403: Domain not verified/],
+    [500, null, /status 500\.$/],
+  ]) {
+    await assert.rejects(
+      sendThroughApi(email, { env, fetcher: async () => ({ ...answer(status, body), json: async () => { if (body === null) throw new Error("not JSON"); return body; } }) }),
+      (error) => {
+        assert.match(error.message, expected);
+        assert.equal(error.message.includes("re_secret_key_123"), false);
+        assert.equal(error.message.includes("student@example.com"), false);
+        return true;
+      }
+    );
+  }
+
+  // No answer in time: the request is abandoned and said to have timed out.
+  const started = Date.now();
+  await assert.rejects(
+    sendThroughApi(email, {
+      env,
+      timeoutMs: 40,
+      fetcher: (url, init) => new Promise((resolve, reject) => init.signal.addEventListener("abort", () => reject(new Error(`aborted ${url} with ${init.headers.Authorization}`)))),
+    }),
+    (error) => {
+      assert.match(error.message, /did not answer in time/);
+      assert.equal(error.message.includes("re_secret_key_123"), false, "the underlying error is not passed on");
+      return true;
+    }
+  );
+  assert.ok(Date.now() - started < 2000);
+  // The network failing is told apart from a timeout, still without detail.
+  await assert.rejects(sendThroughApi(email, { env, fetcher: async () => { throw new TypeError("fetch failed re_secret_key_123"); } }), /could not be reached: TypeError\.$/);
+
+  // Not configured: refused before any request.
+  let asked = 0;
+  await assert.rejects(sendThroughApi(email, { env: { EMAIL_PROVIDER: "resend" }, fetcher: async () => { asked += 1; return answer(200, {}); } }), /must be configured/);
+  assert.equal(asked, 0);
+});
+
+test("with no email settings, password recovery still says it is unavailable", async () => {
+  // The server under test has neither kind of email settings, as production has today.
+  const reset = await jsonRequest("/api/auth/password-reset/request", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ role: "student", email: studentEmail }),
+  });
+  assert.equal(reset.response.status, 503);
+  assert.match(reset.body.message, /temporarily unavailable/);
+});

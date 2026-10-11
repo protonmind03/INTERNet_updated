@@ -6,7 +6,7 @@
 | The supervisor's daily summary: one email a morning saying how much is
 | waiting for their decision. It is not sent when nothing is waiting, when
 | the supervisor turned summary emails off (Profile > Notifications), or
-| when the server has no SMTP settings. `digest_log` holds one row per
+| when the server has no email settings. `digest_log` holds one row per
 | email sent, which is what keeps it to one a day.
 |
 | Everything that depends on the clock or on sending takes it as an
@@ -15,7 +15,7 @@
 */
 
 import type { Pool } from "pg";
-import { isSmtpConfigured, sendEmail } from "./mailer";
+import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
 
 type Mailer = (email: { to: string; subject: string; text: string }) => Promise<void>;
@@ -23,7 +23,9 @@ type Mailer = (email: { to: string; subject: string; text: string }) => Promise<
 export type DigestDeps = {
   now?: Date;
   env?: NodeJS.ProcessEnv;
-  /** Defaults to the real SMTP check and sender. */
+  /** Whether email can be sent. Defaults to the real check. */
+  emailReady?: boolean;
+  /** The old name for `emailReady`, kept for one round. */
   smtpReady?: boolean;
   send?: Mailer;
 };
@@ -106,7 +108,7 @@ export async function sendOnce(
  */
 export async function sendSupervisorDigests(pool: Pool, deps: DigestDeps = {}): Promise<string[]> {
   const env = deps.env ?? process.env;
-  if (!(deps.smtpReady ?? isSmtpConfigured())) return [];
+  if (!(deps.emailReady ?? deps.smtpReady ?? isEmailConfigured())) return [];
   const clock = manilaClock(deps.now ?? new Date());
   if (clock.time < clockSetting(env.SUPERVISOR_DIGEST_TIME, "07:30")) return [];
   const send = deps.send ?? sendEmail;

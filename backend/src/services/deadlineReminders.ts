@@ -1,5 +1,5 @@
 import type { Pool } from "pg";
-import { isSmtpConfigured, sendEmail } from "./mailer";
+import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
 
 type NotificationWriter = (notification: {
@@ -86,7 +86,7 @@ export function startDeadlineReminderScheduler(
             LIMIT 1
             FOR UPDATE OF r SKIP LOCKED
             `,
-            [isSmtpConfigured(), MAX_EMAIL_ATTEMPTS]
+            [isEmailConfigured(), MAX_EMAIL_ATTEMPTS]
           );
           if (pending.rows.length === 0) {
             await client.query("COMMIT");
@@ -95,7 +95,7 @@ export function startDeadlineReminderScheduler(
 
           const reminder = pending.rows[0];
           const emailDue =
-            isSmtpConfigured() &&
+            isEmailConfigured() &&
             !reminder.email_sent_at &&
             reminder.email_attempts < MAX_EMAIL_ATTEMPTS &&
             (!reminder.email_next_attempt_at ||
@@ -157,10 +157,10 @@ export function startDeadlineReminderScheduler(
                 [reminder.id]
               );
             }
-          } else if (!reminder.email_sent_at && !isSmtpConfigured() && !warnedAboutSmtp) {
+          } else if (!reminder.email_sent_at && !isEmailConfigured() && !warnedAboutSmtp) {
             warnedAboutSmtp = true;
             console.error(
-              "Task deadline email reminders are pending SMTP configuration; configure SMTP_HOST, SMTP_PORT, SMTP_FROM, SMTP_USER, and SMTP_PASSWORD."
+              "Task deadline email reminders are waiting for email to be configured: EMAIL_PROVIDER, EMAIL_API_KEY and SMTP_FROM, or the five SMTP_* settings."
             );
           }
 
