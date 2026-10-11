@@ -25,6 +25,8 @@ import { formatDate, formatDateTime, formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { coordinatorRequest } from "./request";
+import TermSelect from "./TermSelect";
+import { useTermFilter } from "./useTermFilter";
 
 type TrendDay = { day: string; logs: number; hours: number; students: number };
 
@@ -229,9 +231,9 @@ function reportSections(report: AnalyticsData): ReportSection[] {
  * The students' projections and the company summary, for the exports. If
  * they cannot be loaded the report is still produced without them.
  */
-async function programmeTables(): Promise<ReportSection[]> {
+async function programmeTables(term: string): Promise<ReportSection[]> {
   try {
-    return programmeSections(await fetchProgrammeReport());
+    return programmeSections(await fetchProgrammeReport(term));
   } catch {
     return [];
   }
@@ -248,10 +250,20 @@ export default function CoordinatorAnalytics() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [buildingPdf, setBuildingPdf] = useState(false);
+  // Shared with the dashboard, Students and Monitoring.
+  const { term, setTerm, terms } = useTermFilter();
+  const termName =
+    term === "none"
+      ? "Students with no term"
+      : terms.find((item) => String(item.id) === term)?.name || "All terms";
 
   const load = useCallback(async (period: Period) => {
     try {
-      setData(await coordinatorRequest<AnalyticsData>(`/api/coordinator/analytics?days=${period}`));
+      setData(
+        await coordinatorRequest<AnalyticsData>(
+          `/api/coordinator/analytics?days=${period}${term ? `&term=${encodeURIComponent(term)}` : ""}`
+        )
+      );
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load analytics."));
@@ -259,7 +271,7 @@ export default function CoordinatorAnalytics() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, []);
+  }, [term]);
 
   useEffect(() => {
     void Promise.resolve().then(() => load(days));
@@ -278,7 +290,7 @@ export default function CoordinatorAnalytics() {
       // Loaded on demand so the PDF library is not part of every page load.
       const { buildAnalyticsPdf } = await import("../../lib/analyticsPdf");
       // The company summary fits a page; the per-student table is in the CSV.
-      const programme = (await programmeTables()).slice(1);
+      const programme = (await programmeTables(term)).slice(1);
       buildAnalyticsPdf([...reportSections(data), ...programme], new Date().toLocaleString()).save(
         reportFileName("pdf")
       );
@@ -293,10 +305,11 @@ export default function CoordinatorAnalytics() {
 
   const downloadCsv = async () => {
     if (!data) return;
-    const programme = await programmeTables();
+    const programme = await programmeTables(term);
     const rows: (string | number)[][] = [
       ["INTERNet Coordinator Analytics Report"],
       ["Generated at", new Date().toLocaleString()],
+      ["Term", termName],
       ...[...reportSections(data), ...programme].flatMap((section) => [
         [],
         [section.title],
@@ -327,6 +340,9 @@ export default function CoordinatorAnalytics() {
       actions={
         data ? (
           <>
+            <span className="print:hidden">
+              <TermSelect term={term} terms={terms} onChange={setTerm} />
+            </span>
             <Button variant="secondary" icon="printer" onClick={() => window.print()}>
               Print
             </Button>

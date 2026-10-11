@@ -6158,11 +6158,46 @@ app.get(
   }
 );
 
+/*
+|--------------------------------------------------------------------------
+| ONE TERM'S STUDENTS
+|--------------------------------------------------------------------------
+|
+| The dashboard and Analytics count every active student unless the
+| request names a term: its id, or "none" for students with no term. The
+| value is checked to be exactly one of those before it is put into the
+| SQL, so the pieces below never carry anything the caller typed.
+|
+|   sql        added to a condition on the students alias `s`
+|   plain      the same, for a query on `students` with no alias
+|   ofStudent  for a table with only a student_id column: "<column> is one
+|              of this term's students"
+|
+*/
+
+type TermScope = { term: string; sql: string; plain: string; ofStudent: (column: string) => string };
+
+function termScope(value: unknown): TermScope | null {
+  const term = typeof value === "string" ? value.trim() : "";
+  if (term && term !== "none" && !/^[0-9]{1,9}$/.test(term)) return null;
+  const condition = !term ? "" : term === "none" ? "term_id IS NULL" : `term_id = ${Number(term)}`;
+  return {
+    term,
+    sql: condition ? ` AND s.${condition}` : "",
+    plain: condition ? ` AND ${condition}` : "",
+    ofStudent: (column) =>
+      condition ? ` AND ${column} IN (SELECT student_id FROM students WHERE ${condition})` : "",
+  };
+}
+
 app.get(
   "/api/coordinator/dashboard",
   requireCoordinator,
-  async (_req, res) => {
+  async (req, res) => {
     try {
+      const scope = termScope(req.query.term);
+      if (!scope) return res.status(400).json({ message: "That is not a term." });
+
       const [
         studentCount,
         supervisorCount,
@@ -6175,19 +6210,19 @@ app.get(
         hoursTrend,
       ] = await Promise.all([
         pool.query(
-          `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM students`
+          `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM students WHERE TRUE${scope.plain}`
         ),
         pool.query(
           `SELECT COUNT(*) FILTER (WHERE is_active) AS active, COUNT(*) AS total FROM supervisors`
         ),
         pool.query(
           `SELECT COUNT(*) AS count FROM attendance a
-           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
            WHERE a.status = 'Pending'`
         ),
         pool.query(
           `SELECT COUNT(*) AS count FROM attendance a
-           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
            WHERE ${flaggedLogCondition("a")}`
         ),
         pool.query(
@@ -6200,12 +6235,12 @@ app.get(
             COUNT(*) FILTER (WHERE status = 'Reviewed') AS completed,
             COUNT(*) AS total
           FROM tasks t
-          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE
+          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE${scope.sql}
           `
         ),
         pool.query(
           `SELECT COALESCE(SUM(a.hours), 0) AS total_hours FROM attendance a
-           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
            WHERE a.status = 'Verified'`
         ),
         // Today at a glance: who has timed in, who is still on the clock,
@@ -6214,16 +6249,16 @@ app.get(
           `
           SELECT
             (SELECT COUNT(DISTINCT a.student_id) FROM attendance a
-              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
               WHERE a.date = CURRENT_DATE) AS timed_in,
             (SELECT COUNT(*) FROM attendance a
-              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
               WHERE a.date = CURRENT_DATE AND a.time_out IS NULL) AS on_the_clock,
             (SELECT COUNT(*) FROM absences b
-              JOIN students s ON s.student_id = b.student_id AND s.is_active = TRUE
+              JOIN students s ON s.student_id = b.student_id AND s.is_active = TRUE${scope.sql}
               WHERE b.date = CURRENT_DATE) AS absent,
             (SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
-              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+              JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
               WHERE a.status = 'Verified' AND a.date > CURRENT_DATE - 7) AS week_hours
           `
         ),
@@ -6237,7 +6272,7 @@ app.get(
           FROM generate_series(CURRENT_DATE - 13, CURRENT_DATE, INTERVAL '1 day') AS d(day)
           LEFT JOIN (
             attendance a
-            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
           ) ON a.date = d.day::date
           GROUP BY d.day
           ORDER BY d.day
@@ -6592,7 +6627,7 @@ const ANALYTICS_PERIODS = [14, 30, 90];
 
 // Each active student's verified hours and how far that is toward their
 // requirement (0 to 100).
-const STUDENT_PROGRESS_CTE = `
+const studentProgressCte = (scope = "") => `
   progress AS (
     SELECT
       s.student_id,
@@ -6609,7 +6644,7 @@ const STUDENT_PROGRESS_CTE = `
       FROM attendance a
       WHERE a.student_id = s.student_id AND a.status = 'Verified'
     ) hrs
-    WHERE s.is_active = TRUE
+    WHERE s.is_active = TRUE${scope}
   )
 `;
 
@@ -6618,6 +6653,8 @@ app.get(
   requireCoordinator,
   async (req, res) => {
     try {
+      const scope = termScope(req.query.term);
+      if (!scope) return res.status(400).json({ message: "That is not a term." });
       const requested = Number(req.query.days);
       const days = ANALYTICS_PERIODS.includes(requested) ? requested : 14;
 
@@ -6646,7 +6683,7 @@ app.get(
           ) AS d(day)
           LEFT JOIN (
             attendance a
-            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
           ) ON a.date = d.day::date
           GROUP BY d.day
           ORDER BY d.day
@@ -6669,14 +6706,14 @@ app.get(
             COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method = 'supervisor') AS by_supervisor,
             COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method IS NULL) AS unchecked
           FROM attendance a
-          JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE
+          JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
           WHERE a.date > CURRENT_DATE - ($1::int * 2)
           `,
           [days]
         ),
         pool.query(
           `
-          WITH ${STUDENT_PROGRESS_CTE}
+          WITH ${studentProgressCte(scope.sql)}
           SELECT
             COUNT(*) AS students,
             COALESCE(AVG(percent), 0) AS average,
@@ -6692,7 +6729,7 @@ app.get(
         ),
         pool.query(
           `
-          WITH ${STUDENT_PROGRESS_CTE}
+          WITH ${studentProgressCte(scope.sql)}
           SELECT
             company,
             COUNT(*) AS students,
@@ -6712,7 +6749,7 @@ app.get(
             ROUND(AVG(e.rating)::numeric, 2) AS average_rating
           FROM evaluations e
           JOIN students s ON s.student_id = e.student_id
-          WHERE e.evaluator_type = 'student' AND NULLIF(TRIM(s.company), '') IS NOT NULL
+          WHERE e.evaluator_type = 'student' AND NULLIF(TRIM(s.company), '') IS NOT NULL${scope.sql}
           GROUP BY LOWER(TRIM(s.company))
           `
         ),
@@ -6720,7 +6757,7 @@ app.get(
           `
           SELECT LOWER(TRIM(company_name)) AS company_key, COUNT(*) AS complaints
           FROM complaints
-          WHERE NULLIF(TRIM(company_name), '') IS NOT NULL
+          WHERE NULLIF(TRIM(company_name), '') IS NOT NULL${scope.ofStudent("student_id")}
           GROUP BY LOWER(TRIM(company_name))
           `
         ),
@@ -6731,6 +6768,7 @@ app.get(
             COUNT(*) AS count,
             COUNT(*) FILTER (WHERE status NOT IN ('Resolved', 'Dismissed')) AS open
           FROM complaints
+          WHERE TRUE${scope.ofStudent("student_id")}
           GROUP BY category
           ORDER BY COUNT(*) DESC, category ASC
           `
@@ -6744,7 +6782,7 @@ app.get(
               WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < CURRENT_DATE
             ) AS overdue
           FROM tasks t
-          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE
+          JOIN students s ON s.student_id = t.student_id AND s.is_active = TRUE${scope.sql}
           GROUP BY t.status
           `
         ),
@@ -6756,6 +6794,7 @@ app.get(
             COUNT(*) AS count,
             ROUND(AVG(e.rating)::numeric, 2) AS average_rating
           FROM evaluations e
+          WHERE TRUE${scope.ofStudent("e.student_id")}
           GROUP BY e.evaluator_type, e.category
           ORDER BY e.evaluator_type, e.category
           `

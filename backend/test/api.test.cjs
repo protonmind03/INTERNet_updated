@@ -4598,3 +4598,56 @@ test("the report's figures match Monitoring, its company rows match its student 
   assert.equal(counted, report.students.length, "every active student is in exactly one term's report, or in the one for no term");
   assert.equal((await get("?term=999999999")).students.length, 0);
 });
+
+/*
+| The term filter on the dashboard and Analytics
+*/
+
+test("the dashboard and Analytics narrow to one term, and the terms add up to the whole", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const get = async (path) => {
+    const result = await jsonRequest(path, { headers });
+    assert.equal(result.response.status, 200, `${path}: ${JSON.stringify(result.body).slice(0, 120)}`);
+    return result.body;
+  };
+  for (const path of ["/api/coordinator/dashboard", "/api/coordinator/analytics"]) {
+    assert.equal((await jsonRequest(`${path}?term=abc`, { headers })).response.status, 400, path);
+    assert.equal((await jsonRequest(`${path}?term=1;DROP`, { headers })).response.status, 400, path);
+    assert.equal((await jsonRequest(`${path}?term=none`, { headers: authHeaders(studentToken) })).response.status, 403, path);
+    // Without a term: exactly as before.
+    assert.deepEqual(await get(`${path}?term=`), await get(path));
+  }
+
+  const terms = ["none", ...(await get("/api/coordinator/terms")).terms.map((item) => String(item.id))];
+  const whole = { dashboard: await get("/api/coordinator/dashboard"), analytics: await get("/api/coordinator/analytics?days=30") };
+  const sum = { students: 0, hours: 0, analyticsStudents: 0, analyticsHours: 0, tasks: 0 };
+  for (const term of terms) {
+    const dashboard = await get(`/api/coordinator/dashboard?term=${term}`);
+    const analytics = await get(`/api/coordinator/analytics?days=30&term=${term}`);
+    const listed = (await get(`/api/coordinator/monitoring?term=${term}`)).students;
+    // The dashboard's active students are the ones Monitoring lists for the term.
+    assert.equal(Number(dashboard.students.active), listed.length, `term ${term}`);
+    assert.equal(Number(analytics.progress.students), listed.length, `term ${term}`);
+    const hours = listed.reduce((total, row) => total + Number(row.hours_rendered), 0);
+    assert.ok(Math.abs(Number(dashboard.totalHoursLogged) - hours) < 0.01, `term ${term}: ${dashboard.totalHoursLogged} vs ${hours}`);
+    assert.ok(Math.abs(Number(analytics.progress.hours) - hours) < 0.01, `term ${term}`);
+    // Companies in the term's analytics hold exactly the term's students.
+    assert.equal(analytics.companies.reduce((total, row) => total + row.students, 0), listed.length, `term ${term}`);
+    sum.students += Number(dashboard.students.active);
+    sum.hours += Number(dashboard.totalHoursLogged);
+    sum.analyticsStudents += Number(analytics.progress.students);
+    sum.analyticsHours += Number(analytics.progress.hours);
+    sum.tasks += analytics.taskFunnel.reduce((total, row) => total + row.count, 0);
+  }
+  assert.equal(sum.students, Number(whole.dashboard.students.active), "every active student is in one term or none");
+  assert.ok(Math.abs(sum.hours - Number(whole.dashboard.totalHoursLogged)) < 0.01);
+  assert.equal(sum.analyticsStudents, Number(whole.analytics.progress.students));
+  assert.ok(Math.abs(sum.analyticsHours - Number(whole.analytics.progress.hours)) < 0.01);
+  assert.equal(sum.tasks, whole.analytics.taskFunnel.reduce((total, row) => total + row.count, 0));
+
+  // A term nobody is in: zeros, not an error.
+  const empty = await get("/api/coordinator/dashboard?term=999999999");
+  assert.equal(Number(empty.students.active), 0);
+  assert.equal(Number(empty.totalHoursLogged), 0);
+  assert.equal(Number((await get("/api/coordinator/analytics?term=999999999")).progress.students), 0);
+});

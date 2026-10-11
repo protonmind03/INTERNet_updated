@@ -19,6 +19,8 @@ import { useLaunchReady } from "../../lib/launch";
 import { errorText } from "../../lib/toast";
 import AlertsCard from "./AlertsCard";
 import { coordinatorRequest } from "./request";
+import TermSelect from "./TermSelect";
+import { useTermFilter } from "./useTermFilter";
 
 type DashboardData = {
   students: { active: number; total: number };
@@ -77,12 +79,15 @@ export default function CoordinatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useLaunchReady(!loading);
+  // Shared with Students, Monitoring and Analytics, so the choice carries between them.
+  const { term, setTerm, terms } = useTermFilter();
+  const termQuery = term ? `?term=${encodeURIComponent(term)}` : "";
 
   const load = useCallback(async () => {
     try {
       const [summary, monitoring] = await Promise.all([
-        coordinatorRequest<DashboardData>("/api/coordinator/dashboard"),
-        coordinatorRequest<{ students: MonitorRow[] }>("/api/coordinator/monitoring"),
+        coordinatorRequest<DashboardData>(`/api/coordinator/dashboard${termQuery}`),
+        coordinatorRequest<{ students: MonitorRow[] }>(`/api/coordinator/monitoring${termQuery}`),
       ]);
       setData(summary);
       setRows(monitoring.students || []);
@@ -92,7 +97,7 @@ export default function CoordinatorDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [termQuery]);
 
   useEffect(() => {
     const refresh = () => {
@@ -211,6 +216,7 @@ export default function CoordinatorDashboard() {
     <CoordinatorLayout
       title="Dashboard"
       subtitle={`${greetingFor(new Date())}. Here is where the programme stands on ${formatLongDate(new Date())}.`}
+      actions={<TermSelect term={term} terms={terms} onChange={setTerm} />}
     >
       <div className="space-y-6">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
