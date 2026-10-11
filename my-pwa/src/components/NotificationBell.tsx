@@ -110,17 +110,22 @@ export default function NotificationBell({
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
+        // What the badge shows is part of the name, so what is seen and what is
+        // announced agree: past 99 the badge reads "99+" and the name adds the count.
         aria-label={
-          unreadCount > 0
-            ? `Notifications, ${unreadCount} unread`
-            : "Notifications"
+          unreadCount > 99
+            ? `Notifications, 99+ unread (${unreadCount})`
+            : unreadCount > 0
+              ? `Notifications, ${unreadCount} unread`
+              : "Notifications"
         }
         aria-expanded={open}
         className={buttonClassName}
       >
         <Icon name="bell" />
         {unreadCount > 0 && (
-          <span className="tabular absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white ring-2 ring-white">
+          <span
+            className="tabular absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white ring-2 ring-white">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         )}
