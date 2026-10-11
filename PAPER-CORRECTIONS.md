@@ -394,7 +394,9 @@ are true of the system today, for a scope section:
   check; it does not change the limit already stated above, that the check
   runs in the student's browser and the server trusts its report.
 - An announcement's "seen by" count is the number of people who have had
-  it on their Announcements page. It does not show that anyone read it.
+  it on their list of announcements (for a student, the Announcements tab
+  under the bell; the Announcements page counts the same way). It does not
+  show that anyone read it.
 - The schedule's calendar file is a copy made when it is saved; it does
   not update itself when the schedule changes.
 - Accessibility was checked with an automated tool (axe, WCAG 2.1 A and
@@ -407,8 +409,9 @@ are true of the system today, for a scope section:
 - A student writes a weekly journal, which their supervisor marks reviewed
   or returns with a note. It is not graded and is not counted toward
   completion.
-- The Completion page is a checklist the system counts (hours, logs,
-  documents, tasks, the supervisor's evaluation, the student's feedback).
+- The completion checklist, a card on the student's Profile, is a list
+  the system counts (hours, logs, documents, tasks, the supervisor's
+  evaluation, the student's rating of the company).
   "Request completion review" tells the coordinator the list is done. It
   does not complete, clear or certify anything; if the paper says the
   system "clears" or "certifies" a student, that is not accurate.
@@ -422,3 +425,28 @@ are true of the system today, for a scope section:
   period for attendance photos has been set: photos are kept. If the paper
   describes a retention period or an approved consent form, it is ahead of
   the system.
+- The student portal's menu, since October 2026, is Today, Attendance,
+  Tasks and Documents, with Schedule and Weekly journal under "More".
+  Notifications, Announcements, Completion, Feedback and Report a concern
+  are no longer menu items. If the paper, a screenshot or the module
+  diagram lists them as separate student pages or menu entries, say
+  instead where each is now:
+  - notifications and announcements are read from the bell in the header,
+    on two tabs; the bell shows twenty notifications at a time and can
+    show only the unread ones;
+  - the completion checklist is a card on the student's Profile;
+  - reporting a concern and the evaluations (those written about the
+    student, and the student's rating of the company) are the two tabs of
+    one page, the "Resolution Center", opened from the avatar menu on a
+    phone and from the header on a desktop.
+- On screen the student portal says "concern" for what a student reports.
+  If the paper says "complaint" or "incident report" for the same thing,
+  use one word throughout; "concern" matches the screens. (The database
+  table is still named `complaints`; that is a name in the ERD, not on
+  screen.)
+- The student's Today page no longer carries the attendance card. It
+  shows one line saying where the day stands, and the card is on the
+  Attendance page. On a phone, the next step of the day (Time in, Lunch,
+  Back, Time out) is a button that floats above the menu on every page
+  except Attendance and Profile. A screenshot of the old Today page is out
+  of date.

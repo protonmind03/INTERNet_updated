@@ -1314,3 +1314,60 @@ and a ticket used twice. The upload script on a local folder of 11 files.
 **Not checked:** a real email leaving the server (it needs a provider
 account, a key and a verified domain); the upload script on the host; the
 download of its archive from the volume.
+
+## 25. Round 2, Phase 1A: the student portal, reorganised (12 October 2026)
+
+On `ui-redesign`, on localhost. No migration. Frontend, except the
+notification lists.
+
+- **One place for the time-in actions (1A.1).** The day's attendance, the
+  privacy step, the camera dialog and the break, back and time-out
+  confirmations are held once and shared. Nothing a student sees changed.
+- **Today (1A.2).** The attendance card is on Attendance only. Today opens
+  with one line: not timed in, on the clock since when and for how long,
+  on lunch since when, or done with what the supervisor decided. On a
+  desktop the next step is a button in the page header.
+- **A floating next-step button on phones (1A.3).** Time in, Lunch, Back,
+  Time out, bottom right above the tab bar on every page except Attendance
+  and Profile. It goes away while a dialog or sheet is open and when the
+  day is done. With no connection before time-in it looks unavailable and
+  a tap says why and what to do. Steps waiting to be sent show as a badge.
+  The push prompt and toasts sit above it.
+- **The bell (1A.4, 1A.5).** Notifications left the menu. The bell shows
+  the newest twenty and loads twenty more when its list is scrolled to the
+  end, with All and Unread; its badge is the server's count. For students
+  it has a second tab, Announcements, which records them as seen exactly
+  as the page does. The notification list endpoints take `limit`,
+  `offset` and `status=unread` and then also answer `total` and
+  `unread`; asked for plainly they answer as before.
+- **Completion on Profile (1A.6).** The checklist and the request for a
+  review are one card at the top of Profile.
+- **Resolution Center (1A.7).** `/student/resolution`, with two tabs:
+  Concerns (reporting one, and those reported) and Evaluations (those
+  written about the student, and "Rate your company"). The words on screen
+  are "concern" throughout.
+- **The menu (1A.8).** Tabs: Today, Attendance, Tasks, Documents, More.
+  More: Schedule, Weekly journal. Avatar: Profile, Resolution Center, Sign
+  out. On a desktop the Resolution Center is a labelled button in the
+  header.
+
+**Addresses.** Every old address still opens: `/notifications`,
+`/announcements` and `/student/completion` as pages; `/report` and
+`/student/feedback` go to the right tab of the Resolution Center and keep
+whatever else the address carried.
+
+**What was checked:** 124 API tests (123 before; the new one pages each
+role's list, reads past the end, filters unread, and is refused for
+another account). 12 end-to-end tests (9 before): the floating button at
+390 px, the menu on a phone, and the moved addresses. In a browser at
+390 px and 1280 px: the status line, the button's size and place, the
+bell loading 20, 40, 60, the Unread filter, the Announcements tab asking
+the server once, the redirects, the Profile card. The automated
+accessibility check on all 47 pages at both widths, and with the bell and
+the avatar menu open: clean, after fixing the contrast of the time on an
+unread notification and of a note on today's row of the schedule.
+
+**Not checked:** anything on a real phone (the floating button under a
+thumb and above the home indicator; the bell's scrolling by touch). The
+floating button's offline look and its waiting badge with a connection
+really lost.

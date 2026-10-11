@@ -537,24 +537,46 @@ item one commit; stop at the end of every phase.
 ### Phase 1A: student portal reorganisation
 
 No migrations. Frontend, except the notification lists' paging (1A.5).
+Built 2026-10-12 on localhost, one commit per item.
 
-- [ ] **1A.1 Shared time-in actions.** One provider holds the day's
+Different from the description, each for a stated reason:
+
+- 1A.1: three pages (Today, Attendance, Time record) read the attendance
+  before they draw the layout, so they mount the provider themselves one
+  level up and the layout uses that one. There is still only ever one.
+- 1A.2 and 1A.3: the header button and the floating button are each
+  rendered at their own width only (not both, with one hidden by CSS), so
+  a page never has two buttons with the same name.
+- 1A.5: a paged answer also carries `unread` (the count of all unread,
+  not only those on the page), which the bell's badge needs. The
+  Announcements tab is given to students only; supervisors keep their page
+  and their "View all notifications" link.
+- 1A.5: announcement links still open `/announcements`. Opening the
+  bell's tab from a link was left out: it was not clean.
+- 1A.7: the links the server stores in notifications still name
+  `/report` and `/student/feedback`, which redirect. They were left so
+  that the older frontend keeps working on the newer backend.
+- Awaiting confirmation: the button and status line say "Lunch" and "On
+  lunch", as described; the Attendance card and the time record still say
+  "break" for the same step.
+
+- [x] **1A.1 Shared time-in actions.** One provider holds the day's
   attendance, the privacy step, the camera dialog and the break, back and
   time-out confirmations; the Attendance card uses it. No change in
   behaviour.
-- [ ] **1A.2 Today page.** The attendance card leaves Today; a one-line
+- [x] **1A.2 Today page.** The attendance card leaves Today; a one-line
   status takes its place, with a next-step button in the header on desktop.
-- [ ] **1A.3 Floating action button** on phones: the next step, hidden on
+- [x] **1A.3 Floating action button** on phones: the next step, hidden on
   Attendance and Profile, while a dialog is open and once the day is done;
   a badge for steps waiting offline; its own layer.
-- [ ] **1A.4 Notifications out of the navigation.** `/notifications` stays.
-- [ ] **1A.5 Bell panel.** Paged notification lists on the server; the bell
+- [x] **1A.4 Notifications out of the navigation.** `/notifications` stays.
+- [x] **1A.5 Bell panel.** Paged notification lists on the server; the bell
   loads twenty at a time, has All and Unread, and an Announcements tab that
   records "seen" as the page does. Announcements leaves the navigation.
-- [ ] **1A.6 Completion into Profile.** `/student/completion` stays.
-- [ ] **1A.7 Resolution Center** at `/student/resolution`: Concerns and
+- [x] **1A.6 Completion into Profile.** `/student/completion` stays.
+- [x] **1A.7 Resolution Center** at `/student/resolution`: Concerns and
   Evaluations. `/report` and `/student/feedback` redirect.
-- [ ] **1A.8 Navigation:** Today, Attendance, Tasks, Documents, More
+- [x] **1A.8 Navigation:** Today, Attendance, Tasks, Documents, More
   (Schedule, Weekly journal); avatar menu: Profile, Resolution Center,
   Sign out.
 

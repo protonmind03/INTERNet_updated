@@ -269,6 +269,16 @@ frontends both work on it: the time-in request is unchanged.
 New variables this phase: `EMAIL_PROVIDER` and `EMAIL_API_KEY` (Railway,
 both optional; unset means today's behaviour).
 
+### Phase 1A: student portal reorganisation (built 2026-10-12, on localhost)
+
+No migration, no new variable, no new backend address (so `vercel.json`
+is unchanged). Nothing to set on Vercel or Railway.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| On "push" | Railway staging, Vercel Preview | Nothing to do by hand: both deploy from `ui-redesign`. Either may finish first. | The backend change (paged notification lists) is additive and the old bell works on it. If the frontend finishes first, the new bell shows every notification at once, with no "load more" and an Unread chip that does not narrow the list, until the backend catches up, a matter of minutes. |
+| On "make it live" | Railway production (run by you) | A fresh database backup first, as for Phase 0: the same release carries migrations 035 and 036. | This phase adds no migration, but it ships together with those. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
