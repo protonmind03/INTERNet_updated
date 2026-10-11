@@ -34,6 +34,8 @@ import { usePagination } from "../../lib/usePagination";
 import AbsenceList from "./AbsenceList";
 import { coordinatorRequest } from "./request";
 import TermSelect from "./TermSelect";
+import ProjectionLine from "../../components/ProjectionLine";
+import { useProjections } from "../../lib/useProjections";
 import { useTermFilter } from "./useTermFilter";
 
 type MonitorRow = {
@@ -81,7 +83,7 @@ type Discrepancy = {
   reasons: string[];
 };
 
-type Scope = "all" | "attention";
+type Scope = "all" | "attention" | "risk";
 
 const needsAttention = (row: MonitorRow) => row.flagged_logs > 0 || row.overdue_tasks > 0;
 
@@ -93,7 +95,11 @@ export default function CoordinatorMonitoring() {
 
   const [searchParams] = useSearchParams();
   const [scope, setScope] = useState<Scope>(() =>
-    searchParams.get("scope") === "attention" ? "attention" : "all"
+    searchParams.get("risk") === "1"
+      ? "risk"
+      : searchParams.get("scope") === "attention"
+        ? "attention"
+        : "all"
   );
   const [query, setQuery] = useState("");
   const [focusStudent, setFocusStudent] = useState<string | null>(null);
@@ -102,6 +108,7 @@ export default function CoordinatorMonitoring() {
   const [reviewingId, setReviewingId] = useState<number | null>(null);
   // Shared with the Students page, so the choice carries between the two.
   const { term, setTerm, terms } = useTermFilter(searchParams.get("term"));
+  const projections = useProjections("coordinator", term);
 
   const load = useCallback(async () => {
     try {
@@ -153,14 +160,16 @@ export default function CoordinatorMonitoring() {
     () =>
       rows.filter(
         (row) =>
-          (scope === "all" || needsAttention(row)) &&
+          (scope === "all" ||
+            (scope === "risk" ? projections.get(row.student_id)?.at_risk : needsAttention(row))) &&
           (!text ||
             [row.name, row.student_id, row.company, row.program, row.supervisor_name]
               .filter(Boolean)
               .some((value) => String(value).toLowerCase().includes(text)))
       ),
-    [rows, scope, text]
+    [rows, scope, text, projections]
   );
+  const riskCount = rows.filter((row) => projections.get(row.student_id)?.at_risk).length;
 
   const termStudents = useMemo(() => new Set(rows.map((row) => row.student_id)), [rows]);
 
@@ -215,6 +224,7 @@ export default function CoordinatorMonitoring() {
               options={[
                 { value: "all", label: "All students", count: rows.length },
                 { value: "attention", label: "Needs attention", count: attentionCount },
+                { value: "risk", label: "At risk", count: riskCount },
               ]}
             />
             <TermSelect term={term} terms={terms} onChange={setTerm} />
@@ -277,6 +287,7 @@ export default function CoordinatorMonitoring() {
                         {formatHours(row.hours_rendered)} / {formatHours(row.required_hours)}
                       </span>
                     </div>
+                    <ProjectionLine projection={projections.get(row.student_id)} className="mt-1" />
                     <PeriodHours row={row} />
                     <p className="mt-2 text-xs text-slate-600">
                       <TaskSummary row={row} />
@@ -337,6 +348,7 @@ export default function CoordinatorMonitoring() {
                           <p className="tabular mt-1 text-xs text-slate-500">
                             {formatHours(row.hours_rendered)} of {formatHours(row.required_hours)}
                           </p>
+                          <ProjectionLine projection={projections.get(row.student_id)} />
                           <PeriodHours row={row} />
                         </td>
                         <td className="px-3 py-3 text-slate-700">

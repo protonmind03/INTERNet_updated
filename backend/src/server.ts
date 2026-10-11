@@ -28,6 +28,7 @@ import { startTimeOutReminderScheduler } from "./services/timeOutReminders";
 import { consentRequired, hasCurrentConsent } from "./services/privacy";
 import { allowsChannel, categoryOf } from "./services/notificationPreferences";
 import { startDigestScheduler } from "./services/digests";
+import { sendCoordinatorDigests } from "./services/insights";
 import { auditMiddleware } from "./services/audit";
 import {
   buildListQuery,
@@ -9174,6 +9175,6 @@ app.listen(
     startPostgresNotificationListener(pool);
     startDeadlineReminderScheduler(pool, createNotification);
     startTimeOutReminderScheduler(pool, createNotification);
-    startDigestScheduler(pool);
+    startDigestScheduler(pool, [sendCoordinatorDigests]);
   }
 );

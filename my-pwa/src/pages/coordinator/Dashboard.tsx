@@ -17,6 +17,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate, formatHours, formatLongDate, greetingFor } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { errorText } from "../../lib/toast";
+import AlertsCard from "./AlertsCard";
 import { coordinatorRequest } from "./request";
 
 type DashboardData = {
@@ -256,6 +257,8 @@ export default function CoordinatorDashboard() {
             </>
           )}
         </div>
+
+        <AlertsCard />
 
         <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
           <Card className="min-w-0 lg:col-span-3">

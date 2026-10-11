@@ -1,0 +1,428 @@
+/*
+|--------------------------------------------------------------------------
+| PROJECTIONS AND ALERTS
+|--------------------------------------------------------------------------
+|
+| Two things worked out from records the system already has.
+|
+| A PROJECTION says when a student will finish at the pace they are
+| scheduled for: the hours still to verify are counted off against their
+| weekly schedule, day by day from tomorrow, skipping holidays. A student
+| is AT RISK when that date falls after their term ends, or when they
+| still have hours to do and nothing is scheduled. It is an estimate from
+| the schedule, not a promise; a student who works more or less than
+| scheduled finishes sooner or later.
+|
+| ALERTS are the things a coordinator should not have to go looking for:
+| supervisors sitting on reviews, agreements about to run out, students
+| who have stopped turning up, and students at risk.
+|
+| The arithmetic is in plain functions so it can be tested with made-up
+| dates. Nothing here writes to the database.
+|
+*/
+
+import type { Pool } from "pg";
+import { isSmtpConfigured, sendEmail } from "./mailer";
+import { allowsChannel } from "./notificationPreferences";
+import { clockSetting, manilaClock, sendOnce, type DigestDeps } from "./digests";
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** Days a supervisor may leave something waiting before the coordinator is told. */
+export const SLOW_REVIEW_DAYS = 3;
+/** How far ahead an agreement's end is flagged. */
+export const MOA_WARNING_DAYS = 30;
+/** Scheduled days in a row without attendance before a student is flagged. */
+export const MISSED_DAYS_ALERT = 5;
+
+const PROJECTION_LIMIT_DAYS = 730;
+
+function addDays(date: string, days: number): string {
+  const value = new Date(`${date}T00:00:00Z`);
+  value.setUTCDate(value.getUTCDate() + days);
+  return value.toISOString().slice(0, 10);
+}
+
+const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
+
+export type Projection = {
+  remaining_hours: number;
+  weekly_hours: number;
+  /** "YYYY-MM-DD", or null when it cannot be worked out. */
+  projected_finish: string | null;
+  at_risk: boolean;
+  /** Why, in a few words; empty when not at risk. */
+  risk_reason: string;
+};
+
+/**
+ * When a student finishes at their scheduled pace.
+ * `schedule` is hours per weekday name; `holidays` are "YYYY-MM-DD".
+ */
+export function projectFinish(input: {
+  today: string;
+  requiredHours: number;
+  verifiedHours: number;
+  schedule: Record<string, number>;
+  holidays: Set<string>;
+  termEnd?: string | null;
+}): Projection {
+  const remaining = Math.max(0, Math.round((input.requiredHours - input.verifiedHours) * 100) / 100);
+  const weekly = Math.round(Object.values(input.schedule).reduce((sum, hours) => sum + (hours > 0 ? hours : 0), 0) * 100) / 100;
+  if (remaining === 0) {
+    return { remaining_hours: 0, weekly_hours: weekly, projected_finish: null, at_risk: false, risk_reason: "" };
+  }
+  if (weekly <= 0) {
+    return {
+      remaining_hours: remaining,
+      weekly_hours: 0,
+      projected_finish: null,
+      at_risk: true,
+      risk_reason: "No working days are scheduled.",
+    };
+  }
+  let left = remaining;
+  let finish: string | null = null;
+  for (let offset = 1; offset <= PROJECTION_LIMIT_DAYS; offset += 1) {
+    const day = addDays(input.today, offset);
+    if (input.holidays.has(day)) continue;
+    left -= input.schedule[weekdayOf(day)] || 0;
+    if (left <= 0.0001) {
+      finish = day;
+      break;
+    }
+  }
+  if (!finish) {
+    return {
+      remaining_hours: remaining,
+      weekly_hours: weekly,
+      projected_finish: null,
+      at_risk: true,
+      risk_reason: "At the scheduled hours this would take more than two years.",
+    };
+  }
+  const late = Boolean(input.termEnd) && finish > String(input.termEnd);
+  return {
+    remaining_hours: remaining,
+    weekly_hours: weekly,
+    projected_finish: finish,
+    at_risk: late,
+    risk_reason: late ? `Projected to finish after the term ends on ${input.termEnd}.` : "",
+  };
+}
+
+/**
+ * How many scheduled days in a row, counting back from yesterday, have no
+ * log and no filed absence. Stops at `since` (nothing is expected before
+ * a student's first day) and at 60 days.
+ */
+export function missedScheduledDays(input: {
+  today: string;
+  since: string;
+  schedule: Record<string, number>;
+  holidays: Set<string>;
+  /** Dates with a log or a filed absence. */
+  accounted: Set<string>;
+}): number {
+  let missed = 0;
+  for (let offset = 1; offset <= 60; offset += 1) {
+    const day = addDays(input.today, -offset);
+    if (day < input.since) break;
+    if (input.holidays.has(day) || !((input.schedule[weekdayOf(day)] || 0) > 0)) continue;
+    if (input.accounted.has(day)) break;
+    missed += 1;
+  }
+  return missed;
+}
+
+type StudentFacts = {
+  student_id: string;
+  name: string;
+  company: string | null;
+  supervisor_id: string | null;
+  required_hours: number;
+  verified_hours: number;
+  term_end: string | null;
+  term_start: string | null;
+  first_log: string | null;
+};
+
+/** The facts both the projections and the alerts start from, for active students. */
+async function loadStudents(
+  pool: Pool,
+  scope: { studentId?: string; supervisorId?: string; termId?: number | "none" }
+) {
+  const students = await pool.query<StudentFacts>(
+    `
+    SELECT s.student_id, s.name, s.company, s.supervisor_id, s.required_hours,
+      (SELECT COALESCE(SUM(a.hours), 0)::float FROM attendance a
+        WHERE a.student_id = s.student_id AND a.status = 'Verified') AS verified_hours,
+      TO_CHAR(t.end_date, 'YYYY-MM-DD') AS term_end,
+      TO_CHAR(t.start_date, 'YYYY-MM-DD') AS term_start,
+      (SELECT TO_CHAR(MIN(a.date), 'YYYY-MM-DD') FROM attendance a WHERE a.student_id = s.student_id) AS first_log
+    FROM students s
+    LEFT JOIN terms t ON t.id = s.term_id
+    WHERE s.is_active = TRUE
+      AND ($1::text IS NULL OR s.student_id = $1)
+      AND ($2::text IS NULL OR s.supervisor_id = $2)
+      AND ($3::text IS NULL OR ($3 = 'none' AND s.term_id IS NULL) OR s.term_id::text = $3)
+    ORDER BY s.name
+    `,
+    [scope.studentId ?? null, scope.supervisorId ?? null, scope.termId === undefined ? null : String(scope.termId)]
+  );
+  const ids = students.rows.map((row) => row.student_id);
+  const [schedules, holidays] = await Promise.all([
+    pool.query<{ student_id: string; day: string; hours: number }>(
+      `SELECT student_id, INITCAP(TRIM(day)) AS day, COALESCE(SUM(hours), 0)::float AS hours
+       FROM ojt_schedule WHERE is_active = TRUE AND student_id = ANY($1::text[])
+       GROUP BY student_id, INITCAP(TRIM(day))`,
+      [ids]
+    ),
+    pool.query<{ date: string }>(`SELECT TO_CHAR(holiday_date, 'YYYY-MM-DD') AS date FROM holidays`),
+  ]);
+  const scheduleOf = new Map<string, Record<string, number>>();
+  for (const row of schedules.rows) {
+    scheduleOf.set(row.student_id, { ...(scheduleOf.get(row.student_id) || {}), [row.day]: Number(row.hours) });
+  }
+  return {
+    students: students.rows,
+    scheduleOf,
+    holidays: new Set(holidays.rows.map((row) => row.date)),
+  };
+}
+
+export type StudentProjection = Projection & {
+  student_id: string;
+  name: string;
+  company: string | null;
+  required_hours: number;
+  verified_hours: number;
+};
+
+export async function projectionsFor(
+  pool: Pool,
+  scope: { studentId?: string; supervisorId?: string; termId?: number | "none" },
+  now: Date = new Date()
+): Promise<StudentProjection[]> {
+  const { date: today } = manilaClock(now);
+  const { students, scheduleOf, holidays } = await loadStudents(pool, scope);
+  return students.map((row) => ({
+    student_id: row.student_id,
+    name: row.name,
+    company: row.company,
+    required_hours: Number(row.required_hours) || 0,
+    verified_hours: Math.round(Number(row.verified_hours) * 100) / 100,
+    ...projectFinish({
+      today,
+      requiredHours: Number(row.required_hours) || 0,
+      verifiedHours: Number(row.verified_hours) || 0,
+      schedule: scheduleOf.get(row.student_id) || {},
+      holidays,
+      termEnd: row.term_end,
+    }),
+  }));
+}
+
+export type Alert = {
+  key: "slow_supervisors" | "moa_expiring" | "missed_days" | "at_risk";
+  title: string;
+  /** Where the coordinator goes to act on it. */
+  link: string;
+  items: { label: string; detail: string; link?: string }[];
+};
+
+const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** Everything the coordinator should be told about, each kind only when it has something. */
+export async function coordinatorAlerts(pool: Pool, now: Date = new Date()): Promise<Alert[]> {
+  const { date: today } = manilaClock(now);
+  const [slow, agreements, facts] = await Promise.all([
+    pool.query<{ supervisor_id: string; name: string; waiting: number; oldest_days: number }>(
+      `
+      WITH waiting AS (
+        SELECT s.supervisor_id, a.time_out AS since FROM attendance a JOIN students s ON s.student_id = a.student_id
+          WHERE s.is_active = TRUE AND a.status = 'Pending' AND a.time_out IS NOT NULL
+        UNION ALL
+        SELECT s.supervisor_id, COALESCE(t.submitted_at, t.created_at) FROM tasks t JOIN students s ON s.student_id = t.student_id
+          WHERE s.is_active = TRUE AND t.status = 'Submitted'
+        UNION ALL
+        SELECT s.supervisor_id, d.uploaded_at FROM documents d JOIN students s ON s.student_id = d.student_id
+          WHERE s.is_active = TRUE AND d.status = 'Pending'
+        UNION ALL
+        SELECT s.supervisor_id, b.created_at FROM absences b JOIN students s ON s.student_id = b.student_id
+          WHERE s.is_active = TRUE AND b.status = 'Pending'
+        UNION ALL
+        SELECT s.supervisor_id, j.submitted_at FROM journals j JOIN students s ON s.student_id = j.student_id
+          WHERE s.is_active = TRUE AND j.status = 'Submitted'
+      )
+      SELECT sup.supervisor_id, sup.name, COUNT(*)::int AS waiting,
+             FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz AT TIME ZONE 'Asia/Manila') - MIN(w.since)) / 86400)::int AS oldest_days
+      FROM waiting w JOIN supervisors sup ON sup.supervisor_id = w.supervisor_id
+      WHERE sup.is_active = TRUE
+        AND w.since <= ($1::timestamptz AT TIME ZONE 'Asia/Manila') - make_interval(days => $2::int)
+      GROUP BY sup.supervisor_id, sup.name
+      ORDER BY oldest_days DESC, sup.name
+      `,
+      [now.toISOString(), SLOW_REVIEW_DAYS]
+    ),
+    pool.query<{ id: number; name: string; moa_expiry: string; days: number }>(
+      `SELECT c.id, c.name, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
+              (c.moa_expiry - $1::date)::int AS days
+       FROM companies c
+       WHERE c.is_active = TRUE AND c.moa_expiry IS NOT NULL AND c.moa_expiry <= $1::date + $2::int
+       ORDER BY c.moa_expiry, c.name`,
+      [today, MOA_WARNING_DAYS]
+    ),
+    loadStudents(pool, {}),
+  ]);
+
+  const ids = facts.students.map((row) => row.student_id);
+  const accounted = await pool.query<{ student_id: string; date: string }>(
+    `SELECT student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM attendance
+       WHERE student_id = ANY($1::text[]) AND date >= $2::date - 61
+     UNION
+     SELECT student_id, TO_CHAR(date, 'YYYY-MM-DD') FROM absences
+       WHERE student_id = ANY($1::text[]) AND date >= $2::date - 61`,
+    [ids, today]
+  );
+  const accountedOf = new Map<string, Set<string>>();
+  for (const row of accounted.rows) {
+    if (!accountedOf.has(row.student_id)) accountedOf.set(row.student_id, new Set());
+    accountedOf.get(row.student_id)!.add(row.date);
+  }
+
+  const missing: Alert["items"] = [];
+  const risky: Alert["items"] = [];
+  for (const row of facts.students) {
+    const schedule = facts.scheduleOf.get(row.student_id) || {};
+    const record = `/coordinator/students/${encodeURIComponent(row.student_id)}`;
+    // Nothing is expected of a student before their first log or the start of their term.
+    const since = row.first_log || row.term_start;
+    if (since) {
+      const days = missedScheduledDays({
+        today,
+        since,
+        schedule,
+        holidays: facts.holidays,
+        accounted: accountedOf.get(row.student_id) || new Set(),
+      });
+      if (days >= MISSED_DAYS_ALERT) {
+        missing.push({
+          label: row.name,
+          detail: `${days} scheduled days in a row with no attendance and no absence filed.`,
+          link: record,
+        });
+      }
+    }
+    const projection = projectFinish({
+      today,
+      requiredHours: Number(row.required_hours) || 0,
+      verifiedHours: Number(row.verified_hours) || 0,
+      schedule,
+      holidays: facts.holidays,
+      termEnd: row.term_end,
+    });
+    if (projection.at_risk) risky.push({ label: row.name, detail: projection.risk_reason, link: record });
+  }
+
+  const alerts: Alert[] = [
+    {
+      key: "slow_supervisors",
+      title: `Supervisors with reviews waiting more than ${SLOW_REVIEW_DAYS} days`,
+      link: "/coordinator/supervisors",
+      items: slow.rows.map((row) => ({
+        label: row.name,
+        detail: `${plural(row.waiting, "item", "items")} waiting; the oldest for ${plural(row.oldest_days, "day", "days")}.`,
+        link: `/coordinator/supervisors?q=${encodeURIComponent(row.supervisor_id)}`,
+      })),
+    },
+    {
+      key: "moa_expiring",
+      title: `Agreements that have ended or end within ${MOA_WARNING_DAYS} days`,
+      link: "/coordinator/companies",
+      items: agreements.rows.map((row) => ({
+        label: row.name,
+        detail:
+          row.days < 0
+            ? `Ended on ${row.moa_expiry}.`
+            : row.days === 0
+              ? "Ends today."
+              : `Ends on ${row.moa_expiry}, in ${plural(row.days, "day", "days")}.`,
+      })),
+    },
+    {
+      key: "missed_days",
+      title: `Students with ${MISSED_DAYS_ALERT} or more scheduled days without attendance`,
+      link: "/coordinator/monitoring",
+      items: missing,
+    },
+    {
+      key: "at_risk",
+      title: "Students at risk of not finishing in time",
+      link: "/coordinator/monitoring?risk=1",
+      items: risky,
+    },
+  ];
+  return alerts.filter((alert) => alert.items.length > 0);
+}
+
+const DAY_CODES = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"];
+
+/**
+ * The coordinators' weekly summary of the alerts: one email on the chosen
+ * day (Monday unless COORDINATOR_DIGEST_DAY says otherwise), not sent when
+ * there are no alerts, to anyone who turned summary emails off, or without
+ * SMTP settings. Returns the coordinators emailed.
+ */
+export async function sendCoordinatorDigests(pool: Pool, deps: DigestDeps = {}): Promise<string[]> {
+  const env = deps.env ?? process.env;
+  if (!(deps.smtpReady ?? isSmtpConfigured())) return [];
+  const now = deps.now ?? new Date();
+  const clock = manilaClock(now);
+  const wanted = DAY_CODES.indexOf((env.COORDINATOR_DIGEST_DAY || "").trim().toUpperCase());
+  if (clock.weekday !== (wanted >= 0 ? wanted : 1)) return [];
+  if (clock.time < clockSetting(env.COORDINATOR_DIGEST_TIME, "07:30")) return [];
+
+  const due = await pool.query<{ coordinator_id: string; name: string; email: string }>(
+    `SELECT c.coordinator_id, c.name, c.email FROM coordinators c
+     WHERE c.is_active = TRUE AND c.email IS NOT NULL AND c.email <> ''
+       AND NOT EXISTS (
+         SELECT 1 FROM digest_log g
+         WHERE g.kind = 'coordinator_weekly' AND g.account_id = c.coordinator_id AND g.period_key = $1
+       )`,
+    [clock.date]
+  );
+  if (due.rows.length === 0) return [];
+  const alerts = await coordinatorAlerts(pool, now);
+  if (alerts.length === 0) return [];
+
+  const send = deps.send ?? sendEmail;
+  const base = (env.FRONTEND_URL || "").replace(/\/+$/, "");
+  const body = alerts.flatMap((alert) => [
+    `${alert.title} (${alert.items.length})`,
+    ...alert.items.slice(0, 10).map((item) => `  - ${item.label}: ${item.detail}`),
+    ...(alert.items.length > 10 ? [`  - and ${alert.items.length - 10} more`] : []),
+    "",
+  ]);
+  const sent: string[] = [];
+  for (const row of due.rows) {
+    if (!(await allowsChannel(pool, "coordinator", row.coordinator_id, "digest", "email"))) continue;
+    const delivered = await sendOnce(pool, "coordinator_weekly", row.coordinator_id, clock.date, () =>
+      send({
+        to: row.email,
+        subject: `INTERNet: ${plural(alerts.length, "thing needs", "things need")} your attention this week`,
+        text: [
+          `Hello ${row.name},`,
+          "",
+          ...body,
+          base ? `Open your dashboard: ${base}/coordinator/dashboard` : "Sign in to INTERNet to see them.",
+          "",
+          "This summary is sent once a week, only when there is something to report. You can turn it off in INTERNet under Profile > Notifications.",
+        ].join("\n"),
+      })
+    );
+    if (delivered) sent.push(row.coordinator_id);
+  }
+  return sent;
+}

@@ -3,6 +3,7 @@ import type express from "express";
 import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
+import { coordinatorAlerts, projectionsFor } from "../services/insights";
 
 /*
 |--------------------------------------------------------------------------
@@ -3698,6 +3699,54 @@ export function registerExtensionRoutes(
     } catch (error) {
       console.error("DELETE SITE VISIT ERROR:", error);
       return res.status(500).json({ message: "Failed to remove the visit." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | PROJECTIONS AND ALERTS
+  |--------------------------------------------------------------------------
+  |
+  | See services/insights.ts for how each is worked out. A student sees
+  | their own projection, a supervisor their interns', the coordinator
+  | every active student's (optionally one term's). Alerts are the
+  | coordinator's.
+  |
+  */
+
+  app.get(
+    "/api/projections",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        let termId: number | "none" | undefined;
+        if (auth.role === "coordinator" && req.query.term !== undefined && req.query.term !== "") {
+          const term = String(req.query.term);
+          if (term !== "none" && !/^\d{1,9}$/.test(term)) {
+            return res.status(400).json({ message: "That is not a term." });
+          }
+          termId = term === "none" ? "none" : Number(term);
+        }
+        const projections = await projectionsFor(pool, {
+          studentId: auth.role === "student" ? auth.id : undefined,
+          supervisorId: auth.role === "supervisor" ? auth.id : undefined,
+          termId,
+        });
+        return res.json({ projections });
+      } catch (error) {
+        console.error("GET PROJECTIONS ERROR:", error);
+        return res.status(500).json({ message: "Failed to work out the projections." });
+      }
+    }
+  );
+
+  app.get("/api/coordinator/alerts", requireCoordinator, async (_req, res) => {
+    try {
+      return res.json({ alerts: await coordinatorAlerts(pool) });
+    } catch (error) {
+      console.error("GET ALERTS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the alerts." });
     }
   });
 }

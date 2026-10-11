@@ -4405,3 +4405,136 @@ test("a visit is logged against a company, shows on the company, and can be corr
     await pool.end();
   }
 });
+
+/*
+| Projections and alerts
+*/
+
+test("the projection counts remaining hours off against the schedule, skipping holidays", () => {
+  require("tsx/cjs");
+  const { projectFinish, missedScheduledDays } = require("../src/services/insights.ts");
+  const week = { Monday: 8, Tuesday: 8, Wednesday: 8, Thursday: 8, Friday: 8 };
+  const base = { today: "2026-10-09", requiredHours: 100, verifiedHours: 60, schedule: week, holidays: new Set() };
+
+  // Friday 9 October, 40 hours left at 8 a day: Monday to Friday of the next week.
+  const plain = projectFinish(base);
+  assert.deepEqual([plain.remaining_hours, plain.weekly_hours, plain.projected_finish, plain.at_risk], [40, 40, "2026-10-16", false]);
+  // A holiday in that week pushes it to the following Monday.
+  assert.equal(projectFinish({ ...base, holidays: new Set(["2026-10-14"]) }).projected_finish, "2026-10-19");
+  // Part of a day is still that day.
+  assert.equal(projectFinish({ ...base, verifiedHours: 97 }).projected_finish, "2026-10-12");
+  // Done: nothing to project, and never at risk.
+  const done = projectFinish({ ...base, verifiedHours: 120 });
+  assert.deepEqual([done.remaining_hours, done.projected_finish, done.at_risk], [0, null, false]);
+
+  // At risk: after the term ends, or nothing scheduled, or absurdly far off.
+  const late = projectFinish({ ...base, termEnd: "2026-10-15" });
+  assert.equal(late.at_risk, true);
+  assert.match(late.risk_reason, /after the term ends on 2026-10-15/);
+  assert.equal(projectFinish({ ...base, termEnd: "2026-10-16" }).at_risk, false, "finishing on the last day is in time");
+  const idle = projectFinish({ ...base, schedule: {} });
+  assert.deepEqual([idle.projected_finish, idle.at_risk], [null, true]);
+  assert.match(idle.risk_reason, /No working days/);
+  assert.equal(projectFinish({ ...base, requiredHours: 100000, schedule: { Monday: 1 } }).at_risk, true);
+
+  // Missed days: scheduled days back from yesterday with nothing on them.
+  const missed = (accounted, extra = {}) =>
+    missedScheduledDays({ today: "2026-10-16", since: "2026-09-01", schedule: week, holidays: new Set(), accounted: new Set(accounted), ...extra });
+  assert.equal(missed(["2026-10-15"]), 0);
+  // Friday 16th: Thu, Wed, Tue, Mon missed, then Friday the 9th was attended. The weekend does not count.
+  assert.equal(missed(["2026-10-09"]), 4);
+  assert.equal(missed(["2026-10-08"]), 5);
+  assert.equal(missed(["2026-10-08"], { holidays: new Set(["2026-10-13"]) }), 4, "a holiday is not a missed day");
+  assert.equal(missed([], { since: "2026-10-14" }), 2, "nothing is expected before the first day");
+  assert.equal(missed([], { schedule: {} }), 0);
+});
+
+test("projections are scoped to who asks, and alerts are the coordinator's", async () => {
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest("/api/projections")).response.status, 401);
+  const mine = await jsonRequest("/api/projections", { headers: authHeaders(studentToken) });
+  assert.equal(mine.response.status, 200);
+  assert.deepEqual(mine.body.projections.map((row) => row.student_id), [student.student_id], "a student sees only their own");
+  const row = mine.body.projections[0];
+  for (const key of ["remaining_hours", "weekly_hours", "projected_finish", "at_risk", "risk_reason", "required_hours", "verified_hours"]) assert.ok(key in row, key);
+  assert.equal(row.remaining_hours, Math.max(0, Math.round((row.required_hours - row.verified_hours) * 100) / 100));
+  if (row.projected_finish) assert.match(row.projected_finish, /^\d{4}-\d{2}-\d{2}$/);
+  // A student cannot widen it.
+  const widened = await jsonRequest("/api/projections?term=none", { headers: authHeaders(studentToken) });
+  assert.deepEqual(widened.body.projections.map((item) => item.student_id), [student.student_id]);
+
+  const interns = await jsonRequest(`/api/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}/interns`, { headers: authHeaders(supervisor.token) });
+  const theirs = await jsonRequest("/api/projections", { headers: authHeaders(supervisor.token) });
+  assert.deepEqual(theirs.body.projections.map((item) => item.student_id).sort(), interns.body.interns.map((item) => item.student_id).sort());
+
+  const all = await jsonRequest("/api/projections", { headers: authHeaders(coordinatorToken) });
+  assert.ok(all.body.projections.length >= theirs.body.projections.length);
+  assert.equal((await jsonRequest("/api/projections?term=abc", { headers: authHeaders(coordinatorToken) })).response.status, 400);
+  assert.equal((await jsonRequest("/api/projections?term=999999999", { headers: authHeaders(coordinatorToken) })).body.projections.length, 0);
+
+  assert.equal((await jsonRequest("/api/coordinator/alerts")).response.status, 401);
+  assert.equal((await jsonRequest("/api/coordinator/alerts", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/alerts", { headers: authHeaders(supervisor.token) })).response.status, 403);
+  const alerts = await jsonRequest("/api/coordinator/alerts", { headers: authHeaders(coordinatorToken) });
+  assert.equal(alerts.response.status, 200);
+  for (const alert of alerts.body.alerts) {
+    assert.ok(["slow_supervisors", "moa_expiring", "missed_days", "at_risk"].includes(alert.key));
+    assert.ok(alert.items.length > 0, "a kind with nothing in it is left out");
+    assert.match(alert.link, /^\/coordinator\//);
+  }
+  // The at-risk alert and the projections agree.
+  const risky = all.body.projections.filter((item) => item.at_risk).length;
+  assert.equal(alerts.body.alerts.find((alert) => alert.key === "at_risk")?.items.length ?? 0, risky);
+});
+
+test("alerts pick up a slow supervisor and an agreement about to end, and the weekly email reports them once", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  require("tsx/cjs");
+  const { coordinatorAlerts, sendCoordinatorDigests } = require("../src/services/insights.ts");
+  const supervisor = await supervisorSession();
+  const pool = localTestPool();
+  const name = `Alert Test Company ${Date.now()}`;
+  const clear = async () => {
+    await pool.query(`DELETE FROM absences WHERE student_id = $1 AND reason = 'Alert test.'`, [student.student_id]);
+    await pool.query(`DELETE FROM companies WHERE name LIKE 'Alert Test Company %'`);
+    await pool.query(`DELETE FROM digest_log WHERE kind = 'coordinator_weekly' AND period_key LIKE '2031-%'`);
+  };
+  await clear();
+  try {
+    // Monday 6 January 2031, 08:00 in the Philippines.
+    const monday = new Date("2031-01-06T08:00:00+08:00");
+    await pool.query(`INSERT INTO companies (name, moa_expiry, is_active) VALUES ($1, '2031-01-20', TRUE)`, [name]);
+    await pool.query(`INSERT INTO absences (student_id, date, reason, status, created_at) VALUES ($1, '2030-12-20', 'Alert test.', 'Pending', '2031-01-01 09:00')`, [student.student_id]);
+
+    const alerts = await coordinatorAlerts(pool, monday);
+    const moa = alerts.find((alert) => alert.key === "moa_expiring");
+    assert.ok(moa.items.some((item) => item.label === name && /in 14 days/.test(item.detail)), JSON.stringify(moa));
+    const slow = alerts.find((alert) => alert.key === "slow_supervisors");
+    assert.ok(slow.items.some((item) => item.label === supervisor.supervisor.name), "five days waiting is more than three");
+
+    const outbox = [];
+    const run = (now, env = {}) => sendCoordinatorDigests(pool, { now, env: { FRONTEND_URL: "https://example.test", ...env }, smtpReady: true, send: async (email) => { outbox.push(email); } });
+    const mine = () => outbox.filter((email) => email.to === coordinatorEmail);
+    // Not on a Sunday, not before the time, not without SMTP.
+    await run(new Date("2031-01-05T08:00:00+08:00"));
+    await run(new Date("2031-01-06T07:00:00+08:00"));
+    assert.deepEqual(await sendCoordinatorDigests(pool, { now: monday, smtpReady: false }), []);
+    assert.equal(mine().length, 0);
+    // Monday morning: one email, naming what was found.
+    await run(monday);
+    assert.equal(mine().length, 1);
+    assert.match(mine()[0].text, new RegExp(name));
+    assert.match(mine()[0].text, /https:\/\/example\.test\/coordinator\/dashboard/);
+    await run(new Date("2031-01-06T15:00:00+08:00"));
+    assert.equal(mine().length, 1, "once a week");
+    // Another day can be chosen.
+    await run(new Date("2031-01-08T08:00:00+08:00"), { COORDINATOR_DIGEST_DAY: "wed" });
+    assert.equal(mine().length, 2);
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});

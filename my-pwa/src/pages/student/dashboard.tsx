@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
+import ProjectionLine from "../../components/ProjectionLine";
 import Tooltip from "../../components/Tooltip";
 import {
   Card,
@@ -28,6 +29,7 @@ import {
 import { useLaunchReady } from "../../lib/launch";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
+import { useProjections } from "../../lib/useProjections";
 import { MissedTimeOutNotice } from "./AttendanceCorrections";
 import TodayAttendance from "./TodayAttendance";
 import { logDateKey, useAttendance, type AttendanceLog } from "./useAttendance";
@@ -355,6 +357,7 @@ function ProgressCard({
   loading: boolean;
   weeklyScheduleHours: number;
 }) {
+  const projection = [...useProjections("student").values()][0];
   if (loading || !summary) {
     return (
       <Card className="p-5">
@@ -401,6 +404,7 @@ function ProgressCard({
           <p className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
             {outlook}
           </p>
+          <ProjectionLine projection={projection} own className="mt-1" />
           {summary.totalTasks > 0 && (
             <p className="mt-1 text-sm text-slate-600">
               {summary.completedTasks} of {summary.totalTasks} tasks reviewed.

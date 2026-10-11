@@ -21,6 +21,8 @@ import {
   getInitials,
 } from "../../lib/format";
 import { useAccount } from "../../lib/session";
+import { useProjections } from "../../lib/useProjections";
+import ProjectionLine from "../../components/ProjectionLine";
 import { useSupervisorWork, type Intern, type SupervisorWork } from "./useSupervisorWork";
 
 export default function SupervisorInterns() {
@@ -170,7 +172,9 @@ function InternDialog({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const projections = useProjections("supervisor");
   if (!intern) return null;
+  const projection = projections.get(intern.student_id);
 
   const logs = work.attendance.filter((entry) => entry.student_id === intern.student_id);
   const tasks = work.tasks.filter((entry) => entry.student_id === intern.student_id);
@@ -218,6 +222,7 @@ function InternDialog({
             </span>
           </div>
           <ProgressBar value={intern.completion} className="mt-2" />
+          <ProjectionLine projection={projection} className="mt-2" />
           <a
             href={`mailto:${intern.email}`}
             className="mt-3 inline-block text-sm font-semibold text-psu-700 hover:underline"
