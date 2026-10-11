@@ -4651,3 +4651,55 @@ test("the dashboard and Analytics narrow to one term, and the terms add up to th
   assert.equal(Number(empty.totalHoursLogged), 0);
   assert.equal(Number((await get("/api/coordinator/analytics?term=999999999")).progress.students), 0);
 });
+
+/*
+| The Students page's list, searched, filtered, ordered and paged on the server
+*/
+
+test("the student list can be ordered and narrowed to unsupervised students, a page at a time", async () => {
+  const headers = authHeaders(coordinatorToken);
+  const list = async (query) => {
+    const result = await jsonRequest(`/api/coordinator/students${query}`, { headers });
+    assert.equal(result.response.status, 200, `${query}: ${JSON.stringify(result.body).slice(0, 120)}`);
+    return result.body;
+  };
+  const everyone = await list("");
+  assert.ok(!("total" in everyone), "without paging the answer is as it always was");
+  for (const row of everyone.students) assert.ok("progress" in row);
+
+  // Each order really is that order, across pages, with nobody lost or repeated.
+  const walk = async (sort) => {
+    const rows = [];
+    for (let offset = 0; ; offset += 2) {
+      const page = await list(`?limit=2&offset=${offset}&sort=${sort}`);
+      assert.equal(page.total, everyone.students.length, sort);
+      rows.push(...page.students);
+      if (page.students.length < 2) break;
+    }
+    assert.deepEqual(rows.map((row) => row.student_id).sort(), everyone.students.map((row) => row.student_id).sort(), sort);
+    return rows;
+  };
+  const byName = await walk("name");
+  assert.deepEqual(byName.map((row) => row.name), [...byName.map((row) => row.name)].sort((a, b) => a.localeCompare(b, "en", { sensitivity: "base" })));
+  const byProgress = await walk("progress");
+  const share = byProgress.map((row) => Number(row.progress));
+  assert.deepEqual(share, [...share].sort((a, b) => a - b), "least progress first");
+  for (const row of byProgress) {
+    const expected = Number(row.required_hours) > 0 ? Number(row.hours_rendered) / Number(row.required_hours) : 0;
+    assert.ok(Math.abs(Number(row.progress) - expected) < 0.0001, row.student_id);
+  }
+  await walk("supervisor");
+  // An order that is not one of the three is by name.
+  assert.deepEqual((await walk("password")).map((row) => row.student_id), byName.map((row) => row.student_id));
+
+  // "No supervisor": active students with nobody supervising them, and only those.
+  const unassigned = await list("?status=unassigned&limit=200");
+  const expected = everyone.students.filter((row) => row.is_active && !row.supervisor_name).map((row) => row.student_id).sort();
+  assert.deepEqual(unassigned.students.map((row) => row.student_id).sort(), expected);
+  assert.equal(unassigned.total, expected.length);
+  // It combines with search and with a term.
+  const none = await list("?status=unassigned&q=zzzz-no-such-student&limit=20");
+  assert.deepEqual([none.students.length, none.total], [0, 0]);
+  const inTerm = await list("?status=active&term=none&limit=200&sort=progress");
+  assert.ok(inTerm.students.every((row) => row.is_active && row.term_id === null));
+});

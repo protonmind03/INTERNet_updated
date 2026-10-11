@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
@@ -22,7 +22,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
-import { usePagination } from "../../lib/usePagination";
+import { serverPagination } from "../../lib/usePagination";
 import ImportAccounts from "./ImportAccounts";
 import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
@@ -53,6 +53,9 @@ type SupervisorOption = {
 // "unassigned" is active students who have no supervisor.
 type StatusFilter = "all" | "active" | "inactive" | "unassigned";
 type SortBy = "name" | "progress" | "supervisor";
+
+/** Students shown at a time; the server sends one page of them. */
+const PAGE_SIZE = 20;
 
 const EMPTY_FORM = {
   student_id: "",
@@ -86,42 +89,43 @@ export default function CoordinatorStudents() {
   const [toggling, setToggling] = useState<Student | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [importing, setImporting] = useState(false);
-  const sorted = useMemo(() => {
-    const progress = (student: Student) =>
-      Number(student.required_hours) > 0
-        ? Number(student.hours_rendered) / Number(student.required_hours)
-        : 0;
-    return [...students].sort((a, b) =>
-      sortBy === "progress"
-        ? progress(a) - progress(b)
-        : sortBy === "supervisor"
-          ? (a.supervisor_name || "").localeCompare(b.supervisor_name || "") ||
-            a.name.localeCompare(b.name)
-          : a.name.localeCompare(b.name)
-    );
-  }, [students, sortBy]);
-  const pager = usePagination(sorted, 20);
+  // The server searches, filters, orders and pages; only one page is here.
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const pager = serverPagination(students, total, page, PAGE_SIZE, setPage);
+  // A changed search, filter or order starts again from the first page.
+  const fromFirstPage =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      setPage(1);
+    };
 
   const load = useCallback(async () => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String((page - 1) * PAGE_SIZE),
+      sort: sortBy,
+    });
     if (search.trim()) params.set("q", search.trim());
-    if (status !== "all") params.set("status", status === "unassigned" ? "active" : status);
+    if (status !== "all") params.set("status", status);
     if (term) params.set("term", term);
     try {
-      const data = await coordinatorRequest<{ students: Student[] }>(
+      const data = await coordinatorRequest<{ students: Student[]; total?: number }>(
         `/api/coordinator/students?${params.toString()}`
       );
       const list = data.students || [];
-      setStudents(
-        status === "unassigned" ? list.filter((student) => !student.supervisor_name) : list
-      );
+      setStudents(list);
+      setTotal(data.total ?? list.length);
+      // The last row of the last page was removed: step back to a page that has rows.
+      if (list.length === 0 && page > 1) setPage(page - 1);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load students."));
     } finally {
       setLoading(false);
     }
-  }, [search, status, term]);
+  }, [search, status, term, sortBy, page]);
 
   // Wait for typing to pause before searching.
   useEffect(() => {
@@ -181,7 +185,7 @@ export default function CoordinatorStudents() {
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 sm:p-5">
             <SearchField
               value={search}
-              onChange={setSearch}
+              onChange={fromFirstPage(setSearch)}
               label="Search students"
               placeholder="Search name, ID, email or company"
               className="w-full sm:w-80"
@@ -189,7 +193,7 @@ export default function CoordinatorStudents() {
             <FilterChips
               label="Account status"
               value={status}
-              onChange={setStatus}
+              onChange={fromFirstPage(setStatus)}
               options={[
                 { value: "all", label: "All" },
                 { value: "active", label: "Active" },
@@ -197,12 +201,12 @@ export default function CoordinatorStudents() {
                 { value: "inactive", label: "Deactivated" },
               ]}
             />
-            <TermSelect term={term} terms={terms} onChange={setTerm} />
+            <TermSelect term={term} terms={terms} onChange={fromFirstPage(setTerm)} />
             <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
               Sort by
               <select
                 value={sortBy}
-                onChange={(event) => setSortBy(event.target.value as SortBy)}
+                onChange={(event) => fromFirstPage(setSortBy)(event.target.value as SortBy)}
                 className="field w-auto"
               >
                 <option value="name">Name</option>

@@ -5365,7 +5365,15 @@ app.get(
         return res.status(400).json({ message: "That is not a term." });
       }
 
-      const result = await listQuery(req, { order: "name ASC, student_id ASC" }, 
+      // How a paged list is ordered. Without paging the order is by name, as before.
+      const order =
+        req.query.sort === "progress"
+          ? "progress ASC, name ASC, student_id ASC"
+          : req.query.sort === "supervisor"
+            ? "supervisor_name ASC, name ASC, student_id ASC"
+            : "name ASC, student_id ASC";
+
+      const result = await listQuery(req, { order }, 
         `
         SELECT
           s.id, s.student_id, s.email, s.name, s.program, s.company,
@@ -5375,7 +5383,12 @@ app.get(
           COALESCE((
             SELECT SUM(a.hours) FROM attendance a
             WHERE a.student_id::text = s.student_id::text AND a.status = 'Verified'
-          ), 0) AS hours_rendered
+          ), 0) AS hours_rendered,
+          -- Share of the required hours verified so far, for ordering.
+          CASE WHEN COALESCE(s.required_hours, 0) > 0 THEN COALESCE((
+            SELECT SUM(a.hours) FROM attendance a
+            WHERE a.student_id::text = s.student_id::text AND a.status = 'Verified'
+          ), 0) / s.required_hours ELSE 0 END AS progress
         FROM students s
         LEFT JOIN supervisors sup
           ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
@@ -5383,7 +5396,9 @@ app.get(
         WHERE (s.name ILIKE $1 OR s.email ILIKE $1 OR s.student_id::text ILIKE $1 OR s.company ILIKE $1 OR s.program ILIKE $1)
         AND ($2::text IS NULL
           OR ($2 = 'active' AND s.is_active = TRUE)
-          OR ($2 = 'inactive' AND s.is_active = FALSE))
+          OR ($2 = 'inactive' AND s.is_active = FALSE)
+          -- Active students nobody is supervising.
+          OR ($2 = 'unassigned' AND s.is_active = TRUE AND sup.supervisor_id IS NULL))
         AND ($3::text IS NULL
           OR ($3 = 'none' AND s.term_id IS NULL)
           OR s.term_id::text = $3)
