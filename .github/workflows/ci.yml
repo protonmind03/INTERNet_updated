@@ -110,3 +110,114 @@ jobs:
       - run: npm run build
 
       - run: npm run lint
+
+  e2e:
+    name: End-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: internet_ojt
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d internet_ojt"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+
+    # None of these are secrets. A real browser drives the built site
+    # against an API and database that live only for this run.
+    env:
+      DATABASE_PUBLIC_URL: postgresql://postgres:postgres@localhost:5432/internet_ojt
+      JWT_SECRET: ci-only-signing-key-never-used-outside-this-workflow
+      PORT: "5000"
+      FRONTEND_URL: http://localhost:4173
+      PRIVATE_UPLOAD_DIR: /tmp/internet-e2e-uploads
+      VITE_API_URL: http://127.0.0.1:5000
+      E2E_API_URL: http://127.0.0.1:5000
+      E2E_BASE_URL: http://localhost:4173
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            backend/package-lock.json
+            my-pwa/package-lock.json
+            e2e/package-lock.json
+
+      - name: Start the API with the demo accounts
+        working-directory: backend
+        run: |
+          npm ci
+          npm run db:migrate
+          npm run db:seed-demo
+          npx tsx src/server.ts > "$RUNNER_TEMP/api.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "$E2E_API_URL/api/health" > /dev/null; then
+              echo "API is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "The API did not answer /api/health within 30 seconds."
+          cat "$RUNNER_TEMP/api.log"
+          exit 1
+
+      - name: Build and serve the site
+        working-directory: my-pwa
+        run: |
+          npm ci
+          npm run build
+          npx vite preview --port 4173 --strictPort > "$RUNNER_TEMP/site.log" 2>&1 &
+          for attempt in $(seq 1 30); do
+            if curl --silent --fail "$E2E_BASE_URL/" > /dev/null; then
+              echo "Site is up."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "The site did not answer within 30 seconds."
+          cat "$RUNNER_TEMP/site.log"
+          exit 1
+
+      - name: Install the test runner
+        working-directory: e2e
+        run: npm ci
+
+      - name: Keep the browser between runs
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('e2e/package-lock.json') }}
+
+      - name: Install the browser
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run the end-to-end tests
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Keep the report when a test fails
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
+          retention-days: 7
+
+      - name: Show the API log
+        if: failure()
+        run: cat "$RUNNER_TEMP/api.log" || true

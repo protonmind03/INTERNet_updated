@@ -35,10 +35,8 @@
     <main>
       <h1>You're offline</h1>
       <p>INTERNet needs a connection to load your records. Check your data or Wi-Fi, then try again.</p>
-      <button type="button" onclick="location.reload()">Try again</button>
+      <button type="button" id="retry">Try again</button>
     </main>
-    <script>
-      window.addEventListener("online", function () { location.reload(); });
-    </script>
+    <script src="/offline.js"></script>
   </body>
 </html>
