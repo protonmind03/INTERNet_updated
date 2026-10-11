@@ -7801,7 +7801,20 @@ app.get(
       return res.status(404).json({ message: "Supervisor not found." });
     }
 
-    return res.json({ supervisor: result.rows[0] });
+    // Who to write to about the programme. A supervisor is not assigned to
+    // a coordinator, so it is the active coordinator who has been one
+    // longest: the same person a student with no coordinator is shown.
+    const coordinator = await pool.query(
+      `
+      SELECT c.name, c.email, c.department
+      FROM coordinators c
+      WHERE c.is_active = TRUE
+      ORDER BY c.created_at ASC NULLS LAST, c.coordinator_id ASC
+      LIMIT 1
+      `
+    );
+
+    return res.json({ supervisor: result.rows[0], coordinator: coordinator.rows[0] ?? null });
   } catch (error) {
     console.error("GET SUPERVISOR PROFILE ERROR:", error);
     return res.status(500).json({

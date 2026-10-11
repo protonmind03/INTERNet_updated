@@ -238,7 +238,7 @@ function clockValue(value: string | null): string {
 }
 
 /** Sets the times on a log, with the reason the intern will be shown. */
-function CorrectTimesDialog({
+export function CorrectTimesDialog({
   entry,
   work,
   onClose,

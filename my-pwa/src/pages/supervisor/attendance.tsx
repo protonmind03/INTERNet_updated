@@ -10,6 +10,7 @@ import {
   ErrorNotice,
   FilterChips,
   Modal,
+  RowMenu,
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
@@ -19,7 +20,7 @@ import { formatDayDate, formatHours, formatTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { usePagination } from "../../lib/usePagination";
 import RecordTimeIn from "./RecordTimeIn";
-import ReviewDetail from "./ReviewDetail";
+import ReviewDetail, { CorrectTimesDialog } from "./ReviewDetail";
 import { useSupervisorWork, type AttendanceEntry } from "./useSupervisorWork";
 
 type Filter = "all" | "Pending" | "Verified" | "Rejected";
@@ -37,6 +38,42 @@ function breakText(entry: AttendanceEntry): string {
   }`;
 }
 
+/** True when the log is waiting for this supervisor's decision. */
+const awaitsReview = (entry: AttendanceEntry) =>
+  entry.status === "Pending" && !(entry.capture_method === "supervisor" && !entry.time_out);
+
+/**
+ * How the log was made, as small marks on its row: by the intern's camera
+ * check or by the supervisor in person, and whether a step's time came
+ * from the phone's clock while it was offline. The detail says more.
+ */
+function LogMarks({ entry }: { entry: AttendanceEntry }) {
+  if (!entry.capture_method && !entry.recorded_offline) return null;
+  const mark = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium";
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {entry.capture_method === "liveness" && (
+        <span className={`${mark} bg-slate-100 text-slate-700`}>
+          <Icon name="camera" size={12} />
+          Camera check
+        </span>
+      )}
+      {entry.capture_method === "supervisor" && (
+        <span className={`${mark} bg-psu-50 text-psu-800`}>
+          <Icon name="user" size={12} />
+          Recorded in person
+        </span>
+      )}
+      {entry.recorded_offline && (
+        <span className={`${mark} bg-amber-50 text-amber-900`}>
+          <Icon name="clock" size={12} />
+          Recorded offline
+        </span>
+      )}
+    </span>
+  );
+}
+
 export default function SupervisorAttendanceApproval() {
   const supervisor = useAccount("supervisor");
   const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "attendance", "absences"]);
@@ -48,6 +85,8 @@ export default function SupervisorAttendanceApproval() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [openId, setOpenId] = useState<number | null>(null);
+  // The log whose times are being corrected straight from its row.
+  const [correctingId, setCorrectingId] = useState<number | null>(null);
   const [recording, setRecording] = useState(false);
 
   const scoped = useMemo(
@@ -99,6 +138,7 @@ export default function SupervisorAttendanceApproval() {
   }, [work.absences, internId, search, dateFrom, dateTo]);
   const absencePager = usePagination(visibleAbsences, 10);
   const opened = attendance.find((entry) => entry.id === openId) ?? null;
+  const correcting = attendance.find((entry) => entry.id === correctingId) ?? null;
   const filtered =
     filter !== "all" || internId !== "" || search.trim() !== "" || dateFrom !== "" || dateTo !== "";
 
@@ -184,11 +224,11 @@ export default function SupervisorAttendanceApproval() {
             <>
               <ul className="divide-y divide-slate-100 md:hidden">
                 {pager.pageItems.map((entry) => (
-                  <li key={entry.id}>
+                  <li key={entry.id} className="flex items-start">
                     <button
                       type="button"
                       onClick={() => setOpenId(entry.id)}
-                      className="block w-full px-4 py-3.5 text-left hover:bg-slate-50"
+                      className="block min-w-0 flex-1 py-3.5 pl-4 pr-1 text-left hover:bg-slate-50"
                     >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -205,7 +245,25 @@ export default function SupervisorAttendanceApproval() {
                       <p className="tabular mt-1 text-sm text-slate-500">
                         {formatHours(entry.hours)} · Break {breakText(entry).toLowerCase()}
                       </p>
+                      <LogMarks entry={entry} />
                     </button>
+                    <div className="shrink-0 py-2.5 pr-2">
+                      <RowMenu
+                        label={`Actions for ${entry.student_name}, ${formatDayDate(entry.date)}`}
+                        items={[
+                          {
+                            label: awaitsReview(entry) ? "Review" : "View",
+                            icon: "clipboard",
+                            onSelect: () => setOpenId(entry.id),
+                          },
+                          {
+                            label: "Correct the times",
+                            icon: "edit",
+                            onSelect: () => setCorrectingId(entry.id),
+                          },
+                        ]}
+                      />
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -231,6 +289,7 @@ export default function SupervisorAttendanceApproval() {
                       <tr key={entry.id} className="hover:bg-slate-50">
                         <td className="px-5 py-3 font-medium text-slate-900">
                           {entry.student_name}
+                          <LogMarks entry={entry} />
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-slate-700">
                           {formatDayDate(entry.date)}
@@ -254,17 +313,26 @@ export default function SupervisorAttendanceApproval() {
                             <StatusBadge status={entry.status} />
                           )}
                         </td>
-                        <td className="px-5 py-3 text-right">
-                          <button
-                            type="button"
-                            onClick={() => setOpenId(entry.id)}
-                            className="rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
-                          >
-                            {entry.status === "Pending" &&
-                            !(entry.capture_method === "supervisor" && !entry.time_out)
-                              ? "Review"
-                              : "View"}
-                          </button>
+                        <td className="px-5 py-3">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setOpenId(entry.id)}
+                              className="rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
+                            >
+                              {awaitsReview(entry) ? "Review" : "View"}
+                            </button>
+                            <RowMenu
+                              label={`More for ${entry.student_name}, ${formatDayDate(entry.date)}`}
+                              items={[
+                                {
+                                  label: "Correct the times",
+                                  icon: "edit",
+                                  onSelect: () => setCorrectingId(entry.id),
+                                },
+                              ]}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -359,6 +427,16 @@ export default function SupervisorAttendanceApproval() {
           />
         )}
       </Modal>
+
+      {/* The same dialog the log's detail opens. */}
+      {correcting && (
+        <CorrectTimesDialog
+          key={correcting.id}
+          entry={correcting}
+          work={work}
+          onClose={() => setCorrectingId(null)}
+        />
+      )}
 
       <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />
     </SupervisorLayout>

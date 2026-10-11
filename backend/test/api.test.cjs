@@ -5048,3 +5048,24 @@ test("a supervisor is told in one answer which of their interns have a final eva
     assert.equal(list.body.student_ids.includes(id), one.body.evaluation !== null, id);
   }
 });
+
+test("a supervisor's profile names the coordinator to write to, and nothing else about them", async () => {
+  const supervisor = await supervisorSession();
+  const id = encodeURIComponent(supervisor.supervisor.supervisor_id);
+  const mine = await jsonRequest(`/api/supervisors/${id}/profile`, { headers: authHeaders(supervisor.token) });
+  assert.equal(mine.response.status, 200);
+  // What it always answered is still there.
+  assert.equal(mine.body.supervisor.supervisor_id, supervisor.supervisor.supervisor_id);
+  assert.ok(mine.body.supervisor.email);
+  // The coordinator: a name, an email, a department. No id, no password, no sign-in details.
+  assert.ok(mine.body.coordinator, "there is an active coordinator in the test data");
+  assert.deepEqual(Object.keys(mine.body.coordinator).sort(), ["department", "email", "name"]);
+  assert.match(mine.body.coordinator.email, /@/);
+  // The same person a student with no coordinator of their own is shown.
+  const students = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
+  assert.ok(students.body.coordinator);
+
+  assert.equal((await jsonRequest(`/api/supervisors/${id}/profile`)).response.status, 401);
+  assert.equal((await jsonRequest(`/api/supervisors/${id}-other/profile`, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest(`/api/supervisors/${id}/profile`, { headers: authHeaders(studentToken) })).response.status, 403);
+});

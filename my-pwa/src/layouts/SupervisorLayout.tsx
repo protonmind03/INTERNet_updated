@@ -8,6 +8,7 @@ import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { useCoordinatorContact } from "../pages/supervisor/useCoordinatorContact";
 
 /*
 |--------------------------------------------------------------------------
@@ -56,6 +57,7 @@ export default function SupervisorLayout({
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  const coordinator = useCoordinatorContact(supervisor?.supervisor_id, menuOpen);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -175,6 +177,20 @@ export default function SupervisorLayout({
                     <Icon name="flag" className="text-slate-400" />
                     Concerns
                   </button>
+                  {coordinator && (
+                    <div className="border-t border-slate-100 px-4 py-3">
+                      <p className="text-xs font-medium text-slate-500">Your OJT coordinator</p>
+                      <p className="truncate text-sm font-medium text-slate-900">
+                        {coordinator.name}
+                      </p>
+                      <a
+                        href={`mailto:${coordinator.email}`}
+                        className="block truncate text-sm font-medium text-psu-700 hover:underline"
+                      >
+                        {coordinator.email}
+                      </a>
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
