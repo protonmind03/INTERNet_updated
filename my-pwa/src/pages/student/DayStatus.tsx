@@ -3,6 +3,7 @@ import Icon from "../../components/Icon";
 import { Button, Skeleton } from "../../components/ui";
 import { formatDuration, formatHours, formatTime } from "../../lib/format";
 import { toast } from "../../lib/toast";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { nextStep, OFFLINE_TIME_IN } from "./nextStep";
 import { useTimeIn } from "./timeInContext";
 import { workedMinutes } from "./useAttendance";
@@ -81,7 +82,8 @@ export function NextStepButton() {
   const timeIn = useTimeIn();
   const { stage, loading, busy } = timeIn.attendance;
   const step = loading ? null : nextStep(stage);
-  if (!step) return null;
+  const wide = useMediaQuery("(min-width: 768px)");
+  if (!step || !wide) return null;
   const offline = stage === "not-started" && !timeIn.online;
 
   return (
@@ -92,7 +94,7 @@ export function NextStepButton() {
       aria-label={step.name}
       // Looks unavailable but still answers a click, to say why.
       aria-disabled={offline || undefined}
-      className={`hidden md:inline-flex ${offline ? "opacity-60" : ""}`}
+      className={offline ? "opacity-60" : undefined}
       onClick={() => (offline ? toast.info(OFFLINE_TIME_IN) : step.run(timeIn))}
     >
       {step.label}

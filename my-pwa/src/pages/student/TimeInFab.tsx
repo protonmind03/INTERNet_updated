@@ -3,6 +3,7 @@ import { useLocation } from "react-router-dom";
 import Icon from "../../components/Icon";
 import { useReportedHeight } from "../../lib/layers";
 import { toast } from "../../lib/toast";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { nextStep, OFFLINE_TIME_IN } from "./nextStep";
 import { useTimeIn } from "./timeInContext";
 
@@ -44,12 +45,15 @@ export default function TimeInFab() {
   const timeIn = useTimeIn();
   const { pathname } = useLocation();
   const dialogOnScreen = useDialogOnScreen();
+  // Phones only. On a wide screen the page header has the button, and this
+  // one is not on the page at all, so the step is never offered twice.
+  const phone = useMediaQuery("(max-width: 767px)");
   // Its height plus the gap above it, for whatever floats over that corner.
   const report = useReportedHeight<HTMLButtonElement>("--inb-fab", 12);
 
   const { stage, loading, busy, todayLog } = timeIn.attendance;
   const step = loading ? null : nextStep(stage);
-  if (!step || HIDDEN_ON.includes(pathname) || dialogOnScreen || timeIn.dialogOpen) return null;
+  if (!phone || !step || HIDDEN_ON.includes(pathname) || dialogOnScreen || timeIn.dialogOpen) return null;
 
   const offline = stage === "not-started" && !timeIn.online;
   const waiting = todayLog?.waiting?.length ?? 0;

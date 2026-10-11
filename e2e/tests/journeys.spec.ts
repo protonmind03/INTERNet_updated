@@ -67,6 +67,61 @@ test.describe("time-in", () => {
   });
 });
 
+test.describe("the floating next-step button", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("on a phone it is on Today and Tasks, not on Attendance, and opens the time-in dialog", async ({ page }) => {
+    const student = await apiSession("student");
+    const log = await api<{ attendance: { date: string }[] }>(
+      student.token,
+      "GET",
+      `/api/attendance/${encodeURIComponent(student.id)}`
+    );
+    test.skip(
+      log.body.attendance.some((entry) => String(entry.date).slice(0, 10) === today()),
+      "The demo student already has a log for today, so the next step is not Time in."
+    );
+    const privacy = await api<{ current: boolean }>(
+      student.token,
+      "GET",
+      `/api/students/${encodeURIComponent(student.id)}/privacy`
+    );
+
+    await signIn(page, "student");
+    const main = page.getByRole("navigation", { name: "Main" });
+    const button = page.locator("button.float-fab");
+    await expect(button).toBeVisible();
+    await expect(button).toHaveAccessibleName("Time in");
+    // 56 px tall, in the bottom right corner, clear of the tab bar.
+    const box = (await button.boundingBox())!;
+    const bar = (await main.last().boundingBox())!;
+    expect(box.height).toBe(56);
+    expect(box.x + box.width).toBeGreaterThan(390 - 24);
+    expect(box.y + box.height).toBeLessThanOrEqual(bar.y);
+
+    await main.getByRole("link", { name: "Tasks" }).click();
+    await expect(page).toHaveURL(/\/task$/);
+    await expect(button).toBeVisible();
+
+    // Attendance has the full card, so the button stays away.
+    await main.getByRole("link", { name: "Attendance" }).click();
+    await expect(page).toHaveURL(/\/daily-log$/);
+    await expect(page.getByRole("button", { name: "Time in", exact: true })).toBeVisible();
+    await expect(button).toHaveCount(0);
+
+    await main.getByRole("link", { name: "Today" }).click();
+    await button.click();
+    if (!privacy.body.current) {
+      const notice = page.getByRole("dialog", { name: "Privacy notice" });
+      await expect(notice).toBeVisible();
+      await notice.getByRole("button", { name: "I agree" }).click();
+    }
+    await expect(page.getByRole("dialog", { name: "Time in" })).toBeVisible();
+    // A dialog is open: the button is out of its way.
+    await expect(button).toHaveCount(0);
+  });
+});
+
 test.describe("weekly journal", () => {
   test("a student writes it, the supervisor returns it, the student sends it again, and it is reviewed", async ({ browser }) => {
     const student = await apiSession("student");
