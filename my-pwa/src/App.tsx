@@ -157,6 +157,7 @@ const CoordinatorAudit = page("coordinator", () => import("./pages/coordinator/A
 const CoordinatorCompanies = page("coordinator", () => import("./pages/coordinator/Companies"));
 const CoordinatorTerms = page("coordinator", () => import("./pages/coordinator/Terms"));
 const CoordinatorHolidays = page("coordinator", () => import("./pages/coordinator/Holidays"));
+const CoordinatorAccounts = page("coordinator", () => import("./pages/coordinator/Coordinators"));
 
 // The brand kit preview only exists in development builds.
 const BrandPreview = import.meta.env.DEV ? lazy(() => import("./brand/BrandPreview")) : null;
@@ -423,6 +424,11 @@ function App() {
         <Route
           path="/coordinator/holidays"
           element={<CoordinatorHolidays />}
+        />
+
+        <Route
+          path="/coordinator/coordinators"
+          element={<CoordinatorAccounts />}
         />
 
         {BrandPreview && (

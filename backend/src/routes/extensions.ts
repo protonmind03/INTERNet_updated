@@ -1461,6 +1461,7 @@ export function registerExtensionRoutes(
   const resettable = {
     students: { role: "student" as const, table: "students", idColumn: "student_id" },
     supervisors: { role: "supervisor" as const, table: "supervisors", idColumn: "supervisor_id" },
+    coordinators: { role: "coordinator" as const, table: "coordinators", idColumn: "coordinator_id" },
   };
 
   app.post(
@@ -1469,6 +1470,12 @@ export function registerExtensionRoutes(
     async (req, res, next) => {
       const target = resettable[req.params.kind as keyof typeof resettable];
       if (!target) return next();
+      // Your own password is changed on your Profile, with the current one.
+      if (target.role === "coordinator" && req.params.id === (req as AuthedRequest).auth?.id) {
+        return res.status(409).json({
+          message: "Change your own password from your Profile.",
+        });
+      }
       try {
         const password = typeof req.body?.password === "string" ? req.body.password : "";
         const policyError = passwordPolicyError(password);
@@ -3420,4 +3427,144 @@ export function registerExtensionRoutes(
       }
     }
   );
+
+  /*
+  |--------------------------------------------------------------------------
+  | COORDINATOR ACCOUNTS
+  |--------------------------------------------------------------------------
+  |
+  | A coordinator can list the coordinator accounts, add one, deactivate or
+  | reactivate one, and give one a temporary password (the reset route
+  | above). A new account, like every account a coordinator creates, must
+  | set its own password at first sign-in.
+  |
+  | Two things are refused so the programme can never be locked out of its
+  | own system: deactivating yourself, and deactivating the last active
+  | coordinator. An account is never deleted.
+  |
+  */
+
+  const COORDINATOR_COLUMNS = `c.coordinator_id, c.name, c.email, c.department, c.is_active, c.created_at`;
+
+  app.get("/api/coordinator/coordinators", requireCoordinator, async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const result = await pool.query(
+        `SELECT ${COORDINATOR_COLUMNS}, (c.coordinator_id = $1) AS is_self
+         FROM coordinators c ORDER BY c.is_active DESC, c.name, c.coordinator_id`,
+        [auth.id]
+      );
+      return res.json({ coordinators: result.rows });
+    } catch (error) {
+      console.error("GET COORDINATORS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the coordinator accounts." });
+    }
+  });
+
+  app.post("/api/coordinator/coordinators", requireCoordinator, async (req, res) => {
+    try {
+      const id = text(req.body?.coordinator_id);
+      const name = text(req.body?.name);
+      const email = text(req.body?.email).toLowerCase();
+      const department = text(req.body?.department);
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      if (!/^[\w.-]{3,50}$/.test(id)) {
+        return res.status(400).json({
+          message: "Give the account an ID of 3 to 50 letters, digits, dots, dashes or underscores.",
+        });
+      }
+      if (name.length < 2 || name.length > 150) {
+        return res.status(400).json({ message: "Enter the coordinator's name." });
+      }
+      if (!EMAIL_PATTERN.test(email) || email.length > 150) {
+        return res.status(400).json({ message: "Enter a valid email address." });
+      }
+      if (department.length > 150) {
+        return res.status(400).json({ message: "Keep the department to 150 characters." });
+      }
+      const policyError = passwordPolicyError(password);
+      if (policyError) {
+        return res.status(400).json({ message: `Starting password: ${policyError}` });
+      }
+      const taken = await pool.query(
+        `SELECT 1 FROM coordinators WHERE coordinator_id = $1 OR LOWER(email) = $2`,
+        [id, email]
+      );
+      if (taken.rows.length > 0) {
+        return res.status(409).json({ message: "A coordinator with that ID or email already exists." });
+      }
+      const result = await pool.query(
+        `INSERT INTO coordinators AS c
+           (coordinator_id, email, password, name, department, is_active, must_change_password)
+         VALUES ($1, $2, $3, $4, $5, TRUE, TRUE)
+         RETURNING ${COORDINATOR_COLUMNS}`,
+        [id, email, await hashPassword(password), name, department || null]
+      );
+      return res.status(201).json({
+        message: "Coordinator account created. They must set their own password at first sign-in.",
+        coordinator: result.rows[0],
+      });
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({ message: "A coordinator with that ID or email already exists." });
+      }
+      console.error("CREATE COORDINATOR ERROR:", error);
+      return res.status(500).json({ message: "Failed to create the coordinator account." });
+    }
+  });
+
+  app.patch("/api/coordinator/coordinators/:id/status", requireCoordinator, async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const target = String(req.params.id);
+      if (typeof req.body?.is_active !== "boolean") {
+        return res.status(400).json({ message: "Say whether the account is active." });
+      }
+      const active: boolean = req.body.is_active;
+      if (!active && target === auth.id) {
+        return res.status(409).json({
+          message: "You cannot deactivate your own account. Ask another coordinator to do it.",
+        });
+      }
+
+      await client.query("BEGIN");
+      // Every active row is locked, so two coordinators deactivating each
+      // other at the same moment cannot leave nobody.
+      const actives = await client.query<{ coordinator_id: string }>(
+        `SELECT coordinator_id FROM coordinators WHERE is_active = TRUE FOR UPDATE`
+      );
+      if (!active && actives.rows.length === 1 && actives.rows[0].coordinator_id === target) {
+        await client.query("ROLLBACK");
+        return res.status(409).json({
+          message: "This is the only active coordinator account. Add or reactivate another before deactivating it.",
+        });
+      }
+      // Deactivating also ends the account's sessions.
+      const result = await client.query(
+        `UPDATE coordinators c
+         SET is_active = $2,
+             auth_version = CASE WHEN $2 THEN c.auth_version ELSE c.auth_version + 1 END
+         WHERE c.coordinator_id = $1
+         RETURNING ${COORDINATOR_COLUMNS}`,
+        [target, active]
+      );
+      if (result.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ message: "Coordinator account not found." });
+      }
+      await client.query("COMMIT");
+      if (!active) closeNotificationStreams({ role: "coordinator", id: target });
+      return res.json({
+        message: active ? "Coordinator account reactivated." : "Coordinator account deactivated.",
+        coordinator: result.rows[0],
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      console.error("COORDINATOR STATUS ERROR:", error);
+      return res.status(500).json({ message: "Failed to update the coordinator account." });
+    } finally {
+      client.release();
+    }
+  });
 }

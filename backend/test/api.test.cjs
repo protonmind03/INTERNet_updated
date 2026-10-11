@@ -4232,3 +4232,100 @@ test("supervisors are imported from a file like students, each with a password t
     await pool.end();
   }
 });
+
+/*
+| Coordinator accounts
+*/
+
+test("coordinator accounts are managed only by coordinators, with the same password rules", async () => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/coordinators";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+  const list = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(list.response.status, 200);
+  assert.equal(list.body.coordinators.filter((row) => row.is_self).length, 1);
+  for (const row of list.body.coordinators) {
+    assert.deepEqual(Object.keys(row).sort(), ["coordinator_id", "created_at", "department", "email", "is_active", "is_self", "name"]);
+  }
+
+  const good = { coordinator_id: "COORD-TEST", name: "Second Coordinator", email: "second@example.com", password: "StartingPass123!" };
+  const post = (body, token = coordinatorToken) => jsonRequest(path, jsonBody(token, "POST", body));
+  assert.equal((await post(good, supervisor.token)).response.status, 403);
+  for (const bad of [{}, { ...good, coordinator_id: "x" }, { ...good, coordinator_id: "has space" }, { ...good, name: "" },
+    { ...good, email: "nope" }, { ...good, password: "short" }, { ...good, password: undefined }, { ...good, department: "x".repeat(151) }]) {
+    assert.equal((await post(bad)).response.status, 400, JSON.stringify(bad).slice(0, 70));
+  }
+  // An ID or email already in use.
+  assert.equal((await post({ ...good, coordinator_id: coordinator.coordinator_id })).response.status, 409);
+  assert.equal((await post({ ...good, email: coordinatorEmail.toUpperCase() })).response.status, 409);
+
+  // Not yourself, by either route.
+  const me = encodeURIComponent(coordinator.coordinator_id);
+  const off = await jsonRequest(`${path}/${me}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: false }));
+  assert.equal(off.response.status, 409);
+  assert.match(off.body.message, /your own account/);
+  const reset = await jsonRequest(`/api/coordinator/coordinators/${me}/reset-password`, jsonBody(coordinatorToken, "POST", { password: "AnotherPass123!" }));
+  assert.equal(reset.response.status, 409);
+  assert.equal((await jsonRequest(`${path}/${me}/status`, jsonBody(coordinatorToken, "PATCH", {}))).response.status, 400);
+  assert.equal((await jsonRequest(`${path}/NOBODY-HERE/status`, jsonBody(coordinatorToken, "PATCH", { is_active: true }))).response.status, 404);
+  // Still signed in after all of that.
+  assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+});
+
+test("a second coordinator is created, must change their password, and can be deactivated by another but not by themselves", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const id = `COORD-${stamp}`;
+  const email = `coord.${stamp}@example.com`;
+  const path = "/api/coordinator/coordinators";
+  try {
+    const made = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { coordinator_id: id, name: "Second Coordinator", email, department: "CCS", password: "StartingPass123!" }));
+    assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    assert.equal(made.body.coordinator.is_active, true);
+    assert.equal("password" in made.body.coordinator, false);
+    assert.equal((await pool.query(`SELECT must_change_password FROM coordinators WHERE coordinator_id = $1`, [id])).rows[0].must_change_password, true);
+
+    // They can sign in and use the coordinator's routes.
+    const second = await login("coordinator", email, "StartingPass123!");
+    assert.equal((await jsonRequest(path, { headers: authHeaders(second.token) })).response.status, 200);
+
+    // A temporary password from another coordinator ends their sessions.
+    const reset = await jsonRequest(`${path}/${id}/reset-password`, jsonBody(coordinatorToken, "POST", { password: "TemporaryPass456!" }));
+    assert.equal(reset.response.status, 200, JSON.stringify(reset.body));
+    assert.equal((await jsonRequest(path, { headers: authHeaders(second.token) })).response.status, 401);
+    const again = await login("coordinator", email, "TemporaryPass456!");
+
+    // Deactivated: signed out at once, and cannot sign in.
+    const off = await jsonRequest(`${path}/${id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: false }));
+    assert.equal(off.response.status, 200);
+    assert.equal(off.body.coordinator.is_active, false);
+    assert.equal((await jsonRequest(path, { headers: authHeaders(again.token) })).response.status, 401);
+    const refused = await jsonRequest("/api/login/coordinator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "TemporaryPass456!" }) });
+    assert.notEqual(refused.response.status, 200);
+
+    // Reactivated: they can sign in again, and they too cannot deactivate
+    // themselves. (Since nobody can deactivate their own account and only
+    // an active coordinator can deactivate another, one always remains.)
+    assert.equal((await jsonRequest(`${path}/${id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: true }))).response.status, 200);
+    const back = await login("coordinator", email, "TemporaryPass456!");
+    const self = await jsonRequest(`${path}/${id}/status`, jsonBody(back.token, "PATCH", { is_active: false }));
+    assert.equal(self.response.status, 409);
+    assert.equal((await pool.query(`SELECT is_active FROM coordinators WHERE coordinator_id = $1`, [id])).rows[0].is_active, true);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=account&limit=30", { headers: authHeaders(coordinatorToken) });
+    const actions = audit.body.entries.filter((entry) => entry.entity_id === id).map((entry) => entry.action);
+    for (const action of ["account.create", "account.password_reset", "account.deactivate", "account.activate"]) assert.ok(actions.includes(action), action);
+    assert.ok(audit.body.entries.filter((entry) => entry.entity_id === id).every((entry) => entry.entity_type === "coordinator"));
+  } finally {
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [id]);
+    await pool.end();
+  }
+});

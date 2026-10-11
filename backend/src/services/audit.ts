@@ -232,6 +232,22 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("supervisorId"),
     keep: ["to"],
   },
+  // Coordinator accounts
+  {
+    method: "POST",
+    path: "/api/coordinator/coordinators",
+    action: "account.create",
+    entityType: "coordinator",
+    entityId: (source) => source.body.coordinator_id,
+    keep: ["name", "department"],
+  },
+  {
+    method: "PATCH",
+    path: "/api/coordinator/coordinators/:id/status",
+    action: (source) => (source.body.is_active ? "account.activate" : "account.deactivate"),
+    entityType: "coordinator",
+    entityId: param("id"),
+  },
   // Companies
   {
     method: "POST",

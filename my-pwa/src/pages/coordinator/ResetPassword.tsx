@@ -23,14 +23,14 @@ function suggestPassword(): string {
 /**
  * Lets the coordinator set a temporary password for someone who is locked
  * out and cannot use the emailed reset link. Shown inside the edit dialog
- * of a student or supervisor.
+ * of a student or supervisor, and for another coordinator's account.
  */
 export default function ResetPassword({
   kind,
   accountId,
   name,
 }: {
-  kind: "students" | "supervisors";
+  kind: "students" | "supervisors" | "coordinators";
   accountId: string;
   name: string;
 }) {
