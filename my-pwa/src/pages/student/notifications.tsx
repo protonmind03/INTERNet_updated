@@ -30,7 +30,7 @@ function fromWording(item: NotificationItem): NotificationTarget {
   if (KINDS[item.type]) return KINDS[item.type];
   // Most notifications are stored with a generic type; infer from the title.
   const title = item.title.toLowerCase();
-  if (title.includes("complaint")) return { icon: "flag", path: "/student/resolution?tab=concerns" };
+  if (title.includes("complaint") || title.includes("concern")) return { icon: "flag", path: "/student/resolution?tab=concerns" };
   if (title.includes("supervisor assigned") || title.includes("schedule")) {
     return { icon: "calendar", path: "/schedule" };
   }

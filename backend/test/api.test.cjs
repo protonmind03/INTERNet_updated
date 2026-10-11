@@ -2276,6 +2276,9 @@ test("every kind of notification is given a page inside the app", () => {
     ["student", "info", "Supervisor assigned", "/schedule"],
     ["student", "success", "Complaint resolved", "/report"],
     ["student", "info", "Reply on your complaint", "/report"],
+    // The same notifications in the wording used since Round 2: "concern".
+    ["student", "success", "Concern resolved", "/report"],
+    ["student", "info", "Reply on your concern", "/report"],
     ["student", "info", "Welcome to INTERNet", "/student/dashboard"],
     ["student", "info", "Required hours changed", "/student/dashboard"],
     ["student", "announcement", "Announcement: Orientation", "/announcements"],
@@ -2290,9 +2293,12 @@ test("every kind of notification is given a page inside the app", () => {
     ["supervisor", "schedule", "Intern schedule updated", "/supervisor/interns"],
     ["supervisor", "document", "New document required", "/supervisor/documents"],
     ["supervisor", "info", "Complaint resolved", "/supervisor/complaints"],
+    ["supervisor", "info", "Concern resolved", "/supervisor/complaints"],
     ["supervisor", "announcement", "Announcement: Orientation", "/supervisor/announcements"],
     ["coordinator", "warning", "New complaint filed", "/coordinator/complaints"],
     ["coordinator", "warning", "Reply on a complaint", "/coordinator/complaints"],
+    ["coordinator", "warning", "New concern filed", "/coordinator/complaints"],
+    ["coordinator", "warning", "Reply on a concern", "/coordinator/complaints"],
     ["coordinator", "attendance", "Attendance log rejected", "/coordinator/monitoring"],
     ["coordinator", "evaluation", "New company feedback", "/coordinator/evaluations"],
     ["coordinator", "info", "Something new", "/coordinator/notifications"],
@@ -4725,6 +4731,7 @@ test("a notification's link names the record when its page can show that record"
   assert.equal(link("supervisor", "document", "Document submitted for review", { type: "document", id: 3 }), "/supervisor/dashboard?focus=document-3");
   assert.equal(link("supervisor", "info", "Weekly journal submitted", { type: "journal", id: 9 }), "/supervisor/dashboard?focus=journal-9");
   assert.equal(link("coordinator", "warning", "New complaint filed", { type: "complaint", id: 12 }), "/coordinator/complaints?focus=complaint-12");
+  assert.equal(link("coordinator", "warning", "New concern filed", { type: "complaint", id: 12 }), "/coordinator/complaints?focus=complaint-12");
 
   // No record named: the page alone, as before.
   assert.equal(link("student", "attendance", "Attendance verified"), "/daily-log");

@@ -11,9 +11,16 @@
 | This is the one place that rule lives. The portals keep a copy of the
 | title rule only for notifications written before links were stored.
 |
+| What a student or supervisor reports is called a "concern" on screen.
+| Notifications written before that say "complaint" and keep that title,
+| so the title rule matches both words.
+|
 */
 
 export type NotificationRole = "student" | "supervisor" | "coordinator";
+
+/** True for a title about a concern, in today's wording or the older one. */
+const aboutConcern = (title: string) => title.includes("concern") || title.includes("complaint");
 
 /** The record a notification is about. */
 export type NotificationEntity = { type: string; id: string | number };
@@ -33,7 +40,7 @@ function studentLink(type: string, title: string): string {
   if (type === "document") return "/documents";
   if (type === "evaluation") return "/student/feedback";
   if (type === "schedule") return "/schedule";
-  if (title.includes("complaint")) return "/report";
+  if (aboutConcern(title)) return "/report";
   if (title.includes("supervisor assigned") || title.includes("schedule")) return "/schedule";
   if (title.includes("welcome") || title.includes("required hours") || title.includes("account")) {
     return "/student/dashboard";
@@ -63,7 +70,7 @@ function supervisorLink(type: string, title: string): string {
   ) {
     return "/supervisor/dashboard";
   }
-  if (title.includes("complaint")) return "/supervisor/complaints";
+  if (aboutConcern(title)) return "/supervisor/complaints";
   if (type === "task" || title.includes("task")) return "/supervisor/tasks";
   if (type === "document" || title.includes("document")) return "/supervisor/documents";
   if (type === "attendance" || title.includes("attendance")) return "/supervisor/attendance";
@@ -71,7 +78,7 @@ function supervisorLink(type: string, title: string): string {
 }
 
 function coordinatorLink(type: string, title: string, entity?: NotificationEntity): string {
-  if (title.includes("complaint")) return "/coordinator/complaints";
+  if (aboutConcern(title)) return "/coordinator/complaints";
   if (title.includes("feedback") || title.includes("evaluation")) return "/coordinator/evaluations";
   // About one student: open that student's record.
   if (entity?.type === "student") {

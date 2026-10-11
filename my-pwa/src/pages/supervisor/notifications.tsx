@@ -34,7 +34,7 @@ function fromWording(item: NotificationItem): NotificationTarget {
         : "clock";
     return { icon, path: "/supervisor/dashboard" };
   }
-  if (title.includes("complaint")) return { icon: "flag", path: "/supervisor/complaints" };
+  if (title.includes("complaint") || title.includes("concern")) return { icon: "flag", path: "/supervisor/complaints" };
   if (title.includes("task") || title.includes("deadline")) {
     return { icon: "tasks", path: "/supervisor/tasks" };
   }

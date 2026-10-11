@@ -51,7 +51,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
       { label: "Requirements", path: "/coordinator/requirements", icon: "clipboard" },
       { label: "Documents", path: "/coordinator/documents", icon: "document" },
       { label: "Evaluations", path: "/coordinator/evaluations", icon: "star" },
-      { label: "Complaints", path: "/coordinator/complaints", icon: "flag" },
+      { label: "Concerns", path: "/coordinator/complaints", icon: "flag" },
       { label: "Announcements", path: "/coordinator/announcements", icon: "megaphone" },
     ],
   },
@@ -410,10 +410,10 @@ function GlobalSearch() {
             }
           }}
           role="combobox"
-          aria-label="Search students, supervisors and complaints"
+          aria-label="Search students, supervisors and concerns"
           aria-expanded={showPanel}
           aria-controls="coordinator-search-results"
-          placeholder="Search students, supervisors, complaints"
+          placeholder="Search students, supervisors, concerns"
           className="h-full w-full min-w-0 bg-transparent text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
         />
         <kbd className="hidden shrink-0 rounded border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-xs font-medium text-slate-500 md:block">

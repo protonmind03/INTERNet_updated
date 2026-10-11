@@ -336,7 +336,7 @@ function EvaluateDialog({
       open={open}
       onClose={close}
       title={editing ? "Edit evaluation" : "Evaluate a student"}
-      description="The student sees this evaluation on their Feedback page."
+      description="The student sees this evaluation in their Resolution Center, under Evaluations."
       locked={saving}
       footer={
         <>

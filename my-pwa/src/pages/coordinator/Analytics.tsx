@@ -193,7 +193,7 @@ function reportSections(report: AnalyticsData): ReportSection[] {
         "Verified hours",
         "Student rating (1-5)",
         "Ratings",
-        "Complaints",
+        "Concerns",
       ],
       rows: report.companies.map((company) => [
         company.company || "No company set",
@@ -206,8 +206,8 @@ function reportSections(report: AnalyticsData): ReportSection[] {
       ]),
     },
     {
-      title: "Complaints by category",
-      head: ["Category", "Complaints", "Still open"],
+      title: "Concerns by category",
+      head: ["Category", "Concerns", "Still open"],
       rows: report.complaintsByCategory.map((complaint) => [
         complaint.category,
         complaint.count,
@@ -603,13 +603,13 @@ export default function CoordinatorAnalytics() {
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
                 <Card className="min-w-0">
                   <CardHeader
-                    title="Complaints by category"
+                    title="Concerns by category"
                     description={(() => {
                       const total = data.complaintsByCategory.reduce((sum, row) => sum + row.count, 0);
                       const open = data.complaintsByCategory.reduce((sum, row) => sum + row.open, 0);
                       return total === 0
                         ? undefined
-                        : `${plural(total, "complaint")} filed · ${open} still open`;
+                        : `${plural(total, "concern")} reported · ${open} still open`;
                     })()}
                     action={
                       <Link
@@ -622,7 +622,7 @@ export default function CoordinatorAnalytics() {
                     }
                   />
                   {data.complaintsByCategory.length === 0 ? (
-                    <EmptyState icon="flag" title="No complaints have been filed" />
+                    <EmptyState icon="flag" title="No concerns have been reported" />
                   ) : (
                     <div className="px-4 pb-5 pt-4 sm:px-5">
                       <BarList
@@ -785,7 +785,7 @@ function CompanyTable({ companies }: { companies: AnalyticsData["companies"] }) 
               <th scope="col" className="w-56 px-3 py-3 font-medium">Average progress</th>
               <th scope="col" className="px-3 py-3 text-right font-medium">Verified hours</th>
               <th scope="col" className="px-3 py-3 font-medium">Student rating</th>
-              <th scope="col" className="px-5 py-3 text-right font-medium">Complaints</th>
+              <th scope="col" className="px-5 py-3 text-right font-medium">Concerns</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

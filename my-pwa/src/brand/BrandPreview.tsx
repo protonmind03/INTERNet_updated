@@ -11,10 +11,10 @@ const CONTEXT: Record<Role, string> = {
 const STATUS: Record<Role, string> = {
   student: "Timed in 8:02 AM",
   supervisor: "3 time-ins to verify",
-  coordinator: "4 open complaints",
+  coordinator: "4 open concerns",
 };
 const NAV: Record<Role, string[]> = {
-  student: ["Today", "Attendance", "Tasks", "Documents", "Schedule", "Feedback"],
+  student: ["Today", "Attendance", "Tasks", "Documents", "Schedule", "Weekly journal"],
   supervisor: ["Dashboard", "Attendance", "My Interns", "Tasks", "Documents", "Evaluation"],
   coordinator: ["Dashboard", "Students", "Supervisors", "Monitoring", "Requirements", "Analytics"],
 };

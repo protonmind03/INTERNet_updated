@@ -4586,7 +4586,7 @@ app.post(
       if (!category) {
         return res.status(400).json({
           message:
-            "Complaint category is required.",
+            "A category is required for the concern.",
         });
       }
 
@@ -4596,7 +4596,7 @@ app.post(
       ) {
         return res.status(400).json({
           message:
-            "Complaint description is required.",
+            "A description is required for the concern.",
         });
       }
       if (!auth || auth.role !== "student") {
@@ -4710,8 +4710,8 @@ app.post(
         coordinators.rows.map((coordinator) =>
           createNotification({
             coordinatorId: String(coordinator.coordinator_id),
-            title: "New complaint filed",
-            message: `A student filed a ${category.trim()} complaint for coordinator review.`,
+            title: "New concern filed",
+            message: `A student reported a ${category.trim()} concern for coordinator review.`,
             type: "warning",
           })
         )
@@ -4719,7 +4719,7 @@ app.post(
 
       return res.status(201).json({
         message:
-          "Complaint submitted successfully.",
+          "Concern sent.",
 
         complaint:
           result.rows[0],
@@ -4737,7 +4737,7 @@ app.post(
 
       return res.status(500).json({
         message:
-          "Failed to submit complaint.",
+          "Failed to send the concern.",
         error:
           error instanceof Error
             ? error.message
@@ -4765,7 +4765,7 @@ app.get(
 
       if (!auth || auth.id !== studentId) {
         return res.status(403).json({
-          message: "You can only view your own complaints.",
+          message: "You can only view your own concerns.",
         });
       }
 
@@ -4815,7 +4815,7 @@ app.get(
 
       return res.status(500).json({
         message:
-          "Failed to get complaints.",
+          "Failed to load concerns.",
         error:
           error instanceof Error
             ? error.message
@@ -5945,7 +5945,7 @@ app.get(
         ...complaints.rows.map((row) => ({
           type: "complaint",
           id: String(row.id),
-          title: row.category || "Complaint",
+          title: row.category || "Concern",
           detail: `${row.status} · ${row.reported_student_name || row.company_name || row.description}`,
           href: `/coordinator/complaints${destination}`,
         })),
@@ -6571,7 +6571,7 @@ app.get(
     } catch (error) {
       console.error("COORDINATOR COMPLAINTS ERROR:", error);
       return res.status(500).json({
-        message: "Failed to load complaints.",
+        message: "Failed to load concerns.",
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -6635,7 +6635,7 @@ app.patch(
       );
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ message: "Complaint not found." });
+        return res.status(404).json({ message: "Concern not found." });
       }
 
       const complaint = result.rows[0];
@@ -6643,8 +6643,8 @@ app.patch(
       if (complaint.student_id) {
         await createNotification({
           studentId: complaint.student_id,
-          title: `Complaint ${status.toLowerCase()}`,
-          message: `Your filed complaint (${complaint.category}) is now ${status.toLowerCase()}.`,
+          title: `Concern ${status.toLowerCase()}`,
+          message: `Your concern (${complaint.category}) is now ${status.toLowerCase()}.`,
           type: status === "Resolved" ? "success" : "info",
         });
       }
@@ -6652,20 +6652,20 @@ app.patch(
       if (complaint.filed_by_supervisor_id) {
         await createNotification({
           supervisorId: complaint.filed_by_supervisor_id,
-          title: `Complaint ${status.toLowerCase()}`,
-          message: `Your filed complaint (${complaint.category}) is now ${status.toLowerCase()}.`,
+          title: `Concern ${status.toLowerCase()}`,
+          message: `Your concern (${complaint.category}) is now ${status.toLowerCase()}.`,
           type: status === "Resolved" ? "success" : "info",
         });
       }
 
       return res.json({
-        message: "Complaint updated.",
+        message: "Concern updated.",
         complaint,
       });
     } catch (error) {
       console.error("RESOLVE COMPLAINT ERROR:", error);
       return res.status(500).json({
-        message: "Failed to update complaint.",
+        message: "Failed to update the concern.",
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -8169,7 +8169,7 @@ app.post(
       );
       if (intern.rows.length === 0) {
         return res.status(403).json({
-          message: "You can only report an incident about one of your own interns.",
+          message: "You can only report a concern about one of your own interns.",
         });
       }
       reportedStudentId = intern.rows[0].student_id;
@@ -8208,15 +8208,15 @@ app.post(
       coordinators.rows.map((coordinator) =>
         createNotification({
           coordinatorId: String(coordinator.coordinator_id),
-          title: "New complaint filed",
-          message: `A supervisor filed a ${String(category).trim()} complaint for coordinator review.`,
+          title: "New concern filed",
+          message: `A supervisor reported a ${String(category).trim()} concern for coordinator review.`,
           type: "warning",
         })
       )
     );
 
     return res.status(201).json({
-      message: "Complaint filed.",
+      message: "Concern sent.",
       complaint: result.rows[0],
     });
   } catch (error) {
@@ -8227,7 +8227,7 @@ app.post(
     }
     console.error("FILE SUPERVISOR COMPLAINT ERROR:", error);
     return res.status(500).json({
-      message: "Failed to file complaint.",
+      message: "Failed to send the concern.",
       error: error instanceof Error ? error.message : String(error),
     });
   }
@@ -8243,7 +8243,7 @@ app.get(
     const { supervisorId } = req.params;
     if (!auth || auth.id !== supervisorId) {
       return res.status(403).json({
-        message: "You can only view your own complaints.",
+        message: "You can only view your own concerns.",
       });
     }
 
@@ -8260,7 +8260,7 @@ app.get(
   } catch (error) {
     console.error("GET SUPERVISOR COMPLAINTS ERROR:", error);
     return res.status(500).json({
-      message: "Failed to load complaints.",
+      message: "Failed to load concerns.",
       error: error instanceof Error ? error.message : String(error),
     });
   }

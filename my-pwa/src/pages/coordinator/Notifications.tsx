@@ -11,7 +11,7 @@ export default function CoordinatorNotifications() {
   return (
     <CoordinatorLayout
       title="Notifications"
-      subtitle="Complaints, flagged attendance and feedback that need your attention."
+      subtitle="Concerns, flagged attendance and company ratings that need your attention."
       actions={
         unreadCount > 0 ? (
           <Button variant="secondary" icon="check" onClick={() => void markAllRead()}>
@@ -27,7 +27,7 @@ export default function CoordinatorNotifications() {
         error={error}
         onRead={(id) => void markRead(id)}
         resolve={coordinatorNotificationTarget}
-        emptyDescription="You will be told here when a complaint is filed, an attendance log is flagged or feedback comes in."
+        emptyDescription="You will be told here when a concern is reported, an attendance log is flagged or a student rates their company."
       />
     </CoordinatorLayout>
   );

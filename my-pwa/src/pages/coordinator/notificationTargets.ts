@@ -17,7 +17,7 @@ export function coordinatorNotificationTarget(item: NotificationItem): Notificat
 function fromWording(item: NotificationItem): NotificationTarget {
   if (item.type === "announcement") return { icon: "megaphone", path: "" };
   const title = item.title.toLowerCase();
-  if (title.includes("complaint")) return { icon: "flag", path: "/coordinator/complaints" };
+  if (title.includes("complaint") || title.includes("concern")) return { icon: "flag", path: "/coordinator/complaints" };
   if (title.includes("attendance")) return { icon: "activity", path: "/coordinator/monitoring" };
   if (title.includes("feedback") || title.includes("evaluation")) {
     return { icon: "star", path: "/coordinator/evaluations" };

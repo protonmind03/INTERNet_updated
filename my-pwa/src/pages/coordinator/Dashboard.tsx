@@ -158,7 +158,7 @@ export default function CoordinatorDashboard() {
         {
           key: "complaints",
           count: data.pendingComplaints,
-          title: data.pendingComplaints === 1 ? "complaint to review" : "complaints to review",
+          title: data.pendingComplaints === 1 ? "concern to review" : "concerns to review",
           detail: "Filed by students or supervisors and not yet looked at.",
           to: "/coordinator/complaints",
           icon: "flag",
@@ -279,7 +279,7 @@ export default function CoordinatorDashboard() {
                 <EmptyState
                   icon="check-circle"
                   title="Nothing needs attention"
-                  description="No open complaints, flagged logs or waiting reviews."
+                  description="No open concerns, flagged logs or waiting reviews."
                 />
               ) : (
                 <ul className="divide-y divide-slate-100 border-t border-slate-100">

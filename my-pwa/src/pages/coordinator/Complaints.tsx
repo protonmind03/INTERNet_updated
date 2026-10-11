@@ -98,7 +98,7 @@ export default function CoordinatorComplaints() {
       if (list.length === 0 && page > 1) setPage(page - 1);
       setError("");
     } catch (loadError) {
-      setError(errorText(loadError, "Could not load complaints."));
+      setError(errorText(loadError, "Could not load concerns."));
     } finally {
       setLoading(false);
     }
@@ -115,8 +115,8 @@ export default function CoordinatorComplaints() {
 
   return (
     <CoordinatorLayout
-      title="Complaints"
-      subtitle="Reports filed by students and supervisors. Record what was done about each one."
+      title="Concerns"
+      subtitle="Reported by students and supervisors. Record what was done about each one."
     >
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
@@ -125,7 +125,7 @@ export default function CoordinatorComplaints() {
           <SearchField
             value={search}
             onChange={fromFirstPage(setSearch)}
-            label="Search complaints"
+            label="Search concerns"
             placeholder="Search by person, company or wording"
             className="w-full sm:w-80"
           />
@@ -149,7 +149,7 @@ export default function CoordinatorComplaints() {
           ) : complaints.length === 0 ? (
             <EmptyState
               icon={filtered ? "search" : "check-circle"}
-              title={filtered ? "No complaints match" : "No complaints have been filed"}
+              title={filtered ? "No concerns match" : "No concerns have been reported"}
             />
           ) : (
             <>
@@ -234,12 +234,12 @@ function ComplaintDialog({
       });
       toast.success(
         status === "In Review"
-          ? "Marked as in review. The person who filed it has been notified."
-          : `Complaint ${status.toLowerCase()}. The person who filed it has been notified.`
+          ? "Marked as in review. The person who reported it has been notified."
+          : `Concern ${status.toLowerCase()}. The person who reported it has been notified.`
       );
       onSaved();
     } catch (saveError) {
-      setError(errorText(saveError, "The complaint could not be updated."));
+      setError(errorText(saveError, "The concern could not be updated."));
       setBusy(null);
     }
   };

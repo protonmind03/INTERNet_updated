@@ -107,13 +107,13 @@ export default function EvaluationsPanel() {
         })
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Your feedback could not be sent.");
-      toast.success("Thank you. Your feedback was sent to your coordinator.");
+      if (!response.ok) throw new Error(data.message || "Your rating could not be sent.");
+      toast.success("Thank you. Your rating was sent to your coordinator.");
       setRating(0);
       setComments("");
       await load();
     } catch (error) {
-      setFormError(errorText(error, "Your feedback could not be sent."));
+      setFormError(errorText(error, "Your rating could not be sent."));
     } finally {
       setSubmitting(false);
     }

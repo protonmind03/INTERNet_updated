@@ -2215,7 +2215,7 @@ export function registerExtensionRoutes(
         const auth = (req as AuthedRequest).auth!;
         const complaint = await complaintFor(String(req.params.id), auth);
         if (!complaint) {
-          return res.status(404).json({ message: "Complaint not found." });
+          return res.status(404).json({ message: "Concern not found." });
         }
         const result = await pool.query(
           `SELECT id, author_role, author_name, message, created_at
@@ -2243,7 +2243,7 @@ export function registerExtensionRoutes(
         }
         const complaint = await complaintFor(String(req.params.id), auth);
         if (!complaint) {
-          return res.status(404).json({ message: "Complaint not found." });
+          return res.status(404).json({ message: "Concern not found." });
         }
 
         const accounts = {
@@ -2272,15 +2272,15 @@ export function registerExtensionRoutes(
               studentId: complaint.student_id,
               supervisorId: complaint.student_id ? null : complaint.filed_by_supervisor_id,
               entity: { type: "complaint", id: complaint?.id },
-              title: "Reply on your complaint",
-              message: `The OJT coordinator replied about your ${complaint.category} report.`,
+              title: "Reply on your concern",
+              message: `The OJT coordinator replied about your ${complaint.category} concern.`,
               type: "info",
             });
           } else {
             await notifyCoordinators({
               entity: { type: "complaint", id: complaint?.id },
-              title: "Reply on a complaint",
-              message: `${author.rows[0]?.name || "The filer"} replied about a ${complaint.category} report.`,
+              title: "Reply on a concern",
+              message: `${author.rows[0]?.name || "The filer"} replied about a ${complaint.category} concern.`,
               type: "warning",
             });
           }
@@ -2782,8 +2782,8 @@ export function registerExtensionRoutes(
         done: row.own_feedback > 0,
         detail:
           row.own_feedback > 0
-            ? "You have given feedback about your company."
-            : "You have not given feedback about your company yet.",
+            ? "You have rated your company."
+            : "You have not rated your company yet.",
       },
     ];
     return {
