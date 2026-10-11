@@ -265,7 +265,7 @@ export default function OjtSchedule() {
                                 {formatClockTime(shift.end_time)}
                               </p>
                               {shift.focus && (
-                                <p className="truncate text-sm text-slate-500">
+                                <p className="truncate text-sm text-slate-600">
                                   {shift.focus}
                                 </p>
                               )}
