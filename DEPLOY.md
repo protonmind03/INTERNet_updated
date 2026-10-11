@@ -60,10 +60,10 @@ Optional, each can be added later:
   break, back-to-work or time-out recorded while a phone was offline may be
   when it arrives. Older ones are refused.
 - `SUPERVISOR_DIGEST_TIME` (default `07:30`, Philippine time): when the
-  supervisors' daily summary email goes out. Needs the SMTP settings.
+  supervisors' daily summary email goes out. Needs the email settings.
 - `COORDINATOR_DIGEST_DAY` (default `MON`) and `COORDINATOR_DIGEST_TIME`
   (default `07:30`): when the coordinators' weekly summary of alerts goes
-  out. Needs the SMTP settings.
+  out. Needs the email settings.
 - `PRIVACY_CONSENT_REQUIRED` (off unless `true`): the server refuses a
   time-in from a student who has not agreed to the current privacy notice.
   The app asks either way. See "Privacy notice and photo retention" below
@@ -76,14 +76,57 @@ Optional, each can be added later:
 - `LOGIN_IP_MAX_FAILURES` (default 100): wrong passwords allowed from one
   network address, across all accounts, per 15 minutes. Keep it high if
   many users share one campus connection.
-- Email (password recovery, deadline reminder emails): `SMTP_HOST`,
-  `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Without all five,
-  "Forgot password" reports that email is not configured.
+- Email (password recovery, deadline reminders, the summary emails), by
+  one of two routes; see "Email" below. On Railway use the first.
+  - Through a provider's HTTPS API: `EMAIL_PROVIDER` (`resend`),
+    `EMAIL_API_KEY` (a secret) and `SMTP_FROM` (the sender).
+  - Through SMTP: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`,
+    `SMTP_FROM`.
+  With neither, "Forgot password" reports that email is not configured.
 - Browser push notifications: `WEB_PUSH_VAPID_PUBLIC_KEY`,
   `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_SUBJECT`. Generate the key pair
   with `npx web-push generate-vapid-keys`. Set all three or none.
 - Azure Blob Storage instead of the volume:
   `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER`.
+
+### Email
+
+Railway closes the SMTP ports (25, 465, 587, 2525) to outbound traffic on
+the Hobby plan and below, so the SMTP route cannot send from the hosted
+backend there. The server therefore also sends through an email
+provider's HTTPS API, which works on every plan. Resend is the provider
+built in.
+
+What it needs, in this order:
+
+1. **A domain you own.** A provider only sends from a domain whose DNS you
+   can edit. `internet-psu.vercel.app` is Vercel's, so it cannot be used.
+   Without a domain of your own, a provider's test mode will only deliver
+   to the address you signed up with, which is enough to try it and not
+   enough for students.
+2. **The domain verified with the provider.** In Resend: Domains > Add
+   Domain. It shows the exact DNS records to add at your DNS host; copy
+   them from there, do not type them from memory. They are:
+   - **DKIM**: a TXT record the provider generates (a long key).
+   - **SPF**: a TXT record on the sending subdomain that names the provider
+     as allowed to send, with the MX record that goes with it.
+   - **DMARC**: one TXT record at `_dmarc.<your domain>`. To start:
+     `v=DMARC1; p=none;` (report only). Tighten it later.
+   Wait until the provider shows the domain as verified.
+3. **An API key** from the provider, with permission to send only.
+4. **Three variables on the backend service**: `EMAIL_PROVIDER` = `resend`,
+   `EMAIL_API_KEY` = the key (keep it hidden; never paste it into a chat or
+   a screenshot), and `SMTP_FROM` = the sender, on the verified domain, for
+   example `INTERNet <no-reply@your-domain>`.
+5. **`FRONTEND_URL`** must already be the site's address: the reset link in
+   the email is built from it.
+6. Redeploy, then test: on the sign-in page choose "Forgot password", ask
+   for a reset to an address you can read, and open the link in the email.
+   If nothing arrives, the backend's Deploy Logs have a line starting
+   `SEND PASSWORD RESET EMAIL ERROR` with the provider's reason. The log
+   never contains the key or the address it was sent to.
+
+If both this and the five `SMTP_*` are set, the provider's API is used.
 
 ## 3. Vercel: frontend
 
@@ -231,18 +274,30 @@ can then reach the database from anywhere.
 
 ### Uploaded files (run by you)
 
-Not yet tried against the hosted volume; the commands are from Railway's
-CLI reference. Do it once while nothing depends on it.
+**Not yet tried against the hosted volume.** The packing script has been
+run on a local folder only, and the download command is from Railway's CLI
+reference. Do it once while nothing depends on it, and tell me what each
+step printed.
 
 1. Open a shell in the backend service (`railway ssh`, or right-click the
-   service in the dashboard > Copy SSH Command) and pack the folder:
-   `tar czf /data/uploads-backup.tgz -C /data private-uploads`
-2. Back on your machine, download that one file from the volume:
-   `railway volume files download /uploads-backup.tgz ./uploads-backup.tgz`
+   service in the dashboard > Copy SSH Command) and pack the uploads:
+   `npm run uploads:backup`
+   It only reads the uploads. It prints how many files there are, and the
+   name and size of one archive written beside the uploads folder, for
+   example `/data/internet-uploads-20261012-093000.tgz`.
+2. Back on your machine, download that one file from the volume, using the
+   name the script printed:
+   `railway volume files download /internet-uploads-20261012-093000.tgz ./internet-uploads-20261012-093000.tgz`
    (`railway volume browse /` shows what is on the volume if the path is
    not found.)
-3. In the service shell again, remove the archive so it does not use up the
-   volume: `rm /data/uploads-backup.tgz`
+3. Check it opens: `tar -tzf internet-uploads-20261012-093000.tgz` lists the
+   files, and the count should match what step 1 printed (plus one line
+   for the folder itself).
+4. In the service shell again, remove the archive so it does not use up the
+   volume: `rm /data/internet-uploads-*.tgz`
+
+The archive holds photos of faces and submitted documents. Keep it
+somewhere other than your laptop, and never share it.
 
 ### Restore drill
 

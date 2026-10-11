@@ -354,9 +354,11 @@ are true of the system today, for a scope section:
   time-in but does not prove presence; the supervisor's review is still
   the control. A replacement photo sent with a corrected log, and the
   supervisor's in-person photo, are ordinary uploads.
-- Password recovery, reminder emails, and browser push need SMTP and VAPID
-  settings on the server; without them those features report that they
-  are not configured.
+- Password recovery, reminder emails, and browser push need email and
+  VAPID settings on the server; without them those features report that
+  they are not configured. Email is sent through an email provider's HTTPS
+  API (or SMTP), from a domain the programme owns; the system does not run
+  its own mail server.
 - Coordinator dashboard, monitoring, and analytics figures load on request
   and are not live.
 - On Monitoring, the coordinator's date range shows each student's hours
@@ -385,8 +387,12 @@ are true of the system today, for a scope section:
   days, agreements ending within 30 days, 5 scheduled days without
   attendance), worked out when the dashboard is opened.
 - Summary emails to supervisors and coordinators exist in the system but
-  are sent only when the server has SMTP settings, which the hosted
+  are sent only when the server has email settings, which the hosted
   system does not have at the time of writing.
+- A camera check is good for one time-in: the ticket the server issues
+  for it is refused if presented a second time. This closes replaying one
+  check; it does not change the limit already stated above, that the check
+  runs in the student's browser and the server trusts its report.
 - An announcement's "seen by" count is the number of people who have had
   it on their Announcements page. It does not show that anyone read it.
 - The schedule's calendar file is a copy made when it is saved; it does

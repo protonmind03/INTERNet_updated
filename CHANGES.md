@@ -1280,3 +1280,37 @@ form against a local database standing in for the tunnel.
 **Not checked:** the calendar file opened in a real phone calendar app;
 the enforced policy on the hosted site (it gets there on the next push);
 the tunnel form against the host.
+
+## 24. Round 2, Phase 0: operations (12 October 2026)
+
+On `ui-redesign`, on localhost. One additive migration (036).
+
+- **Email through an HTTPS API (0.1).** The server can now send email
+  through an email provider's HTTPS API as well as SMTP. With
+  `EMAIL_PROVIDER` and `EMAIL_API_KEY` set (sender: `SMTP_FROM`) the API is
+  used; otherwise SMTP if its five settings are there; otherwise email is
+  not configured and everything behaves as before. Resend is built in; a
+  second provider is one small entry. Password recovery, deadline
+  reminders and both summary emails all go through the same check and the
+  same sender. The key and the recipient never appear in a log or an error.
+- **Push keys (0.2).** No code. The steps are in the Round 2 platform list.
+- **Upload backup (0.3).** `npm run uploads:backup`, run on the server,
+  packs every uploaded file into one archive and prints the file count and
+  the archive's name and size.
+- **Foreign keys (0.4).** No code and nothing run. The platform list asks
+  for the read-only orphan report.
+- **Single-use camera check (0.5).** The ticket a camera check is issued
+  now has an id, and the first time-in that passes with it spends it. A
+  second time-in with the same ticket is refused (409). Migration 036
+  holds the spent ids; they are removed after a day.
+
+**What was checked:** 123 API tests (119 before). New: which route email
+takes for each combination of settings; the provider adapter against a
+stand-in for the network (success, four kinds of refusal, a timeout, a
+network failure, and that none of them leak the key or the address);
+password recovery still answering "unavailable" with no email settings;
+and a ticket used twice. The upload script on a local folder of 11 files.
+
+**Not checked:** a real email leaving the server (it needs a provider
+account, a key and a verified domain); the upload script on the host; the
+download of its archive from the volume.

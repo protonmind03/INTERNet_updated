@@ -241,6 +241,34 @@ Things to know:
 - The site's security header lists both backends, since one `vercel.json`
   serves both sites.
 
+## Round 2
+
+From here on work reaches the test site first ("push") and the live site
+second ("make it live"). Each step below says which Railway environment it
+is for: **staging** is the test site's backend, **production** the live
+one. A variable is set in each environment separately.
+
+### Phase 0: operations (built 2026-10-12, on localhost)
+
+One additive migration: 036 (`liveness_ticket_uses`). Old and new
+frontends both work on it: the time-in request is unchanged.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| Before "make it live" | Railway production (run by you) | A fresh database backup through the tunnel, as in `DEPLOY.md`. Tell me it is done. | The release has a migration. |
+| When you want email | Your DNS host | Add the DKIM, SPF (with its MX) and DMARC records your email provider shows for your sending domain, and wait until it says verified. `DEPLOY.md` > "Email" has the steps. **Needs a domain you own**; a `vercel.app` address cannot send. | Lets the provider send as your domain, and keeps the mail out of spam. |
+| When you want email | Railway → Variables (staging first, then production) | `EMAIL_PROVIDER` = `resend`; `EMAIL_API_KEY` = the provider's key (a secret: keep the value hidden); `SMTP_FROM` = the sender on the verified domain. Unset means no email, as today. | Email through the provider's HTTPS API. Railway closes the SMTP ports on Hobby, so the five `SMTP_*` cannot work there. |
+| After setting them | The site | "Forgot password" > ask for a reset to an inbox you can read > open the link. On staging first. | The real test that email leaves the server. |
+| When you want push | Any terminal | `npx web-push generate-vapid-keys` prints a public and a private key. | The key pair for browser push. |
+| When you want push | Railway → Variables (each environment its own pair) | `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` (a secret) and `WEB_PUSH_SUBJECT` = `mailto:` an address you read. Set all three or none. | Browser push notifications. Unset means push stays off. |
+| After setting them | A phone, on the site | Sign in, allow notifications when asked, then have another account cause one (a supervisor verifying a log). `DEPLOY.md` > "Phone checks" has the list. | The real test of push. |
+| Once, while nothing depends on it | Railway backend shell, then your machine (run by you) | The upload backup: `npm run uploads:backup` in `railway ssh`, download the one archive it names, check it, delete it from the server. `DEPLOY.md` > "Uploaded files". **Never tried on the host**: tell me what each step printed. | Photos and documents have no other backup. |
+| Once | Your machine, through the tunnel (run by you) | `railway connect Postgres --tunnel-only`, then in `backend`: `railway run --service Postgres npm run db:fk-orphans PORT`. It only reads. Send me the table it prints. Do not run `db:fk-validate` yet. | Shows whether any old rows point at records that no longer exist, before the foreign keys are validated. |
+| | Vercel | No setting changes. No new backend address, so `vercel.json` is unchanged. | |
+
+New variables this phase: `EMAIL_PROVIDER` and `EMAIL_API_KEY` (Railway,
+both optional; unset means today's behaviour).
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
@@ -253,6 +281,7 @@ All optional; unset means today's behaviour.
 | `PRIVACY_CONSENT_REQUIRED` | Railway | 4 | off: the app asks, the server does not insist |
 | `PHOTO_RETENTION_DAYS` | Railway | 4 | purge off |
 | `COORDINATOR_DIGEST_DAY`, `COORDINATOR_DIGEST_TIME` | Railway | 5 | `MON`, `07:30` |
+| `EMAIL_PROVIDER`, `EMAIL_API_KEY` | Railway | Round 2, 0 | email through SMTP if the five `SMTP_*` are set, otherwise no email |
 
 No new `VITE_*` variables are planned. If one is added, changing it on
 Vercel needs a redeploy, because it is read when the site is built.
