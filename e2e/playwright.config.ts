@@ -46,6 +46,11 @@ export default defineConfig({
     viewport: { width: 390, height: 844 },
     hasTouch: true,
     isMobile: true,
+    // The clock of the people who use it. The app takes "today" from the
+    // device, and the server keeps every date in Philippine time; a test
+    // machine on another clock (CI runs on UTC) would disagree with the
+    // server about the date for eight hours of every day.
+    timezoneId: process.env.E2E_TIMEZONE || "Asia/Manila",
     // CI downloads Chromium; locally the installed Chrome is used.
     channel: process.env.CI ? undefined : "chrome",
     permissions: ["camera"],
