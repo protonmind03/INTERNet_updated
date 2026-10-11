@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import DtrSheet from "../../components/DtrSheet";
+import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
@@ -29,6 +30,7 @@ import {
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
 import { useDtrCertifications } from "../../lib/useDtrCertifications";
+import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
 import { useHolidays } from "../../lib/useHolidays";
 import { usePagination } from "../../lib/usePagination";
 import { coordinatorRequest, downloadSubmittedDocument } from "./request";
@@ -172,6 +174,7 @@ export default function StudentRecord() {
   const [tab, setTab] = useState<Tab>("overview");
   const holidays = useHolidays("coordinator");
   const { certifications } = useDtrCertifications("coordinator", studentId || undefined);
+  const final = useFinalEvaluation("coordinator", studentId || undefined);
   const [rejecting, setRejecting] = useState<Pending | null>(null);
 
   const load = useCallback(async () => {
@@ -540,6 +543,15 @@ export default function StudentRecord() {
                     })}
                   </ul>
                 )}
+              </Card>
+            )}
+
+            {tab === "evaluations" && final.evaluation && (
+              <Card>
+                <CardHeader title="Final evaluation" />
+                <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+                  <FinalEvaluationView evaluation={final.evaluation} />
+                </div>
               </Card>
             )}
 

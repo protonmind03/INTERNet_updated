@@ -18,7 +18,9 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { EVALUATION_CATEGORIES } from "../../lib/evaluation";
 import { formatDate } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
+import { useEvaluationForm } from "../../lib/useFinalEvaluation";
 import { usePagination } from "../../lib/usePagination";
+import EvaluationFormEditor from "./EvaluationFormEditor";
 import { coordinatorRequest } from "./request";
 
 type EvaluatorType = "supervisor" | "student" | "teacher";
@@ -116,19 +118,43 @@ export default function CoordinatorEvaluations() {
     [rows, filter]
   );
   const pager = usePagination(visible, 15);
+  const evaluationForm = useEvaluationForm("coordinator");
+  const [editingForm, setEditingForm] = useState(false);
 
   return (
     <CoordinatorLayout
       title="Evaluations"
       subtitle="Ratings of students by supervisors and by you, and students' feedback on their companies."
       actions={
-        <Button icon="plus" onClick={() => setEvaluating(true)}>
-          Evaluate a student
-        </Button>
+        <>
+          <Button variant="secondary" icon="clipboard" onClick={() => setEditingForm(true)}>
+            Final evaluation form
+          </Button>
+          <Button icon="plus" onClick={() => setEvaluating(true)}>
+            Evaluate a student
+          </Button>
+        </>
       }
     >
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+
+        {evaluationForm.form?.is_sample && (
+          <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            Supervisors are filling in a <span className="font-semibold">sample</span> final
+            evaluation form. Open "Final evaluation form" to enter the university's own criteria.
+          </p>
+        )}
+        {editingForm && evaluationForm.loaded && (
+          <EvaluationFormEditor
+            form={evaluationForm.form}
+            onClose={() => setEditingForm(false)}
+            onSaved={() => {
+              setEditingForm(false);
+              void evaluationForm.reload();
+            }}
+          />
+        )}
 
         <FilterChips
           label="Filter evaluations"

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
 import {
   Button,
@@ -13,6 +14,7 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDate } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
 
 type Evaluation = {
   id: number;
@@ -30,6 +32,7 @@ const RATING_WORDS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
 export default function StudentFeedback() {
   const student = useAccount("student");
   const studentId = student?.student_id;
+  const final = useFinalEvaluation("student", studentId);
 
   const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -122,6 +125,18 @@ export default function StudentFeedback() {
     >
       <div className="space-y-5">
         {loadError && <ErrorNotice message={loadError} onRetry={() => void load()} />}
+
+        {final.evaluation && (
+          <Card>
+            <CardHeader
+              title="Final evaluation"
+              description="Your supervisor's evaluation at the end of your OJT"
+            />
+            <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
+              <FinalEvaluationView evaluation={final.evaluation} />
+            </div>
+          </Card>
+        )}
 
         <div className="grid gap-5 lg:grid-cols-5">
           <Card className="lg:col-span-3">

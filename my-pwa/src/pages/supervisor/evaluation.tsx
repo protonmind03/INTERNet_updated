@@ -16,6 +16,7 @@ import { EVALUATION_CATEGORIES } from "../../lib/evaluation";
 import { formatDate } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import FinalEvaluationCard from "./FinalEvaluationCard";
 import { useSupervisorWork } from "./useSupervisorWork";
 
 type Evaluation = {
@@ -410,6 +411,10 @@ export default function SupervisorEvaluation() {
             )}
           </div>
         </Card>
+      </div>
+
+      <div className="mt-5">
+        <FinalEvaluationCard intern={chosenIntern} />
       </div>
 
       <ConfirmDialog

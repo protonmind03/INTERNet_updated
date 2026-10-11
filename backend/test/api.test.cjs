@@ -3423,6 +3423,7 @@ test("a student whose checklist is complete asks for a review once, and the coor
       await pool.query(`DELETE FROM ${table} WHERE student_id = $1`, [sid]);
     }
     await pool.query(`DELETE FROM evaluations WHERE student_id = $1 OR evaluator_id = $1`, [sid]);
+    await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM notifications WHERE entity_type = 'student' AND entity_id = $1`, [sid]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
   };
@@ -3480,6 +3481,13 @@ test("a student whose checklist is complete asks for a review once, and the coor
       `INSERT INTO evaluations (student_id, evaluator_type, evaluator_id, evaluator_name, category, rating, comments)
        VALUES ($1, 'supervisor', 'SUP', 'A Supervisor', 'Overall', 5, 'Good work.'),
               ($1, 'student', $1, 'Complete Test', 'Company', 4, 'Learned a lot.')`,
+      [sid]
+    );
+    // An ordinary evaluation is not the final one.
+    assert.equal(done(await read()).evaluation, false);
+    await pool.query(
+      `INSERT INTO final_evaluations (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks)
+       VALUES ($1, 1, '{}'::jsonb, 'SUP', 'A Supervisor', '{}'::jsonb, 5, 'Good work throughout.')`,
       [sid]
     );
     state = await read();
@@ -3827,6 +3835,132 @@ test("a month is certified once, only when its logs are settled, and can be with
     assert.deepEqual(actions, ["dtr.certify", "dtr.withdraw", "dtr.certify"]);
   } finally {
     await clear();
+    await pool.end();
+  }
+});
+
+/*
+| Final evaluation
+*/
+
+test("the evaluation form is read by everyone signed in and changed only by the coordinator, with checks", async () => {
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest("/api/evaluation-form")).response.status, 401);
+  for (const token of [studentToken, supervisor.token, coordinatorToken]) {
+    const { response, body } = await jsonRequest("/api/evaluation-form", { headers: authHeaders(token) });
+    assert.equal(response.status, 200);
+    assert.ok(body.form, "there is a form to fill in");
+    assert.ok(body.form.criteria.length >= 2);
+    assert.equal(typeof body.form.is_sample, "boolean");
+    for (const criterion of body.form.criteria) assert.deepEqual(Object.keys(criterion).sort(), ["description", "key", "label"]);
+  }
+  const save = (body, token = coordinatorToken) => jsonRequest("/api/coordinator/evaluation-form", jsonBody(token, "PUT", body));
+  const good = { name: "Final evaluation", scale_max: 5, criteria: [{ label: "Quality of work", description: "" }, { label: "Conduct", description: "" }] };
+  assert.equal((await save(good, studentToken)).response.status, 403);
+  assert.equal((await save(good, supervisor.token)).response.status, 403);
+  for (const bad of [{}, { ...good, name: "x" }, { ...good, scale_max: 2 }, { ...good, scale_max: 11 }, { ...good, scale_max: 4.5 },
+    { ...good, criteria: [] }, { ...good, criteria: [{ label: "Only one" }] }, { ...good, criteria: "Quality" },
+    { ...good, criteria: [{ label: "Ok one" }, { label: "x" }] }, { ...good, criteria: [{ label: "Same" }, { label: "same" }] },
+    { ...good, criteria: [{ label: "Fine", description: "x".repeat(301) }, { label: "Other" }] },
+    { ...good, criteria: Array.from({ length: 21 }, (_, index) => ({ label: `Criterion ${index}` })) }]) {
+    assert.equal((await save(bad)).response.status, 400, JSON.stringify(bad).slice(0, 80));
+  }
+
+  // The final evaluation itself: who may read and write it.
+  const id = encodeURIComponent(student.student_id);
+  assert.equal((await jsonRequest(`/api/final-evaluations/${id}`)).response.status, 401);
+  for (const token of [studentToken, supervisor.token, coordinatorToken]) {
+    const read = await jsonRequest(`/api/final-evaluations/${id}`, { headers: authHeaders(token) });
+    assert.equal(read.response.status, 200);
+    assert.ok("evaluation" in read.body);
+  }
+  assert.equal((await jsonRequest("/api/final-evaluations/SOMEONE-ELSE", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/final-evaluations/SOMEONE-ELSE", { headers: authHeaders(supervisor.token) })).response.status, 403);
+  const put = (token, who = id) => jsonRequest(`/api/final-evaluations/${who}`, jsonBody(token, "PUT", { ratings: {}, remarks: "Good work throughout." }));
+  assert.equal((await put(studentToken)).response.status, 403);
+  assert.equal((await put(coordinatorToken)).response.status, 403);
+  assert.equal((await put(supervisor.token, "SOMEONE-ELSE")).response.status, 403);
+});
+
+test("a final evaluation rates every criterion once per student and keeps the form it was written on", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const pool = localTestPool();
+  const id = encodeURIComponent(student.student_id);
+  const formsBefore = (await pool.query(`SELECT id, is_active FROM evaluation_forms ORDER BY id`)).rows;
+  const kept = (await pool.query(`SELECT * FROM final_evaluations WHERE student_id = $1`, [student.student_id])).rows[0];
+  await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [student.student_id]);
+  try {
+    const form = (await jsonRequest("/api/evaluation-form", { headers: authHeaders(supervisor.token) })).body.form;
+    const all = (value) => Object.fromEntries(form.criteria.map((criterion) => [criterion.key, value]));
+    const put = (body) => jsonRequest(`/api/final-evaluations/${id}`, jsonBody(supervisor.token, "PUT", { form_id: form.id, ...body }));
+
+    // Every criterion, in range, whole numbers; remarks required.
+    const first = form.criteria[0].key;
+    for (const bad of [{ ratings: {}, remarks: "Good work throughout." }, { ratings: { ...all(4), [first]: 0 }, remarks: "Good work throughout." },
+      { ratings: { ...all(4), [first]: form.scale_max + 1 }, remarks: "Good work throughout." }, { ratings: { ...all(4), [first]: 3.5 }, remarks: "Good work throughout." },
+      { ratings: { ...all(4), [first]: "4" }, remarks: "Good work throughout." }, { ratings: all(4), remarks: "Good." }, { ratings: all(4) }]) {
+      assert.equal((await put(bad)).response.status, 400, JSON.stringify(bad).slice(0, 80));
+    }
+    // A form that is no longer the one in use.
+    assert.equal((await jsonRequest(`/api/final-evaluations/${id}`, jsonBody(supervisor.token, "PUT", { form_id: form.id + 9999, ratings: all(4), remarks: "Good work throughout." }))).response.status, 409);
+
+    const ratings = { ...all(4), [first]: 5 };
+    const sent = await put({ ratings, remarks: "  Reliable and quick to learn.  " });
+    assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+    const expected = Math.round(((4 * (form.criteria.length - 1) + 5) / form.criteria.length) * 100) / 100;
+    assert.equal(sent.body.evaluation.average, expected);
+    assert.equal(sent.body.evaluation.remarks, "Reliable and quick to learn.");
+    assert.deepEqual(sent.body.evaluation.form_snapshot.criteria, form.criteria);
+    assert.equal(sent.body.evaluation.supervisor_name, supervisor.supervisor.name);
+
+    // Sent again: the same one, changed. Still one per student.
+    const changed = await put({ ratings: all(3), remarks: "Reliable and quick to learn." });
+    assert.equal(changed.response.status, 200);
+    assert.equal(changed.body.evaluation.id, sent.body.evaluation.id);
+    assert.equal(changed.body.evaluation.average, 3);
+
+    // The student and the coordinator read the same thing; it is on the checklist and in the download.
+    for (const token of [studentToken, coordinatorToken]) {
+      const read = await jsonRequest(`/api/final-evaluations/${id}`, { headers: authHeaders(token) });
+      assert.equal(read.body.evaluation.average, 3);
+    }
+    const checklist = await jsonRequest(`/api/students/${id}/completion`, { headers: authHeaders(studentToken) });
+    assert.equal(checklist.body.items.find((item) => item.key === "evaluation").done, true);
+    const download = await jsonRequest(`/api/students/${id}/data-export`, { headers: authHeaders(studentToken) });
+    assert.equal(download.body.final_evaluation.remarks, "Reliable and quick to learn.");
+    const notes = await jsonRequest(`/api/notifications/student/${id}`, { headers: authHeaders(studentToken) });
+    assert.equal(notes.body.notifications.find((item) => item.title === "Final evaluation submitted")?.link, "/student/feedback");
+
+    // The coordinator changes the form: a new one is in use, no longer a sample; the evaluation keeps its own.
+    const saved = await jsonRequest("/api/coordinator/evaluation-form", jsonBody(coordinatorToken, "PUT", {
+      name: "Test form", scale_max: 4, criteria: [{ label: "  Punctuality ", description: "On time." }, { label: "Output" }],
+    }));
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.body.form.criteria, [{ key: "c1", label: "Punctuality", description: "On time." }, { key: "c2", label: "Output", description: "" }]);
+    assert.equal(saved.body.form.is_sample, false);
+    const now = (await jsonRequest("/api/evaluation-form", { headers: authHeaders(studentToken) })).body.form;
+    assert.equal(now.id, saved.body.form.id);
+    const still = await jsonRequest(`/api/final-evaluations/${id}`, { headers: authHeaders(studentToken) });
+    assert.deepEqual(still.body.evaluation.form_snapshot.criteria, form.criteria);
+    // The old form can no longer be submitted.
+    assert.equal((await put({ ratings: all(4), remarks: "Reliable and quick to learn." })).response.status, 409);
+  } finally {
+    // Put the forms and the student's evaluation back as they were.
+    await pool.query(`DELETE FROM evaluation_forms WHERE id <> ALL($1::int[])`, [formsBefore.map((row) => row.id)]);
+    for (const row of formsBefore) await pool.query(`UPDATE evaluation_forms SET is_active = $2 WHERE id = $1`, [row.id, row.is_active]);
+    await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [student.student_id]);
+    if (kept) {
+      await pool.query(
+        `INSERT INTO final_evaluations (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks, submitted_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+        [kept.student_id, kept.form_id, kept.form_snapshot, kept.supervisor_id, kept.supervisor_name, kept.ratings, kept.average, kept.remarks, kept.submitted_at, kept.updated_at]
+      );
+    }
+    await pool.query(`DELETE FROM notifications WHERE title LIKE 'Final evaluation %' AND (student_id = $1 OR entity_id = $1)`, [student.student_id]);
     await pool.end();
   }
 });

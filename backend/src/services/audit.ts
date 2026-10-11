@@ -288,6 +288,26 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     from: (source) => ({ reactivated: source.result.reactivated }),
   },
+  // Final evaluation
+  {
+    method: "PUT",
+    path: "/api/coordinator/evaluation-form",
+    action: "evaluation_form.save",
+    entityType: "evaluation_form",
+    entityId: (source) => nested(source.result.form, "id"),
+    keep: ["name", "scale_max"],
+    from: (source) => ({
+      criteria: Array.isArray(source.body.criteria) ? source.body.criteria.length : undefined,
+    }),
+  },
+  {
+    method: "PUT",
+    path: "/api/final-evaluations/:studentId",
+    action: "final_evaluation.submit",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ average: nested(source.result.evaluation, "average") }),
+  },
   // Time record certification
   {
     method: "POST",

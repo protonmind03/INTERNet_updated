@@ -2479,7 +2479,7 @@ export function registerExtensionRoutes(
   |   attendance  no log is still open or waiting for the supervisor
   |   documents   every active requirement has an approved file
   |   tasks       no task is unfinished or waiting for review
-  |   evaluation  the supervisor has evaluated the student
+  |   evaluation  the supervisor has submitted the final evaluation
   |   feedback    the student has given feedback about the company
   |
   | When all six are done the student may ask the coordinator, once, to
@@ -2524,8 +2524,8 @@ export function registerExtensionRoutes(
         (SELECT COUNT(*)::int FROM tasks t
           WHERE t.student_id = s.student_id
             AND t.status IN ('Pending', 'In Progress', 'Submitted')) AS open_tasks,
-        (SELECT COUNT(*)::int FROM evaluations e
-          WHERE e.student_id = s.student_id AND e.evaluator_type = 'supervisor') AS supervisor_evaluations,
+        (SELECT COUNT(*)::int FROM final_evaluations e
+          WHERE e.student_id = s.student_id) AS supervisor_evaluations,
         (SELECT COUNT(*)::int FROM evaluations e
           WHERE e.evaluator_type = 'student' AND e.evaluator_id = s.student_id) AS own_feedback
       FROM students s WHERE s.student_id = $1
@@ -2576,8 +2576,8 @@ export function registerExtensionRoutes(
         done: row.supervisor_evaluations > 0,
         detail:
           row.supervisor_evaluations > 0
-            ? "Your supervisor has evaluated you."
-            : "Your supervisor has not evaluated you yet.",
+            ? "Your supervisor has submitted your final evaluation."
+            : "Your supervisor has not submitted your final evaluation yet.",
       },
       {
         key: "feedback",
@@ -2750,7 +2750,7 @@ export function registerExtensionRoutes(
         return res.status(403).json({ message: "You can only download your own data." });
       }
       const mine = (sql: string) => pool.query(sql, [auth.id]).then((result) => result.rows);
-      const [profile, attendance, absences, tasks, documents, journals, evaluations, complaints,
+      const [profile, attendance, absences, tasks, documents, journals, finalEvaluation, certifications, evaluations, complaints,
         complaintMessages, schedule, notifications] = await Promise.all([
         mine(`SELECT * FROM students WHERE student_id = $1`),
         mine(`SELECT * FROM attendance WHERE student_id = $1 ORDER BY date, id`),
@@ -2758,6 +2758,8 @@ export function registerExtensionRoutes(
         mine(`SELECT * FROM tasks WHERE student_id = $1 ORDER BY created_at, id`),
         mine(`SELECT * FROM documents WHERE student_id = $1 ORDER BY uploaded_at, id`),
         mine(`SELECT * FROM journals WHERE student_id = $1 ORDER BY week_start`),
+        mine(`SELECT * FROM final_evaluations WHERE student_id = $1`),
+        mine(`SELECT * FROM dtr_certifications WHERE student_id = $1 ORDER BY month`),
         // Evaluations of the student, and the ones the student wrote.
         mine(`SELECT * FROM evaluations
               WHERE student_id = $1 OR (evaluator_type = 'student' AND evaluator_id = $1)
@@ -2792,6 +2794,8 @@ export function registerExtensionRoutes(
         documents,
         journals,
         evaluations,
+        final_evaluation: finalEvaluation[0] ?? null,
+        time_record_certifications: certifications,
         complaints,
         complaint_messages: complaintMessages,
         schedule,
@@ -2943,6 +2947,227 @@ export function registerExtensionRoutes(
     } catch (error) {
       console.error("WITHDRAW DTR CERTIFICATION ERROR:", error);
       return res.status(500).json({ message: "Failed to withdraw the certification." });
+    }
+  });
+
+  /*
+  |--------------------------------------------------------------------------
+  | FINAL EVALUATION
+  |--------------------------------------------------------------------------
+  |
+  | At the end of the OJT the supervisor rates the student once, on every
+  | criterion of the form the coordinator keeps, and writes remarks. The
+  | form in use is the active row of evaluation_forms; saving a changed
+  | form adds a row, so an evaluation already submitted keeps the criteria
+  | it was written on (its form_snapshot). See migration 031.
+  |
+  | The form the system starts with is a sample, and is marked as one.
+  |
+  */
+
+  type FormCriterion = { key: string; label: string; description: string };
+
+  const FORM_COLUMNS = `f.id, f.name, f.scale_max, f.criteria, f.is_sample, f.created_at`;
+  const FINAL_COLUMNS = `
+    e.id, e.student_id, e.form_snapshot, e.supervisor_name, e.ratings,
+    e.average::float AS average, e.remarks, e.submitted_at, e.updated_at
+  `;
+
+  const activeForm = () =>
+    pool
+      .query<{ id: number; name: string; scale_max: number; criteria: FormCriterion[]; is_sample: boolean }>(
+        `SELECT ${FORM_COLUMNS} FROM evaluation_forms f WHERE f.is_active = TRUE ORDER BY f.id DESC LIMIT 1`
+      )
+      .then((result) => result.rows[0] ?? null);
+
+  app.get(
+    "/api/evaluation-form",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (_req, res) => {
+      try {
+        return res.json({ form: await activeForm() });
+      } catch (error) {
+        console.error("GET EVALUATION FORM ERROR:", error);
+        return res.status(500).json({ message: "Failed to load the evaluation form." });
+      }
+    }
+  );
+
+  app.put("/api/coordinator/evaluation-form", requireCoordinator, async (req, res) => {
+    try {
+      const input = req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {};
+      const name = text(input.name);
+      const scale = Number(input.scale_max);
+      if (name.length < 3 || name.length > 100) {
+        return res.status(400).json({ message: "Give the form a name (3 to 100 characters)." });
+      }
+      if (!Number.isInteger(scale) || scale < 3 || scale > 10) {
+        return res.status(400).json({ message: "The top of the rating scale must be a whole number from 3 to 10." });
+      }
+      if (!Array.isArray(input.criteria) || input.criteria.length < 2 || input.criteria.length > 20) {
+        return res.status(400).json({ message: "A form needs 2 to 20 criteria." });
+      }
+      const criteria: FormCriterion[] = [];
+      for (const [index, raw] of input.criteria.entries()) {
+        const item = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+        const label = text(item.label);
+        const description = text(item.description);
+        if (label.length < 3 || label.length > 80) {
+          return res.status(400).json({ message: `Criterion ${index + 1} needs a name (3 to 80 characters).` });
+        }
+        if (description.length > 300) {
+          return res.status(400).json({ message: `Keep the description of "${label}" to 300 characters.` });
+        }
+        if (criteria.some((other) => other.label.toLowerCase() === label.toLowerCase())) {
+          return res.status(400).json({ message: `"${label}" is on the form twice.` });
+        }
+        criteria.push({ key: `c${index + 1}`, label, description });
+      }
+
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(`UPDATE evaluation_forms SET is_active = FALSE WHERE is_active = TRUE`);
+        const saved = await client.query(
+          `INSERT INTO evaluation_forms AS f (name, scale_max, criteria, is_active, is_sample, created_by)
+           VALUES ($1, $2, $3::jsonb, TRUE, FALSE, $4)
+           RETURNING ${FORM_COLUMNS}`,
+          [name, scale, JSON.stringify(criteria), (req as AuthedRequest).auth!.id]
+        );
+        await client.query("COMMIT");
+        return res.json({ message: "Evaluation form saved.", form: saved.rows[0] });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+      } finally {
+        client.release();
+      }
+    } catch (error) {
+      console.error("SAVE EVALUATION FORM ERROR:", error);
+      return res.status(500).json({ message: "Failed to save the evaluation form." });
+    }
+  });
+
+  app.get(
+    "/api/final-evaluations/:studentId",
+    requireRole(["student", "supervisor", "coordinator"]),
+    async (req, res) => {
+      try {
+        const auth = (req as AuthedRequest).auth!;
+        const id = String(req.params.studentId);
+        if (auth.role === "student" && auth.id !== id) {
+          return res.status(403).json({ message: "You can only see your own evaluation." });
+        }
+        if (auth.role === "supervisor") {
+          const assigned = await pool.query(
+            `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
+            [id, auth.id]
+          );
+          if (assigned.rows.length === 0) {
+            return res.status(403).json({ message: "You can only view your own interns." });
+          }
+        }
+        const result = await pool.query(
+          `SELECT ${FINAL_COLUMNS} FROM final_evaluations e WHERE e.student_id = $1`,
+          [id]
+        );
+        return res.json({ evaluation: result.rows[0] ?? null });
+      } catch (error) {
+        console.error("GET FINAL EVALUATION ERROR:", error);
+        return res.status(500).json({ message: "Failed to load the final evaluation." });
+      }
+    }
+  );
+
+  // Submits the final evaluation, or changes the one already submitted.
+  app.put("/api/final-evaluations/:studentId", requireRole("supervisor"), async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const id = String(req.params.studentId);
+      const owner = await pool.query<{ name: string; supervisor_name: string }>(
+        `SELECT s.name, sup.name AS supervisor_name
+         FROM students s JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+         WHERE s.student_id = $1 AND s.supervisor_id = $2`,
+        [id, auth.id]
+      );
+      if (owner.rows.length === 0) {
+        return res.status(403).json({ message: "You can only evaluate your own interns." });
+      }
+      const form = await activeForm();
+      if (!form) {
+        return res.status(409).json({ message: "The OJT coordinator has not set up the evaluation form yet." });
+      }
+      // The form the supervisor filled in must be the one in use now.
+      if (Number(req.body?.form_id) !== form.id) {
+        return res.status(409).json({
+          message: "The evaluation form has changed. Reload the page and fill in the current one.",
+        });
+      }
+      const given = req.body?.ratings && typeof req.body.ratings === "object" ? (req.body.ratings as Record<string, unknown>) : {};
+      const ratings: Record<string, number> = {};
+      for (const criterion of form.criteria) {
+        const value = given[criterion.key];
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 1 || value > form.scale_max) {
+          return res.status(400).json({
+            message: `Rate "${criterion.label}" from 1 to ${form.scale_max}.`,
+          });
+        }
+        ratings[criterion.key] = value;
+      }
+      const remarks = text(req.body?.remarks);
+      if (remarks.length < 10 || remarks.length > 2000) {
+        return res.status(400).json({ message: "Write your overall remarks (10 to 2000 characters)." });
+      }
+      const values = Object.values(ratings);
+      const average = Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100;
+      const snapshot = { name: form.name, scale_max: form.scale_max, criteria: form.criteria };
+
+      const result = await pool.query(
+        `
+        INSERT INTO final_evaluations AS e
+          (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks)
+        VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7, $8)
+        ON CONFLICT (student_id) DO UPDATE
+          SET form_id = EXCLUDED.form_id,
+              form_snapshot = EXCLUDED.form_snapshot,
+              supervisor_id = EXCLUDED.supervisor_id,
+              supervisor_name = EXCLUDED.supervisor_name,
+              ratings = EXCLUDED.ratings,
+              average = EXCLUDED.average,
+              remarks = EXCLUDED.remarks,
+              updated_at = NOW()
+        RETURNING ${FINAL_COLUMNS}, (e.submitted_at = e.updated_at) AS is_new
+        `,
+        [id, form.id, JSON.stringify(snapshot), auth.id, owner.rows[0].supervisor_name, JSON.stringify(ratings), average, remarks]
+      );
+      const { is_new: isNew, ...evaluation } = result.rows[0];
+
+      await quietly("FINAL EVALUATION NOTIFICATION ERROR", async () => {
+        await createNotification({
+          studentId: id,
+          link: "/student/feedback",
+          title: isNew ? "Final evaluation submitted" : "Final evaluation updated",
+          message: `${owner.rows[0].supervisor_name} ${isNew ? "submitted" : "updated"} your final evaluation: ${average} out of ${form.scale_max} on average.`,
+          type: "evaluation",
+        });
+        if (isNew) {
+          await notifyCoordinators({
+            entity: { type: "student", id },
+            link: `/coordinator/students/${encodeURIComponent(id)}`,
+            title: "Final evaluation submitted",
+            message: `${owner.rows[0].supervisor_name} submitted the final evaluation of ${owner.rows[0].name}: ${average} out of ${form.scale_max} on average.`,
+            type: "info",
+          });
+        }
+      });
+
+      return res.status(isNew ? 201 : 200).json({
+        message: isNew ? "Final evaluation submitted." : "Final evaluation updated.",
+        evaluation,
+      });
+    } catch (error) {
+      console.error("SAVE FINAL EVALUATION ERROR:", error);
+      return res.status(500).json({ message: "Failed to save the final evaluation." });
     }
   });
 }
