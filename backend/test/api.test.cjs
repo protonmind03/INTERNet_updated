@@ -1723,7 +1723,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -5291,4 +5291,174 @@ test("the key figures and the action list are the coordinator's, take a term, an
   }
   assert.equal(students, actions.progress.students);
   assert.equal(pendingLogs, count("pending_logs"));
+});
+
+test("the audit rules cover consent, a data export, and what a coordinator opens", () => {
+  require("tsx/cjs");
+  const { auditEntryFor } = require("../src/services/audit.ts");
+  const entry = (method, path, source = {}) =>
+    auditEntryFor(method, path, { params: {}, body: {}, result: {}, ...source });
+
+  assert.deepEqual(
+    entry("POST", "/api/students/:studentId/privacy/consent", { params: { studentId: "S1" }, body: { version: "2026-10" }, result: { consent_version: "2026-10", consent_at: "x" }, actorRole: "student" }),
+    { action: "privacy.consent", entityType: "student", entityId: "S1", details: { version: "2026-10" } }
+  );
+  // Reads carry how long a repeat stays one entry.
+  assert.deepEqual(
+    entry("GET", "/api/students/:studentId/data-export", { params: { studentId: "S1" }, actorRole: "student" }),
+    { action: "privacy.export", entityType: "student", entityId: "S1", details: {}, quietMinutes: 10 }
+  );
+  assert.deepEqual(
+    entry("GET", "/api/coordinator/students/:studentId/overview", { params: { studentId: "S1" }, actorRole: "coordinator" }),
+    { action: "student.view", entityType: "student", entityId: "S1", details: {}, quietMinutes: 10 }
+  );
+  // A document: logged for a coordinator, with whose it is; not for its owner or their supervisor.
+  const file = { params: { documentId: "7" }, noted: { student_id: "S1", doc_type: "Medical certificate", file_path: "/uploads/secret.pdf" } };
+  assert.deepEqual(entry("GET", "/api/documents/:documentId/file", { ...file, actorRole: "coordinator" }), {
+    action: "document.view", entityType: "document", entityId: "7",
+    details: { student_id: "S1", name: "Medical certificate" }, quietMinutes: 10,
+  });
+  assert.equal(entry("GET", "/api/documents/:documentId/file", { ...file, actorRole: "student" }), null);
+  assert.equal(entry("GET", "/api/documents/:documentId/file", { ...file, actorRole: "supervisor" }), null);
+  assert.equal(entry("GET", "/api/documents/:documentId/file", file), null);
+  // An uploaded photo or attachment, the same action.
+  assert.deepEqual(entry("GET", "/api/uploads/:filename", { params: { filename: "1700000000000-abcdef012345.jpg" }, actorRole: "coordinator" }), {
+    action: "document.view", entityType: "upload", entityId: "1700000000000-abcdef012345.jpg", details: {}, quietMinutes: 10,
+  });
+  assert.equal(entry("GET", "/api/uploads/:filename", { params: { filename: "x.jpg" }, actorRole: "supervisor" }), null);
+  // Taking the log out: every time, with the filters used.
+  assert.deepEqual(entry("GET", "/api/coordinator/audit/export", { actorRole: "coordinator", noted: { rows: 12, filters: ["action=attendance", "from=2026-10-01"] } }), {
+    action: "audit.export", entityType: "audit_log", entityId: null,
+    details: { rows: 12, filters: ["action=attendance", "from=2026-10-01"] },
+  });
+  // Other reads are not logged at all.
+  assert.equal(entry("GET", "/api/coordinator/students", { actorRole: "coordinator" }), null);
+  assert.equal(entry("GET", "/api/coordinator/audit", { actorRole: "coordinator" }), null);
+});
+
+test("a coordinator's reads are written once per ten minutes, and a student's export is written", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  const sid = student.student_id;
+  const rows = async (action, actorId) =>
+    (await pool.query(
+      `SELECT COUNT(*)::int AS n FROM audit_log WHERE action = $1 AND actor_id = $2 AND entity_id = $3 AND created_at > NOW() - INTERVAL '10 minutes'`,
+      [action, actorId, sid]
+    )).rows[0].n;
+  // The row is written after the answer is sent, so it is looked for a moment later.
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 400));
+  try {
+    await pool.query(`DELETE FROM audit_log WHERE action IN ('student.view', 'privacy.export') AND entity_id = $1`, [sid]);
+    const overview = `/api/coordinator/students/${encodeURIComponent(sid)}/overview`;
+    assert.equal((await jsonRequest(overview, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    await settle();
+    assert.equal(await rows("student.view", coordinator.coordinator_id), 1, "opening a record is logged");
+    assert.equal((await jsonRequest(overview, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    assert.equal((await jsonRequest(overview, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    await settle();
+    assert.equal(await rows("student.view", coordinator.coordinator_id), 1, "opening it again straight away is the same entry");
+    // An earlier look, more than ten minutes ago, does not hide a new one.
+    await pool.query(`UPDATE audit_log SET created_at = NOW() - INTERVAL '11 minutes' WHERE action = 'student.view' AND entity_id = $1`, [sid]);
+    assert.equal((await jsonRequest(overview, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    await settle();
+    assert.equal(await rows("student.view", coordinator.coordinator_id), 1);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'student.view' AND entity_id = $1`, [sid])).rows[0].n, 2);
+    // A record that is not there is not logged as opened.
+    await jsonRequest(`/api/coordinator/students/NO-SUCH-STUDENT/overview`, { headers: authHeaders(coordinatorToken) });
+
+    // The student's own copy of their data.
+    const exported = await jsonRequest(`/api/students/${encodeURIComponent(sid)}/data-export`, { headers: authHeaders(studentToken) });
+    assert.equal(exported.response.status, 200);
+    await settle();
+    assert.equal(await rows("privacy.export", sid), 1);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'student.view' AND entity_id = 'NO-SUCH-STUDENT'`)).rows[0].n, 0);
+  } finally {
+    await pool.query(`DELETE FROM audit_log WHERE action IN ('student.view', 'privacy.export') AND entity_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("audit filters: a day is the day in the Philippines, a person is found by name, and the export is itself logged", async (t) => {
+  const headers = authHeaders(coordinatorToken);
+  const list = (query) => jsonRequest(`/api/coordinator/audit?${query}`, { headers });
+  // Refused before anything is read.
+  for (const query of ["entity_type=Not%20A%20Kind", "from=2026-13-40", "actor_role=admin", "from=2026-03-11&to=2026-03-10"]) {
+    assert.equal((await list(query)).response.status, 400, query);
+    assert.equal((await jsonRequest(`/api/coordinator/audit/export?${query}`, { headers })).response.status, 400, query);
+  }
+  assert.equal((await jsonRequest("/api/coordinator/audit/export")).response.status, 401);
+  assert.equal((await jsonRequest("/api/coordinator/audit/export", { headers: authHeaders(studentToken) })).response.status, 403);
+  // With no filters it answers as it always has.
+  const plain = await list("limit=5");
+  assert.equal(plain.response.status, 200);
+  assert.deepEqual(Object.keys(plain.body).sort(), ["entries", "limit", "offset", "total"]);
+
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  try {
+    await pool.query(`DELETE FROM audit_log WHERE entity_type = 'manila_test' OR action = 'audit.export'`);
+    // Half an hour either side of midnight in Manila. In UTC both fall on 10 March.
+    await pool.query(
+      `INSERT INTO audit_log (actor_role, actor_id, action, entity_type, entity_id, details, created_at) VALUES
+         ('student', $1, 'manila_test.late', 'manila_test', 'before-midnight', '{"reason":"=SUM(A1)"}', '2026-03-10 23:30:00+08'),
+         ('student', $1, 'manila_test.early', 'manila_test', 'after-midnight', '{}', '2026-03-11 00:30:00+08')`,
+      [student.student_id]
+    );
+    const ids = async (query) => {
+      const result = await list(`entity_type=manila_test&${query}`);
+      assert.equal(result.response.status, 200, query);
+      assert.equal(result.body.total, result.body.entries.length, query);
+      return result.body.entries.map((entry) => entry.entity_id).sort();
+    };
+    assert.deepEqual(await ids("from=2026-03-10&to=2026-03-10"), ["before-midnight"], "23:30 belongs to that day");
+    assert.deepEqual(await ids("from=2026-03-11&to=2026-03-11"), ["after-midnight"], "00:30 belongs to the next");
+    assert.deepEqual(await ids("to=2026-03-10"), ["before-midnight"]);
+    assert.deepEqual(await ids("from=2026-03-11"), ["after-midnight"]);
+    assert.deepEqual(await ids("from=2026-03-09&to=2026-03-09"), []);
+    // The record, the kind of action, and the person by name or by id.
+    assert.deepEqual(await ids("entity_id=after-midnight"), ["after-midnight"]);
+    assert.deepEqual(await ids("action=manila_test"), ["after-midnight", "before-midnight"]);
+    assert.deepEqual(await ids("action=manila_test.late"), ["before-midnight"]);
+    const namePart = student.name.split(" ")[0].toLowerCase();
+    assert.deepEqual(await ids(`person=${encodeURIComponent(namePart)}`), ["after-midnight", "before-midnight"], "found by part of the name");
+    assert.deepEqual(await ids(`person=${encodeURIComponent(student.student_id)}`), ["after-midnight", "before-midnight"]);
+    assert.deepEqual(await ids("person=nobody-of-this-name"), []);
+    // "person" looks at who did it, not at the record's id.
+    assert.deepEqual(await ids("person=before-midnight"), []);
+    assert.deepEqual(await ids("actor_role=student"), ["after-midnight", "before-midnight"]);
+    assert.deepEqual(await ids("actor_role=supervisor"), []);
+
+    // The export: the same rows as a file, in Philippine time.
+    const response = await fetch(new URL("/api/coordinator/audit/export?entity_type=manila_test&from=2026-03-10&to=2026-03-10", apiBaseUrl), { headers });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type"), /^text\/csv/);
+    assert.match(response.headers.get("content-disposition"), /attachment; filename="internet-audit-log-\d{4}-\d{2}-\d{2}\.csv"/);
+    const csv = await response.text();
+    const lines = csv.replace(/^﻿/, "").trim().split("\r\n");
+    assert.equal(lines.length, 2, "a heading and the one entry");
+    assert.match(lines[0], /^When \(Philippine time\),Account kind,Account ID,Name,Action,Record kind,Record ID,Details$/);
+    assert.ok(lines[1].startsWith(`2026-03-10 23:30:00,student,${student.student_id},`), lines[1]);
+    assert.ok(lines[1].includes("manila_test.late,manila_test,before-midnight,"), lines[1]);
+    assert.ok(!csv.includes("after-midnight"));
+    // Taking it out is in the log, with the filters used and the number of rows.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const logged = await pool.query(`SELECT actor_id, details FROM audit_log WHERE action = 'audit.export' ORDER BY id DESC LIMIT 1`);
+    assert.equal(logged.rows.length, 1);
+    assert.equal(logged.rows[0].actor_id, coordinator.coordinator_id);
+    assert.equal(logged.rows[0].details.rows, 1);
+    assert.deepEqual(logged.rows[0].details.filters.sort(), ["entity_type=manila_test", "from=2026-03-10", "to=2026-03-10"]);
+    // Reading the list is not an export, and is not logged.
+    await list("limit=5");
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'audit.export'`)).rows[0].n, 1);
+  } finally {
+    await pool.query(`DELETE FROM audit_log WHERE entity_type = 'manila_test' OR action = 'audit.export'`);
+    await pool.end();
+  }
 });

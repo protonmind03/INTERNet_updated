@@ -3,6 +3,7 @@ import type express from "express";
 import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
+import { manilaClock } from "../services/digests";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
 
 /*
@@ -2101,33 +2102,61 @@ export function registerExtensionRoutes(
   |
   | The rows are written by services/audit.ts as actions happen. This is the
   | coordinator's view of them: newest first, a page at a time, filtered by
-  | kind of action, who did it, or a date range. There is no route that
-  | changes or removes a row.
+  | kind of action, who did it, the record it is about, or a date range.
+  | There is no route that changes or removes a row.
+  |
+  | The filters, all optional:
+  |   action       a kind ("attendance") or one action ("attendance.approve")
+  |   actor_role   student, supervisor or coordinator
+  |   person       part of the name, or the id, of whoever did it
+  |   entity_type  the kind of record it is about, with or without
+  |   entity_id    that record's id
+  |   from, to     days, YYYY-MM-DD. A day is the day in the Philippines:
+  |                created_at is a moment in time, and it is turned into
+  |                Manila's date before it is compared, so an entry made at
+  |                23:30 belongs to that day and one at 00:30 to the next.
+  |   q            looks in the person, their id and the record id at once
   |
   */
 
-  app.get("/api/coordinator/audit", requireCoordinator, async (req, res) => {
-    try {
-      const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? ""), 10) || 50, 1), 200);
-      const offset = Math.max(Number.parseInt(String(req.query.offset ?? ""), 10) || 0, 0);
-      const action = text(req.query.action).slice(0, 60);
-      const actorRole = text(req.query.actor_role);
-      const search = text(req.query.q).slice(0, 100);
-      const from = text(req.query.from);
-      const to = text(req.query.to);
+  /** Reads the audit filters, or says what is wrong with them. */
+  function auditFilters(query: Record<string, unknown>):
+    | { problem: string }
+    | { where: string; joins: string; values: string[]; summary: Record<string, string> } {
+    const action = text(query.action).slice(0, 60);
+    const actorRole = text(query.actor_role);
+    const search = text(query.q).slice(0, 100);
+    const from = text(query.from);
+    const to = text(query.to);
+    const person = text(query.person).slice(0, 100);
+    const entityType = text(query.entity_type).slice(0, 40);
+    const entityId = text(query.entity_id).slice(0, 80);
 
-      if ((from && !DATE_PATTERN.test(from)) || (to && !DATE_PATTERN.test(to))) {
-        return res.status(400).json({ message: "Dates must be written as YYYY-MM-DD." });
-      }
-      if (from && to && from > to) {
-        return res.status(400).json({ message: "The start date must not be after the end date." });
-      }
-      if (actorRole && !["student", "supervisor", "coordinator"].includes(actorRole)) {
-        return res.status(400).json({ message: "That is not a kind of account." });
-      }
+    // Written as a date, and a real one: "2026-13-40" has the shape but is no day.
+    const realDay = (value: string) =>
+      DATE_PATTERN.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
+    if ((from && !realDay(from)) || (to && !realDay(to))) {
+      return { problem: "Dates must be written as YYYY-MM-DD." };
+    }
+    if (from && to && from > to) {
+      return { problem: "The start date must not be after the end date." };
+    }
+    if (actorRole && !["student", "supervisor", "coordinator"].includes(actorRole)) {
+      return { problem: "That is not a kind of account." };
+    }
+    if (entityType && !/^[a-z_]+$/.test(entityType)) {
+      return { problem: "That is not a kind of record." };
+    }
 
-      // "attendance" matches every attendance action; "attendance.verify" one.
-      const filters = `
+    const summary: Record<string, string> = {};
+    for (const [key, value] of Object.entries({
+      action, actor_role: actorRole, person, entity_type: entityType, entity_id: entityId, from, to, q: search,
+    })) {
+      if (value) summary[key] = value;
+    }
+    return {
+      // "attendance" matches every attendance action; "attendance.approve" one.
+      where: `
         WHERE ($1 = '' OR a.action = $1 OR a.action LIKE $1 || '.%')
           AND ($2 = '' OR a.actor_role = $2)
           AND ($3 = '' OR (a.created_at AT TIME ZONE 'Asia/Manila')::date >= $3::date)
@@ -2136,14 +2165,89 @@ export function registerExtensionRoutes(
             OR a.actor_id ILIKE '%' || $5 || '%'
             OR a.entity_id ILIKE '%' || $5 || '%'
             OR COALESCE(st.name, sup.name, co.name, '') ILIKE '%' || $5 || '%')
-      `;
-      const joins = `
+          AND ($6 = ''
+            OR a.actor_id ILIKE '%' || $6 || '%'
+            OR COALESCE(st.name, sup.name, co.name, '') ILIKE '%' || $6 || '%')
+          AND ($7 = '' OR a.entity_type = $7)
+          AND ($8 = '' OR a.entity_id = $8)
+      `,
+      joins: `
         FROM audit_log a
         LEFT JOIN students st ON a.actor_role = 'student' AND st.student_id::text = a.actor_id
         LEFT JOIN supervisors sup ON a.actor_role = 'supervisor' AND sup.supervisor_id::text = a.actor_id
         LEFT JOIN coordinators co ON a.actor_role = 'coordinator' AND co.coordinator_id::text = a.actor_id
-      `;
-      const values = [action, actorRole, from, to, search];
+      `,
+      values: [action, actorRole, from, to, search, person, entityType, entityId],
+      summary,
+    };
+  }
+
+  /** The most entries one export holds. A larger result says so in its last line. */
+  const AUDIT_EXPORT_LIMIT = 10_000;
+
+  /** A value as one CSV cell. Text a spreadsheet would run as a formula is made plain text. */
+  const csvCell = (value: unknown): string => {
+    let cell = value === null || value === undefined ? "" : String(value);
+    if (/^[=+\-@\t\r]/.test(cell)) cell = `'${cell}`;
+    return /[",\r\n]/.test(cell) ? `"${cell.replace(/"/g, '""')}"` : cell;
+  };
+
+  // The filtered entries as a file. Taking a copy out is itself written to
+  // the log (services/audit.ts), with the filters used and how many rows.
+  app.get("/api/coordinator/audit/export", requireCoordinator, async (req, res) => {
+    try {
+      const filters = auditFilters(req.query as Record<string, unknown>);
+      if ("problem" in filters) return res.status(400).json({ message: filters.problem });
+
+      const [entries, total] = await Promise.all([
+        pool.query(
+          `
+          SELECT TO_CHAR(a.created_at AT TIME ZONE 'Asia/Manila', 'YYYY-MM-DD HH24:MI:SS') AS at,
+                 a.actor_role, a.actor_id, COALESCE(st.name, sup.name, co.name, '') AS actor_name,
+                 a.action, a.entity_type, a.entity_id, a.details
+          ${filters.joins} ${filters.where}
+          ORDER BY a.created_at DESC, a.id DESC
+          LIMIT ${AUDIT_EXPORT_LIMIT}
+          `,
+          filters.values
+        ),
+        pool.query<{ total: string }>(`SELECT COUNT(*) AS total ${filters.joins} ${filters.where}`, filters.values),
+      ]);
+      const matched = Number(total.rows[0].total);
+      const lines = [
+        ["When (Philippine time)", "Account kind", "Account ID", "Name", "Action", "Record kind", "Record ID", "Details"],
+        ...entries.rows.map((row) => [
+          row.at, row.actor_role, row.actor_id, row.actor_name, row.action,
+          row.entity_type, row.entity_id,
+          row.details && Object.keys(row.details).length > 0 ? JSON.stringify(row.details) : "",
+        ]),
+        ...(matched > entries.rows.length
+          ? [[`Only the newest ${entries.rows.length} of ${matched} matching entries are in this file. Narrow the dates to get the rest.`]]
+          : []),
+      ];
+      const { date } = manilaClock(new Date());
+      res.locals.auditNote = {
+        rows: entries.rows.length,
+        filters: Object.entries(filters.summary).map(([key, value]) => `${key}=${value}`),
+      };
+      return res
+        .type("text/csv; charset=utf-8")
+        .attachment(`internet-audit-log-${date}.csv`)
+        // The mark at the start is what makes a spreadsheet read the accents and "ñ" correctly.
+        .send(`\uFEFF${lines.map((line) => line.map(csvCell).join(",")).join("\r\n")}\r\n`);
+    } catch (error) {
+      console.error("EXPORT AUDIT LOG ERROR:", error);
+      return res.status(500).json({ message: "Failed to export the audit log." });
+    }
+  });
+
+  app.get("/api/coordinator/audit", requireCoordinator, async (req, res) => {
+    try {
+      const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? ""), 10) || 50, 1), 200);
+      const offset = Math.max(Number.parseInt(String(req.query.offset ?? ""), 10) || 0, 0);
+      const read = auditFilters(req.query as Record<string, unknown>);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const { where: filters, joins, values } = read;
 
       const [entries, total] = await Promise.all([
         pool.query(
@@ -2153,7 +2257,7 @@ export function registerExtensionRoutes(
                  a.action, a.entity_type, a.entity_id, a.details, a.created_at
           ${joins} ${filters}
           ORDER BY a.created_at DESC, a.id DESC
-          LIMIT $6 OFFSET $7
+          LIMIT $9 OFFSET $10
           `,
           [...values, limit, offset]
         ),

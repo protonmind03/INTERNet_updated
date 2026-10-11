@@ -17,6 +17,13 @@ import type { Pool } from "pg";
 | What goes into `details` is named field by field. Nothing else from the
 | request is kept, so a password or a file can never end up in the log.
 |
+| A few READS are logged too: a coordinator opening a student's record, a
+| document or an uploaded photo, and a student downloading their own data.
+| The row is written after the answer has been sent, so the download never
+| waits for it. A page asks for the same record or photo again whenever it
+| is reloaded, so a read by the same person of the same thing is written
+| once in any ten minutes (`quietMinutes`), not once per request.
+|
 */
 
 export type AuditEntry = {
@@ -24,6 +31,8 @@ export type AuditEntry = {
   entityType: string | null;
   entityId: string | null;
   details: Record<string, unknown>;
+  /** Set for reads: not written again for the same person and record within this long. */
+  quietMinutes?: number;
 };
 
 type Source = {
@@ -31,6 +40,10 @@ type Source = {
   body: Record<string, unknown>;
   /** What the route answered with. */
   result: Record<string, unknown>;
+  /** What the route chose to say about a request whose answer is a file (res.locals.auditNote). */
+  noted?: Record<string, unknown>;
+  /** Who is asking: some reads are logged for one kind of account only. */
+  actorRole?: string;
 };
 
 type Rule = {
@@ -45,7 +58,14 @@ type Rule = {
   keep?: string[];
   /** Facts taken from the answer. */
   from?: (source: Source) => Record<string, unknown>;
+  /** When set, only these kinds of account are logged. */
+  roles?: string[];
+  /** For reads: the same person reading the same thing again within this long is not logged twice. */
+  quietMinutes?: number;
 };
+
+/** How long a repeated read by the same person stays one entry. */
+const READ_QUIET_MINUTES = 10;
 
 const param = (name: string) => (source: Source) => source.params[name];
 const nested = (value: unknown, key: string): unknown =>
@@ -76,6 +96,65 @@ function timesText(times: unknown): string {
 }
 
 export const AUDIT_RULES: Rule[] = [
+  // Privacy
+  {
+    method: "POST",
+    path: "/api/students/:studentId/privacy/consent",
+    action: "privacy.consent",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ version: source.result.consent_version }),
+  },
+  {
+    method: "GET",
+    path: "/api/students/:studentId/data-export",
+    action: "privacy.export",
+    entityType: "student",
+    entityId: param("studentId"),
+    quietMinutes: READ_QUIET_MINUTES,
+  },
+  // What a coordinator opened. Supervisors and students opening their own are not logged.
+  {
+    method: "GET",
+    path: "/api/coordinator/students/:studentId/overview",
+    action: "student.view",
+    entityType: "student",
+    entityId: param("studentId"),
+    roles: ["coordinator"],
+    quietMinutes: READ_QUIET_MINUTES,
+  },
+  {
+    method: "GET",
+    path: "/api/documents/:documentId/file",
+    action: "document.view",
+    entityType: "document",
+    entityId: param("documentId"),
+    roles: ["coordinator"],
+    quietMinutes: READ_QUIET_MINUTES,
+    from: (source) => ({
+      student_id: source.noted?.student_id,
+      name: source.noted?.doc_type,
+    }),
+  },
+  {
+    method: "GET",
+    path: "/api/uploads/:filename",
+    action: "document.view",
+    entityType: "upload",
+    entityId: param("filename"),
+    roles: ["coordinator"],
+    quietMinutes: READ_QUIET_MINUTES,
+  },
+  // The log itself: taking a copy of it out is recorded in it.
+  {
+    method: "GET",
+    path: "/api/coordinator/audit/export",
+    action: "audit.export",
+    entityType: "audit_log",
+    entityId: () => null,
+    roles: ["coordinator"],
+    from: (source) => ({ rows: source.noted?.rows, filters: source.noted?.filters }),
+  },
   // Attendance
   {
     method: "PATCH",
@@ -495,6 +574,7 @@ export function auditEntryFor(
     (candidate) => candidate.method === method.toUpperCase() && candidate.path === routePath
   );
   if (!rule) return null;
+  if (rule.roles && !rule.roles.includes(source.actorRole ?? "")) return null;
 
   const action = typeof rule.action === "function" ? rule.action(source) : rule.action;
   if (!action) return null;
@@ -518,8 +598,12 @@ export function auditEntryFor(
         ? null
         : String(entityId).slice(0, 80),
     details,
+    ...(rule.quietMinutes ? { quietMinutes: rule.quietMinutes } : {}),
   };
 }
+
+/** True when some rule logs a read of this route. Most GETs have none, and are left alone. */
+const READ_PATHS = new Set(AUDIT_RULES.filter((rule) => rule.method === "GET").map((rule) => rule.path));
 
 type Actor = { role: string; id: string };
 
@@ -529,20 +613,28 @@ type Actor = { role: string; id: string };
  */
 export function auditMiddleware(pool: Pool, secret: string) {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS") return next();
+    if (req.method === "HEAD" || req.method === "OPTIONS") return next();
+    const reading = req.method === "GET";
 
-    // Keep what the route answers with: a created record's id is only there.
-    const sendJson = res.json.bind(res);
-    res.json = (body?: unknown) => {
-      res.locals.auditResult = body;
-      return sendJson(body);
-    };
+    if (!reading) {
+      // Keep what the route answers with: a created record's id is only there.
+      const sendJson = res.json.bind(res);
+      res.json = (body?: unknown) => {
+        res.locals.auditResult = body;
+        return sendJson(body);
+      };
+    }
 
+    // After the answer has gone out: logging never holds up a request or a download.
     res.on("finish", () => {
-      if (res.statusCode < 200 || res.statusCode >= 300) return;
+      // 304: the browser already had the file and showed it again.
+      const succeeded =
+        (res.statusCode >= 200 && res.statusCode < 300) || (reading && res.statusCode === 304);
+      if (!succeeded) return;
       const actor = (req as Request & { auth?: Actor }).auth;
       const routePath = (req.route as { path?: unknown } | undefined)?.path;
       if (!actor || typeof routePath !== "string") return;
+      if (reading && !READ_PATHS.has(routePath)) return;
 
       let entry: AuditEntry | null = null;
       try {
@@ -551,6 +643,11 @@ export function auditMiddleware(pool: Pool, secret: string) {
           params: req.params as Record<string, string | undefined>,
           body: req.body && typeof req.body === "object" ? (req.body as Record<string, unknown>) : {},
           result: result && typeof result === "object" ? (result as Record<string, unknown>) : {},
+          noted:
+            res.locals.auditNote && typeof res.locals.auditNote === "object"
+              ? (res.locals.auditNote as Record<string, unknown>)
+              : {},
+          actorRole: actor.role,
         });
       } catch (error) {
         console.error("AUDIT ENTRY ERROR:", error);
@@ -565,7 +662,14 @@ export function auditMiddleware(pool: Pool, secret: string) {
       pool
         .query(
           `INSERT INTO audit_log (actor_role, actor_id, action, entity_type, entity_id, details, ip_hash)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+           SELECT $1, $2, $3, $4, $5, $6, $7
+           WHERE $8::int IS NULL OR NOT EXISTS (
+             SELECT 1 FROM audit_log recent
+             WHERE recent.actor_role = $1 AND recent.actor_id = $2 AND recent.action = $3
+               AND recent.entity_type IS NOT DISTINCT FROM $4
+               AND recent.entity_id IS NOT DISTINCT FROM $5
+               AND recent.created_at > NOW() - make_interval(mins => $8::int)
+           )`,
           [
             actor.role,
             actor.id,
@@ -574,6 +678,7 @@ export function auditMiddleware(pool: Pool, secret: string) {
             entry.entityId,
             JSON.stringify(entry.details),
             ipHash,
+            entry.quietMinutes ?? null,
           ]
         )
         .catch((error) => console.error("AUDIT LOG WRITE ERROR:", error));

@@ -8995,7 +8995,7 @@ app.get(
     try {
       const result = await pool.query(
         `
-        SELECT d.file_path, d.original_filename, d.mime_type
+        SELECT d.file_path, d.original_filename, d.mime_type, d.student_id, d.doc_type
         FROM documents d
         LEFT JOIN students s ON s.student_id = d.student_id
         WHERE d.id = $1
@@ -9016,6 +9016,11 @@ app.get(
         .replace(/[\r\n"]/g, "_")
         .trim();
       const file = await readPrivateFile(fileName);
+      // For the audit log, when it is a coordinator who opens it (services/audit.ts).
+      res.locals.auditNote = {
+        student_id: result.rows[0].student_id,
+        doc_type: result.rows[0].doc_type,
+      };
       return res
         .type(file.contentType || result.rows[0].mime_type)
         .attachment(downloadName)
