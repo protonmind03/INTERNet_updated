@@ -9,10 +9,14 @@ export type ReportSection = {
 
 const MARGIN = 14;
 
-/** Builds the coordinator analytics report as an A4 PDF document. */
+/**
+ * Builds a report of titled tables as an A4 PDF document: the coordinator's
+ * analytics report unless another title is given.
+ */
 export function buildAnalyticsPdf(
   sections: ReportSection[],
-  generatedAt: string
+  generatedAt: string,
+  title = "INTERNet OJT Analytics Report"
 ): jsPDF {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
   const pageHeight = doc.internal.pageSize.getHeight();
@@ -20,7 +24,7 @@ export function buildAnalyticsPdf(
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text("INTERNet OJT Analytics Report", MARGIN, 18);
+  doc.text(title, MARGIN, 18);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(100);

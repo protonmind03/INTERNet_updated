@@ -21,8 +21,10 @@ import {
   getInitials,
 } from "../../lib/format";
 import { useAccount } from "../../lib/session";
+import { errorText, toast } from "../../lib/toast";
 import { useProjections } from "../../lib/useProjections";
 import ProjectionLine from "../../components/ProjectionLine";
+import { fetchFinalEvaluation, internSummarySections } from "./internSummary";
 import { useSupervisorWork, type Intern, type SupervisorWork } from "./useSupervisorWork";
 
 export default function SupervisorInterns() {
@@ -173,6 +175,7 @@ function InternDialog({
 }) {
   const navigate = useNavigate();
   const projections = useProjections("supervisor");
+  const [buildingPdf, setBuildingPdf] = useState(false);
   if (!intern) return null;
   const projection = projections.get(intern.student_id);
 
@@ -180,6 +183,28 @@ function InternDialog({
   const tasks = work.tasks.filter((entry) => entry.student_id === intern.student_id);
   const documents = work.documents.filter((entry) => entry.student_id === intern.student_id);
   const pending = pendingFor(work, intern.student_id);
+
+  // Everything about this intern as one PDF, from what is on the page.
+  const downloadSummary = async () => {
+    setBuildingPdf(true);
+    try {
+      // Loaded on demand so the PDF library is not part of every page load.
+      const [{ buildAnalyticsPdf }, evaluation] = await Promise.all([
+        import("../../lib/analyticsPdf"),
+        fetchFinalEvaluation(intern.student_id),
+      ]);
+      buildAnalyticsPdf(
+        internSummarySections({ intern, logs, tasks, documents, projection, evaluation }),
+        new Date().toLocaleString(),
+        `OJT Summary: ${intern.name}`
+      ).save(`internet-summary-${intern.student_id}.pdf`);
+      toast.success("Summary PDF ready.");
+    } catch (pdfError) {
+      toast.error(errorText(pdfError, "The summary could not be prepared."));
+    } finally {
+      setBuildingPdf(false);
+    }
+  };
 
   return (
     <Modal
@@ -203,6 +228,15 @@ function InternDialog({
             }
           >
             Time record
+          </Button>
+          <Button
+            variant="secondary"
+            icon="download"
+            busy={buildingPdf}
+            busyProcess="export"
+            onClick={() => void downloadSummary()}
+          >
+            {buildingPdf ? "Preparing" : "Summary PDF"}
           </Button>
           {pending > 0 && (
             <Button onClick={() => navigate("/supervisor/dashboard")}>
