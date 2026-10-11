@@ -227,3 +227,57 @@ test.describe("completion", () => {
     }
   });
 });
+
+test.describe("the student's menu", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("on a phone: five tabs, two things under More, and the Resolution Center under the avatar", async ({ page }) => {
+    await signIn(page, "student");
+    const bar = page.getByRole("navigation", { name: "Main" }).last();
+    for (const name of ["Today", "Attendance", "Tasks", "Documents"]) {
+      await expect(bar.getByRole("link", { name })).toBeVisible();
+    }
+
+    await bar.getByRole("button", { name: "More" }).click();
+    const more = page.getByRole("dialog", { name: "More" });
+    await expect(more.getByRole("link")).toHaveText(["Schedule", "Weekly journal"]);
+    await more.getByRole("link", { name: "Schedule" }).click();
+    await expect(page).toHaveURL(/\/schedule$/);
+
+    await page.getByRole("button", { name: /Account menu/ }).click();
+    await expect(page.getByRole("button", { name: "Profile", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Resolution Center", exact: true }).click();
+    await expect(page).toHaveURL(/\/student\/resolution/);
+    await expect(page.getByRole("tab", { name: "Concerns" })).toHaveAttribute("aria-selected", "true");
+    await page.getByRole("tab", { name: "Evaluations" }).click();
+    await expect(page.getByRole("heading", { name: "Rate your company" })).toBeVisible();
+  });
+
+  test("the addresses of the pages that moved still open", async ({ page }) => {
+    await signIn(page, "student");
+    await page.goto("/report");
+    await expect(page).toHaveURL(/\/student\/resolution\?tab=concerns$/);
+    await expect(page.getByRole("heading", { name: "Report a concern" })).toBeVisible();
+    await page.goto("/student/feedback");
+    await expect(page).toHaveURL(/\/student\/resolution\?tab=evaluations$/);
+    await expect(page.getByRole("tab", { name: "Evaluations" })).toHaveAttribute("aria-selected", "true");
+    // Out of the menu, still pages.
+    for (const [path, heading] of [
+      ["/notifications", "Notifications"],
+      ["/announcements", "Announcements"],
+      ["/student/completion", "Completion"],
+    ]) {
+      await page.goto(path);
+      await expect(page).toHaveURL(new RegExp(`${path}$`));
+      await expect(page).toHaveTitle(new RegExp(`^${heading}`));
+    }
+    // The checklist itself is on Profile.
+    await page.goto("/profile");
+    await expect(page.getByRole("heading", { name: "Completion checklist" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Report a concern" })).toHaveAttribute(
+      "href",
+      "/student/resolution?tab=concerns"
+    );
+  });
+});

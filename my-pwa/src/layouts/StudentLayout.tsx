@@ -108,9 +108,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
     navigate("/", { replace: true });
   };
 
-  const moreActive = [...SECONDARY_NAV, ACCOUNT_NAV].some(
-    (item) => item.path === location.pathname
-  );
+  const moreActive = SECONDARY_NAV.some((item) => item.path === location.pathname);
 
   return (
     <div className="flex h-[calc(100dvh-var(--inb-top-inset))] bg-slate-50 print:block print:h-auto print:bg-white">
@@ -347,7 +345,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
           >
             <div className="mx-auto mt-2.5 h-1 w-10 rounded-full bg-slate-300" />
             <div className="px-2 pb-1 pt-3">
-              {[...SECONDARY_NAV, ACCOUNT_NAV].map((item) => (
+              {SECONDARY_NAV.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
@@ -374,17 +372,6 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
                   )}
                 </NavLink>
               ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setMoreOpen(false);
-                  setConfirmSignOut(true);
-                }}
-                className="mt-1 flex w-full items-center gap-3.5 rounded-xl border-t border-slate-100 px-4 py-3.5 text-left text-[15px] font-medium text-red-600"
-              >
-                <Icon name="logout" size={20} />
-                Sign out
-              </button>
             </div>
           </div>
         </div>
