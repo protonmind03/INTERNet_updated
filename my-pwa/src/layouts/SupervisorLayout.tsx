@@ -117,7 +117,7 @@ export default function SupervisorLayout({
           <div className="ml-auto flex items-center gap-1.5">
             <NotificationBell
               role="supervisor"
-              viewAllPath="/supervisor/notifications"
+              announcementsFor="supervisor"
               buttonClassName="relative flex h-10 w-10 items-center justify-center rounded-lg text-psu-100 hover:bg-white/10 hover:text-white"
             />
             <div className="relative" ref={menuRef}>
@@ -157,17 +157,6 @@ export default function SupervisorLayout({
                   >
                     <Icon name="user" className="text-slate-400" />
                     Profile and password
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      navigate("/supervisor/announcements");
-                    }}
-                    className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
-                  >
-                    <Icon name="megaphone" className="text-slate-400" />
-                    Announcements
                   </button>
                   <button
                     type="button"
