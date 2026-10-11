@@ -4043,3 +4043,103 @@ test("each person keeps their own notification choices, and they default to on",
     await pool.end();
   }
 });
+
+/*
+| Supervisor's daily summary email
+*/
+
+test("the summary email rules: the clock, the setting and the wording", () => {
+  require("tsx/cjs");
+  const { clockSetting, manilaClock, supervisorDigestLines } = require("../src/services/digests.ts");
+  assert.equal(clockSetting(undefined, "07:30"), "07:30");
+  assert.equal(clockSetting(" 06:00 ", "07:30"), "06:00");
+  for (const bad of ["7:30", "24:00", "07:60", "morning", ""]) assert.equal(clockSetting(bad, "07:30"), "07:30", bad);
+  // 23:45 UTC on a Sunday is 07:45 on Monday in the Philippines.
+  assert.deepEqual(manilaClock(new Date("2026-10-11T23:45:00Z")), { date: "2026-10-12", time: "07:45", weekday: 1 });
+  assert.deepEqual(manilaClock(new Date("2026-10-11T16:00:00Z")), { date: "2026-10-12", time: "00:00", weekday: 1 });
+  assert.deepEqual(supervisorDigestLines({ attendance: 0, tasks: 0, documents: 0, absences: 0, journals: 0 }), []);
+  assert.deepEqual(
+    supervisorDigestLines({ attendance: 1, tasks: 2, documents: 0, absences: 1, journals: 3 }),
+    ["1 attendance log", "2 task submissions", "1 absence", "3 weekly journals"]
+  );
+});
+
+test("a supervisor gets one summary a day, only when something waits and they want it", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  require("tsx/cjs");
+  const { sendSupervisorDigests } = require("../src/services/digests.ts");
+  const supervisor = await supervisorSession();
+  const sid = supervisor.supervisor.supervisor_id;
+  const pool = localTestPool();
+  const day = "2001-06-04";
+  const clear = async () => {
+    await pool.query(`DELETE FROM digest_log WHERE period_key LIKE '2001-06-%'`);
+    await pool.query(`DELETE FROM absences WHERE student_id = $1 AND date = $2`, [student.student_id, day]);
+    await pool.query(`DELETE FROM notification_preferences WHERE account_id = $1 AND category = 'digest'`, [sid]);
+  };
+  await clear();
+  const outbox = [];
+  const send = async (email) => {
+    outbox.push(email);
+  };
+  // Summaries for other supervisors in the database are not this test's business.
+  const mine = () => outbox.filter((email) => email.to === supervisor.supervisor.email);
+  const at = (time, date = day) => new Date(`${date}T${time}:00+08:00`);
+  const run = (now, extra = {}) => sendSupervisorDigests(pool, { now, env: { FRONTEND_URL: "https://example.test/" }, smtpReady: true, send, ...extra });
+  try {
+    // Something is waiting for this supervisor.
+    await pool.query(`INSERT INTO absences (student_id, date, reason, status) VALUES ($1, $2, 'Summary email test.', 'Pending')`, [student.student_id, day]);
+
+    // No SMTP: nothing, and nothing is marked as sent.
+    assert.deepEqual(await run(at("08:00"), { smtpReady: false }), []);
+    // Before the time: nothing.
+    await run(at("07:29"));
+    assert.equal(mine().length, 0);
+    // A later time can be set.
+    await run(at("08:00"), { env: { SUPERVISOR_DIGEST_TIME: "09:00" } });
+    assert.equal(mine().length, 0);
+
+    // At the time: one email, saying what waits and where to go.
+    const sent = await run(at("07:30"));
+    assert.ok(sent.includes(sid));
+    assert.equal(mine().length, 1);
+    const email = mine()[0];
+    assert.match(email.subject, /waiting for your decision/);
+    assert.match(email.text, /absence/);
+    assert.match(email.text, /https:\/\/example\.test\/supervisor\/dashboard/);
+    assert.match(email.text, /Profile > Notifications/);
+    assert.equal(/password/i.test(email.text), false);
+
+    // Later the same day: not again. The next day: again.
+    await run(at("15:00"));
+    assert.equal(mine().length, 1);
+    await run(at("07:45", "2001-06-05"));
+    assert.equal(mine().length, 2);
+
+    // An email that fails is tried again at the next check.
+    await run(at("08:00", "2001-06-06"), { send: async () => { throw new Error("mail server down"); } });
+    assert.equal(mine().length, 2);
+    await run(at("08:05", "2001-06-06"));
+    assert.equal(mine().length, 3);
+
+    // Turned off by the supervisor: none.
+    await jsonRequest("/api/notification-preferences", jsonBody(supervisor.token, "PUT", { category: "digest", email: false }));
+    await run(at("08:00", "2001-06-07"));
+    assert.equal(mine().length, 3);
+    await jsonRequest("/api/notification-preferences", jsonBody(supervisor.token, "PUT", { category: "digest", email: true }));
+
+    // Nothing waiting: none.
+    await pool.query(`DELETE FROM absences WHERE student_id = $1 AND date = $2`, [student.student_id, day]);
+    const queue = await jsonRequest("/api/supervisor/review-count", { headers: authHeaders(supervisor.token) });
+    if (queue.body.waiting === 0) {
+      await run(at("08:00", "2001-06-08"));
+      assert.equal(mine().length, 3);
+    }
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});
