@@ -317,3 +317,84 @@ test.describe("the supervisor's menu, and one word for a concern", () => {
     await expect(page.getByText(/complaint/i)).toHaveCount(0);
   });
 });
+
+test.describe("the coordinator's console", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("the dashboard is today, one action list by who acts, and six figures with targets", async ({ page }) => {
+    await signIn(page, "coordinator");
+    await expect(page.getByRole("heading", { name: "Today's attendance" })).toBeVisible();
+    await expect(page.getByText("Scheduled, not yet in")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Action list" })).toBeVisible();
+    // The three lists it replaced are gone.
+    for (const old of ["Needs attention", "Students to check on", "Alerts"]) {
+      await expect(page.getByRole("heading", { name: old, exact: true })).toHaveCount(0);
+    }
+
+    const figures = page.getByRole("region", { name: "Key figures" });
+    await expect(figures.getByRole("heading", { level: 3 })).toHaveCount(6);
+    await expect(figures.getByText(/^Target: /)).toHaveCount(6);
+    // "?" states what is counted.
+    const first = "Students on track to finish within the term";
+    await expect(figures.getByText(/Of the active students, the share whose remaining hours/)).toBeHidden();
+    await figures.getByRole("button", { name: `What "${first}" counts` }).click();
+    await expect(figures.getByText(/Of the active students, the share whose remaining hours/)).toBeVisible();
+    // The card opens the list behind the figure.
+    await figures.getByRole("link", { name: first }).click();
+    await expect(page).toHaveURL(/\/coordinator\/monitoring\?risk=1$/);
+
+    // The same six cards are on Analytics.
+    await page.goto("/coordinator/analytics");
+    await expect(page.getByRole("region", { name: "Key figures" }).getByRole("heading", { level: 3 })).toHaveCount(6);
+  });
+
+  test("audit filters live in the address, and an export downloads and is itself logged", async ({ page }) => {
+    await signIn(page, "coordinator");
+    await page.goto("/coordinator/audit");
+    await page.getByLabel("Category").selectOption({ label: "Attendance" });
+    await expect(page).toHaveURL(/category=attendance/);
+    await page.getByLabel("Done by").selectOption({ label: "A supervisor" });
+    await page.getByLabel("When").selectOption({ label: "This week" });
+    await expect(page).toHaveURL(/role=supervisor/);
+    await expect(page).toHaveURL(/when=week/);
+    await expect(page.getByText(/\(Philippine time\)/)).toBeVisible();
+
+    // The address alone brings the same view back.
+    await page.reload();
+    await expect(page.getByLabel("Category")).toHaveValue("attendance");
+    await expect(page.getByLabel("Done by")).toHaveValue("supervisor");
+    await expect(page.getByLabel("When")).toHaveValue("week");
+
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page).toHaveURL(/\/coordinator\/audit$/);
+    await page.getByLabel("When").selectOption({ label: "Custom dates" });
+    await expect(page.getByLabel("From")).toBeVisible();
+
+    // Signing in is not logged, so there may be nothing to export on an empty database.
+    const exportButton = page.getByRole("button", { name: "Export CSV" });
+    await page.getByRole("button", { name: "Clear filters" }).click();
+    await expect(page.getByText(/^\d+ entr(y|ies)/)).toBeVisible();
+    if (await exportButton.isEnabled()) {
+      const [download] = await Promise.all([page.waitForEvent("download"), exportButton.click()]);
+      expect(download.suggestedFilename()).toMatch(/^internet-audit-log-\d{4}-\d{2}-\d{2}\.csv$/);
+      await page.getByLabel("Category").selectOption({ label: "Exports of this log" });
+      // In the table: the same entries are also laid out for a narrow screen, hidden at this width.
+      await expect(page.getByRole("cell", { name: "Exported the audit log" }).first()).toBeVisible();
+    }
+  });
+
+  test("a student's schedule is edited on their record, and Requirements points there", async ({ page }) => {
+    const student = await apiSession("student");
+    await signIn(page, "coordinator");
+    await page.goto(`/coordinator/students/${encodeURIComponent(student.id)}?tab=schedule`);
+    await expect(page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Weekly schedule" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save schedule" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Add a day" })).toBeVisible();
+
+    await page.goto(`/coordinator/requirements?student=${encodeURIComponent(student.id)}`);
+    await expect(page.getByText(/also on their own record, under the Schedule tab/)).toBeVisible();
+    await page.getByRole("link", { name: /Open .* record/ }).click();
+    await expect(page).toHaveURL(/\/coordinator\/students\/.+\?tab=schedule$/);
+  });
+});
