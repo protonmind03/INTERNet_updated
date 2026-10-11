@@ -22,6 +22,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
 import { formatDate, formatDateTime, formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
+import GroupSummary from "./GroupSummary";
 import KpiCards from "./KpiCards";
 import { fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { coordinatorRequest } from "./request";
@@ -570,6 +571,9 @@ export default function CoordinatorAnalytics() {
                 <CompanyTable companies={data.companies} />
               </Card>
 
+              {/* The company table's twins. */}
+              <GroupSummary query={term} />
+
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
                 <Card className="min-w-0">
                   <CardHeader
@@ -740,7 +744,7 @@ function CompanyTable({ companies }: { companies: AnalyticsData["companies"] }) 
             <p className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-600">
               <span className="tabular">{formatHours(company.hours)} verified</span>
               {rating(company)}
-              <span>{plural(company.complaints, "complaint")}</span>
+              <span>{plural(company.complaints, "concern")}</span>
             </p>
           </li>
         ))}
