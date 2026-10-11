@@ -582,25 +582,48 @@ Different from the description, each for a stated reason:
 
 ### Phase 1B: supervisor portal reorganisation, and one name per concept
 
-No migrations.
+No migrations. Built 2026-10-12 on localhost, one commit per item.
 
-- [ ] **1B.1 Supervisor bell.** The same bell as the student's: paging,
+Different from the description, or decided where it left room:
+
+- 1B.1: with the Announcements tab, the supervisor's bell loses "View all
+  notifications", as the student's did. `/supervisor/notifications` still
+  opens by address.
+- 1B.3: the final-evaluation lookup was one request per intern, so
+  `GET /api/supervisor/final-evaluations` was added. The item is listed
+  after everything waiting for a decision, has its own filter chip only
+  when there is one, and is not counted in the Review badge in the top
+  bar (that count comes from the server and is of decisions waiting).
+  Until the server has answered who has an evaluation, no one is listed.
+- 1B.4: a supervisor is not assigned to a coordinator in the database, so
+  "Your OJT coordinator" is the active coordinator who has been one
+  longest: the person a student with no coordinator of their own is shown.
+- 1B.5: the wording of the server's messages for concerns changed along
+  with the notification titles, because they are shown on screen in
+  toasts. "Workplace Incident" is a category stored with each concern and
+  is unchanged. The student's rating of their company is called a rating.
+- 1B.6: a production build was already leaving the kit's toasts out
+  (tree-shaking). They are now also not exported from the kit's index.
+- Awaiting confirmation: the printed sheet is still headed "Daily Time
+  Record", the form's formal name. Everywhere else says "Time record".
+
+- [x] **1B.1 Supervisor bell.** The same bell as the student's: paging,
   Unread, and an Announcements tab that records "seen". Announcements
   leaves the account menu; `/supervisor/announcements` stays.
-- [ ] **1B.2 Concerns in the account menu.** "Incidents" leaves the top
+- [x] **1B.2 Concerns in the account menu.** "Incidents" leaves the top
   bar and becomes "Concerns" beside Profile. Same address.
-- [ ] **1B.3 "Final evaluation due" in the Review queue,** for an intern
+- [x] **1B.3 "Final evaluation due" in the Review queue,** for an intern
   within 40 hours of their required hours, or past them, with no final
   evaluation. It opens Evaluations with that intern chosen. Evaluations
   stays in the top bar until Phase 4.
-- [ ] **1B.4 Usability.** Capture method and "recorded offline" marks on
+- [x] **1B.4 Usability.** Capture method and "recorded offline" marks on
   attendance rows; "Correct the times" in the row menu; the supervisor's
   coordinator in the account menu.
-- [ ] **1B.5 One name per concept,** all three portals: "concern", "Time
+- [x] **1B.5 One name per concept,** all three portals: "concern", "Time
   record", "Evaluations". Server notification titles change where the
   word appears; links and title guessing match old and new wording. Audit
   action names stay; their labels change. Database names stay.
-- [ ] **1B.6 Redundant code.** The brand kit's own toast system is out of
+- [x] **1B.6 Redundant code.** The brand kit's own toast system is out of
   the production build.
 
 ## Still open

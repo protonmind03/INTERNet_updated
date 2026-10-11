@@ -450,3 +450,29 @@ are true of the system today, for a scope section:
   Back, Time out) is a button that floats above the menu on every page
   except Attendance and Profile. A screenshot of the old Today page is out
   of date.
+- The supervisor portal's top bar, since October 2026, is Review, Interns,
+  Attendance, Tasks, Documents, Journals and Evaluations. What the paper
+  may call "Incidents" or "Incident Reports" is "Concerns" and is opened
+  from the supervisor's account menu; announcements are read from the
+  bell. A screenshot or module list that shows Incidents in the top bar,
+  or Announcements in the account menu, is out of date.
+- One word is used on every screen for what a student or a supervisor
+  reports to the coordinator: a "concern". The coordinator's page and
+  sidebar entry are "Concerns". If the paper uses "complaint", "incident"
+  or "incident report" for it (the feature table, the use case names, the
+  module diagram), use "concern" in the text, and keep `complaints` only
+  where the paper names the database table.
+- The supervisor's Review queue also lists "Final evaluation due" for an
+  intern within 40 hours of their required hours, or past them, who has
+  no final evaluation. It is a reminder that opens the evaluation form.
+  The system does not block completion on it beyond what the completion
+  checklist already counts, and it does not write the evaluation.
+- In the supervisor's attendance list each log is marked with how it was
+  made (the intern's camera check, or recorded in person by the
+  supervisor) and whether a step was recorded while the phone was
+  offline. These marks describe how the record was made; they are not a
+  verification result.
+- A supervisor sees the name and email of the OJT coordinator in their
+  account menu. The system does not assign supervisors to coordinators:
+  with more than one coordinator, the one shown is the longest-serving
+  active coordinator.

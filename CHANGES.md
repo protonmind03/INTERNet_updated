@@ -1371,3 +1371,48 @@ unread notification and of a note on today's row of the schedule.
 thumb and above the home indicator; the bell's scrolling by touch). The
 floating button's offline look and its waiting badge with a connection
 really lost.
+
+## 26. Round 2, Phase 1B: the supervisor portal, and one name per concept (12 October 2026)
+
+On `ui-redesign`, on localhost. No migration.
+
+- **Supervisor bell (1B.1).** The same bell as the student's: twenty at a
+  time, All or Unread, and an Announcements tab that records them as
+  seen. Announcements left the account menu.
+- **Concerns in the account menu (1B.2).** "Incidents" left the top bar.
+  It is "Concerns", beside Profile, at the same address.
+- **Final evaluation due (1B.3).** An intern within 40 hours of their
+  required hours, or past them, with no final evaluation is listed in the
+  Review queue. The row opens Evaluations with that intern chosen
+  (`/supervisor/evaluation?intern=...`). New endpoint:
+  `GET /api/supervisor/final-evaluations`. Evaluations stays in the top
+  bar.
+- **Usability (1B.4).** Attendance rows carry small marks: Camera check,
+  Recorded in person, Recorded offline. "Correct the times" is in each
+  row's menu and opens the same dialog as the log's detail. The account
+  menu shows "Your OJT coordinator" with a name and an email; the
+  supervisor's profile answer has a new `coordinator` field for it.
+- **One name per concept (1B.5).** "Concern" in all three portals: page
+  titles, the coordinator's sidebar and search, Analytics, the dashboard,
+  audit labels, toasts, server messages, and the titles of new
+  notifications ("New concern filed", "Concern resolved", "Reply on your
+  concern"). Stored notifications keep their old titles; the link rule on
+  the server and the title rules in the three portals match both words.
+  Routes, database names, audit action names and the `complaint` record
+  type are unchanged.
+- **Redundant code (1B.6).** The brand kit's own toast system is no longer
+  exported from the kit; only the development-only brand preview imports
+  it. The route progress bar, the one part the app uses, has its own file.
+
+**What was checked:** 126 API tests (124 before): the final-evaluations
+list against asking intern by intern, and who is refused; the coordinator
+on the supervisor's profile and that it carries only a name, an email and
+a department; the link rule for both wordings. 14 end-to-end tests (12
+before): the supervisor's menu and bell, and the coordinator's Concerns
+page. In a browser at 1280 px and 390 px: the queue item and where it
+leads, the account menu, the bell, the row marks, the row menu and its
+dialog. The automated accessibility check on all 47 pages at both
+widths, and with the menus and the dialog open: clean.
+
+**Not checked:** on a real phone. The queue item with several interns at
+different hours (the test data has one intern).
