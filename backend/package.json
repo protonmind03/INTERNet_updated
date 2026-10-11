@@ -15,6 +15,7 @@
     "db:backup-local": "tsx src/scripts/backup-local.ts",
     "db:backup-production": "tsx src/scripts/backup-production.ts",
     "db:backfill-companies": "tsx src/scripts/backfill-companies.ts",
+    "db:backfill-programs": "tsx src/scripts/backfill-programs.ts",
     "db:fk-orphans": "tsx src/scripts/fk-orphans.ts",
     "db:fk-validate": "tsx src/scripts/fk-validate.ts",
     "privacy:purge-photos": "tsx src/scripts/purge-photos.ts",

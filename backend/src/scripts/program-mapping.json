@@ -1,0 +1,4 @@
+{
+  "_how": "Written by a person. Each line maps a program as typed on student accounts to a program name or short code, exactly. Example: \"BS Info Tech\": \"BSIT\". Run npm run db:backfill-programs to see which spellings need a line.",
+  "mappings": {}
+}
