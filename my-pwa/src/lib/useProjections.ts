@@ -15,27 +15,28 @@ export type Projection = {
 
 /**
  * Projections by student ID: the signed-in student's own, a supervisor's
- * interns', or for the coordinator every active student (one term's when
- * `term` is given). Extra to the page that shows them: nothing is shown
- * while they load or if they cannot be loaded.
+ * interns', or for the coordinator every active student, narrowed by the
+ * coordinator's filters when `query` is given ("term=3&program=7").
+ * Extra to the page that shows them: nothing is shown while they load or
+ * if they cannot be loaded.
  */
-export function useProjections(role: OfflineRole, term = ""): Map<string, Projection> {
-  const [state, setState] = useState<{ term: string; byStudent: Map<string, Projection> }>({
-    term: "",
+export function useProjections(role: OfflineRole, query = ""): Map<string, Projection> {
+  const [state, setState] = useState<{ query: string; byStudent: Map<string, Projection> }>({
+    query: "",
     byStudent: new Map(),
   });
 
   useEffect(() => {
     let active = true;
     fetch(
-      `${API_URL}/api/projections${term ? `?term=${encodeURIComponent(term)}` : ""}`,
+      `${API_URL}/api/projections${query ? `?${query}` : ""}`,
       withRoleAuth(role)
     )
       .then((response) => (response.ok ? response.json() : null))
       .then((data) => {
         if (!active || !Array.isArray(data?.projections)) return;
         setState({
-          term,
+          query,
           byStudent: new Map(
             (data.projections as Projection[]).map((item) => [item.student_id, item])
           ),
@@ -45,10 +46,10 @@ export function useProjections(role: OfflineRole, term = ""): Map<string, Projec
     return () => {
       active = false;
     };
-  }, [role, term]);
+  }, [role, query]);
 
   // Never one term's figures under another term's filter.
-  return state.term === term ? state.byStudent : EMPTY;
+  return state.query === query ? state.byStudent : EMPTY;
 }
 
 const EMPTY = new Map<string, Projection>();

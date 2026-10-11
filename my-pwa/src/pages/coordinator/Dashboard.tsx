@@ -17,8 +17,8 @@ import { useLaunchReady } from "../../lib/launch";
 import { errorText } from "../../lib/toast";
 import KpiCards from "./KpiCards";
 import { coordinatorRequest } from "./request";
-import TermSelect from "./TermSelect";
-import { useTermFilter } from "./useTermFilter";
+import FilterBar from "./FilterBar";
+import { useStudentFilters } from "./useStudentFilters";
 
 /*
 |--------------------------------------------------------------------------
@@ -84,9 +84,9 @@ export default function CoordinatorDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useLaunchReady(!loading);
-  // Shared with Students, Monitoring and Analytics, so the choice carries between them.
-  const { term, setTerm, terms } = useTermFilter();
-  const termQuery = term ? `?term=${encodeURIComponent(term)}` : "";
+  // Shared with the other coordinator pages, so the choice carries between them.
+  const studentFilters = useStudentFilters();
+  const termQuery = studentFilters.query ? `?${studentFilters.query}` : "";
 
   const load = useCallback(async () => {
     try {
@@ -130,9 +130,9 @@ export default function CoordinatorDashboard() {
     <CoordinatorLayout
       title="Dashboard"
       subtitle={`${greetingFor(new Date())}. Here is where the programme stands on ${formatLongDate(new Date())}.`}
-      actions={<TermSelect term={term} terms={terms} onChange={setTerm} />}
     >
       <div className="space-y-6">
+        <FilterBar state={studentFilters} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         {/* TODAY */}
@@ -243,7 +243,7 @@ export default function CoordinatorDashboard() {
         </Card>
 
         {/* IS IT GOING WELL */}
-        <KpiCards term={term} />
+        <KpiCards query={studentFilters.query} />
 
         {/* THE DETAIL */}
         <Card className="min-w-0">

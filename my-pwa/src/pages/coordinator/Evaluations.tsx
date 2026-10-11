@@ -21,7 +21,9 @@ import { errorText, toast } from "../../lib/toast";
 import { useEvaluationForm } from "../../lib/useFinalEvaluation";
 import { usePagination } from "../../lib/usePagination";
 import EvaluationFormEditor from "./EvaluationFormEditor";
+import FilterBar from "./FilterBar";
 import { coordinatorRequest } from "./request";
+import { useStudentFilters } from "./useStudentFilters";
 
 type EvaluatorType = "supervisor" | "student" | "teacher";
 
@@ -85,10 +87,13 @@ export default function CoordinatorEvaluations() {
     }
   };
 
+  const studentFilters = useStudentFilters();
+  const chosen = studentFilters.query;
+
   const load = useCallback(async () => {
     try {
       const data = await coordinatorRequest<{ evaluations: EvaluationRow[] }>(
-        "/api/coordinator/evaluations"
+        `/api/coordinator/evaluations${chosen ? `?${chosen}` : ""}`
       );
       setRows(data.evaluations || []);
       setError("");
@@ -97,7 +102,7 @@ export default function CoordinatorEvaluations() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [chosen]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
@@ -137,6 +142,10 @@ export default function CoordinatorEvaluations() {
       }
     >
       <div className="space-y-5">
+        <FilterBar
+          state={studentFilters}
+          note={studentFilters.active ? "Showing only evaluations of the students these choices leave." : undefined}
+        />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         {evaluationForm.form?.is_sample && (

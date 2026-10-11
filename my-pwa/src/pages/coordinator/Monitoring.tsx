@@ -33,11 +33,11 @@ import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import AbsenceList from "./AbsenceList";
 import { coordinatorRequest } from "./request";
-import TermSelect from "./TermSelect";
+import FilterBar from "./FilterBar";
 import ProjectionLine from "../../components/ProjectionLine";
 import { useProjections } from "../../lib/useProjections";
 import { downloadSectionsCsv, fetchProgrammeReport, programmeSections } from "./programmeReport";
-import { useTermFilter } from "./useTermFilter";
+import { describeFilters, useStudentFilters } from "./useStudentFilters";
 
 type MonitorRow = {
   student_id: string;
@@ -107,8 +107,9 @@ export default function CoordinatorMonitoring() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
   const [reviewingId, setReviewingId] = useState<number | null>(null);
-  // Shared with the Students page, so the choice carries between the two.
-  const { term, setTerm, terms } = useTermFilter(searchParams.get("term"));
+  // Shared with the other coordinator pages, so the choice carries between them.
+  const studentFilters = useStudentFilters();
+  const term = studentFilters.query;
   const projections = useProjections("coordinator", term);
 
   const load = useCallback(async () => {
@@ -120,9 +121,8 @@ export default function CoordinatorMonitoring() {
       if (dateTo) range.set("to", dateTo);
       // A range typed back to front is not sent; the page then shows the whole.
       const ordered = !dateFrom || !dateTo || dateFrom <= dateTo;
-      const params = new URLSearchParams(ordered ? range : undefined);
-      if (term) params.set("term", term);
-      const query = params.toString() ? `?${params.toString()}` : "";
+      const sent = [ordered ? range.toString() : "", term].filter(Boolean).join("&");
+      const query = sent ? `?${sent}` : "";
       const [monitoring, discrepancies] = await Promise.all([
         coordinatorRequest<{ students: MonitorRow[] }>(`/api/coordinator/monitoring${query}`),
         coordinatorRequest<{ discrepancies: Discrepancy[] }>("/api/coordinator/discrepancies"),
@@ -203,16 +203,13 @@ export default function CoordinatorMonitoring() {
     setExporting(true);
     try {
       const report = await fetchProgrammeReport(term);
-      const termName =
-        term === "none"
-          ? "Students with no term"
-          : terms.find((item) => String(item.id) === term)?.name || "All terms";
+      const termName = describeFilters(studentFilters);
       downloadSectionsCsv(
         `internet-monitoring-${new Date().toISOString().slice(0, 10)}.csv`,
         [
           ["INTERNet Monitoring Report"],
           ["Generated at", new Date().toLocaleString()],
-          ["Term", termName],
+          ["Students", termName],
           ["Active students", report.students.length],
         ],
         programmeSections(report)
@@ -241,6 +238,7 @@ export default function CoordinatorMonitoring() {
       }
     >
       <div className="space-y-6">
+        <FilterBar state={studentFilters} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <Card>
@@ -262,7 +260,6 @@ export default function CoordinatorMonitoring() {
                 { value: "risk", label: "At risk", count: riskCount },
               ]}
             />
-            <TermSelect term={term} terms={terms} onChange={setTerm} />
             <DateRangeFilter
               from={dateFrom}
               to={dateTo}

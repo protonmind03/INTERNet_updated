@@ -26,8 +26,8 @@ import { serverPagination } from "../../lib/usePagination";
 import ImportAccounts from "./ImportAccounts";
 import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
-import TermSelect from "./TermSelect";
-import { useTermFilter } from "./useTermFilter";
+import FilterBar from "./FilterBar";
+import { useStudentFilters } from "./useStudentFilters";
 import ResetPassword from "./ResetPassword";
 
 type Student = {
@@ -81,9 +81,10 @@ export default function CoordinatorStudents() {
     searchParams.get("filter") === "unassigned" ? "unassigned" : "all"
   );
   const [sortBy, setSortBy] = useState<SortBy>("name");
-  // One term's students, "none" for those with no term, or "" for everyone.
-  // Shared with Monitoring, so the choice carries between the two pages.
-  const { term, setTerm, terms } = useTermFilter(searchParams.get("term"));
+  // Term, college, program, block, company and supervisor, shared with the
+  // other coordinator pages. The server does the filtering.
+  const studentFilters = useStudentFilters();
+  const term = studentFilters.query;
 
   const [editing, setEditing] = useState<Student | "new" | null>(null);
   const [toggling, setToggling] = useState<Student | null>(null);
@@ -109,10 +110,9 @@ export default function CoordinatorStudents() {
     });
     if (search.trim()) params.set("q", search.trim());
     if (status !== "all") params.set("status", status);
-    if (term) params.set("term", term);
     try {
       const data = await coordinatorRequest<{ students: Student[]; total?: number }>(
-        `/api/coordinator/students?${params.toString()}`
+        `/api/coordinator/students?${params.toString()}${term ? `&${term}` : ""}`
       );
       const list = data.students || [];
       setStudents(list);
@@ -179,6 +179,7 @@ export default function CoordinatorStudents() {
       }
     >
       <div className="space-y-5">
+        <FilterBar state={studentFilters} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <Card>
@@ -201,7 +202,6 @@ export default function CoordinatorStudents() {
                 { value: "inactive", label: "Deactivated" },
               ]}
             />
-            <TermSelect term={term} terms={terms} onChange={fromFirstPage(setTerm)} />
             <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
               Sort by
               <select

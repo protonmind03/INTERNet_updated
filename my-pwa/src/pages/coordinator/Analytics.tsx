@@ -25,8 +25,8 @@ import { errorText, toast } from "../../lib/toast";
 import KpiCards from "./KpiCards";
 import { fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { coordinatorRequest } from "./request";
-import TermSelect from "./TermSelect";
-import { useTermFilter } from "./useTermFilter";
+import FilterBar from "./FilterBar";
+import { describeFilters, useStudentFilters } from "./useStudentFilters";
 
 type TrendDay = { day: string; logs: number; hours: number; students: number };
 
@@ -250,18 +250,16 @@ export default function CoordinatorAnalytics() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [buildingPdf, setBuildingPdf] = useState(false);
-  // Shared with the dashboard, Students and Monitoring.
-  const { term, setTerm, terms } = useTermFilter();
-  const termName =
-    term === "none"
-      ? "Students with no term"
-      : terms.find((item) => String(item.id) === term)?.name || "All terms";
+  // Shared with the other coordinator pages.
+  const studentFilters = useStudentFilters();
+  const term = studentFilters.query;
+  const termName = describeFilters(studentFilters);
 
   const load = useCallback(async (period: Period) => {
     try {
       setData(
         await coordinatorRequest<AnalyticsData>(
-          `/api/coordinator/analytics?days=${period}${term ? `&term=${encodeURIComponent(term)}` : ""}`
+          `/api/coordinator/analytics?days=${period}${term ? `&${term}` : ""}`
         )
       );
       setError("");
@@ -309,7 +307,7 @@ export default function CoordinatorAnalytics() {
     const rows: (string | number)[][] = [
       ["INTERNet Coordinator Analytics Report"],
       ["Generated at", new Date().toLocaleString()],
-      ["Term", termName],
+      ["Students", termName],
       ...[...reportSections(data), ...programme].flatMap((section) => [
         [],
         [section.title],
@@ -340,9 +338,6 @@ export default function CoordinatorAnalytics() {
       actions={
         data ? (
           <>
-            <span className="print:hidden">
-              <TermSelect term={term} terms={terms} onChange={setTerm} />
-            </span>
             <Button variant="secondary" icon="printer" onClick={() => window.print()}>
               Print
             </Button>
@@ -356,6 +351,12 @@ export default function CoordinatorAnalytics() {
         ) : undefined
       }
     >
+      <div className="mb-5">
+        <FilterBar state={studentFilters} />
+      </div>
+      {data && studentFilters.active && (
+        <p className="mb-4 hidden text-sm text-slate-600 print:block">Students covered: {termName}.</p>
+      )}
       {error && (
         <div className="mb-5">
           <ErrorNotice message={error} onRetry={() => void load(days)} />
@@ -410,7 +411,7 @@ export default function CoordinatorAnalytics() {
               </div>
 
               {/* The six figures with targets: the same cards as the dashboard. */}
-              <KpiCards term={term} />
+              <KpiCards query={term} />
 
               {/* The chosen period in one line; the charts below break it down. */}
               <p className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-700 shadow-card">

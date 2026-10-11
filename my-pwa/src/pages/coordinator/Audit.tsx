@@ -15,7 +15,9 @@ import { API_URL, withCoordinatorAuth } from "../../lib/api";
 import { formatDateTime, localDateKey } from "../../lib/format";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
 import { serverPagination } from "../../lib/usePagination";
+import FilterBar from "./FilterBar";
 import { coordinatorRequest } from "./request";
+import { FILTER_KEYS as STUDENT_KEYS, useStudentFilters } from "./useStudentFilters";
 
 /*
 |--------------------------------------------------------------------------
@@ -311,6 +313,9 @@ export default function CoordinatorAudit() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
+  // Entries about some of the students. From the address only: a filter
+  // left over from another page would hide most of the log without saying so.
+  const subject = useStudentFilters({ remember: false });
   // The term "This term" means: the one today falls in, else the newest still open.
   const [term, setTerm] = useState<TermDates | null>(null);
 
@@ -388,8 +393,8 @@ export default function CoordinatorAudit() {
     if (record) sent.set("entity_id", record);
     if (range.from) sent.set("from", range.from);
     if (range.to) sent.set("to", range.to);
-    return sent.toString();
-  }, [category, role, person, kind, record, range]);
+    return [sent.toString(), subject.query].filter(Boolean).join("&");
+  }, [category, role, person, kind, record, range, subject.query]);
 
   // "This term" waits for the term's dates before asking.
   const waitingForTerm = when === "term" && !term;
@@ -451,7 +456,7 @@ export default function CoordinatorAudit() {
   const pager = serverPagination(entries, total, page, PAGE_SIZE, (next) =>
     change({ page: next > 1 ? String(next) : "" })
   );
-  const filtered = FILTER_KEYS.some((key) => params.get(key));
+  const filtered = [...FILTER_KEYS, ...STUDENT_KEYS].some((key) => params.get(key));
 
   return (
     <CoordinatorLayout
@@ -471,6 +476,15 @@ export default function CoordinatorAudit() {
     >
       <div className="space-y-6">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+
+        <FilterBar
+          state={subject}
+          note={
+            subject.active
+              ? "Showing only entries about these students: ones on a student's own record, or that name the student. Most entries about a log, task or document do not name one and are left out."
+              : "Choose here to see only the entries about some of the students."
+          }
+        />
 
         <Card>
           <div className="space-y-3 border-b border-slate-100 p-4 sm:p-5">

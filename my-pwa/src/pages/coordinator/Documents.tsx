@@ -19,7 +19,9 @@ import { formatFileSize } from "../../lib/files";
 import { formatDate, localDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
+import FilterBar from "./FilterBar";
 import { coordinatorRequest, downloadSubmittedDocument } from "./request";
+import { useStudentFilters } from "./useStudentFilters";
 
 type DocumentStatus = "Pending" | "Approved" | "Rejected";
 
@@ -65,13 +67,16 @@ export default function CoordinatorDocuments() {
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
+  const studentFilters = useStudentFilters();
+  const chosen = studentFilters.query;
+
   const load = useCallback(async () => {
     try {
       const data = await coordinatorRequest<{
         documents: SubmittedDocument[];
         students: StudentProgress[];
         requirements: string[];
-      }>("/api/coordinator/documents");
+      }>(`/api/coordinator/documents${chosen ? `?${chosen}` : ""}`);
       setDocuments(data.documents || []);
       setStudents(data.students || []);
       setRequirements(data.requirements || []);
@@ -81,7 +86,7 @@ export default function CoordinatorDocuments() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [chosen]);
 
   useEffect(() => {
     const refresh = () => {
@@ -153,6 +158,7 @@ export default function CoordinatorDocuments() {
       subtitle="Which OJT requirements each student has completed, and every file submitted. Supervisors do the reviewing."
     >
       <div className="space-y-6">
+        <FilterBar state={studentFilters} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <SearchField

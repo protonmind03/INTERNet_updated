@@ -180,19 +180,19 @@ export function KpiCard({ kpi }: { kpi: Kpi }) {
   );
 }
 
-/** The six cards, for all students or one term's. */
-export default function KpiCards({ term }: { term: string }) {
-  const [state, setState] = useState<{ term: string; kpis: Kpi[] } | null>(null);
+/** The six cards, for all students or those the coordinator's filters leave ("term=3&program=7"). */
+export default function KpiCards({ query }: { query: string }) {
+  const [state, setState] = useState<{ query: string; kpis: Kpi[] } | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let current = true;
     coordinatorRequest<{ kpis: Kpi[] }>(
-      `/api/coordinator/kpis${term ? `?term=${encodeURIComponent(term)}` : ""}`
+      `/api/coordinator/kpis${query ? `?${query}` : ""}`
     )
       .then((data) => {
         if (!current) return;
-        setState({ term, kpis: data.kpis || [] });
+        setState({ query, kpis: data.kpis || [] });
         setFailed(false);
       })
       .catch(() => {
@@ -201,9 +201,9 @@ export default function KpiCards({ term }: { term: string }) {
     return () => {
       current = false;
     };
-  }, [term]);
+  }, [query]);
 
-  const loading = !state || state.term !== term;
+  const loading = !state || state.query !== query;
 
   return (
     <section aria-labelledby="kpi-heading">

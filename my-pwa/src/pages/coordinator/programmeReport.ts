@@ -6,9 +6,10 @@ import { coordinatorRequest } from "./request";
 | THE PROGRAMME REPORT, AS TABLES
 |--------------------------------------------------------------------------
 |
-| Students with their hours and projected finish, and companies summed
-| from them, as the server works them out (optionally for one term). The
-| same two tables go into the Monitoring export and the Analytics report.
+| Students with their hours and projected finish, and the same students
+| summed by company, by program and by block, as the server works them out
+| for the students the coordinator's filters leave. The same tables go into
+| the Monitoring export and the Analytics report.
 |
 */
 
@@ -16,6 +17,10 @@ type ReportStudent = {
   student_id: string;
   name: string;
   program: string | null;
+  college: string | null;
+  program_code: string | null;
+  major: string | null;
+  block: string | null;
   company: string | null;
   supervisor: string | null;
   term: string | null;
@@ -41,13 +46,49 @@ type ReportCompany = {
   last_visit: string | null;
 };
 
-export type ProgrammeReport = { students: ReportStudent[]; companies: ReportCompany[] };
+/** Students summed under one heading: a program, or a block. */
+export type ReportGroup = {
+  name: string;
+  students: number;
+  verified_hours: number;
+  required_hours: number;
+  average_completion: number;
+  completed: number;
+  at_risk: number;
+};
 
-export function fetchProgrammeReport(term = ""): Promise<ProgrammeReport> {
-  return coordinatorRequest<ProgrammeReport>(
-    `/api/coordinator/report${term ? `?term=${encodeURIComponent(term)}` : ""}`
-  );
+export type ProgrammeReport = {
+  students: ReportStudent[];
+  companies: ReportCompany[];
+  /** Missing from a server older than the program records. */
+  programs?: ReportGroup[];
+  blocks?: ReportGroup[];
+};
+
+/** `query` is the coordinator's filters as sent to the server: "term=3&program=7". */
+export function fetchProgrammeReport(query = ""): Promise<ProgrammeReport> {
+  return coordinatorRequest<ProgrammeReport>(`/api/coordinator/report${query ? `?${query}` : ""}`);
 }
+
+const GROUP_HEAD = [
+  "Active students",
+  "Verified hours",
+  "Required hours",
+  "Average complete (%)",
+  "Students finished",
+  "Students at risk",
+];
+
+const groupRows = (groups: ReportGroup[]) =>
+  groups.map((row) => [
+    row.name,
+    row.students,
+    row.verified_hours,
+    row.required_hours,
+    row.average_completion,
+    row.completed,
+    row.at_risk,
+  ]);
 
 export function programmeSections(report: ProgrammeReport): ReportSection[] {
   return [
@@ -56,7 +97,11 @@ export function programmeSections(report: ProgrammeReport): ReportSection[] {
       head: [
         "Student ID",
         "Name",
+        "College",
         "Program",
+        "Program code",
+        "Major",
+        "Block",
         "Company",
         "Supervisor",
         "Term",
@@ -72,7 +117,11 @@ export function programmeSections(report: ProgrammeReport): ReportSection[] {
       rows: report.students.map((row) => [
         row.student_id,
         row.name,
+        row.college || "",
         row.program || "",
+        row.program_code || "",
+        row.major || "",
+        row.block || "",
         row.company || "",
         row.supervisor || "",
         row.term || "",
@@ -110,6 +159,17 @@ export function programmeSections(report: ProgrammeReport): ReportSection[] {
         row.moa_expiry || "",
         row.last_visit || "",
       ]),
+    },
+    // The company table's twins: the same students, by program and by block.
+    {
+      title: "Programs: summary",
+      head: ["Program", ...GROUP_HEAD],
+      rows: groupRows(report.programs || []),
+    },
+    {
+      title: "Blocks: summary",
+      head: ["Block", ...GROUP_HEAD],
+      rows: groupRows(report.blocks || []),
     },
   ];
 }
