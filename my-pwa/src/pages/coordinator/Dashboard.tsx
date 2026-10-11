@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { ColumnChart, ShareBar } from "../../components/charts";
 import Icon, { type IconName } from "../../components/Icon";
@@ -7,65 +7,70 @@ import {
   CardHeader,
   EmptyState,
   ErrorNotice,
-  ProgressBar,
   Skeleton,
   SkeletonRows,
-  StatTile,
 } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate, formatHours, formatLongDate, greetingFor } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { errorText } from "../../lib/toast";
-import AlertsCard from "./AlertsCard";
+import KpiCards from "./KpiCards";
 import { coordinatorRequest } from "./request";
 import TermSelect from "./TermSelect";
 import { useTermFilter } from "./useTermFilter";
 
+/*
+|--------------------------------------------------------------------------
+| COORDINATOR DASHBOARD
+|--------------------------------------------------------------------------
+|
+| Top to bottom, in the order a coordinator asks: who is in today; what
+| needs someone to act, and who; whether the programme is on target; and
+| then the detail (hours, progress, what waits with each supervisor).
+|
+| Everything is counted on the server. The page asks for three summaries
+| and never downloads the students themselves.
+|
+*/
+
 type DashboardData = {
   students: { active: number; total: number };
-  supervisors: { active: number; total: number };
-  pendingAttendance: number;
-  flaggedAttendance: number;
-  pendingComplaints: number;
-  tasks: { awaitingReview: number; completed: number; total: number };
-  totalHoursLogged: number;
   today: { timedIn: number; onTheClock: number; absent: number };
-  weekHours: number;
   hoursTrend: { day: string; hours: number; logs: number }[];
 };
 
-type MonitorRow = {
-  student_id: string;
-  name: string;
-  company: string | null;
-  supervisor_name: string | null;
-  required_hours: number;
-  hours_rendered: number;
-  pending_logs: number;
-  tasks_awaiting_review: number;
-  flagged_logs: number;
-  overdue_tasks: number;
-  completion: number;
-};
-
-type AttentionItem = {
+type ActionRow = {
   key: string;
   count: number;
-  title: string;
-  detail: string;
-  to: string;
-  icon: IconName;
-  urgent: boolean;
+  label: string;
+  reason: string;
+  link: string;
+  names?: string[];
+};
+
+type ActionGroup = { who: "you" | "supervisors" | "students"; title: string; rows: ActionRow[] };
+
+type Actions = {
+  groups: ActionGroup[];
+  scheduled_not_in: number;
+  progress: { students: number; not_started: number; under_half: number; past_half: number; completed: number };
+  supervisor_queues: { supervisor_id: string; name: string; interns: number; logs: number; tasks: number; waiting: number }[];
+};
+
+const GROUPS: Record<ActionGroup["who"], { icon: IconName; note: string }> = {
+  you: { icon: "user", note: "Only you can settle these." },
+  supervisors: { icon: "briefcase", note: "Waiting on supervisors. Follow up if they stay." },
+  students: { icon: "users", note: "Students to check on." },
 };
 
 // Lighter to darker along the same blue: further along is darker.
 const PROGRESS_BANDS = [
-  { label: "Not started", color: "#95a9fc", holds: (percent: number) => percent <= 0 },
-  { label: "Under halfway", color: "#637bf4", holds: (percent: number) => percent > 0 && percent < 50 },
-  { label: "Past halfway", color: "#1d36d3", holds: (percent: number) => percent >= 50 && percent < 100 },
-  { label: "Completed", color: "#0f1e6e", holds: (percent: number) => percent >= 100 },
-];
+  { key: "not_started", label: "Not started", color: "#95a9fc" },
+  { key: "under_half", label: "Under halfway", color: "#637bf4" },
+  { key: "past_half", label: "Past halfway", color: "#1d36d3" },
+  { key: "completed", label: "Completed", color: "#0f1e6e" },
+] as const;
 
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
@@ -75,7 +80,7 @@ const dayLabel = (day: string) => formatDate(day).replace(/, \d{4}$/, "");
 
 export default function CoordinatorDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
-  const [rows, setRows] = useState<MonitorRow[]>([]);
+  const [actions, setActions] = useState<Actions | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   useLaunchReady(!loading);
@@ -85,12 +90,12 @@ export default function CoordinatorDashboard() {
 
   const load = useCallback(async () => {
     try {
-      const [summary, monitoring] = await Promise.all([
+      const [summary, list] = await Promise.all([
         coordinatorRequest<DashboardData>(`/api/coordinator/dashboard${termQuery}`),
-        coordinatorRequest<{ students: MonitorRow[] }>(`/api/coordinator/monitoring${termQuery}`),
+        coordinatorRequest<Actions>(`/api/coordinator/actions${termQuery}`),
       ]);
       setData(summary);
-      setRows(monitoring.students || []);
+      setActions(list);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load the dashboard."));
@@ -117,100 +122,9 @@ export default function CoordinatorDashboard() {
     };
   }, [load]);
 
-  // Students with a flagged log or an overdue task, worst first.
-  const watchList = useMemo(
-    () =>
-      rows
-        .filter((row) => row.flagged_logs > 0 || row.overdue_tasks > 0)
-        .sort(
-          (a, b) =>
-            b.flagged_logs + b.overdue_tasks - (a.flagged_logs + a.overdue_tasks)
-        )
-        .slice(0, 6),
-    [rows]
-  );
-
-  // How much each supervisor has waiting on them, most first.
-  const supervisorQueues = useMemo(() => {
-    const queues = new Map<string, { logs: number; tasks: number; interns: number }>();
-    for (const row of rows) {
-      if (!row.supervisor_name) continue;
-      const queue = queues.get(row.supervisor_name) ?? { logs: 0, tasks: 0, interns: 0 };
-      queue.logs += row.pending_logs || 0;
-      queue.tasks += row.tasks_awaiting_review || 0;
-      queue.interns += 1;
-      queues.set(row.supervisor_name, queue);
-    }
-    return [...queues.entries()]
-      .map(([name, queue]) => ({ name, ...queue, waiting: queue.logs + queue.tasks }))
-      .sort((a, b) => b.waiting - a.waiting || a.name.localeCompare(b.name));
-  }, [rows]);
-
-  const unassigned = rows.filter((row) => !row.supervisor_name).length;
-  const completed = rows.filter((row) => row.completion >= 100).length;
-  const averageCompletion =
-    rows.length > 0
-      ? Math.round(rows.reduce((sum, row) => sum + row.completion, 0) / rows.length)
-      : 0;
-
-  const candidates: AttentionItem[] = data
-    ? [
-        {
-          key: "complaints",
-          count: data.pendingComplaints,
-          title: data.pendingComplaints === 1 ? "concern to review" : "concerns to review",
-          detail: "Filed by students or supervisors and not yet looked at.",
-          to: "/coordinator/complaints",
-          icon: "flag",
-          urgent: true,
-        },
-        {
-          key: "flagged",
-          count: data.flaggedAttendance,
-          title:
-            data.flaggedAttendance === 1 ? "flagged attendance log" : "flagged attendance logs",
-          detail: "Rejected, missing a time-out, or left unverified for days.",
-          to: "/coordinator/monitoring?scope=attention",
-          icon: "alert",
-          urgent: true,
-        },
-        {
-          key: "unassigned",
-          count: unassigned,
-          title: unassigned === 1 ? "student without a supervisor" : "students without a supervisor",
-          detail: "They cannot upload documents or have logs verified until assigned.",
-          to: "/coordinator/students?filter=unassigned",
-          icon: "users",
-          urgent: true,
-        },
-        {
-          key: "pending",
-          count: data.pendingAttendance,
-          title:
-            data.pendingAttendance === 1
-              ? "attendance log awaiting a supervisor"
-              : "attendance logs awaiting supervisors",
-          detail: "Waiting for the assigned supervisor to verify.",
-          to: "/coordinator/monitoring",
-          icon: "clock",
-          urgent: false,
-        },
-        {
-          key: "tasks",
-          count: data.tasks.awaitingReview,
-          title:
-            data.tasks.awaitingReview === 1
-              ? "task submission awaiting a supervisor"
-              : "task submissions awaiting supervisors",
-          detail: "Submitted by students and not yet reviewed.",
-          to: "/coordinator/monitoring",
-          icon: "tasks",
-          urgent: false,
-        },
-      ]
-    : [];
-  const attention = candidates.filter((item) => item.count > 0);
+  const groups = actions ? actions.groups.filter((group) => group.rows.length > 0) : [];
   const trendHours = data ? data.hoursTrend.reduce((sum, day) => sum + day.hours, 0) : 0;
+  const queues = actions?.supervisor_queues ?? [];
 
   return (
     <CoordinatorLayout
@@ -221,150 +135,168 @@ export default function CoordinatorDashboard() {
       <div className="space-y-6">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {/* TODAY */}
+        <section aria-labelledby="today-heading">
+          <h2 id="today-heading" className="mb-3 text-sm font-semibold text-slate-900">
+            Today's attendance
+          </h2>
           {loading ? (
-            <div className="col-span-full">
-              <BrandLoader role="coordinator" process="dashboard" />
-            </div>
-          ) : !data ? (
-            [0, 1, 2, 3].map((tile) => <Skeleton key={tile} className="h-[104px] rounded-xl" />)
+            <BrandLoader role="coordinator" process="dashboard" />
+          ) : !data || !actions ? (
+            <Skeleton className="h-20 rounded-xl" />
           ) : (
-            <>
-              <StatTile
-                label="Timed in today"
+            <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              <TodayFigure
+                label="Timed in"
                 value={`${data.today.timedIn} of ${data.students.active}`}
-                hint={`${data.today.onTheClock} on the clock now · ${data.today.absent} absent`}
-                icon="clock"
-                tone="gold"
+                note="Active students with a log today"
               />
-              <StatTile
-                label="Active students"
-                value={data.students.active}
-                hint={`With ${plural(data.supervisors.active, "active supervisor")}`}
-                icon="users"
+              <TodayFigure
+                label="On the clock now"
+                value={data.today.onTheClock}
+                note="Timed in and not yet out"
               />
-              <StatTile
-                label="Verified hours"
-                value={formatHours(data.totalHoursLogged)}
-                hint={`${formatHours(data.weekHours)} in the last 7 days`}
-                icon="check-circle"
-                tone="good"
+              <TodayFigure label="Absent" value={data.today.absent} note="Filed an absence for today" />
+              <TodayFigure
+                label="Scheduled, not yet in"
+                value={actions.scheduled_not_in}
+                note="Due today with no log and no absence"
               />
-              <StatTile
-                label="Average completion"
-                value={`${averageCompletion}%`}
-                hint={
-                  rows.length > 0
-                    ? `${completed} of ${rows.length} have completed their hours`
-                    : "No active students yet"
-                }
-                icon="chart"
-              />
-            </>
+            </dl>
           )}
-        </div>
+        </section>
 
-        <AlertsCard />
-
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-5">
-          <Card className="min-w-0 lg:col-span-3">
-            <CardHeader
-              title="Needs attention"
-              description="What is waiting on you, and what is stuck with supervisors"
-            />
-            <div className="mt-3">
-              {loading ? (
-                <SkeletonRows rows={4} />
-              ) : attention.length === 0 ? (
-                <EmptyState
-                  icon="check-circle"
-                  title="Nothing needs attention"
-                  description="No open concerns, flagged logs or waiting reviews."
-                />
-              ) : (
-                <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                  {attention.map((item) => (
-                    <li key={item.key}>
-                      <Link
-                        to={item.to}
-                        className="flex items-center gap-4 px-4 py-3.5 hover:bg-slate-50 sm:px-5"
-                      >
-                        <span
-                          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset ${
-                            item.urgent
-                              ? "bg-red-50 text-red-600 ring-red-600/15"
-                              : "bg-amber-50 text-amber-700 ring-amber-600/20"
-                          }`}
-                        >
-                          <Icon name={item.icon} />
+        {/* WHAT NEEDS DOING, AND WHO DOES IT */}
+        <Card>
+          <CardHeader
+            title="Action list"
+            description="What needs someone to act, grouped by who"
+          />
+          <div className="mt-3">
+            {loading ? (
+              <SkeletonRows rows={4} />
+            ) : groups.length === 0 ? (
+              <EmptyState
+                icon="check-circle"
+                title="Nothing needs doing"
+                description="No open concerns, flagged logs, waiting reviews or students to check on."
+              />
+            ) : (
+              <div className="grid grid-cols-1 border-t border-slate-100 lg:grid-cols-3 lg:divide-x lg:divide-slate-100">
+                {(["you", "supervisors", "students"] as const).map((who) => {
+                  const group = actions?.groups.find((item) => item.who === who);
+                  const rows = group?.rows ?? [];
+                  return (
+                    <section
+                      key={who}
+                      aria-labelledby={`actions-${who}`}
+                      className="border-b border-slate-100 last:border-b-0 lg:border-b-0"
+                    >
+                      <div className="flex items-center gap-2.5 px-4 pt-4 sm:px-5">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-psu-50 text-psu-700 ring-1 ring-inset ring-psu-600/10">
+                          <Icon name={GROUPS[who].icon} size={16} />
                         </span>
-                        <span className="min-w-0 flex-1">
-                          <span className="block text-sm font-semibold text-slate-900">
-                            {item.count} {item.title}
-                          </span>
-                          <span className="block text-sm text-slate-600">{item.detail}</span>
-                        </span>
-                        <Icon name="chevron-right" size={16} className="shrink-0 text-slate-300" />
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
+                        <div className="min-w-0">
+                          <h3 id={`actions-${who}`} className="text-sm font-semibold text-slate-900">
+                            {group?.title ?? who}
+                          </h3>
+                          <p className="text-xs text-slate-600">{GROUPS[who].note}</p>
+                        </div>
+                      </div>
+                      {rows.length === 0 ? (
+                        <p className="px-4 pb-5 pt-3 text-sm text-slate-600 sm:px-5">Nothing here.</p>
+                      ) : (
+                        <ul className="mt-2 divide-y divide-slate-100">
+                          {rows.map((row) => (
+                            <li key={row.key}>
+                              <Link
+                                to={row.link}
+                                className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 sm:px-5"
+                              >
+                                <span className="tabular mt-0.5 flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md bg-slate-900 px-1.5 text-sm font-semibold text-white">
+                                  {row.count}
+                                </span>
+                                <span className="min-w-0 flex-1">
+                                  <span className="block text-sm font-semibold text-slate-900">
+                                    {row.label}
+                                  </span>
+                                  <span className="block text-sm text-slate-600">{row.reason}</span>
+                                  {row.names && row.names.length > 0 && (
+                                    <span className="mt-0.5 block truncate text-xs text-slate-600">
+                                      {row.names.join(", ")}
+                                      {row.count > row.names.length && ` and ${row.count - row.names.length} more`}
+                                    </span>
+                                  )}
+                                </span>
+                                <Icon name="chevron-right" size={16} className="mt-1 shrink-0 text-slate-400" />
+                              </Link>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </section>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </Card>
 
-          <Card className="min-w-0 lg:col-span-2">
-            <CardHeader
-              title="Verified hours, last 14 days"
-              description={loading ? undefined : `${formatHours(trendHours)} in total`}
-              action={<CardLink to="/coordinator/analytics" label="Analytics" />}
-            />
-            <div className="px-4 pb-4 pt-7 sm:px-5">
-              {loading || !data ? (
-                <Skeleton className="h-36 w-full" />
-              ) : trendHours === 0 ? (
-                <p className="py-10 text-center text-sm text-slate-500">
-                  No hours were verified in the last 14 days.
-                </p>
-              ) : (
-                <ColumnChart
-                  points={data.hoursTrend.map((day) => ({
-                    key: day.day,
-                    label: dayLabel(day.day),
-                    value: day.hours,
-                    detail: day.logs === 0 ? "No attendance logged" : plural(day.logs, "log"),
-                  }))}
-                  label="Verified hours per day over the last 14 days"
-                  format={(value) => formatHours(value)}
-                  height={130}
-                  axis={false}
-                />
-              )}
-            </div>
-          </Card>
-        </div>
+        {/* IS IT GOING WELL */}
+        <KpiCards term={term} />
 
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-3">
+        {/* THE DETAIL */}
+        <Card className="min-w-0">
+          <CardHeader
+            title="Verified hours, last 14 days"
+            description={loading ? undefined : `${formatHours(trendHours)} in total`}
+            action={<CardLink to="/coordinator/analytics" label="Analytics" />}
+          />
+          <div className="px-4 pb-4 pt-7 sm:px-5">
+            {loading || !data ? (
+              <Skeleton className="h-36 w-full" />
+            ) : trendHours === 0 ? (
+              <p className="py-10 text-center text-sm text-slate-600">
+                No hours were verified in the last 14 days.
+              </p>
+            ) : (
+              <ColumnChart
+                points={data.hoursTrend.map((day) => ({
+                  key: day.day,
+                  label: dayLabel(day.day),
+                  value: day.hours,
+                  detail: day.logs === 0 ? "No attendance logged" : plural(day.logs, "log"),
+                }))}
+                label="Verified hours per day over the last 14 days"
+                format={(value) => formatHours(value)}
+                height={130}
+                axis={false}
+              />
+            )}
+          </div>
+        </Card>
+
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
           <Card className="min-w-0">
             <CardHeader
               title="Progress toward required hours"
               description={
-                loading ? undefined : `${plural(rows.length, "active student")}`
+                loading || !actions ? undefined : plural(actions.progress.students, "active student")
               }
               action={<CardLink to="/coordinator/monitoring" label="Monitoring" />}
             />
             <div className="px-4 pb-5 pt-5 sm:px-5">
-              {loading ? (
+              {loading || !actions ? (
                 <Skeleton className="h-28 w-full" />
-              ) : rows.length === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-500">No active students yet.</p>
+              ) : actions.progress.students === 0 ? (
+                <p className="py-6 text-center text-sm text-slate-600">No active students yet.</p>
               ) : (
                 <ShareBar
                   label="Active students by progress toward their required hours"
                   segments={PROGRESS_BANDS.map((band) => ({
                     label: band.label,
                     color: band.color,
-                    value: rows.filter((row) => band.holds(row.completion)).length,
+                    value: actions.progress[band.key],
                   }))}
                 />
               )}
@@ -375,13 +307,14 @@ export default function CoordinatorDashboard() {
             <CardHeader
               title="Waiting with supervisors"
               description="Attendance logs and task submissions not yet reviewed"
+              action={<CardLink to="/coordinator/supervisors" label="Supervisors" />}
             />
             <div className="mt-3">
               {loading ? (
                 <SkeletonRows rows={3} />
-              ) : supervisorQueues.length === 0 ? (
+              ) : queues.length === 0 ? (
                 <EmptyState icon="briefcase" title="No supervisors have interns yet" />
-              ) : supervisorQueues.every((queue) => queue.waiting === 0) ? (
+              ) : queues.every((queue) => queue.waiting === 0) ? (
                 <EmptyState
                   icon="check-circle"
                   title="Supervisors are caught up"
@@ -389,14 +322,14 @@ export default function CoordinatorDashboard() {
                 />
               ) : (
                 <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                  {supervisorQueues.slice(0, 5).map((queue) => (
+                  {queues.slice(0, 5).map((queue) => (
                     <li
-                      key={queue.name}
+                      key={queue.supervisor_id}
                       className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5"
                     >
                       <div className="min-w-0">
                         <p className="truncate text-sm font-medium text-slate-900">{queue.name}</p>
-                        <p className="text-xs text-slate-500">
+                        <p className="text-xs text-slate-600">
                           {plural(queue.interns, "intern")} · {plural(queue.logs, "log")} ·{" "}
                           {plural(queue.tasks, "task")}
                         </p>
@@ -405,7 +338,7 @@ export default function CoordinatorDashboard() {
                         className={`tabular shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
                           queue.waiting > 0
                             ? "bg-amber-50 text-amber-800 ring-amber-600/25"
-                            : "bg-slate-100 text-slate-500 ring-slate-500/15"
+                            : "bg-slate-100 text-slate-600 ring-slate-500/15"
                         }`}
                       >
                         {queue.waiting} waiting
@@ -416,56 +349,20 @@ export default function CoordinatorDashboard() {
               )}
             </div>
           </Card>
-
-          <Card className="min-w-0">
-            <CardHeader
-              title="Students to check on"
-              description="Flagged logs or overdue tasks"
-            />
-            <div className="mt-3">
-              {loading ? (
-                <SkeletonRows rows={3} />
-              ) : watchList.length === 0 ? (
-                <EmptyState icon="check-circle" title="No students flagged" />
-              ) : (
-                <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                  {watchList.map((row) => (
-                    <li key={row.student_id} className="px-4 py-3.5 sm:px-5">
-                      <div className="flex items-baseline justify-between gap-3">
-                        <Link
-                          to={`/coordinator/students/${encodeURIComponent(row.student_id)}`}
-                          className="truncate text-sm font-medium text-slate-900 hover:text-psu-700 hover:underline"
-                        >
-                          {row.name}
-                        </Link>
-                        <p className="shrink-0 text-xs font-semibold text-red-600">
-                          {[
-                            row.flagged_logs > 0 &&
-                              `${row.flagged_logs} flagged ${row.flagged_logs === 1 ? "log" : "logs"}`,
-                            row.overdue_tasks > 0 && `${row.overdue_tasks} overdue`,
-                          ]
-                            .filter(Boolean)
-                            .join(" · ")}
-                        </p>
-                      </div>
-                      <p className="truncate text-xs text-slate-500">
-                        {row.company || "No company"} · {row.supervisor_name || "No supervisor"}
-                      </p>
-                      <div className="mt-2 flex items-center gap-3">
-                        <ProgressBar value={row.completion} label={`${row.completion} percent`} />
-                        <span className="tabular shrink-0 text-xs text-slate-600">
-                          {row.completion}%
-                        </span>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
         </div>
       </div>
     </CoordinatorLayout>
+  );
+}
+
+/** One of today's four counts. Plain: these are facts, not judged against a target. */
+function TodayFigure({ label, value, note }: { label: string; value: number | string; note: string }) {
+  return (
+    <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-card">
+      <dt className="text-xs font-medium text-slate-600">{label}</dt>
+      <dd className="tabular mt-1 text-2xl font-semibold tracking-tight text-slate-900">{value}</dd>
+      <dd className="mt-0.5 text-xs text-slate-600">{note}</dd>
+    </div>
   );
 }
 
