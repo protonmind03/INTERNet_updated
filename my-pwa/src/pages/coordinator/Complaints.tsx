@@ -20,7 +20,7 @@ import { downloadProtectedUpload } from "../../lib/api";
 import { formatDateTime } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
-import { usePagination } from "../../lib/usePagination";
+import { serverPagination } from "../../lib/usePagination";
 import { coordinatorRequest } from "./request";
 
 type ComplaintStatus = "Pending" | "In Review" | "Resolved" | "Dismissed";
@@ -54,6 +54,9 @@ function subjectOf(complaint: Complaint): string {
   return [complaint.supervisor_name, complaint.company_name].filter(Boolean).join(", ") || "a supervisor";
 }
 
+/** Complaints shown at a time; the server sends one page of them. */
+const PAGE_SIZE = 15;
+
 export default function CoordinatorComplaints() {
   const [searchParams] = useSearchParams();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -63,29 +66,47 @@ export default function CoordinatorComplaints() {
   const [filter, setFilter] = useState<Filter>("all");
   const [openId, setOpenId] = useState<number | null>(null);
 
+  // The server searches, filters and pages; only one page is here.
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  // A changed search or filter starts again from the first page.
+  const fromFirstPage =
+    <T,>(setter: (value: T) => void) =>
+    (value: T) => {
+      setter(value);
+      setPage(1);
+    };
+
   const load = useCallback(async () => {
-    const params = new URLSearchParams();
+    const params = new URLSearchParams({
+      limit: String(PAGE_SIZE),
+      offset: String((page - 1) * PAGE_SIZE),
+    });
     if (filter !== "all") params.set("status", filter);
     if (search.trim()) params.set("q", search.trim());
     try {
-      const data = await coordinatorRequest<{ complaints: Complaint[] }>(
+      const data = await coordinatorRequest<{ complaints: Complaint[]; total?: number }>(
         `/api/coordinator/complaints?${params.toString()}`
       );
-      setComplaints(data.complaints || []);
+      const list = data.complaints || [];
+      setComplaints(list);
+      setTotal(data.total ?? list.length);
+      // The last row of the last page left the filter: step back to a page that has rows.
+      if (list.length === 0 && page > 1) setPage(page - 1);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load complaints."));
     } finally {
       setLoading(false);
     }
-  }, [filter, search]);
+  }, [filter, search, page]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 250);
     return () => window.clearTimeout(timer);
   }, [load]);
 
-  const pager = usePagination(complaints, 15);
+  const pager = serverPagination(complaints, total, page, PAGE_SIZE, setPage);
   const opened = complaints.find((item) => item.id === openId) ?? null;
   const filtered = filter !== "all" || search.trim() !== "";
 
@@ -100,7 +121,7 @@ export default function CoordinatorComplaints() {
         <div className="flex flex-wrap items-center gap-3">
           <SearchField
             value={search}
-            onChange={setSearch}
+            onChange={fromFirstPage(setSearch)}
             label="Search complaints"
             placeholder="Search by person, company or wording"
             className="w-full sm:w-80"
@@ -108,7 +129,7 @@ export default function CoordinatorComplaints() {
           <FilterChips
             label="Filter by status"
             value={filter}
-            onChange={setFilter}
+            onChange={fromFirstPage(setFilter)}
             options={[
               { value: "all", label: "All" },
               { value: "Pending", label: "New" },
