@@ -10,6 +10,7 @@ import { useNavCounts, type NavCounts } from "../lib/navCounts";
 import { useReportedHeight } from "../lib/layers";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import TimeInFab from "../pages/student/TimeInFab";
 import TimeInProvider from "../pages/student/TimeInProvider";
 
 /*
@@ -298,6 +299,9 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
           </button>
         </nav>
       </div>
+
+      {/* The next step of the day, one tap away on a phone. */}
+      <TimeInFab />
 
       {/* "MORE" SHEET (phones) */}
       {moreOpen && (
