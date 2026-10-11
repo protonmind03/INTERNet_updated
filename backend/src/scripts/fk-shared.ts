@@ -16,7 +16,55 @@ export type PendingForeignKey = {
   orphans: number;
 };
 
+/**
+ * True when the script was told to write: `--confirm`, or the bare word
+ * `confirm`. The bare word is for the hosted database, where PowerShell
+ * and `railway run` between them drop the `--` npm needs to pass a flag
+ * through.
+ */
+export function confirmed(): boolean {
+  return process.argv.includes("--confirm") || process.argv.slice(2).includes("confirm");
+}
+
+/**
+ * The hosted database, through a tunnel on this computer. Used when a bare
+ * port number is given and the Railway CLI has supplied the database's own
+ * settings:
+ *
+ *   railway connect Postgres --tunnel-only          (leave running; note the port)
+ *   railway run --service Postgres npm run <script> <port>
+ *
+ * Nothing is typed in and no password appears on screen.
+ */
+async function connectThroughTunnel(port: string): Promise<Client | null> {
+  const { PGUSER: user, PGPASSWORD: password, PGDATABASE: database } = process.env;
+  if (!user || !password || !database) return null;
+  // Encrypted if the database offers it, plain otherwise: either way the
+  // traffic is inside the tunnel.
+  for (const ssl of [{ rejectUnauthorized: false }, false] as const) {
+    const client = new Client({ host: "127.0.0.1", port: Number(port), user, password, database, ssl });
+    try {
+      await client.connect();
+      console.log(`Database: ${database} through the tunnel on port ${port}`);
+      return client;
+    } catch (error) {
+      await client.end().catch(() => undefined);
+      if (ssl === false) throw error;
+    }
+  }
+  return null;
+}
+
 export async function connect(): Promise<Client> {
+  const tunnelPort = process.argv.slice(2).find((value) => /^\d{2,5}$/.test(value));
+  if (tunnelPort) {
+    const tunnelled = await connectThroughTunnel(tunnelPort);
+    if (tunnelled) return tunnelled;
+    throw new Error(
+      "A tunnel port was given, but the database's settings were not supplied. Run this through the Railway CLI, against the Postgres service:\n" +
+        "  railway run --service Postgres npm run <script> <tunnel port>"
+    );
+  }
   const connectionString = process.env.DATABASE_PUBLIC_URL;
   if (!connectionString) {
     throw new Error(

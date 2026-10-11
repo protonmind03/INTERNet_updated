@@ -1245,3 +1245,38 @@ the term picker and its carrying between pages, the Journals page on a
 phone, the Students page turning pages with 46 students in the test
 database, and record links landing on a task, on a log on the second page
 of the list, and on a queue item.
+
+## 23. The optional items, the enforced security policy, and the tunnel for data scripts (12 October 2026)
+
+On `ui-redesign`. One additive migration (035).
+
+- **Add the schedule to a calendar.** The student's Schedule page saves an
+  `.ics` file: one repeating event per working day in Philippine time, up
+  to the projected finish (or half a year when that is not known), skipping
+  holidays, with each holiday as an all-day entry. It is a copy made at
+  that moment.
+- **A summary PDF for each intern.** In the supervisor's intern dialog:
+  hours and projected finish, attendance counts and every log with what was
+  done, tasks with ratings and feedback, documents, and the final
+  evaluation when there is one.
+- **Who has seen an announcement.** The coordinator's list shows "seen by
+  N" beside how many people each announcement went to. A person is counted
+  the first time the announcement is on their Announcements page; the
+  notification alone does not count. Migration 035.
+- **The content security policy is enforced.** `vercel.json` now sends
+  `Content-Security-Policy`, not the report-only form. Checked locally with
+  it enforced: all 46 pages load with no violations, the camera check
+  starts, and the calendar, PDF and data downloads still save.
+- **Data scripts reach the hosted database.** `db:backfill-companies` and
+  the other data scripts take a tunnel port, as the backup does, and the
+  bare word `confirm` in place of `--confirm`. Steps are in `DEPLOY.md`.
+
+**What was checked:** 119 API tests. The calendar file's rules on the
+function itself (first weekday, repeat end, skipped holiday, escaping, line
+length) and the real download on a phone-sized page. The PDF as a real
+file with its tables. Read receipts counting each reader once. The tunnel
+form against a local database standing in for the tunnel.
+
+**Not checked:** the calendar file opened in a real phone calendar app;
+the enforced policy on the hosted site (it gets there on the next push);
+the tunnel form against the host.

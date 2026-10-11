@@ -1,4 +1,5 @@
 import {
+  confirmed as writeConfirmed,
   connect,
   pendingForeignKeys,
   printReport,
@@ -14,7 +15,7 @@ import {
 //   npm run db:fk-validate -- --confirm
 
 async function validate() {
-  const confirmed = process.argv.includes("--confirm");
+  const confirmed = writeConfirmed();
   const client = await connect();
   try {
     if (!confirmed) {

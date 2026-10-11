@@ -387,6 +387,10 @@ are true of the system today, for a scope section:
 - Summary emails to supervisors and coordinators exist in the system but
   are sent only when the server has SMTP settings, which the hosted
   system does not have at the time of writing.
+- An announcement's "seen by" count is the number of people who have had
+  it on their Announcements page. It does not show that anyone read it.
+- The schedule's calendar file is a copy made when it is saved; it does
+  not update itself when the schedule changes.
 - Accessibility was checked with an automated tool (axe, WCAG 2.1 A and
   AA) on every page as it loads, with no failures left. Automated checks
   find only part of what the guidelines cover; the paper should not claim

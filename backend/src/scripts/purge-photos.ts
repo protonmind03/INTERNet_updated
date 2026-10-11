@@ -1,4 +1,4 @@
-import { connect } from "./fk-shared";
+import { confirmed as writeConfirmed, connect } from "./fk-shared";
 import { deletePrivateFile } from "../services/privateFileStore";
 import { photoRetentionDays } from "../services/privacy";
 
@@ -23,7 +23,7 @@ async function purge() {
     );
     return;
   }
-  const confirm = process.argv.includes("--confirm");
+  const confirm = writeConfirmed();
   const client = await connect();
   try {
     if (!confirm) await client.query("SET default_transaction_read_only = on");

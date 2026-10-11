@@ -128,10 +128,9 @@ keeps working throughout.
 **About the company backfill.** For a handful of companies, the Companies
 page does the job: each typed name with no record is shown as a button, and
 adding it links everyone who carries that name. The script is for when
-there are too many to click through. It connects with `DATABASE_PUBLIC_URL`,
-which on Railway is the internal address, so it cannot yet be run from a
-laptop the way the backup can. If you want to use it, tell me and I will
-give it the same tunnel option as the backup command first.
+there are too many to click through. Since 2026-10-12 it reaches the hosted database through the same tunnel
+as the backup (`DEPLOY.md`, "Running a data script on the hosted
+database"). It has been tried that way against a local database only.
 
 New variables this phase: none.
 
@@ -200,7 +199,7 @@ finish in does not matter; for those few minutes the new pages answer
 | Optional | Railway → Variables | All five of `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_FROM`. Without all five no email is sent: not password recovery, not deadline reminders, not the summaries. | Email delivery. |
 | Optional, needs SMTP | Railway → Variables | `SUPERVISOR_DIGEST_TIME`: `HH:MM`, Philippine time. Unset means `07:30`. | When the supervisors' daily summary goes out. |
 | Optional, needs SMTP | Railway → Variables | `COORDINATOR_DIGEST_DAY` (`SUN` to `SAT`; unset means `MON`) and `COORDINATOR_DIGEST_TIME` (`HH:MM`; unset means `07:30`). | When the coordinators' weekly summary goes out. |
-| On your word, later | Vercel (a commit to `vercel.json`, by me) | Switch `Content-Security-Policy-Report-Only` to `Content-Security-Policy`. Every page now loads with no violations, so it is ready; it is left off until you say so, because a mistake in it can stop pages loading. | The stricter security header. |
+| On your word, later | Vercel (a commit to `vercel.json`, by me) | Switch `Content-Security-Policy-Report-Only` to `Content-Security-Policy`. Done on `ui-redesign` on 2026-10-12, after every page loaded with no violations with it enforced locally. It is live on the test site from the next push and on the live site when `main` next moves. If a page ever fails to load because of it, changing the header's name back to the report-only form undoes it. | The stricter security header. |
 | | Vercel | No setting changes. | |
 
 New variables in these parts: `SUPERVISOR_DIGEST_TIME`,

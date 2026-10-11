@@ -323,6 +323,33 @@ or pages that will not load), publish the kill switch:
 
 Unset, `SW_KILLSWITCH` does nothing.
 
+## Running a data script on the hosted database (run by you)
+
+The data scripts (`db:backfill-companies`, `db:fk-orphans`,
+`db:fk-validate`, `privacy:purge-photos`) reach the hosted database the
+way the backup does: through a tunnel, with the Railway CLI supplying the
+database's settings, so nothing is typed in and no password is shown.
+
+1. Take a backup first (see "Backups").
+2. In one terminal, open the tunnel and leave it running. It prints a port
+   number. It also prints the password: do not screenshot that window.
+   `railway connect Postgres --tunnel-only`
+3. In a second terminal, in `backend`, run the script with that port. This
+   only lists what it would do:
+   `railway run --service Postgres npm run db:backfill-companies PORT`
+4. To make the changes, add the word `confirm` after the port:
+   `railway run --service Postgres npm run db:backfill-companies PORT confirm`
+5. Close the tunnel with `Ctrl+C`.
+
+The bare word `confirm` is used instead of `--confirm` because PowerShell
+and `railway run` between them drop the `--` that a flag needs. To run a
+script on the staging database instead, add `--environment staging` to
+both `railway` commands.
+
+This form has been tried against a local database standing in for the
+tunnel, not yet against the host. `privacy:purge-photos` is the exception:
+the photos are on the server's own disk, so it still has to run there.
+
 ## Validating the foreign keys (optional, run by you)
 
 Migration 006 added 15 foreign keys as `NOT VALID`: the database enforces

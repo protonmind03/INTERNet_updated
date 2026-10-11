@@ -1,4 +1,4 @@
-import { connect } from "./fk-shared";
+import { confirmed as writeConfirmed, connect } from "./fk-shared";
 
 // Turns the company names already typed on students, supervisors and
 // complaints into company records, and links those rows to them.
@@ -14,7 +14,12 @@ import { connect } from "./fk-shared";
 //   npm run db:backfill-companies -- --confirm
 //
 // On the hosted database it is run by the project owner, after a backup,
-// through the tunnel described in DEPLOY.md.
+// through a tunnel (DEPLOY.md, "Running a data script on the hosted
+// database"):
+//
+//   railway connect Postgres --tunnel-only
+//   railway run --service Postgres npm run db:backfill-companies <port>
+//   railway run --service Postgres npm run db:backfill-companies <port> confirm
 
 type Proposal = {
   key: string;
@@ -27,7 +32,7 @@ type Proposal = {
 };
 
 async function backfill() {
-  const confirmed = process.argv.includes("--confirm");
+  const confirmed = writeConfirmed();
   const client = await connect();
   try {
     if (!confirmed) await client.query("SET default_transaction_read_only = on");

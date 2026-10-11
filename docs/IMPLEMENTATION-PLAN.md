@@ -374,7 +374,7 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
 - [x] **4.S8 Forgot-to-time-out reminder,** at most once a day per
   student. **[DECISION D11]**
 - [x] **4.S9 Announcements page** for students and supervisors.
-- [ ] **4.S10 Optional:** `.ics` export. **[DECISION D12]** Skipped.
+- [x] **4.S10 Optional:** `.ics` export. **[DECISION D12]** Built 2026-10-12.
 
 **How the student part turned out differently from the list above**
 - 4.S1: the server accepts a time-out with no note, so an older copy of
@@ -409,7 +409,7 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
   printed on `DtrSheet`.
 - [x] **4.V5 Bulk decisions** for documents and absences, with the
   partial-failure report of bulk verify.
-- [ ] **4.V6 Optional:** per-intern summary PDF. **[DECISION D12]** Skipped.
+- [x] **4.V6 Optional:** per-intern summary PDF. **[DECISION D12]** Built 2026-10-12.
 
 ### Coordinator
 - [x] **4.C1 Coordinator accounts.** List, create, deactivate, reset; same
@@ -420,7 +420,7 @@ data lives in IndexedDB, keyed by role and account, purged on sign-out.
   the dialog first.
 - [x] **4.C4 Site visit log.** `site_visits` table and page; visits on the
   company page.
-- [ ] **4.C5 Optional:** read receipts on announcements. **[DECISION D12]** Skipped.
+- [x] **4.C5 Optional:** read receipts on announcements. **[DECISION D12]** Built 2026-10-12.
 
 ### Cross-cutting
 - [x] **4.X1 Notification preferences.** `notification_preferences` (push
@@ -464,7 +464,7 @@ cross-cutting.
   anything not fixed is reported.
 - [x] **5.6 Playwright end-to-end tests** with a fake camera stream, added
   to CI.
-- [ ] **5.7 Enforcing CSP** in `vercel.json`, once the report-only header
+- [x] **5.7 Enforcing CSP** in `vercel.json`, once the report-only header
   has shown no real violations. Pushed only on the owner's word.
   *Known from Phase 1:* `offline.html` has an inline script and an inline
   `onclick`; under an enforced `script-src 'self'` its "Try again" button
@@ -492,9 +492,6 @@ cross-cutting.
 ## Still open
 
 Not built, and noted where each was decided:
-- The three optional items (`.ics` export, per-intern summary PDF,
-  announcement read receipts): skipped, D12.
-- Enforcing the content security policy (5.7): ready, waiting for the word.
 - Server paging: Students, Complaints and the audit log page on the
   server. Still loading whole lists and paging in the browser: the
   Supervisors page (its move-interns dialog needs every supervisor, and
@@ -506,13 +503,17 @@ Not built, and noted where each was decided:
   kinds (a student's document, a coordinator's attendance or document
   notice) still open the page only, and only notifications whose writer
   names the record carry one.
-- The company backfill script cannot yet reach the hosted database.
 
 Closed since the list was first written (2026-10-11, on `ui-redesign`):
 - The term filter now covers the dashboard and Analytics as well.
 - A supervisor has a Journals page for reading back every journal.
 - The Students and Complaints pages are paged by the server.
 - A notification that names a record opens that record.
+- The three optional items are built (2026-10-12): the calendar export,
+  the per-intern summary PDF and announcement read receipts.
+- The content security policy is enforced on `ui-redesign` (5.7). It
+  reaches the live site when `main` next moves.
+- The data scripts reach the hosted database through the tunnel.
 
 Needed from the owner:
 - The university's final evaluation criteria and scale (D13), entered on
