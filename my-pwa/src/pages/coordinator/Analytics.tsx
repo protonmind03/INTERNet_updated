@@ -23,6 +23,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
 import { formatDate, formatDateTime, formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
+import { fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { coordinatorRequest } from "./request";
 
 type TrendDay = { day: string; logs: number; hours: number; students: number };
@@ -224,6 +225,18 @@ function reportSections(report: AnalyticsData): ReportSection[] {
   ];
 }
 
+/**
+ * The students' projections and the company summary, for the exports. If
+ * they cannot be loaded the report is still produced without them.
+ */
+async function programmeTables(): Promise<ReportSection[]> {
+  try {
+    return programmeSections(await fetchProgrammeReport());
+  } catch {
+    return [];
+  }
+}
+
 const reportFileName = (extension: string) =>
   `internet-analytics-${new Date().toISOString().slice(0, 10)}.${extension}`;
 
@@ -264,7 +277,9 @@ export default function CoordinatorAnalytics() {
     try {
       // Loaded on demand so the PDF library is not part of every page load.
       const { buildAnalyticsPdf } = await import("../../lib/analyticsPdf");
-      buildAnalyticsPdf(reportSections(data), new Date().toLocaleString()).save(
+      // The company summary fits a page; the per-student table is in the CSV.
+      const programme = (await programmeTables()).slice(1);
+      buildAnalyticsPdf([...reportSections(data), ...programme], new Date().toLocaleString()).save(
         reportFileName("pdf")
       );
       toast.success("Analytics PDF ready.");
@@ -276,12 +291,13 @@ export default function CoordinatorAnalytics() {
     }
   };
 
-  const downloadCsv = () => {
+  const downloadCsv = async () => {
     if (!data) return;
+    const programme = await programmeTables();
     const rows: (string | number)[][] = [
       ["INTERNet Coordinator Analytics Report"],
       ["Generated at", new Date().toLocaleString()],
-      ...reportSections(data).flatMap((section) => [
+      ...[...reportSections(data), ...programme].flatMap((section) => [
         [],
         [section.title],
         section.head,
@@ -314,7 +330,7 @@ export default function CoordinatorAnalytics() {
             <Button variant="secondary" icon="printer" onClick={() => window.print()}>
               Print
             </Button>
-            <Button variant="secondary" icon="download" onClick={downloadCsv}>
+            <Button variant="secondary" icon="download" onClick={() => void downloadCsv()}>
               CSV
             </Button>
             <Button icon="download" busy={buildingPdf} doneLabel="Ready" busyProcess="export" onClick={() => void downloadPdf()}>

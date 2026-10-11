@@ -36,6 +36,7 @@ import { coordinatorRequest } from "./request";
 import TermSelect from "./TermSelect";
 import ProjectionLine from "../../components/ProjectionLine";
 import { useProjections } from "../../lib/useProjections";
+import { downloadSectionsCsv, fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { useTermFilter } from "./useTermFilter";
 
 type MonitorRow = {
@@ -195,6 +196,35 @@ export default function CoordinatorMonitoring() {
   const attentionCount = rows.filter(needsAttention).length;
   const hasRange = Boolean(dateFrom || dateTo);
 
+  // Students with their projected finish, and companies summed from them,
+  // for the term chosen above (or every term).
+  const [exporting, setExporting] = useState(false);
+  const exportReport = async () => {
+    setExporting(true);
+    try {
+      const report = await fetchProgrammeReport(term);
+      const termName =
+        term === "none"
+          ? "Students with no term"
+          : terms.find((item) => String(item.id) === term)?.name || "All terms";
+      downloadSectionsCsv(
+        `internet-monitoring-${new Date().toISOString().slice(0, 10)}.csv`,
+        [
+          ["INTERNet Monitoring Report"],
+          ["Generated at", new Date().toLocaleString()],
+          ["Term", termName],
+          ["Active students", report.students.length],
+        ],
+        programmeSections(report)
+      );
+      toast.success("Monitoring report downloaded.");
+    } catch (exportError) {
+      toast.error(errorText(exportError, "The report could not be prepared."));
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const showFlags = (studentId: string) => {
     setFocusStudent(studentId);
     document.getElementById("flagged-logs")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -204,6 +234,11 @@ export default function CoordinatorMonitoring() {
     <CoordinatorLayout
       title="Monitoring"
       subtitle="Hours, tasks and attendance problems for every active student."
+      actions={
+        <Button variant="secondary" icon="download" busy={exporting} busyProcess="export" onClick={() => void exportReport()}>
+          {exporting ? "Preparing" : "Export"}
+        </Button>
+      }
     >
       <div className="space-y-6">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}

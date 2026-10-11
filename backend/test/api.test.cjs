@@ -4538,3 +4538,63 @@ test("alerts pick up a slow supervisor and an agreement about to end, and the we
     await pool.end();
   }
 });
+
+/*
+| The programme report, and its agreement with the screens
+*/
+
+test("the report's figures match Monitoring, its company rows match its student rows, and the term filter narrows both", async () => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/report";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest(`${path}?term=abc`, { headers: authHeaders(coordinatorToken) })).response.status, 400);
+
+  const get = async (query = "") => (await jsonRequest(`${path}${query}`, { headers: authHeaders(coordinatorToken) })).body;
+  const report = await get();
+  const monitoring = (await jsonRequest("/api/coordinator/monitoring", { headers: authHeaders(coordinatorToken) })).body.students;
+
+  // The same students, with the same verified hours, as Monitoring shows.
+  assert.deepEqual(report.students.map((row) => row.student_id).sort(), monitoring.map((row) => row.student_id).sort());
+  for (const row of report.students) {
+    const shown = monitoring.find((item) => item.student_id === row.student_id);
+    assert.ok(Math.abs(row.verified_hours - Number(shown.hours_rendered)) < 0.01, `${row.student_id}: ${row.verified_hours} vs ${shown.hours_rendered}`);
+    assert.equal(row.completion, Math.min(100, Math.round((row.verified_hours / row.required_hours) * 100)));
+    assert.equal(row.remaining_hours, Math.max(0, Math.round((row.required_hours - row.verified_hours) * 100) / 100));
+  }
+  // And the same projection the projections route gives.
+  const projections = (await jsonRequest("/api/projections", { headers: authHeaders(coordinatorToken) })).body.projections;
+  for (const row of report.students) {
+    const projected = projections.find((item) => item.student_id === row.student_id);
+    assert.deepEqual([row.projected_finish, row.at_risk], [projected.projected_finish, projected.at_risk], row.student_id);
+  }
+
+  // Every company row is the sum of its students' rows; nobody is counted twice or left out.
+  const check = (data) => {
+    assert.equal(data.companies.reduce((sum, row) => sum + row.students, 0), data.students.length);
+    for (const company of data.companies) {
+      const rows = data.students.filter((row) => ((row.company || "").trim() || "No company") === company.company);
+      assert.equal(company.students, rows.length, company.company);
+      assert.ok(Math.abs(company.verified_hours - rows.reduce((sum, row) => sum + row.verified_hours, 0)) < 0.01, company.company);
+      assert.ok(Math.abs(company.required_hours - rows.reduce((sum, row) => sum + row.required_hours, 0)) < 0.01, company.company);
+      assert.equal(company.at_risk, rows.filter((row) => row.at_risk).length, company.company);
+      assert.equal(company.completed, rows.filter((row) => row.remaining_hours === 0 && row.required_hours > 0).length, company.company);
+    }
+  };
+  check(report);
+
+  // Each term's report is exactly the students Monitoring lists for that term, and the terms add up to the whole.
+  const terms = (await jsonRequest("/api/coordinator/terms", { headers: authHeaders(coordinatorToken) })).body.terms;
+  let counted = 0;
+  for (const term of ["none", ...terms.map((item) => String(item.id))]) {
+    const part = await get(`?term=${term}`);
+    check(part);
+    const listed = (await jsonRequest(`/api/coordinator/monitoring?term=${term}`, { headers: authHeaders(coordinatorToken) })).body.students;
+    assert.deepEqual(part.students.map((row) => row.student_id).sort(), listed.map((row) => row.student_id).sort(), `term ${term}`);
+    for (const row of part.students) assert.ok(report.students.some((whole) => whole.student_id === row.student_id && whole.verified_hours === row.verified_hours));
+    counted += part.students.length;
+  }
+  assert.equal(counted, report.students.length, "every active student is in exactly one term's report, or in the one for no term");
+  assert.equal((await get("?term=999999999")).students.length, 0);
+});

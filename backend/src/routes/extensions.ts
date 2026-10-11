@@ -3,7 +3,7 @@ import type express from "express";
 import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
-import { coordinatorAlerts, projectionsFor } from "../services/insights";
+import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
 
 /*
 |--------------------------------------------------------------------------
@@ -3747,6 +3747,25 @@ export function registerExtensionRoutes(
     } catch (error) {
       console.error("GET ALERTS ERROR:", error);
       return res.status(500).json({ message: "Failed to load the alerts." });
+    }
+  });
+
+  // The figures behind the exports: students with their projection, and
+  // companies summed from them, optionally for one term.
+  app.get("/api/coordinator/report", requireCoordinator, async (req, res) => {
+    try {
+      let termId: number | "none" | undefined;
+      if (req.query.term !== undefined && req.query.term !== "") {
+        const term = String(req.query.term);
+        if (term !== "none" && !/^\d{1,9}$/.test(term)) {
+          return res.status(400).json({ message: "That is not a term." });
+        }
+        termId = term === "none" ? "none" : Number(term);
+      }
+      return res.json(await programmeReport(pool, termId));
+    } catch (error) {
+      console.error("GET REPORT ERROR:", error);
+      return res.status(500).json({ message: "Failed to build the report." });
     }
   });
 }

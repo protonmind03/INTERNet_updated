@@ -426,3 +426,91 @@ export async function sendCoordinatorDigests(pool: Pool, deps: DigestDeps = {}):
   }
   return sent;
 }
+
+/*
+|--------------------------------------------------------------------------
+| THE PROGRAMME REPORT
+|--------------------------------------------------------------------------
+|
+| One row per active student (optionally one term's) with their hours and
+| projection, and one row per company summing its students. It is what the
+| exports are made from, so a file and the screens can be checked against
+| each other: every figure here comes from the same verified attendance
+| the Monitoring page counts.
+|
+*/
+
+export type ReportStudent = StudentProjection & {
+  program: string | null;
+  supervisor: string | null;
+  term: string | null;
+  completion: number;
+};
+
+export type ReportCompany = {
+  company: string;
+  students: number;
+  verified_hours: number;
+  required_hours: number;
+  average_completion: number;
+  completed: number;
+  at_risk: number;
+  /** From the company record, when there is one of that name. */
+  moa_expiry: string | null;
+  last_visit: string | null;
+};
+
+export async function programmeReport(
+  pool: Pool,
+  termId?: number | "none",
+  now: Date = new Date()
+): Promise<{ students: ReportStudent[]; companies: ReportCompany[] }> {
+  const projections = await projectionsFor(pool, { termId }, now);
+  const ids = projections.map((row) => row.student_id);
+  const [extra, records] = await Promise.all([
+    pool.query<{ student_id: string; program: string | null; supervisor: string | null; term: string | null }>(
+      `SELECT s.student_id, s.program, sup.name AS supervisor, t.name AS term
+       FROM students s
+       LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+       LEFT JOIN terms t ON t.id = s.term_id
+       WHERE s.student_id = ANY($1::text[])`,
+      [ids]
+    ),
+    pool.query<{ name: string; moa_expiry: string | null; last_visit: string | null }>(
+      `SELECT c.name, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
+              (SELECT TO_CHAR(MAX(v.visit_date), 'YYYY-MM-DD') FROM site_visits v WHERE v.company_id = c.id) AS last_visit
+       FROM companies c`
+    ),
+  ]);
+  const extraOf = new Map(extra.rows.map((row) => [row.student_id, row]));
+  const students: ReportStudent[] = projections.map((row) => ({
+    ...row,
+    program: extraOf.get(row.student_id)?.program ?? null,
+    supervisor: extraOf.get(row.student_id)?.supervisor ?? null,
+    term: extraOf.get(row.student_id)?.term ?? null,
+    completion:
+      row.required_hours > 0 ? Math.min(100, Math.round((row.verified_hours / row.required_hours) * 100)) : 0,
+  }));
+
+  const recordOf = new Map(records.rows.map((row) => [row.name.trim().toLowerCase(), row]));
+  const groups = new Map<string, ReportStudent[]>();
+  for (const row of students) {
+    const name = (row.company || "").trim() || "No company";
+    groups.set(name, [...(groups.get(name) || []), row]);
+  }
+  const round = (value: number) => Math.round(value * 100) / 100;
+  const companies: ReportCompany[] = [...groups.entries()]
+    .map(([company, rows]) => ({
+      company,
+      students: rows.length,
+      verified_hours: round(rows.reduce((sum, row) => sum + row.verified_hours, 0)),
+      required_hours: round(rows.reduce((sum, row) => sum + row.required_hours, 0)),
+      average_completion: Math.round(rows.reduce((sum, row) => sum + row.completion, 0) / rows.length),
+      completed: rows.filter((row) => row.remaining_hours === 0 && row.required_hours > 0).length,
+      at_risk: rows.filter((row) => row.at_risk).length,
+      moa_expiry: recordOf.get(company.toLowerCase())?.moa_expiry ?? null,
+      last_visit: recordOf.get(company.toLowerCase())?.last_visit ?? null,
+    }))
+    .sort((a, b) => a.company.localeCompare(b.company));
+  return { students, companies };
+}
