@@ -48,6 +48,9 @@ function studentLink(type: string, title: string): string {
 }
 
 function supervisorLink(type: string, title: string): string {
+  // A journal waiting for a decision is in the queue; anything else about
+  // journals is read on their own page.
+  if (title.includes("journal") && !title.includes("submitted")) return "/supervisor/journals";
   if (title.includes("deadline")) return "/supervisor/tasks";
   if (title.includes("intern")) return "/supervisor/interns";
   // New work to decide on opens the review queue, which is the dashboard.

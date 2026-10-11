@@ -496,10 +496,13 @@ Not built, and noted where each was decided:
   announcement read receipts): skipped, D12.
 - Enforcing the content security policy (5.7): ready, waiting for the word.
 - From Phase 3: the pages still load whole lists (only the audit log pages
-  on the server); the dashboard and Analytics have no term filter; a
-  notification opens the right page but not one particular record; the
-  company backfill script cannot yet reach the hosted database.
-- A supervisor has no page for re-reading journals they already reviewed.
+  on the server); a notification opens the right page but not one
+  particular record; the company backfill script cannot yet reach the
+  hosted database.
+
+Closed since the list was first written (2026-10-11, on `ui-redesign`):
+- The term filter now covers the dashboard and Analytics as well.
+- A supervisor has a Journals page for reading back every journal.
 
 Needed from the owner:
 - The university's final evaluation criteria and scale (D13), entered on

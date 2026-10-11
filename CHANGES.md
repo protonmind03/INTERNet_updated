@@ -1206,3 +1206,26 @@ No migrations. Live since 11 October 2026.
 - The end-to-end job on GitHub: it has only been run on this machine. Its
   first run happens on the next push.
 - Anything on a real phone.
+
+## 22. After Phase 5: two gaps closed (11 October 2026)
+
+On `ui-redesign`. No migrations.
+
+- **The term filter covers the dashboard and Analytics.** Both pages have
+  the term picker that Students and Monitoring have, and the choice
+  carries between all four. With a term chosen, every figure counts only
+  that term's active students: today's attendance, hours, tasks, the
+  progress spread, companies and ratings. Complaints and evaluations are
+  the ones of that term's students, so a complaint a supervisor filed is
+  left out of a term's figures. The Analytics exports say which term they
+  are for. Supervisor counts and "complaints to review" on the dashboard
+  stay programme-wide.
+- **Supervisors can read journals back.** A new Journals page lists every
+  journal their interns have written, newest week first, with filters for
+  waiting, reviewed and returned, and by intern. Deciding a journal still
+  happens in the Review queue.
+
+**What was checked:** 116 API tests, including one that checks each term's
+dashboard and Analytics figures against Monitoring and that the terms add
+up to the whole. In a browser: the picker on the dashboard, the choice
+carrying to Analytics and Monitoring, and the Journals page on a phone.
