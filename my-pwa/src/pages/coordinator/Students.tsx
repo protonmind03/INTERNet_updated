@@ -35,6 +35,14 @@ type Student = {
   email: string;
   name: string;
   program: string | null;
+  /** Where the student is placed, when they are linked to the records. */
+  program_id?: number | null;
+  major_id?: number | null;
+  block_id?: number | null;
+  college_id?: number | null;
+  program_code?: string | null;
+  major_name?: string | null;
+  block_name?: string | null;
   company: string | null;
   supervisor_id: string | null;
   supervisor_name: string | null;
@@ -57,12 +65,24 @@ type SortBy = "name" | "progress" | "supervisor";
 /** Students shown at a time; the server sends one page of them. */
 const PAGE_SIZE = 20;
 
+/** The colleges, programs, majors and blocks the form's pickers choose from. */
+type Academics = {
+  colleges: { id: number; name: string; short_name: string | null; is_active: boolean }[];
+  programs: { id: number; college_id: number; name: string; short_code: string; ojt_applies: boolean; is_active: boolean }[];
+  majors: { id: number; program_id: number; name: string; is_active: boolean }[];
+  blocks: { id: number; program_id: number; major_id: number | null; name: string; term_name: string | null; is_active: boolean }[];
+};
+
 const EMPTY_FORM = {
   student_id: "",
   email: "",
   password: "",
   name: "",
   program: "",
+  college_id: "",
+  program_id: "",
+  major_id: "",
+  block_id: "",
   company: "",
   supervisor_id: "",
   required_hours: "180",
@@ -313,7 +333,14 @@ export default function CoordinatorStudents() {
                             </div>
                           </div>
                         </td>
-                        <td className="px-3 py-3 text-slate-700">{student.program || "—"}</td>
+                        <td className="px-3 py-3 text-slate-700">
+                          {student.program || "—"}
+                          {(student.block_name || student.major_name) && (
+                            <span className="block text-xs text-slate-600">
+                              {[student.block_name, student.major_name].filter(Boolean).join(" · ")}
+                            </span>
+                          )}
+                        </td>
                         <td className="px-3 py-3 text-slate-700">{student.company || "—"}</td>
                         <td className="px-3 py-3 text-slate-700">
                           {student.supervisor_name || (
@@ -458,6 +485,10 @@ function StudentDialog({
           password: "",
           name: existing.name,
           program: existing.program || "",
+          college_id: existing.college_id ? String(existing.college_id) : "",
+          program_id: existing.program_id ? String(existing.program_id) : "",
+          major_id: existing.major_id ? String(existing.major_id) : "",
+          block_id: existing.block_id ? String(existing.block_id) : "",
           company: existing.company || "",
           supervisor_id: existing.supervisor_id || "",
           required_hours: String(existing.required_hours || 180),
@@ -466,6 +497,70 @@ function StudentDialog({
   );
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  // The pickers' lists. Without them (an older server, or no connection)
+  // the form still takes the program as text, as it always did.
+  const [academics, setAcademics] = useState<Academics | null>(null);
+  useEffect(() => {
+    let current = true;
+    coordinatorRequest<Academics>("/api/coordinator/academics")
+      .then((data) => {
+        if (current && Array.isArray(data.programs)) setAcademics(data);
+      })
+      .catch(() => undefined);
+    return () => {
+      current = false;
+    };
+  }, []);
+
+  // Each level leaves only what belongs to the one above it. A row that
+  // has been made inactive is offered only while it is the one chosen.
+  const programs = (academics?.programs ?? []).filter(
+    (item) =>
+      String(item.id) === form.program_id ||
+      (item.is_active && item.ojt_applies && (!form.college_id || String(item.college_id) === form.college_id))
+  );
+  const majors = (academics?.majors ?? []).filter(
+    (item) => String(item.program_id) === form.program_id && (item.is_active || String(item.id) === form.major_id)
+  );
+  const blocks = (academics?.blocks ?? []).filter(
+    (item) =>
+      String(item.program_id) === form.program_id &&
+      (item.is_active || String(item.id) === form.block_id) &&
+      (!form.major_id || item.major_id === null || String(item.major_id) === form.major_id)
+  );
+  const chooseCollege = (value: string) =>
+    setForm((current) => {
+      const program = academics?.programs.find((item) => String(item.id) === current.program_id);
+      const keeps = !value || !program || String(program.college_id) === value;
+      return keeps
+        ? { ...current, college_id: value }
+        : { ...current, college_id: value, program_id: "", major_id: "", block_id: "" };
+    });
+  const chooseProgram = (value: string) =>
+    setForm((current) => {
+      const program = academics?.programs.find((item) => String(item.id) === value);
+      return {
+        ...current,
+        program_id: value,
+        // The college follows the program, so the two never disagree.
+        college_id: program ? String(program.college_id) : current.college_id,
+        major_id: "",
+        block_id: "",
+      };
+    });
+  const chooseMajor = (value: string) =>
+    setForm((current) => {
+      const block = academics?.blocks.find((item) => String(item.id) === current.block_id);
+      const keeps = !value || !block || block.major_id === null || String(block.major_id) === value;
+      return { ...current, major_id: value, block_id: keeps ? current.block_id : "" };
+    });
+  const chooseBlock = (value: string) =>
+    setForm((current) => {
+      const block = academics?.blocks.find((item) => String(item.id) === value);
+      // A block of one major says which major its students are of.
+      return { ...current, block_id: value, major_id: block?.major_id ? String(block.major_id) : current.major_id };
+    });
 
   const set = (field: keyof typeof EMPTY_FORM) => (value: string) =>
     setForm((current) => ({ ...current, [field]: value }));
@@ -503,6 +598,15 @@ function StudentDialog({
         name: form.name.trim(),
         email: form.email.trim(),
         program: form.program.trim() || null,
+        // From the pickers. With no program chosen the three are empty and
+        // the text above is what the student's program is.
+        ...(academics
+          ? {
+              program_id: form.program_id ? Number(form.program_id) : null,
+              major_id: form.program_id && form.major_id ? Number(form.major_id) : null,
+              block_id: form.program_id && form.block_id ? Number(form.block_id) : null,
+            }
+          : {}),
         company: form.company.trim() || null,
         supervisor_id: form.supervisor_id || null,
         required_hours: hours,
@@ -584,17 +688,111 @@ function StudentDialog({
             className="field"
           />
         </FormField>
-        <FormField label="Program" htmlFor="student-program" optional>
-          <input
-            id="student-program"
-            type="text"
-            maxLength={150}
-            value={form.program}
-            onChange={(event) => set("program")(event.target.value)}
-            placeholder="BS Information Technology"
-            className="field"
-          />
-        </FormField>
+        {academics && academics.programs.length > 0 && (
+          <>
+            <FormField label="College" htmlFor="student-college" optional>
+              <select
+                id="student-college"
+                value={form.college_id}
+                onChange={(event) => chooseCollege(event.target.value)}
+                className="field"
+              >
+                <option value="">Any college</option>
+                {academics.colleges
+                  .filter((item) => item.is_active || String(item.id) === form.college_id)
+                  .map((item) => (
+                    <option key={item.id} value={String(item.id)}>
+                      {item.name}
+                    </option>
+                  ))}
+              </select>
+            </FormField>
+            <FormField
+              label="Program"
+              htmlFor="student-program-id"
+              optional
+              hint={form.college_id ? "The programs of the college chosen." : undefined}
+            >
+              <select
+                id="student-program-id"
+                value={form.program_id}
+                onChange={(event) => chooseProgram(event.target.value)}
+                className="field"
+              >
+                <option value="">Not in the list (type it below)</option>
+                {programs.map((item) => (
+                  <option key={item.id} value={String(item.id)}>
+                    {item.short_code}: {item.name}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </>
+        )}
+        {form.program_id ? (
+          <>
+            {majors.length > 0 && (
+              <FormField label="Major" htmlFor="student-major" optional>
+                <select
+                  id="student-major"
+                  value={form.major_id}
+                  onChange={(event) => chooseMajor(event.target.value)}
+                  className="field"
+                >
+                  <option value="">None</option>
+                  {majors.map((item) => (
+                    <option key={item.id} value={String(item.id)}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            )}
+            <FormField
+              label="Block"
+              htmlFor="student-block"
+              optional
+              hint={blocks.length === 0 ? "This program has no active block. Add one on the Programs page." : undefined}
+            >
+              <select
+                id="student-block"
+                value={form.block_id}
+                onChange={(event) => chooseBlock(event.target.value)}
+                className="field"
+                disabled={blocks.length === 0}
+              >
+                <option value="">No block</option>
+                {blocks.map((item) => (
+                  <option key={item.id} value={String(item.id)}>
+                    {item.name}
+                    {item.term_name ? ` (${item.term_name})` : ""}
+                  </option>
+                ))}
+              </select>
+            </FormField>
+          </>
+        ) : (
+          <FormField
+            label={academics && academics.programs.length > 0 ? "Program, as text" : "Program"}
+            htmlFor="student-program"
+            optional
+            hint={
+              academics && academics.programs.length > 0
+                ? "Only for a program that is not in the list above. It cannot be filtered by, or given a major or block."
+                : undefined
+            }
+          >
+            <input
+              id="student-program"
+              type="text"
+              maxLength={150}
+              value={form.program}
+              onChange={(event) => set("program")(event.target.value)}
+              placeholder="BS Information Technology"
+              className="field"
+            />
+          </FormField>
+        )}
         {!existing && (
           <FormField
             label="Starting password"

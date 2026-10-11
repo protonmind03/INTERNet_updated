@@ -25,10 +25,14 @@ const KINDS = {
     many: "students",
     id: "student_id",
     idLabel: "Student ID",
-    columns: ["student_id", "name", "email", "program", "company", "supervisor_id", "required_hours", "password"],
-    template: "23-LN-0001,Juan Dela Cruz,juan.delacruz@example.com,BS Information Technology,Example Company,,180,",
+    // college, program, major and block are optional. A program is matched
+    // by its name or short code, a block by its name ("BSIT 4A").
+    columns: ["student_id", "name", "email", "college", "program", "major", "block", "company", "supervisor_id", "required_hours", "password"],
+    template: "23-LN-0001,Juan Dela Cruz,juan.delacruz@example.com,College of Computing Sciences,BSIT,,BSIT 4A,Example Company,,180,",
     // The extra columns worth showing before importing.
     preview: [
+      { key: "program", label: "Program", fallback: "—" },
+      { key: "block", label: "Block", fallback: "—" },
       { key: "supervisor_id", label: "Supervisor ID", fallback: "—" },
       { key: "required_hours", label: "Hours", fallback: "180" },
     ],
