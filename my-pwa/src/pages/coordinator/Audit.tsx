@@ -83,7 +83,7 @@ const ACTIONS: Record<string, string> = {
   "account.edit": "Edited an account",
   "account.activate": "Reactivated an account",
   "account.deactivate": "Deactivated an account",
-  "account.import": "Imported students from a file",
+  "account.import": "Imported accounts from a file",
   "account.password_reset": "Reset an account's password",
   "interns.reassign": "Moved interns to another supervisor",
   "term.create": "Added a term",

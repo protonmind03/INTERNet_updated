@@ -22,6 +22,7 @@ import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import CompanyPicker from "./CompanyPicker";
+import ImportAccounts from "./ImportAccounts";
 import { coordinatorRequest } from "./request";
 import ResetPassword from "./ResetPassword";
 
@@ -53,6 +54,7 @@ export default function CoordinatorSupervisors() {
   const [search, setSearch] = useState(() => searchParams.get("q") || "");
 
   const [editing, setEditing] = useState<Supervisor | "new" | null>(null);
+  const [importing, setImporting] = useState(false);
   const [toggling, setToggling] = useState<Supervisor | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
   // The supervisor whose interns are being moved to someone else.
@@ -110,11 +112,25 @@ export default function CoordinatorSupervisors() {
       title="Supervisors"
       subtitle="Company staff who verify attendance, assign tasks and evaluate interns."
       actions={
-        <Button icon="plus" onClick={() => setEditing("new")}>
-          Register supervisor
-        </Button>
+        <>
+          <Button variant="secondary" icon="upload" onClick={() => setImporting(true)}>
+            Import
+          </Button>
+          <Button icon="plus" onClick={() => setEditing("new")}>
+            Register supervisor
+          </Button>
+        </>
       }
     >
+      <ImportAccounts
+        kind="supervisors"
+        open={importing}
+        onClose={() => setImporting(false)}
+        onImported={() => {
+          setImporting(false);
+          void load();
+        }}
+      />
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 

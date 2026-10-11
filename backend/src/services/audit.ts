@@ -178,8 +178,17 @@ export const AUDIT_RULES: Rule[] = [
   {
     method: "POST",
     path: "/api/coordinator/students/import",
-    action: "account.import",
+    // Checking a file creates nothing, so it is not an action to record.
+    action: (source) => (source.body.dry_run === true ? null : "account.import"),
     entityType: "student",
+    entityId: () => null,
+    from: (source) => ({ created: source.result.created, failed: source.result.failed }),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/supervisors/import",
+    action: (source) => (source.body.dry_run === true ? null : "account.import"),
+    entityType: "supervisor",
     entityId: () => null,
     from: (source) => ({ created: source.result.created, failed: source.result.failed }),
   },

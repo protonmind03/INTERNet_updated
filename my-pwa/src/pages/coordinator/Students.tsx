@@ -23,7 +23,7 @@ import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
-import ImportStudents from "./ImportStudents";
+import ImportAccounts from "./ImportAccounts";
 import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
 import TermSelect from "./TermSelect";
@@ -362,7 +362,8 @@ export default function CoordinatorStudents() {
         }}
       />
 
-      <ImportStudents
+      <ImportAccounts
+        kind="students"
         open={importing}
         onClose={() => setImporting(false)}
         onImported={() => {

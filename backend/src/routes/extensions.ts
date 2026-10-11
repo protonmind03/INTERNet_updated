@@ -788,6 +788,10 @@ export function registerExtensionRoutes(
   | is given a generated one, returned once so the coordinator can hand it
   | out. Every imported student must set their own password at first login.
   |
+  | `dry_run: true` runs every check, including whether the ID or email is
+  | already taken, and creates nothing: the coordinator sees what would
+  | happen to each row before anything is written.
+  |
   */
 
   const MAX_IMPORT_ROWS = 200;
@@ -804,6 +808,9 @@ export function registerExtensionRoutes(
     }
 
     const coordinatorId = (req as AuthedRequest).auth?.id || null;
+    const dryRun = req.body?.dry_run === true;
+    const seenIds = new Set<string>();
+    const seenEmails = new Set<string>();
     // Only an active supervisor can be given interns.
     const supervisors = await pool.query<{ supervisor_id: string; name: string }>(
       `SELECT supervisor_id, name FROM supervisors WHERE is_active = TRUE`
@@ -816,7 +823,7 @@ export function registerExtensionRoutes(
       row: number;
       student_id: string;
       name: string;
-      status: "created" | "error";
+      status: "created" | "ok" | "error";
       message: string;
       password?: string;
     }[] = [];
@@ -855,6 +862,24 @@ export function registerExtensionRoutes(
       const policyError = passwordPolicyError(password);
       if (policyError) {
         fail(`Password: ${policyError}`);
+        continue;
+      }
+      if (seenIds.has(studentId.toLowerCase()) || seenEmails.has(email)) {
+        fail("This student ID or email is in the file more than once.");
+        continue;
+      }
+      seenIds.add(studentId.toLowerCase());
+      seenEmails.add(email);
+
+      if (dryRun) {
+        const taken = await pool.query(
+          `SELECT 1 FROM students WHERE student_id = $1 OR LOWER(email) = $2`,
+          [studentId, email]
+        );
+        if (taken.rows.length > 0) fail("A student with that ID or email already exists.");
+        else {
+          results.push({ row: index + 1, student_id: studentId, name, status: "ok", message: "Ready to import." });
+        }
         continue;
       }
 
@@ -913,6 +938,16 @@ export function registerExtensionRoutes(
       }
     }
 
+    if (dryRun) {
+      const ready = results.filter((result) => result.status === "ok").length;
+      return res.json({
+        dry_run: true,
+        message: `${ready} of ${rows.length} students can be imported.`,
+        ready,
+        failed: rows.length - ready,
+        results,
+      });
+    }
     const created = results.filter((result) => result.status === "created").length;
     return res.status(created > 0 ? 201 : 400).json({
       message: `${created} of ${rows.length} students imported.`,
@@ -922,6 +957,141 @@ export function registerExtensionRoutes(
     });
   });
 
+
+  /*
+  |--------------------------------------------------------------------------
+  | BULK SUPERVISOR IMPORT (coordinator)
+  |--------------------------------------------------------------------------
+  |
+  | The same as the student import above: each row stands by itself, the
+  | answer says what happened to every row, a row with no password is given
+  | a generated one (returned once), and every imported supervisor must set
+  | their own at first sign-in. `dry_run: true` checks the file and creates
+  | nothing.
+  |
+  */
+
+  app.post("/api/coordinator/supervisors/import", requireCoordinator, async (req, res) => {
+    const rows: unknown[] = Array.isArray(req.body?.supervisors) ? req.body.supervisors : [];
+    if (rows.length === 0) {
+      return res.status(400).json({ message: "The file has no supervisors to import." });
+    }
+    if (rows.length > MAX_IMPORT_ROWS) {
+      return res.status(400).json({
+        message: `Import at most ${MAX_IMPORT_ROWS} supervisors at a time.`,
+      });
+    }
+    const dryRun = req.body?.dry_run === true;
+    const seenIds = new Set<string>();
+    const seenEmails = new Set<string>();
+
+    const results: {
+      row: number;
+      supervisor_id: string;
+      name: string;
+      status: "created" | "ok" | "error";
+      message: string;
+      password?: string;
+    }[] = [];
+
+    for (const [index, raw] of rows.entries()) {
+      const entry = (raw || {}) as Record<string, unknown>;
+      const supervisorId = text(entry.supervisor_id);
+      const name = text(entry.name);
+      const email = text(entry.email).toLowerCase();
+      const fail = (message: string) =>
+        results.push({ row: index + 1, supervisor_id: supervisorId, name, status: "error", message });
+
+      if (!supervisorId || !name || !email) {
+        fail("Supervisor ID, name and email are all required.");
+        continue;
+      }
+      if (supervisorId.length > 50) {
+        fail("The supervisor ID is longer than 50 characters.");
+        continue;
+      }
+      if (!EMAIL_PATTERN.test(email)) {
+        fail("The email address is not valid.");
+        continue;
+      }
+      const supplied = typeof entry.password === "string" ? entry.password : "";
+      const password = supplied || generatePassword();
+      const policyError = passwordPolicyError(password);
+      if (policyError) {
+        fail(`Password: ${policyError}`);
+        continue;
+      }
+      if (seenIds.has(supervisorId.toLowerCase()) || seenEmails.has(email)) {
+        fail("This supervisor ID or email is in the file more than once.");
+        continue;
+      }
+      seenIds.add(supervisorId.toLowerCase());
+      seenEmails.add(email);
+
+      if (dryRun) {
+        const taken = await pool.query(
+          `SELECT 1 FROM supervisors WHERE supervisor_id = $1 OR LOWER(email) = $2`,
+          [supervisorId, email]
+        );
+        if (taken.rows.length > 0) fail("A supervisor with that ID or email already exists.");
+        else {
+          results.push({ row: index + 1, supervisor_id: supervisorId, name, status: "ok", message: "Ready to import." });
+        }
+        continue;
+      }
+
+      try {
+        await pool.query(
+          `
+          INSERT INTO supervisors
+            (supervisor_id, email, password, name, company, department, is_active, must_change_password)
+          VALUES ($1, $2, $3, $4, $5, $6, TRUE, TRUE)
+          `,
+          [
+            supervisorId,
+            email,
+            await hashPassword(password),
+            name,
+            text(entry.company) || null,
+            text(entry.department) || null,
+          ]
+        );
+        results.push({
+          row: index + 1,
+          supervisor_id: supervisorId,
+          name,
+          status: "created",
+          message: "Created.",
+          password,
+        });
+      } catch (error) {
+        if ((error as { code?: string }).code === "23505") {
+          fail("A supervisor with that ID or email already exists.");
+        } else {
+          console.error("IMPORT SUPERVISOR ERROR:", error);
+          fail("This supervisor could not be saved.");
+        }
+      }
+    }
+
+    if (dryRun) {
+      const ready = results.filter((result) => result.status === "ok").length;
+      return res.json({
+        dry_run: true,
+        message: `${ready} of ${rows.length} supervisors can be imported.`,
+        ready,
+        failed: rows.length - ready,
+        results,
+      });
+    }
+    const created = results.filter((result) => result.status === "created").length;
+    return res.status(created > 0 ? 201 : 400).json({
+      message: `${created} of ${rows.length} supervisors imported.`,
+      created,
+      failed: rows.length - created,
+      results,
+    });
+  });
   /*
   |--------------------------------------------------------------------------
   | ANNOUNCEMENTS (coordinator)

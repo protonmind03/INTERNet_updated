@@ -6,42 +6,59 @@ import { coordinatorRequest } from "./request";
 
 /*
 |--------------------------------------------------------------------------
-| BULK STUDENT IMPORT
+| BULK ACCOUNT IMPORT (students or supervisors)
 |--------------------------------------------------------------------------
 |
-| Three steps in one dialog: choose a CSV file, check the rows that were
-| read from it, then see what happened to each row. Students given a
-| generated password are listed with it once, with a file to download, so
-| the coordinator can hand the passwords out.
+| Four steps in one dialog: choose a CSV file, look at the rows read from
+| it, have the server check them (nothing is created yet), then import and
+| see what happened to each row. Accounts given a generated password are
+| listed with it once, with a file to download, so the coordinator can
+| hand the passwords out.
 |
 */
 
-const COLUMNS = [
-  "student_id",
-  "name",
-  "email",
-  "program",
-  "company",
-  "supervisor_id",
-  "required_hours",
-  "password",
-] as const;
+type Kind = "students" | "supervisors";
 
-type Column = (typeof COLUMNS)[number];
-type Row = Record<Column, string>;
+const KINDS = {
+  students: {
+    one: "student",
+    many: "students",
+    id: "student_id",
+    idLabel: "Student ID",
+    columns: ["student_id", "name", "email", "program", "company", "supervisor_id", "required_hours", "password"],
+    template: "23-LN-0001,Juan Dela Cruz,juan.delacruz@example.com,BS Information Technology,Example Company,,180,",
+    // The extra columns worth showing before importing.
+    preview: [
+      { key: "supervisor_id", label: "Supervisor ID", fallback: "—" },
+      { key: "required_hours", label: "Hours", fallback: "180" },
+    ],
+  },
+  supervisors: {
+    one: "supervisor",
+    many: "supervisors",
+    id: "supervisor_id",
+    idLabel: "Supervisor ID",
+    columns: ["supervisor_id", "name", "email", "company", "department", "password"],
+    template: "SUP-0001,Maria Santos,maria.santos@example.com,Example Company,Accounting,",
+    preview: [
+      { key: "company", label: "Company", fallback: "—" },
+      { key: "department", label: "Department", fallback: "—" },
+    ],
+  },
+} as const;
+
+type Row = Record<string, string>;
 
 type ImportResult = {
   row: number;
-  student_id: string;
+  /** The account's ID: `student_id` or `supervisor_id`, whichever was imported. */
+  student_id?: string;
+  supervisor_id?: string;
   name: string;
-  status: "created" | "error";
+  status: "created" | "ok" | "error";
   message: string;
   password?: string;
 };
-
-const TEMPLATE = `${COLUMNS.join(",")}
-23-LN-0001,Juan Dela Cruz,juan.delacruz@example.com,BS Information Technology,Example Company,,180,
-`;
 
 const MAX_ROWS = 200;
 
@@ -106,26 +123,34 @@ function downloadText(filename: string, content: string): void {
   URL.revokeObjectURL(url);
 }
 
-export default function ImportStudents({
+export default function ImportAccounts({
+  kind,
   open,
   onClose,
   onImported,
 }: {
+  kind: Kind;
   open: boolean;
   onClose: () => void;
   onImported: () => void;
 }) {
+  const config = KINDS[kind];
   const [rows, setRows] = useState<Row[]>([]);
   const [fileName, setFileName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  /** What the server said the import would do, before anything is created. */
+  const [checked, setChecked] = useState<ImportResult[] | null>(null);
   const [results, setResults] = useState<ImportResult[] | null>(null);
   const input = useRef<HTMLInputElement | null>(null);
+
+  const idOf = (result: ImportResult) => result[config.id] || "";
 
   const reset = () => {
     setRows([]);
     setFileName("");
     setError("");
+    setChecked(null);
     setResults(null);
   };
 
@@ -143,29 +168,30 @@ export default function ImportStudents({
     if (!file) return;
     setError("");
     setRows([]);
+    setChecked(null);
     setFileName(file.name);
 
     const cells = parseCsv(await file.text());
     if (cells.length < 2) {
-      return setError("That file has no student rows under the header row.");
+      return setError(`That file has no ${config.one} rows under the header row.`);
     }
     const header = cells[0].map((value) => value.trim().toLowerCase().replace(/\s+/g, "_"));
-    const missing = (["student_id", "name", "email"] as const).filter(
-      (column) => !header.includes(column)
-    );
+    const missing = [config.id, "name", "email"].filter((column) => !header.includes(column));
     if (missing.length > 0) {
       return setError(
         `The first row must name the columns. Missing: ${missing.join(", ")}. Download the template to see the layout.`
       );
     }
     if (cells.length - 1 > MAX_ROWS) {
-      return setError(`Import at most ${MAX_ROWS} students at a time. This file has ${cells.length - 1}.`);
+      return setError(
+        `Import at most ${MAX_ROWS} ${config.many} at a time. This file has ${cells.length - 1}.`
+      );
     }
 
     setRows(
       cells.slice(1).map((line) => {
-        const row = {} as Row;
-        for (const column of COLUMNS) {
+        const row: Row = {};
+        for (const column of config.columns) {
           const position = header.indexOf(column);
           row[column] = position >= 0 ? (line[position] || "").trim() : "";
         }
@@ -174,19 +200,23 @@ export default function ImportStudents({
     );
   };
 
-  const runImport = async () => {
+  const send = async (dryRun: boolean) => {
     setBusy(true);
     setError("");
     try {
       const response = await coordinatorRequest<{ results: ImportResult[] }>(
-        "/api/coordinator/students/import",
-        { method: "POST", body: { students: rows } }
+        `/api/coordinator/${kind}/import`,
+        { method: "POST", body: { [kind]: rows, ...(dryRun ? { dry_run: true } : {}) } }
       );
-      setResults(response.results);
-      const created = response.results.filter((result) => result.status === "created").length;
-      toast.success(`${created} of ${rows.length} students imported.`);
+      if (dryRun) {
+        setChecked(response.results);
+      } else {
+        setResults(response.results);
+        const made = response.results.filter((result) => result.status === "created").length;
+        toast.success(`${made} of ${rows.length} ${config.many} imported.`);
+      }
     } catch (importError) {
-      setError(errorText(importError, "The import could not be completed."));
+      setError(errorText(importError, dryRun ? "The file could not be checked." : "The import could not be completed."));
     } finally {
       setBusy(false);
     }
@@ -194,26 +224,61 @@ export default function ImportStudents({
 
   const created = results?.filter((result) => result.status === "created") ?? [];
   const failed = results?.filter((result) => result.status === "error") ?? [];
+  const ready = checked?.filter((result) => result.status === "ok") ?? [];
+  const problems = checked?.filter((result) => result.status === "error") ?? [];
 
   const downloadCredentials = () => {
     const lines = [
-      ["student_id", "name", "temporary_password"].join(","),
+      [config.id, "name", "temporary_password"].join(","),
       ...created.map((result) =>
-        [result.student_id, result.name, result.password || ""].map(csvCell).join(",")
+        [idOf(result), result.name, result.password || ""].map(csvCell).join(",")
       ),
     ];
-    downloadText("internet-imported-students.csv", lines.join("\r\n"));
+    downloadText(`internet-imported-${config.many}.csv`, lines.join("\r\n"));
   };
+
+  const outcomeList = (list: ImportResult[]) => (
+    <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+      {list.map((result) => (
+        <li
+          key={result.row}
+          className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3.5 py-2.5 text-sm"
+        >
+          <span className="min-w-0">
+            <span className="font-medium text-slate-900">{result.name || `Row ${result.row}`}</span>
+            <span className="text-slate-500"> · {idOf(result) || "no ID"}</span>
+            {result.status === "error" && (
+              <span className="block text-red-700">{result.message}</span>
+            )}
+          </span>
+          <StatusBadge
+            status={
+              result.status === "created"
+                ? "Created"
+                : result.status === "ok"
+                  ? "Ready"
+                  : results
+                    ? "Not imported"
+                    : "Will be skipped"
+            }
+            tone={result.status === "error" ? "bad" : "good"}
+          />
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <Modal
       open={open}
       onClose={close}
-      title="Import students"
+      title={`Import ${config.many}`}
       description={
         results
           ? `${created.length} created, ${failed.length} not imported`
-          : "Create many student accounts from a spreadsheet saved as CSV."
+          : checked
+            ? `${ready.length} ready, ${problems.length} with a problem. Nothing has been created yet.`
+            : `Create many ${config.one} accounts from a spreadsheet saved as CSV.`
       }
       locked={busy}
       size="lg"
@@ -227,17 +292,34 @@ export default function ImportStudents({
             )}
             <Button onClick={close}>Done</Button>
           </>
+        ) : checked ? (
+          <>
+            <Button variant="secondary" onClick={() => setChecked(null)} disabled={busy}>
+              Back
+            </Button>
+            <Button
+              onClick={() => void send(false)}
+              busy={busy}
+              failed={Boolean(error)}
+              disabled={ready.length === 0}
+            >
+              {busy
+                ? "Importing"
+                : `Import ${ready.length} ${ready.length === 1 ? config.one : config.many}`}
+            </Button>
+          </>
         ) : (
           <>
             <Button variant="secondary" onClick={close} disabled={busy}>
               Cancel
             </Button>
-            <Button onClick={() => void runImport()} busy={busy} failed={Boolean(error)} disabled={rows.length === 0}>
-              {busy
-                ? "Importing"
-                : rows.length > 0
-                  ? `Import ${rows.length} ${rows.length === 1 ? "student" : "students"}`
-                  : "Import"}
+            <Button
+              onClick={() => void send(true)}
+              busy={busy}
+              failed={Boolean(error)}
+              disabled={rows.length === 0}
+            >
+              {busy ? "Checking" : "Check the file"}
             </Button>
           </>
         )
@@ -258,48 +340,45 @@ export default function ImportStudents({
           {created.length > 0 && (
             <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
               <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
-              Download the passwords now. They are not shown again, and each student must set
-              their own at first sign-in.
+              Download the passwords now. They are not shown again, and each {config.one} must
+              set their own at first sign-in.
             </p>
           )}
-          <ul className="divide-y divide-slate-100 rounded-lg border border-slate-200">
-            {results.map((result) => (
-              <li
-                key={result.row}
-                className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-3.5 py-2.5 text-sm"
-              >
-                <span className="min-w-0">
-                  <span className="font-medium text-slate-900">
-                    {result.name || `Row ${result.row}`}
-                  </span>
-                  <span className="text-slate-500"> · {result.student_id || "no ID"}</span>
-                  {result.status === "error" && (
-                    <span className="block text-red-700">{result.message}</span>
-                  )}
-                </span>
-                <StatusBadge
-                  status={result.status === "created" ? "Created" : "Not imported"}
-                  tone={result.status === "created" ? "good" : "bad"}
-                />
-              </li>
-            ))}
-          </ul>
+          {outcomeList(results)}
+        </div>
+      ) : checked ? (
+        <div className="space-y-4">
+          <p className="text-sm text-slate-700">
+            {problems.length === 0
+              ? `Every row can be imported.`
+              : ready.length === 0
+                ? "No row can be imported. Fix the file and choose it again."
+                : `The ${problems.length === 1 ? "row" : "rows"} with a problem will be skipped. To include ${problems.length === 1 ? "it" : "them"}, go back, fix the file and choose it again.`}
+          </p>
+          {outcomeList(checked)}
+          <FormError message={error} />
         </div>
       ) : (
         <div className="space-y-4">
           <ol className="space-y-2 text-sm text-slate-700">
             <li>
-              1. <button
+              1.{" "}
+              <button
                 type="button"
-                onClick={() => downloadText("internet-students-template.csv", TEMPLATE)}
+                onClick={() =>
+                  downloadText(
+                    `internet-${config.many}-template.csv`,
+                    `${config.columns.join(",")}\n${config.template}\n`
+                  )
+                }
                 className="font-semibold text-psu-700 hover:underline"
               >
                 Download the template
               </button>{" "}
-              and fill in one student per row.
+              and fill in one {config.one} per row.
             </li>
             <li>
-              2. <span className="font-medium">student_id</span>,{" "}
+              2. <span className="font-medium">{config.id}</span>,{" "}
               <span className="font-medium">name</span> and{" "}
               <span className="font-medium">email</span> are required. Leave{" "}
               <span className="font-medium">password</span> empty to have one generated.
@@ -319,7 +398,7 @@ export default function ImportStudents({
                 {fileName ? "Choose a different file" : "Choose a CSV file"}
               </span>
               <span className="block text-xs text-slate-500">
-                {fileName || `Up to ${MAX_ROWS} students per file`}
+                {fileName || `Up to ${MAX_ROWS} ${config.many} per file`}
               </span>
             </span>
           </button>
@@ -329,32 +408,34 @@ export default function ImportStudents({
           {rows.length > 0 && (
             <div>
               <p className="mb-2 text-sm font-medium text-slate-700">
-                {rows.length} {rows.length === 1 ? "student" : "students"} found. Check them
-                before importing.
+                {rows.length} {rows.length === 1 ? config.one : config.many} found. Checking the
+                file creates nothing; it shows what would happen to each row.
               </p>
               <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500">
                     <tr>
-                      <th scope="col" className="px-3 py-2 font-medium">Student ID</th>
+                      <th scope="col" className="px-3 py-2 font-medium">{config.idLabel}</th>
                       <th scope="col" className="px-3 py-2 font-medium">Name</th>
                       <th scope="col" className="px-3 py-2 font-medium">Email</th>
-                      <th scope="col" className="px-3 py-2 font-medium">Supervisor ID</th>
-                      <th scope="col" className="px-3 py-2 text-right font-medium">Hours</th>
+                      {config.preview.map((column) => (
+                        <th key={column.key} scope="col" className="px-3 py-2 font-medium">
+                          {column.label}
+                        </th>
+                      ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {rows.map((row, index) => (
                       <tr key={index}>
-                        <td className="whitespace-nowrap px-3 py-2">{row.student_id || "—"}</td>
+                        <td className="whitespace-nowrap px-3 py-2">{row[config.id] || "—"}</td>
                         <td className="px-3 py-2">{row.name || "—"}</td>
                         <td className="px-3 py-2">{row.email || "—"}</td>
-                        <td className="whitespace-nowrap px-3 py-2">
-                          {row.supervisor_id || "—"}
-                        </td>
-                        <td className="tabular px-3 py-2 text-right">
-                          {row.required_hours || "180"}
-                        </td>
+                        {config.preview.map((column) => (
+                          <td key={column.key} className="tabular px-3 py-2">
+                            {row[column.key] || column.fallback}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>

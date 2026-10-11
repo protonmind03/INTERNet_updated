@@ -4143,3 +4143,92 @@ test("a supervisor gets one summary a day, only when something waits and they wa
     await pool.end();
   }
 });
+
+/*
+| Imports: the supervisor import, and checking a file before importing it
+*/
+
+test("checking an import file creates nothing and says what would happen to each row", async () => {
+  const supervisor = await supervisorSession();
+  const stamp = Date.now();
+  const check = (kind, rows, token = coordinatorToken) =>
+    jsonRequest(`/api/coordinator/${kind}/import`, jsonBody(token, "POST", { [kind]: rows, dry_run: true }));
+
+  for (const kind of ["students", "supervisors"]) {
+    assert.equal((await jsonRequest(`/api/coordinator/${kind}/import`, { method: "POST" })).response.status, 401);
+    assert.equal((await check(kind, [{}], studentToken)).response.status, 403);
+    assert.equal((await check(kind, [{}], supervisor.token)).response.status, 403);
+    assert.equal((await check(kind, [])).response.status, 400);
+    assert.equal((await check(kind, Array.from({ length: 201 }, () => ({})))).response.status, 400);
+  }
+
+  const students = await check("students", [
+    { student_id: `DRY-${stamp}`, name: "New Student", email: `dry.${stamp}@example.com` },
+    { student_id: student.student_id, name: "Taken Id", email: `other.${stamp}@example.com` },
+    { student_id: `DRY2-${stamp}`, name: "Taken Email", email: student.email.toUpperCase() },
+    { student_id: `DRY-${stamp}`, name: "Twice In File", email: `twice.${stamp}@example.com` },
+    { student_id: `DRY3-${stamp}`, name: "Bad Email", email: "nope" },
+    { student_id: `DRY4-${stamp}`, name: "Weak Password", email: `weak.${stamp}@example.com`, password: "short" },
+  ]);
+  assert.equal(students.response.status, 200, JSON.stringify(students.body));
+  assert.equal(students.body.dry_run, true);
+  assert.deepEqual(students.body.results.map((row) => row.status), ["ok", "error", "error", "error", "error", "error"]);
+  assert.deepEqual([students.body.ready, students.body.failed], [1, 5]);
+  assert.match(students.body.results[1].message, /already exists/);
+  assert.match(students.body.results[2].message, /already exists/);
+  assert.match(students.body.results[3].message, /more than once/);
+  assert.ok(students.body.results.every((row) => !("password" in row)), "a check hands out no passwords");
+
+  const supervisors = await check("supervisors", [
+    { supervisor_id: `DRYSUP-${stamp}`, name: "New Supervisor", email: `drysup.${stamp}@example.com`, company: "Acme" },
+    { supervisor_id: supervisor.supervisor.supervisor_id, name: "Taken", email: `x.${stamp}@example.com` },
+    { supervisor_id: "", name: "No Id", email: `y.${stamp}@example.com` },
+  ]);
+  assert.equal(supervisors.response.status, 200);
+  assert.deepEqual(supervisors.body.results.map((row) => row.status), ["ok", "error", "error"]);
+
+  // Nothing was created by any of it.
+  const list = await jsonRequest(`/api/coordinator/students?q=${encodeURIComponent(`DRY-${stamp}`)}&limit=5`, { headers: authHeaders(coordinatorToken) });
+  assert.equal(list.body.students.length, 0);
+});
+
+test("supervisors are imported from a file like students, each with a password to change", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const ids = [`IMP-A-${stamp}`, `IMP-B-${stamp}`];
+  const count = async () => (await jsonRequest("/api/coordinator/audit?action=account.import&limit=1", { headers: authHeaders(coordinatorToken) })).body.total;
+  try {
+    const before = await count();
+    const rows = [
+      { supervisor_id: ids[0], name: "Imported One", email: `imp.a.${stamp}@example.com`, company: "Acme", department: "Accounts" },
+      { supervisor_id: ids[1], name: "Imported Two", email: `imp.b.${stamp}@example.com`, password: "ChosenPassword123!" },
+      { supervisor_id: ids[0], name: "Same Id Again", email: `imp.c.${stamp}@example.com` },
+    ];
+    await jsonRequest("/api/coordinator/supervisors/import", jsonBody(coordinatorToken, "POST", { supervisors: rows, dry_run: true }));
+    const done = await jsonRequest("/api/coordinator/supervisors/import", jsonBody(coordinatorToken, "POST", { supervisors: rows }));
+    assert.equal(done.response.status, 201, JSON.stringify(done.body));
+    assert.deepEqual([done.body.created, done.body.failed], [2, 1]);
+    assert.deepEqual(done.body.results.map((row) => row.status), ["created", "created", "error"]);
+    assert.ok(done.body.results[0].password.length >= 12, "a generated password is handed back once");
+    assert.equal(done.body.results[1].password, "ChosenPassword123!");
+
+    // They can sign in, and must then set their own password.
+    const session = await login("supervisor", `imp.a.${stamp}@example.com`, done.body.results[0].password);
+    assert.ok(session.token);
+    const stored = await pool.query(`SELECT must_change_password, company, department, password FROM supervisors WHERE supervisor_id = $1`, [ids[0]]);
+    assert.equal(stored.rows[0].must_change_password, true);
+    assert.deepEqual([stored.rows[0].company, stored.rows[0].department], ["Acme", "Accounts"]);
+    assert.notEqual(stored.rows[0].password, done.body.results[0].password, "the password is stored hashed");
+
+    // The import is in the audit log once; the check before it is not.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    assert.equal(await count(), before + 1);
+  } finally {
+    await pool.query(`DELETE FROM supervisors WHERE supervisor_id = ANY($1::text[])`, [ids]);
+    await pool.end();
+  }
+});
