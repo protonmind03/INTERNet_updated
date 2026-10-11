@@ -489,6 +489,51 @@ cross-cutting.
 
 **Gate:** final report, complete platform checklist, field test plan.
 
+## Round 2
+
+A new round, sent one phase at a time. The rules for it are the owner's
+brief of 2026-10-12: work on `ui-redesign`; localhost, then "push" for the
+test site and staging backend, then "make it live" for production; one
+item one commit; stop at the end of every phase.
+
+### Phase 0: operations
+
+- [x] **0.1 Email through an HTTPS API.** `EMAIL_PROVIDER` and
+  `EMAIL_API_KEY`, sender `SMTP_FROM`; the provider's API first, SMTP
+  second, otherwise not configured. `isEmailConfigured()` replaces
+  `isSmtpConfigured()`, which stays as an alias for one round.
+  **[DECISION]** provider: built on the default (Resend), awaiting
+  confirmation. A second provider is one entry in `PROVIDERS`.
+- [x] **0.2 Push keys.** Nothing to code; the VAPID steps are in the Round
+  2 platform list.
+- [x] **0.3 Upload backup.** `npm run uploads:backup`, run on the server,
+  packs the uploads into one archive and prints its size and file count.
+  **Run on a local folder only; never on the host.**
+- [x] **0.4 Foreign keys.** Nothing run. The platform list asks the owner
+  to run `db:fk-orphans` through the tunnel and send the table.
+- [x] **0.5 Liveness ticket reuse.** Migration 036; a ticket carries a
+  `jti` and is spent by the first time-in that passes the camera check; a
+  second use answers 409.
+
+**How Phase 0 turned out differently from the brief**
+- 0.1: the brief says Railway disables SMTP "on the Hobby plan". Railway's
+  own support answers say the ports are closed on Hobby and below and open
+  on Pro; I did not find the statement on an official docs page. Either
+  way the API route is the one to use.
+- 0.1: **email needs a domain the group owns.** A provider only sends from
+  a verified domain, and a `vercel.app` address is not one. Without a
+  domain, Resend's test mode delivers only to the account's own address.
+- 0.1: the summary-email functions take `emailReady`; the old `smtpReady`
+  is still read, so nothing that calls them had to change.
+- 0.5: the ticket is spent only after its report passes the check, so a
+  failed camera check can be retried on the same ticket. If the server
+  itself then fails to record the time-in, the ticket is given back. A
+  ticket issued before this (no `jti`) is known by its own fingerprint, so
+  it is single-use too.
+- 0.5: clean-up runs on the time-out reminder's five-minute round, not the
+  deadline reminder's one-minute round: a day-old row does not need
+  checking every minute.
+
 ## Still open
 
 Not built, and noted where each was decided:
