@@ -40,7 +40,6 @@ const SECONDARY_NAV: NavItem[] = [
   { label: "Completion", path: "/student/completion", icon: "check-circle" },
   { label: "Feedback", path: "/student/feedback", icon: "star" },
   { label: "Report a concern", path: "/report", icon: "flag" },
-  { label: "Announcements", path: "/announcements", icon: "megaphone" },
 ];
 
 const ACCOUNT_NAV: NavItem = { label: "Profile", path: "/profile", icon: "user" };
@@ -172,7 +171,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
               <>
                 <NotificationBell
                   role="student"
-                  viewAllPath="/notifications"
+                  announcementsFor="student"
                   buttonClassName={`relative flex h-11 w-11 items-center justify-center rounded-lg ${
                     desktop ? "text-slate-600 hover:bg-slate-100" : "text-white hover:bg-white/10"
                   }`}

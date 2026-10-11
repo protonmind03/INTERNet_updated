@@ -5,7 +5,7 @@ import { toast } from "./toast";
 
 export type NotificationRole = "student" | "supervisor" | "coordinator";
 
-const READ_STATE_CHANGED = "internet-notifications-read";
+export const READ_STATE_CHANGED = "internet-notifications-read";
 
 export type NotificationItem = {
   id: number;

@@ -360,6 +360,7 @@ app.use(auditMiddleware(pool, JWT_SECRET));
 const PAGED_LISTS = [
   /^\/api\/coordinator\/(students|supervisors|complaints|documents|discrepancies)\/?$/,
   /^\/api\/supervisor\/attendance\/[^/]+\/?$/,
+  /^\/api\/notifications\/(student|supervisor|coordinator)\/[^/]+\/?$/,
 ];
 
 app.use((req, res, next) => {
@@ -402,6 +403,47 @@ async function listQuery(
       : {},
   };
 }
+/**
+ * One account's notifications, newest first. Asked for plainly it is the
+ * whole list, as it always was. With `limit` and `offset` it is one page
+ * and the answer also carries `total` and `unread` (every unread one, not
+ * only those on the page); `status=unread` leaves out the ones already read.
+ */
+async function notificationList(
+  req: express.Request,
+  column: "student_id" | "supervisor_id" | "coordinator_id",
+  accountId: string,
+  cap: string
+) {
+  const request = req.res?.locals.list as ListRequest | undefined;
+  const unreadOnly = request?.status === "unread";
+  const { rows, page } = await listQuery(
+    req,
+    { order: "created_at DESC, id DESC" },
+    `
+    SELECT id, ${column}, title, message, type, is_read, created_at,
+           link, entity_type, entity_id
+    FROM notifications
+    WHERE ${column} = $1${unreadOnly ? " AND is_read = FALSE" : ""}
+    ORDER BY created_at DESC, id DESC
+    ${cap}
+    `,
+    [accountId]
+  );
+  if (page.total === undefined) return { notifications: rows };
+  const unread = unreadOnly
+    ? page.total
+    : Number(
+        (
+          await pool.query<{ count: string }>(
+            `SELECT COUNT(*) AS count FROM notifications WHERE ${column} = $1 AND is_read = FALSE`,
+            [accountId]
+          )
+        ).rows[0].count
+      );
+  return { notifications: rows, ...page, unread };
+}
+
 const accountTables = {
   student: { table: "students", idColumn: "student_id" },
   supervisor: { table: "supervisors", idColumn: "supervisor_id" },
@@ -4812,31 +4854,7 @@ app.get(
         });
       }
 
-      const result =
-        await pool.query(
-          `
-          SELECT
-            id,
-            student_id,
-            title,
-            message,
-            type,
-            is_read,
-            created_at,
-            link,
-            entity_type,
-            entity_id
-          FROM notifications
-          WHERE student_id = $1
-          ORDER BY created_at DESC
-          `,
-          [studentId]
-        );
-
-      return res.json({
-        notifications:
-          result.rows,
-      });
+      return res.json(await notificationList(req, "student_id", studentId, ""));
     } catch (error) {
       console.error(
         "GET NOTIFICATIONS ERROR:",
@@ -7501,19 +7519,7 @@ app.get(
         });
       }
 
-      const result = await pool.query(
-        `
-        SELECT id, supervisor_id, title, message, type, is_read, created_at,
-               link, entity_type, entity_id
-        FROM notifications
-        WHERE supervisor_id = $1
-        ORDER BY created_at DESC, id DESC
-        LIMIT 100
-        `,
-        [supervisorId]
-      );
-
-      return res.json({ notifications: result.rows });
+      return res.json(await notificationList(req, "supervisor_id", supervisorId, "LIMIT 100"));
     } catch (error) {
       console.error("GET SUPERVISOR NOTIFICATIONS ERROR:", error);
       return res.status(500).json({
@@ -7537,19 +7543,7 @@ app.get(
         });
       }
 
-      const result = await pool.query(
-        `
-        SELECT id, coordinator_id, title, message, type, is_read, created_at,
-               link, entity_type, entity_id
-        FROM notifications
-        WHERE coordinator_id = $1
-        ORDER BY created_at DESC, id DESC
-        LIMIT 100
-        `,
-        [coordinatorId]
-      );
-
-      return res.json({ notifications: result.rows });
+      return res.json(await notificationList(req, "coordinator_id", coordinatorId, "LIMIT 100"));
     } catch (error) {
       console.error("GET COORDINATOR NOTIFICATIONS ERROR:", error);
       return res.status(500).json({

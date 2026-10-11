@@ -10,9 +10,18 @@ type Announcement = { id: number; title: string; message: string; created_at: st
 /**
  * The announcements the coordinator has sent to this person, newest first.
  * Shared by the student and supervisor pages. The last list seen is kept
- * for reading without a connection.
+ * for reading without a connection. Loading the list is what records that
+ * this person has seen what is on it (the server does that), so it is the
+ * same wherever the list is shown. `compact` draws it as plain rows, for
+ * the panel under the bell.
  */
-export default function AnnouncementList({ role }: { role: "student" | "supervisor" }) {
+export default function AnnouncementList({
+  role,
+  compact = false,
+}: {
+  role: "student" | "supervisor";
+  compact?: boolean;
+}) {
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -45,6 +54,43 @@ export default function AnnouncementList({ role }: { role: "student" | "supervis
     window.addEventListener("internet-notification", refresh);
     return () => window.removeEventListener("internet-notification", refresh);
   }, [load]);
+
+  if (compact) {
+    if (error) {
+      return (
+        <div className="px-4 py-4">
+          <ErrorNotice message={error} onRetry={() => void load()} />
+        </div>
+      );
+    }
+    if (loading) {
+      return (
+        <div className="px-4 py-3">
+          <SkeletonRows rows={3} />
+        </div>
+      );
+    }
+    if (items.length === 0) {
+      return (
+        <p className="px-4 py-8 text-center text-sm text-slate-500">
+          No announcements yet. What your OJT coordinator announces will be listed here.
+        </p>
+      );
+    }
+    return (
+      <ul>
+        {items.map((item) => (
+          <li key={item.id} className="border-b border-slate-100 px-4 py-3 last:border-b-0">
+            <h3 className="text-sm font-semibold text-slate-900">{item.title}</h3>
+            <p className="mt-0.5 text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
+            <p className="mt-1.5 whitespace-pre-line break-words text-sm text-slate-700">
+              {item.message}
+            </p>
+          </li>
+        ))}
+      </ul>
+    );
+  }
 
   if (error) return <ErrorNotice message={error} onRetry={() => void load()} />;
   if (loading) {

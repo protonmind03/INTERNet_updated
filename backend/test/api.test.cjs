@@ -4947,3 +4947,74 @@ test("a camera-check ticket is spent by its first time-in and refused the second
     await pool.end();
   }
 });
+
+/*
+| Round 2, Phase 1A: the notification list a page at a time
+*/
+
+test("notifications come a page at a time when asked, with the totals, and whole when not", async () => {
+  const supervisor = await supervisorSession();
+  const lists = [
+    [`/api/notifications/student/${encodeURIComponent(student.student_id)}`, studentToken, false],
+    [`/api/notifications/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, supervisor.token, true],
+    [`/api/notifications/coordinator/${encodeURIComponent(coordinator.coordinator_id)}`, coordinatorToken, true],
+  ];
+  for (const [path, token, capped] of lists) {
+    const get = (query = "") => jsonRequest(`${path}${query}`, { headers: authHeaders(token) });
+
+    // Asked for plainly: the answer it has always given, and nothing more.
+    const whole = await get();
+    assert.equal(whole.response.status, 200, path);
+    assert.deepEqual(Object.keys(whole.body), ["notifications"], path);
+    const all = whole.body.notifications;
+
+    // The first page: the newest ones, in the same order, with the counts.
+    const first = await get("?limit=2");
+    assert.equal(first.response.status, 200, path);
+    assert.deepEqual(first.body.notifications.map((item) => item.id), all.slice(0, 2).map((item) => item.id), path);
+    assert.equal(first.body.limit, 2);
+    assert.equal(first.body.offset, 0);
+    // The plain list of a supervisor or coordinator stops at 100; a paged one counts them all.
+    if (capped) assert.ok(first.body.total >= all.length, path);
+    else assert.equal(first.body.total, all.length, path);
+    if (!capped || all.length < 100) {
+      assert.equal(first.body.unread, all.filter((item) => !item.is_read).length, path);
+    }
+
+    // The second page follows on from the first.
+    const second = await get("?limit=2&offset=2");
+    assert.deepEqual(second.body.notifications.map((item) => item.id), all.slice(2, 4).map((item) => item.id), path);
+
+    // Past the end: no rows, the same total.
+    const past = await get(`?limit=20&offset=${first.body.total + 5}`);
+    assert.equal(past.response.status, 200, path);
+    assert.deepEqual(past.body.notifications, []);
+    assert.equal(past.body.total, first.body.total);
+
+    // Unread only: none of them read, and the total is the unread count.
+    const unread = await get("?limit=50&status=unread");
+    assert.equal(unread.response.status, 200, path);
+    assert.ok(unread.body.notifications.every((item) => item.is_read === false), path);
+    assert.equal(unread.body.total, first.body.unread, path);
+    assert.equal(unread.body.unread, first.body.unread, path);
+    assert.equal(unread.body.notifications.length, Math.min(50, first.body.unread), path);
+
+    // A limit that is not a number is refused, not guessed at.
+    assert.equal((await get("?limit=many")).response.status, 400, path);
+    assert.equal((await get("?limit=0")).response.status, 400, path);
+  }
+
+  // Someone else's list is refused whatever the paging says.
+  const others = await jsonRequest(
+    `/api/notifications/student/${encodeURIComponent(`${student.student_id}-not-owned`)}?limit=20&status=unread`,
+    { headers: authHeaders(studentToken) }
+  );
+  assert.equal(others.response.status, 403);
+  const acrossRoles = await jsonRequest(
+    `/api/notifications/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}?limit=20`,
+    { headers: authHeaders(studentToken) }
+  );
+  assert.equal(acrossRoles.response.status, 403);
+  const signedOut = await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}?limit=20`);
+  assert.equal(signedOut.response.status, 401);
+});
