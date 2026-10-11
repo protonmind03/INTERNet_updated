@@ -6,6 +6,14 @@ import { ROLE_THEMES, errorText, getActiveRole, messageFor, successFor } from ".
 import { MOTION } from "./tokens";
 import type { BrandRole, LoadProcess } from "./roles";
 
+/*
+| The brand kit's own toasts and action button. The app does not use them:
+| it reports through lib/toast.ts and components/Toaster.tsx. They are kept
+| for the brand preview page, which exists only in a development build, and
+| are not exported from the kit's index, so a production build leaves them
+| out.
+*/
+
 /* ======================================================================
    Toasts — one place where every action reports back to the user
    ====================================================================== */
@@ -295,17 +303,4 @@ function shorten(msg: string) {
   // "Recording your time-in photo…" → "Recording time-in…" style: keep it short on buttons.
   const m = msg.replace(/\byour\s+/gi, "").replace(/\s+(from|to|for)\s+.*…$/i, "…");
   return m.length > 26 ? `${m.split(" ").slice(0, 3).join(" ").replace(/…?$/, "…")}` : m;
-}
-
-/* ======================================================================
-   RouteProgress — thin amber bar on every page change
-   ====================================================================== */
-
-/** Render once in the app shell: <RouteProgress trigger={location.pathname} />. */
-export function RouteProgress({ trigger, color = BRAND.amber }: { trigger: string; color?: string }) {
-  return (
-    <div aria-hidden="true" className="pointer-events-none fixed inset-x-0 top-0 z-[95] h-[3px]">
-      <div key={trigger} className="inb-route h-full w-full rounded-r-full" style={{ background: `linear-gradient(90deg, ${color}00, ${color} 30%, ${color})` }} />
-    </div>
-  );
 }

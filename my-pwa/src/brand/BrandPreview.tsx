@@ -1,5 +1,7 @@
 import { useState } from "react";
-import { ActionButton, BrandIcon, BrandLoader, BrandLockup, BrandToastProvider, PortalBrand, PortalHeader, ROLE_THEMES, RouteProgress, SplashScreen, Wordmark } from ".";
+import { BrandIcon, BrandLoader, BrandLockup, PortalBrand, PortalHeader, ROLE_THEMES, RouteProgress, SplashScreen, Wordmark } from ".";
+// The kit's own toasts, shown only on this development-only page.
+import { ActionButton, BrandToastProvider } from "./feedback";
 import type { Role } from ".";
 
 const ROLES: Role[] = ["student", "supervisor", "coordinator"];
