@@ -46,6 +46,7 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "Programme",
     items: [
       { label: "Terms", path: "/coordinator/terms", icon: "calendar" },
+      { label: "Programs", path: "/coordinator/programs", icon: "building" },
       { label: "Holidays", path: "/coordinator/holidays", icon: "calendar" },
       { label: "Site visits", path: "/coordinator/site-visits", icon: "building" },
       { label: "Requirements", path: "/coordinator/requirements", icon: "clipboard" },
