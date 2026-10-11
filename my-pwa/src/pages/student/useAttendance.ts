@@ -41,6 +41,9 @@ export type AttendanceLog = {
   recorded_offline?: boolean;
   /** What the student wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** Set when the supervisor corrected the times on this log, with their reason. */
+  time_corrected_at?: string | null;
+  time_correction_reason?: string | null;
   /** Steps taken offline on this phone that have not reached the server yet. */
   waiting?: StepPath[];
 };

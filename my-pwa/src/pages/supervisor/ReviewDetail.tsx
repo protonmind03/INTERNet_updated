@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import Icon from "../../components/Icon";
-import { Button, StarInput, StatusBadge } from "../../components/ui";
+import { Button, FormError, FormField, Modal, StarInput, StatusBadge } from "../../components/ui";
 import { downloadProtectedUpload } from "../../lib/api";
 import { formatFileSize } from "../../lib/files";
 import {
@@ -94,6 +94,7 @@ function undoAction(undo: () => Promise<void>, done: string) {
 
 function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<AttendanceEntry>) {
   const open = !entry.time_out;
+  const [correcting, setCorrecting] = useState(false);
   const decided = entry.status !== "Pending";
   const rejected = entry.status === "Rejected" || entry.status === "Flagged";
 
@@ -126,6 +127,29 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         <Fact label="Time out" value={open ? "Not yet" : formatTime(entry.time_out)} />
         <Fact label="Hours" value={open ? "—" : formatHours(entry.hours)} strong />
       </dl>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setCorrecting(true)}
+          className="inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
+        >
+          <Icon name="edit" size={15} />
+          Correct the times
+        </button>
+        {entry.time_correction_reason && (
+          <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2.5 text-sm text-slate-700">
+            <span className="font-semibold">
+              Times corrected
+              {entry.time_corrected_at ? ` ${formatDateTime(entry.time_corrected_at)}` : ""}:
+            </span>{" "}
+            {entry.time_correction_reason}
+          </p>
+        )}
+      </div>
+      {correcting && (
+        <CorrectTimesDialog entry={entry} work={work} onClose={() => setCorrecting(false)} />
+      )}
 
       {entry.accomplishments && (
         <Quote label="What the intern accomplished">{entry.accomplishments}</Quote>
@@ -197,6 +221,121 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         }}
       />
     </DetailShell>
+  );
+}
+
+/** "08:05" in Philippine time, the zone every log is kept in. */
+function clockValue(value: string | null): string {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Manila",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
+}
+
+/** Sets the times on a log, with the reason the intern will be shown. */
+function CorrectTimesDialog({
+  entry,
+  work,
+  onClose,
+}: {
+  entry: AttendanceEntry;
+  work: SupervisorWork;
+  onClose: () => void;
+}) {
+  const [timeIn, setTimeIn] = useState(clockValue(entry.time_in));
+  const [breakStart, setBreakStart] = useState(clockValue(entry.break_time));
+  const [breakEnd, setBreakEnd] = useState(clockValue(entry.break_end_time));
+  const [timeOut, setTimeOut] = useState(clockValue(entry.time_out));
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!timeIn) return setError("A log needs a time-in.");
+    if (reason.trim().length < 5) {
+      return setError("Say why the times are being corrected. The intern will see it.");
+    }
+    setSaving(true);
+    setError("");
+    try {
+      await work.correctTimes(
+        entry.id,
+        {
+          time_in: timeIn,
+          break_time: breakStart || null,
+          break_end_time: breakEnd || null,
+          time_out: timeOut || null,
+        },
+        reason
+      );
+      toast.success(`Times corrected. ${entry.student_name} has been told.`);
+      onClose();
+    } catch (saveError) {
+      setError(errorText(saveError, "The times could not be corrected."));
+      setSaving(false);
+    }
+  };
+
+  const time = (id: string, label: string, value: string, onChange: (next: string) => void, optional = false) => (
+    <FormField label={label} htmlFor={id} optional={optional}>
+      <input
+        id={id}
+        type="time"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="field"
+      />
+    </FormField>
+  );
+
+  return (
+    <Modal
+      open
+      onClose={() => !saving && onClose()}
+      title="Correct the times"
+      description={`${entry.student_name} · ${formatLongDate(entry.date)}`}
+      locked={saving}
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={saving}>
+            Cancel
+          </Button>
+          <Button type="submit" form="correct-times-form" busy={saving} failed={Boolean(error)}>
+            {saving ? "Saving" : "Save times"}
+          </Button>
+        </>
+      }
+    >
+      <form id="correct-times-form" onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          {time("correct-time-in", "Time in", timeIn, setTimeIn)}
+          {time("correct-time-out", "Time out", timeOut, setTimeOut, true)}
+          {time("correct-break-start", "Break starts", breakStart, setBreakStart, true)}
+          {time("correct-break-end", "Back to work", breakEnd, setBreakEnd, true)}
+        </div>
+        <FormField
+          label="Reason"
+          htmlFor="correct-reason"
+          hint="The intern sees this. The hours are worked out again from the new times."
+        >
+          <textarea
+            id="correct-reason"
+            rows={3}
+            maxLength={500}
+            value={reason}
+            onChange={(event) => setReason(event.target.value)}
+            className="field resize-none"
+          />
+        </FormField>
+        <FormError message={error} />
+      </form>
+    </Modal>
   );
 }
 

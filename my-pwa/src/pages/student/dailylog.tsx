@@ -379,7 +379,13 @@ function PhotoButton({ onClick }: { onClick: () => void }) {
 
 function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolean }) {
   const bySupervisor = log.capture_method === "supervisor";
-  if (!log.note && !log.review_notes && !log.correction_note && !bySupervisor) {
+  if (
+    !log.note &&
+    !log.review_notes &&
+    !log.correction_note &&
+    !log.time_correction_reason &&
+    !bySupervisor
+  ) {
     return inline ? <span className="text-slate-400">—</span> : null;
   }
   const rejected = log.status === "Rejected" || log.status === "Flagged";
@@ -395,6 +401,12 @@ function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolea
       {log.correction_note && (
         <p className="rounded-md bg-psu-50 px-2.5 py-1.5 text-sm text-psu-900">
           <span className="font-semibold">You:</span> {log.correction_note}
+        </p>
+      )}
+      {log.time_correction_reason && (
+        <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
+          <span className="font-semibold">Times corrected by your supervisor:</span>{" "}
+          {log.time_correction_reason}
         </p>
       )}
       {log.review_notes && (

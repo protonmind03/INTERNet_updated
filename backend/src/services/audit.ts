@@ -64,6 +64,17 @@ function decision(prefix: string, field = "status") {
   };
 }
 
+/** A log's times on one line: "08:00, break 12:00 to 13:00, out 17:00, 8 h". */
+function timesText(times: unknown): string {
+  const at = (key: string) => nested(times, key);
+  return [
+    `in ${at("time_in") ?? "none"}`,
+    at("break_time") ? `break ${at("break_time")} to ${at("break_end_time") ?? "open"}` : "no break",
+    `out ${at("time_out") ?? "none"}`,
+    at("hours") === null || at("hours") === undefined ? "no hours" : `${at("hours")} h`,
+  ].join(", ");
+}
+
 export const AUDIT_RULES: Rule[] = [
   // Attendance
   {
@@ -73,6 +84,18 @@ export const AUDIT_RULES: Rule[] = [
     entityType: "attendance",
     entityId: param("id"),
     keep: ["status", "reason"],
+  },
+  {
+    method: "PATCH",
+    path: "/api/attendance/:id/times",
+    action: "attendance.correct_times",
+    entityType: "attendance",
+    entityId: param("id"),
+    keep: ["reason"],
+    from: (source) => ({
+      before: timesText(source.result.before),
+      after: timesText(source.result.after),
+    }),
   },
   {
     method: "POST",

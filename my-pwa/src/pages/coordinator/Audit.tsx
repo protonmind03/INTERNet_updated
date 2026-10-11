@@ -66,6 +66,7 @@ const ACTIONS: Record<string, string> = {
   "attendance.rejected": "Rejected an attendance log",
   "attendance.undo": "Withdrew a decision on an attendance log",
   "attendance.acknowledge": "Kept a rejection on a flagged log",
+  "attendance.correct_times": "Corrected the times on an attendance log",
   "attendance.record_time_in": "Recorded an intern's time-in in person",
   "task.approve": "Marked a task as reviewed",
   "task.needs_revision": "Asked for revisions on a task",
@@ -112,6 +113,8 @@ const ROLE_NAMES = { student: "Student", supervisor: "Supervisor", coordinator: 
 const DETAIL_LABELS: Record<string, string> = {
   status: "Status",
   reason: "Reason",
+  before: "Before",
+  after: "After",
   review_notes: "Note",
   notes: "Note",
   resolution_notes: "Note",

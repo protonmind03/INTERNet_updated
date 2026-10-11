@@ -3632,3 +3632,105 @@ test("agreeing to the privacy notice is recorded once and kept", async (t) => {
     await pool.end();
   }
 });
+
+/*
+| Supervisor: correcting the times on a log
+*/
+
+test("only the intern's supervisor can correct a log's times, and the request is checked first", async () => {
+  const supervisor = await supervisorSession();
+  const good = { time_in: "08:00", break_time: "12:00", break_end_time: "13:00", time_out: "17:00", reason: "Phone clock was wrong." };
+  const send = (target, body, token = supervisor.token) =>
+    jsonRequest(`/api/attendance/${target}/times`, jsonBody(token, "PATCH", body));
+
+  assert.equal((await jsonRequest("/api/attendance/1/times", { method: "PATCH" })).response.status, 401);
+  assert.equal((await send("1", good, studentToken)).response.status, 403);
+  assert.equal((await send("1", good, coordinatorToken)).response.status, 403);
+  assert.equal((await send("abc", good)).response.status, 404);
+  assert.equal((await send("999999999", good)).response.status, 404);
+
+  // Refused before the log is even looked up.
+  for (const bad of [
+    { ...good, time_in: "8am" }, { ...good, time_out: "25:00" }, { ...good, time_in: "" }, { ...good, time_in: 800 },
+    { ...good, break_end_time: null }, { ...good, break_time: null },
+    { ...good, time_out: "07:00" }, { ...good, break_time: "13:00", break_end_time: "12:00" }, { ...good, break_end_time: "17:30" },
+    { ...good, time_out: "08:00" },
+    { ...good, reason: "" }, { ...good, reason: "no" }, { ...good, reason: "x".repeat(501) },
+  ]) {
+    assert.equal((await send("999999999", bad)).response.status, 400, JSON.stringify(bad).slice(0, 90));
+  }
+});
+
+test("a correction recomputes the hours, tells the intern, and is closed once the coordinator acknowledges", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const pool = localTestPool();
+  const day = "2001-03-05";
+  const clear = async () => {
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND date = $2`, [student.student_id, day]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 AND title = 'Attendance times corrected'`, [student.student_id]);
+  };
+  await clear();
+  try {
+    const made = await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status)
+       VALUES ($1, $2, $2::date + TIME '08:00', $2::date + TIME '17:00', 9, 'Pending') RETURNING id`,
+      [student.student_id, day]
+    );
+    const id = made.rows[0].id;
+    const send = (body) => jsonRequest(`/api/attendance/${id}/times`, jsonBody(supervisor.token, "PATCH", body));
+    const stored = async () => (await pool.query(
+      `SELECT TO_CHAR(time_in, 'HH24:MI') AS time_in, TO_CHAR(break_time, 'HH24:MI') AS break_time,
+              TO_CHAR(break_end_time, 'HH24:MI') AS break_end_time, TO_CHAR(time_out, 'HH24:MI') AS time_out,
+              hours::float AS hours, status, time_correction_reason, time_corrected_by FROM attendance WHERE id = $1`, [id])).rows[0];
+
+    // The same times again are not a correction.
+    assert.equal((await send({ time_in: "08:00", time_out: "17:00", reason: "Nothing changed." })).response.status, 400);
+
+    // A break added and a later start: 08:30 to 17:00 less one hour is 7.5.
+    const fixed = await send({ time_in: "08:30", break_time: "12:00", break_end_time: "13:00", time_out: "17:00", reason: "Arrived at 8:30; lunch was not logged." });
+    assert.equal(fixed.response.status, 200, JSON.stringify(fixed.body));
+    assert.equal(Number(fixed.body.attendance.hours), 7.5);
+    assert.deepEqual(fixed.body.before, { time_in: "08:00", break_time: null, break_end_time: null, time_out: "17:00", hours: 9 });
+    assert.deepEqual(fixed.body.after, { time_in: "08:30", break_time: "12:00", break_end_time: "13:00", time_out: "17:00", hours: 7.5 });
+    let row = await stored();
+    assert.deepEqual([row.time_in, row.break_time, row.break_end_time, row.time_out, row.hours], ["08:30", "12:00", "13:00", "17:00", 7.5]);
+    assert.equal(row.status, "Pending", "the status is left as it was");
+    assert.equal(row.time_corrected_by, supervisor.supervisor.supervisor_id);
+
+    // The time-out removed: the log is open again and has no hours.
+    const reopened = await send({ time_in: "08:30", time_out: null, reason: "They had not left yet." });
+    assert.equal(reopened.response.status, 200);
+    row = await stored();
+    assert.deepEqual([row.break_time, row.time_out, row.hours], [null, null, null]);
+    await send({ time_in: "08:30", time_out: "16:30", reason: "Left at 4:30." });
+    assert.equal((await stored()).hours, 8);
+
+    // The intern is told, sees it on their log, and the notification opens their attendance.
+    const own = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+    assert.equal(own.body.attendance.find((log) => log.id === id).time_correction_reason, "Left at 4:30.");
+    const notes = await jsonRequest(`/api/notifications/student/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+    const told = notes.body.notifications.find((item) => item.title === "Attendance times corrected");
+    assert.equal(told?.link, "/daily-log");
+    assert.match(told.message, /Left at 4:30\./);
+
+    // Before and after are in the audit log.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=attendance.correct_times&limit=10", { headers: authHeaders(coordinatorToken) });
+    const first = audit.body.entries.filter((entry) => String(entry.entity_id) === String(id)).pop();
+    assert.equal(first.details.before, "in 08:00, no break, out 17:00, 9 h");
+    assert.equal(first.details.after, "in 08:30, break 12:00 to 13:00, out 17:00, 7.5 h");
+
+    // Rejected and acknowledged by the coordinator: closed.
+    await pool.query(`UPDATE attendance SET status = 'Rejected', flag_acknowledged_at = NOW() WHERE id = $1`, [id]);
+    const closed = await send({ time_in: "09:00", time_out: "16:30", reason: "Trying again." });
+    assert.equal(closed.response.status, 409);
+    assert.equal((await stored()).time_in, "08:30");
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});

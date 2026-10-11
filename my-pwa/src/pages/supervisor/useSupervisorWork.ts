@@ -63,6 +63,9 @@ export type AttendanceEntry = {
   recorded_offline?: boolean;
   /** What the intern wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** Set when the supervisor corrected the times on this log, with the reason. */
+  time_corrected_at?: string | null;
+  time_correction_reason?: string | null;
   liveness_checks: { flash?: string; attempts?: number | null } | null;
   /** Why the supervisor recorded the time-in instead of the camera check. */
   capture_reason: string | null;
@@ -382,6 +385,29 @@ export function useSupervisorWork(
     [change]
   );
 
+  /** Sets the times on a log ("HH:MM", or null for no break / still open), with a reason. */
+  const correctTimes = useCallback(
+    (
+      id: number,
+      times: {
+        time_in: string;
+        break_time: string | null;
+        break_end_time: string | null;
+        time_out: string | null;
+      },
+      reason: string
+    ) =>
+      change(() =>
+        sendJson(
+          "PATCH",
+          `/api/attendance/${id}/times`,
+          { ...times, reason: reason.trim() },
+          "The times could not be corrected."
+        )
+      ),
+    [change]
+  );
+
   /**
    * Records an intern's time-in with a photo the supervisor took, for when
    * the camera check cannot run on the intern's device.
@@ -522,6 +548,7 @@ export function useSupervisorWork(
     error,
     reload: load,
     decideAttendance,
+    correctTimes,
     recordTimeIn,
     verifyMany,
     decideTask,

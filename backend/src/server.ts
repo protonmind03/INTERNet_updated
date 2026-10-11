@@ -2054,7 +2054,9 @@ app.get(
             corrected_at,
             capture_method,
             recorded_offline,
-            accomplishments
+            accomplishments,
+            time_corrected_at,
+            time_correction_reason
           FROM attendance
           WHERE student_id = $1
           ORDER BY
@@ -3402,6 +3404,8 @@ app.get(
             a.capture_method,
             a.recorded_offline,
             a.accomplishments,
+            a.time_corrected_at,
+            a.time_correction_reason,
             a.liveness_checks,
             a.capture_reason
 
@@ -3773,6 +3777,203 @@ app.get(
         message: "Failed to load supervisor dashboard.",
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
+| TIME CORRECTION (supervisor)
+|--------------------------------------------------------------------------
+|
+| A supervisor who knows a recorded time is wrong (the intern timed in
+| late on the phone, forgot a break, left earlier than logged) can set the
+| times on one of their own interns' logs, with a reason. The hours are
+| worked out again, the intern is told, and the times before and after go
+| into the audit log. The log's status does not change.
+|
+| A rejected log the coordinator has already acknowledged is closed to
+| this: it has been dealt with at the university's end.
+|
+*/
+
+const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+app.patch(
+  "/api/attendance/:id/times",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { id } = req.params;
+      if (!/^\d{1,15}$/.test(String(id))) {
+        return res.status(404).json({ message: "Attendance record not found." });
+      }
+      const body = (req.body && typeof req.body === "object" ? req.body : {}) as Record<string, unknown>;
+      const reason = typeof body.reason === "string" ? body.reason.trim() : "";
+
+      // Each time is "HH:MM" on the log's own date. A break is optional.
+      const clock = (key: string): string | null | undefined => {
+        const value = body[key];
+        if (value === null || value === undefined || value === "") return null;
+        return typeof value === "string" && CLOCK_PATTERN.test(value) ? value : undefined;
+      };
+      const timeIn = clock("time_in");
+      const breakStart = clock("break_time");
+      const breakEnd = clock("break_end_time");
+      const timeOut = clock("time_out");
+      if ([timeIn, breakStart, breakEnd, timeOut].includes(undefined)) {
+        return res.status(400).json({ message: "Write each time as HH:MM, for example 08:30." });
+      }
+      if (!timeIn) {
+        return res.status(400).json({ message: "A log needs a time-in." });
+      }
+      if ((breakStart === null) !== (breakEnd === null) && timeOut !== null) {
+        return res.status(400).json({
+          message: "Give both the start and the end of the break, or leave both empty.",
+        });
+      }
+      if (breakEnd !== null && breakStart === null) {
+        return res.status(400).json({ message: "A break that ends needs a start." });
+      }
+      const order = [timeIn, breakStart, breakEnd, timeOut].filter((value): value is string => Boolean(value));
+      for (let index = 1; index < order.length; index += 1) {
+        if (order[index] <= order[index - 1]) {
+          return res.status(400).json({
+            message: "The times must be in order: time in, break, back to work, time out.",
+          });
+        }
+      }
+      if (reason.length < 5 || reason.length > 500) {
+        return res.status(400).json({
+          message: "Say why the times are being corrected (5 to 500 characters). The intern will see it.",
+        });
+      }
+
+      const current = await pool.query<{
+        student_id: string;
+        date: string;
+        status: string;
+        flag_acknowledged_at: string | null;
+        is_today: boolean;
+        now_clock: string;
+        time_in: string | null;
+        break_time: string | null;
+        break_end_time: string | null;
+        time_out: string | null;
+        hours: string | null;
+      }>(
+        `
+        SELECT a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date, a.status,
+               a.flag_acknowledged_at, (a.date = CURRENT_DATE) AS is_today,
+               TO_CHAR(NOW(), 'HH24:MI') AS now_clock,
+               TO_CHAR(a.time_in, 'HH24:MI') AS time_in,
+               TO_CHAR(a.break_time, 'HH24:MI') AS break_time,
+               TO_CHAR(a.break_end_time, 'HH24:MI') AS break_end_time,
+               TO_CHAR(a.time_out, 'HH24:MI') AS time_out,
+               a.hours
+        FROM attendance a
+        JOIN students s ON s.student_id = a.student_id
+        WHERE a.id = $1 AND s.supervisor_id = $2
+        `,
+        [id, auth?.id]
+      );
+      const log = current.rows[0];
+      if (!log) {
+        return res.status(404).json({ message: "Attendance record not found." });
+      }
+      if (log.flag_acknowledged_at) {
+        return res.status(409).json({
+          message: "The OJT coordinator has already acknowledged this rejected log, so its times can no longer be changed.",
+        });
+      }
+      // On today's log, nothing may be later than now.
+      if (log.is_today && order[order.length - 1] > log.now_clock) {
+        return res.status(400).json({ message: "A time cannot be in the future." });
+      }
+      const before = {
+        time_in: log.time_in,
+        break_time: log.break_time,
+        break_end_time: log.break_end_time,
+        time_out: log.time_out,
+        hours: log.hours === null ? null : Number(log.hours),
+      };
+      if (
+        before.time_in === timeIn &&
+        before.break_time === breakStart &&
+        before.break_end_time === breakEnd &&
+        before.time_out === timeOut
+      ) {
+        return res.status(400).json({ message: "Those are the times already on the log." });
+      }
+
+      const result = await pool.query(
+        `
+        UPDATE attendance a
+        SET time_in = a.date + $2::time,
+            break_time = a.date + $3::time,
+            break_end_time = a.date + $4::time,
+            time_out = a.date + $5::time,
+            -- Rendered hours exclude the break; an open log has none yet.
+            hours = CASE WHEN $5::time IS NULL THEN NULL ELSE GREATEST(
+              ROUND(
+                (
+                  (
+                    EXTRACT(EPOCH FROM ($5::time - $2::time))
+                    - COALESCE(EXTRACT(EPOCH FROM ($4::time - $3::time)), 0)
+                  ) / 3600.0
+                )::numeric,
+                2
+              ),
+              0
+            ) END,
+            time_corrected_at = NOW(),
+            time_corrected_by = $6,
+            time_correction_reason = $7
+        WHERE a.id = $1 AND a.flag_acknowledged_at IS NULL
+        RETURNING a.id, a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date,
+                  a.time_in, a.break_time, a.break_end_time, a.time_out, a.hours, a.status,
+                  a.time_corrected_at, a.time_correction_reason
+        `,
+        [id, timeIn, breakStart, breakEnd, timeOut, auth?.id, reason]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({
+          message: "The OJT coordinator has already acknowledged this rejected log, so its times can no longer be changed.",
+        });
+      }
+      const attendance = result.rows[0];
+      const after = {
+        time_in: timeIn,
+        break_time: breakStart,
+        break_end_time: breakEnd,
+        time_out: timeOut,
+        hours: attendance.hours === null ? null : Number(attendance.hours),
+      };
+
+      // A verified log's hours count toward the requirement.
+      await syncCompletion(String(attendance.student_id));
+      try {
+        await createNotification({
+          studentId: String(attendance.student_id),
+          entity: { type: "attendance", id: attendance.id },
+          title: "Attendance times corrected",
+          message: `Your supervisor corrected the times on your log for ${attendance.date}. Reason: ${reason}`,
+          type: "attendance",
+        });
+      } catch (error) {
+        console.error("TIME CORRECTION NOTIFICATION ERROR:", error);
+      }
+
+      return res.json({
+        message: "Times corrected. The intern has been told.",
+        attendance,
+        before,
+        after,
+      });
+    } catch (error) {
+      console.error("TIME CORRECTION ERROR:", error);
+      return res.status(500).json({ message: "Failed to correct the times." });
     }
   }
 );
