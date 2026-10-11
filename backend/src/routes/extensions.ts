@@ -2022,9 +2022,19 @@ export function registerExtensionRoutes(
         [id]
       );
       const ids = deactivated.rows.map((row) => String(row.student_id));
+      // The term's blocks go with it, and are remembered the same way, so
+      // they stop being offered in pickers and filters.
+      const blocks = await client.query<{ id: number }>(
+        `UPDATE blocks SET is_active = FALSE, updated_at = NOW()
+         WHERE term_id = $1 AND is_active = TRUE
+         RETURNING id`,
+        [id]
+      );
       await client.query(
-        `UPDATE terms SET is_closed = TRUE, closed_at = NOW(), closed_student_ids = $2::jsonb WHERE id = $1`,
-        [id, JSON.stringify(ids)]
+        `UPDATE terms SET is_closed = TRUE, closed_at = NOW(),
+                closed_student_ids = $2::jsonb, closed_block_ids = $3::jsonb
+         WHERE id = $1`,
+        [id, JSON.stringify(ids), JSON.stringify(blocks.rows.map((row) => row.id))]
       );
       if (ids.length > 0) {
         await client.query(
@@ -2038,6 +2048,7 @@ export function registerExtensionRoutes(
       return res.json({
         message: `Term closed. ${ids.length} student${ids.length === 1 ? " was" : "s were"} deactivated; their records are kept.`,
         deactivated: ids.length,
+        blocks_deactivated: blocks.rows.length,
       });
     } catch (error) {
       await quietly("TERM CLOSE ROLLBACK ERROR", () => client.query("ROLLBACK"));
@@ -2054,8 +2065,12 @@ export function registerExtensionRoutes(
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      const term = await client.query<{ is_closed: boolean; closed_student_ids: string[] }>(
-        `SELECT is_closed, closed_student_ids FROM terms WHERE id = $1 FOR UPDATE`,
+      const term = await client.query<{
+        is_closed: boolean;
+        closed_student_ids: string[];
+        closed_block_ids: number[];
+      }>(
+        `SELECT is_closed, closed_student_ids, closed_block_ids FROM terms WHERE id = $1 FOR UPDATE`,
         [id]
       );
       if (term.rows.length === 0) {
@@ -2076,8 +2091,20 @@ export function registerExtensionRoutes(
          WHERE term_id = $1 AND is_active = FALSE AND student_id = ANY($2::text[])`,
         [id, ids]
       );
+      // The blocks the closing switched off, and no others: one a
+      // coordinator deactivated before the term closed stays off.
+      const blockIds = Array.isArray(term.rows[0].closed_block_ids)
+        ? term.rows[0].closed_block_ids.map(Number).filter(Number.isSafeInteger)
+        : [];
+      const restored = await client.query(
+        `UPDATE blocks SET is_active = TRUE, updated_at = NOW()
+         WHERE term_id = $1 AND is_active = FALSE AND id = ANY($2::int[])`,
+        [id, blockIds]
+      );
       await client.query(
-        `UPDATE terms SET is_closed = FALSE, closed_at = NULL, closed_student_ids = '[]'::jsonb WHERE id = $1`,
+        `UPDATE terms SET is_closed = FALSE, closed_at = NULL,
+                closed_student_ids = '[]'::jsonb, closed_block_ids = '[]'::jsonb
+         WHERE id = $1`,
         [id]
       );
       await client.query("COMMIT");
@@ -2085,6 +2112,7 @@ export function registerExtensionRoutes(
       return res.json({
         message: `Term reopened. ${count} student${count === 1 ? " was" : "s were"} reactivated.`,
         reactivated: count,
+        blocks_reactivated: restored.rowCount ?? 0,
       });
     } catch (error) {
       await quietly("TERM REOPEN ROLLBACK ERROR", () => client.query("ROLLBACK"));
