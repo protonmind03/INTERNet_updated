@@ -13,6 +13,8 @@ import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 import { errorText } from "../../lib/toast";
 import type { JournalEntry } from "./useSupervisorWork";
+import InternGroupSelect from "./InternGroups";
+import { useInternGroups } from "./useInternGroups";
 
 /*
 |--------------------------------------------------------------------------
@@ -45,6 +47,9 @@ export default function SupervisorJournals() {
   const [error, setError] = useState("");
   const [scope, setScope] = useState<Scope>("all");
   const [internId, setInternId] = useState("");
+  // Interns of more than one program or block can be narrowed to one.
+  const grouping = useInternGroups();
+  const inGroup = grouping.has;
 
   const load = useCallback(async () => {
     try {
@@ -75,7 +80,9 @@ export default function SupervisorJournals() {
     return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [journals]);
 
-  const ofIntern = internId ? journals.filter((item) => item.student_id === internId) : journals;
+  const ofIntern = (internId ? journals.filter((item) => item.student_id === internId) : journals).filter(
+    (item) => inGroup(item.student_id)
+  );
   const count = (status: JournalEntry["status"]) =>
     ofIntern.filter((item) => item.status === status).length;
   const visible = (scope === "all" ? ofIntern : ofIntern.filter((item) => item.status === scope))
@@ -105,6 +112,7 @@ export default function SupervisorJournals() {
               ]}
             />
           </div>
+          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (
             <label className="block w-full sm:w-56">
               <span className="sr-only">Intern</span>
@@ -114,7 +122,7 @@ export default function SupervisorJournals() {
                 className="field"
               >
                 <option value="">All interns</option>
-                {interns.map(([id, name]) => (
+                {interns.filter(([id]) => inGroup(id)).map(([id, name]) => (
                   <option key={id} value={id}>
                     {name}
                   </option>

@@ -30,6 +30,8 @@ import { finalEvaluationPath, useFinalDue, type FinalDue } from "./finalDue";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
+import InternGroupSelect from "./InternGroups";
+import { useInternGroups } from "./useInternGroups";
 
 /** A row of the queue: something to decide, or a final evaluation to write. */
 type ReviewItem = QueueItem | FinalDue;
@@ -139,6 +141,9 @@ export default function SupervisorDashboard() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState("");
+  // Interns of more than one program or block can be narrowed to one.
+  const grouping = useInternGroups();
+  const inGroup = grouping.has;
   // A notification about one item opens the queue on it (its key is "task-12").
   const focus = useFocus();
   const [selectedKey, setSelectedKey] = useState<string | null>(focus);
@@ -169,8 +174,11 @@ export default function SupervisorDashboard() {
 
   // The queue narrowed to one intern, when one is chosen.
   const scoped = useMemo(
-    () => (internId ? queue.filter((item) => item.entry.student_id === internId) : queue),
-    [queue, internId]
+    () =>
+      (internId ? queue.filter((item) => item.entry.student_id === internId) : queue).filter((item) =>
+        inGroup(item.entry.student_id)
+      ),
+    [queue, internId, inGroup]
   );
 
   const counts = useMemo(
@@ -405,6 +413,7 @@ export default function SupervisorDashboard() {
               ]}
             />
           </div>
+          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (
             <label className="block w-full sm:w-56">
               <span className="sr-only">Intern</span>
@@ -417,7 +426,7 @@ export default function SupervisorDashboard() {
                 className="field"
               >
                 <option value="">All interns</option>
-                {interns.map((intern) => (
+                {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
                   <option key={intern.student_id} value={intern.student_id}>
                     {intern.name}
                   </option>

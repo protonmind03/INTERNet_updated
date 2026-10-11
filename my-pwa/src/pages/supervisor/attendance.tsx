@@ -22,6 +22,8 @@ import { usePagination } from "../../lib/usePagination";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail, { CorrectTimesDialog } from "./ReviewDetail";
 import { useSupervisorWork, type AttendanceEntry } from "./useSupervisorWork";
+import InternGroupSelect from "./InternGroups";
+import { useInternGroups } from "./useInternGroups";
 
 type Filter = "all" | "Pending" | "Verified" | "Rejected";
 
@@ -81,6 +83,9 @@ export default function SupervisorAttendanceApproval() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState("");
+  // Interns of more than one program or block can be narrowed to one.
+  const grouping = useInternGroups();
+  const inGroup = grouping.has;
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
@@ -90,8 +95,11 @@ export default function SupervisorAttendanceApproval() {
   const [recording, setRecording] = useState(false);
 
   const scoped = useMemo(
-    () => (internId ? attendance.filter((entry) => entry.student_id === internId) : attendance),
-    [attendance, internId]
+    () =>
+      (internId ? attendance.filter((entry) => entry.student_id === internId) : attendance).filter((entry) =>
+        inGroup(entry.student_id)
+      ),
+    [attendance, internId, inGroup]
   );
 
   const counts = useMemo(
@@ -129,13 +137,14 @@ export default function SupervisorAttendanceApproval() {
     return work.absences.filter(
       (item) =>
         (!internId || item.student_id === internId) &&
+        inGroup(item.student_id) &&
         isWithinDateRange(item.date, dateFrom, dateTo) &&
         (!text ||
           [item.student_name, item.student_id, item.reason, item.review_notes]
             .filter(Boolean)
             .some((value) => String(value).toLowerCase().includes(text)))
     );
-  }, [work.absences, internId, search, dateFrom, dateTo]);
+  }, [work.absences, internId, inGroup, search, dateFrom, dateTo]);
   const absencePager = usePagination(visibleAbsences, 10);
   const opened = attendance.find((entry) => entry.id === openId) ?? null;
   const correcting = attendance.find((entry) => entry.id === correctingId) ?? null;
@@ -173,6 +182,7 @@ export default function SupervisorAttendanceApproval() {
                   className="field pl-9"
                 />
               </label>
+              <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
               <label className="block w-full sm:w-56">
                 <span className="sr-only">Intern</span>
                 <select
@@ -181,7 +191,7 @@ export default function SupervisorAttendanceApproval() {
                   className="field"
                 >
                   <option value="">All interns</option>
-                  {interns.map((intern) => (
+                  {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
                     <option key={intern.student_id} value={intern.student_id}>
                       {intern.name}
                     </option>

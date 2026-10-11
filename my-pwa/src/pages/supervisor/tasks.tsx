@@ -22,6 +22,8 @@ import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import ReviewDetail from "./ReviewDetail";
+import InternGroupSelect from "./InternGroups";
+import { useInternGroups } from "./useInternGroups";
 import {
   useSupervisorWork,
   type Intern,
@@ -50,6 +52,9 @@ export default function SupervisorTasks() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState("");
+  // Interns of more than one program or block can be narrowed to one.
+  const grouping = useInternGroups();
+  const inGroup = grouping.has;
   // "new" while assigning, a task while editing one, null when closed.
   const [form, setForm] = useState<TaskEntry | "new" | null>(null);
   const [reviewId, setReviewId] = useState<number | null>(null);
@@ -57,8 +62,11 @@ export default function SupervisorTasks() {
   const [cancelBusy, setCancelBusy] = useState(false);
 
   const scoped = useMemo(
-    () => (internId ? tasks.filter((task) => task.student_id === internId) : tasks),
-    [tasks, internId]
+    () =>
+      (internId ? tasks.filter((task) => task.student_id === internId) : tasks).filter((task) =>
+        inGroup(task.student_id)
+      ),
+    [tasks, internId, inGroup]
   );
 
   const counts = useMemo(
@@ -130,6 +138,7 @@ export default function SupervisorTasks() {
               ]}
             />
           </div>
+          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (
             <label className="block w-full sm:w-56">
               <span className="sr-only">Intern</span>
@@ -139,7 +148,7 @@ export default function SupervisorTasks() {
                 className="field"
               >
                 <option value="">All interns</option>
-                {interns.map((intern) => (
+                {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
                   <option key={intern.student_id} value={intern.student_id}>
                     {intern.name}
                   </option>

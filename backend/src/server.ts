@@ -8154,6 +8154,12 @@ app.get(
       SELECT
         s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
         s.phone, s.emergency_contact_name, s.emergency_contact_phone,
+        -- Where the intern is placed, when linked: for the supervisor's
+        -- "Program and block" choice.
+        (SELECT p.short_code FROM programs p WHERE p.id = s.program_id) AS program_code,
+        (SELECT bp.short_code || ' ' || b.year_level || UPPER(TRIM(b.section))
+           FROM blocks b JOIN programs bp ON bp.id = b.program_id
+          WHERE b.id = s.block_id) AS block_name,
         (
           SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
           WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)

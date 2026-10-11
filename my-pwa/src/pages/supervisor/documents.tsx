@@ -18,6 +18,8 @@ import { usePagination } from "../../lib/usePagination";
 import { errorText, toast } from "../../lib/toast";
 import ReviewDetail from "./ReviewDetail";
 import { downloadDocument, useSupervisorWork, type DocumentEntry } from "./useSupervisorWork";
+import InternGroupSelect from "./InternGroups";
+import { useInternGroups } from "./useInternGroups";
 
 type Filter = "all" | "Pending" | "Approved" | "Rejected";
 
@@ -28,11 +30,17 @@ export default function SupervisorDocuments() {
 
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState("");
+  // Interns of more than one program or block can be narrowed to one.
+  const grouping = useInternGroups();
+  const inGroup = grouping.has;
   const [reviewId, setReviewId] = useState<number | null>(null);
 
   const scoped = useMemo(
-    () => (internId ? documents.filter((item) => item.student_id === internId) : documents),
-    [documents, internId]
+    () =>
+      (internId ? documents.filter((item) => item.student_id === internId) : documents).filter((item) =>
+        inGroup(item.student_id)
+      ),
+    [documents, internId, inGroup]
   );
 
   const counts = useMemo(
@@ -83,6 +91,7 @@ export default function SupervisorDocuments() {
               ]}
             />
           </div>
+          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (
             <label className="block w-full sm:w-56">
               <span className="sr-only">Intern</span>
@@ -92,7 +101,7 @@ export default function SupervisorDocuments() {
                 className="field"
               >
                 <option value="">All interns</option>
-                {interns.map((intern) => (
+                {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
                   <option key={intern.student_id} value={intern.student_id}>
                     {intern.name}
                   </option>
