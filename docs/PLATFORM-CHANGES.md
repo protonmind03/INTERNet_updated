@@ -206,6 +206,41 @@ New variables in these parts: `SUPERVISOR_DIGEST_TIME`,
 `COORDINATOR_DIGEST_DAY` and `COORDINATOR_DIGEST_TIME` (Railway, all
 optional, all doing nothing without SMTP).
 
+## The test site and its own backend (set up 2026-10-11)
+
+Two complete copies of the system now run side by side. Work goes to the
+test copy on "push" and to the live copy on "make it live".
+
+| | Test | Live |
+|---|---|---|
+| Site | `inter-net-updated.vercel.app` | `internet-psu.vercel.app` |
+| Git branch | `ui-redesign` | `main` |
+| Vercel environment | Preview | Production |
+| Railway environment | `staging` | `production` |
+| Backend | `internetupdated-staging.up.railway.app` | `internetupdated-production.up.railway.app` |
+| Database | its own, test data only | the real records |
+
+What was changed, all by the owner in the dashboards:
+
+| Platform | Change | Why |
+|---|---|---|
+| Vercel → Domains | `inter-net-updated.vercel.app` connected to Preview, branch `ui-redesign`. | The test address. |
+| Vercel → Environment Variables | `VITE_API_URL` has two values: Production (the production backend) and Preview (the staging backend). | Each site calls its own backend. It is read at build time. |
+| Vercel → Deployment Protection | Vercel Authentication turned off. | So groupmates can open the test site without a Vercel account. Every preview address of the project is now open to anyone with its link; the app's own sign-in still applies. |
+| Railway | A `staging` environment duplicated from `production`: its own backend (branch `ui-redesign`) and its own empty Postgres. | A backend and database the test site cannot harm. |
+| Railway → staging backend → Variables | `FRONTEND_URL` is the test address; `JWT_SECRET` is its own new value; `CORS_ORIGINS` removed; `DATABASE_PUBLIC_URL` is the reference `${{Postgres.DATABASE_URL}}`, which in this environment is the staging database. | Separate sign-ins, and only the test site may call it. |
+
+Things to know:
+- The staging database started empty: it has the default coordinator from
+  the migration (credentials in `CHANGES.md`, changed at first sign-in)
+  and nothing else. Accounts for testing are made there.
+- A push to `ui-redesign` runs any new migration on the staging database.
+  The backup rule applies to the live database only.
+- Two backends and two databases use the Railway credit about twice as
+  fast.
+- The site's security header lists both backends, since one `vercel.json`
+  serves both sites.
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
