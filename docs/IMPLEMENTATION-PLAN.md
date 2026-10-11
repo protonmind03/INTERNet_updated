@@ -690,27 +690,80 @@ Different from the description, or decided where it left room:
 ### Phase 2: College, Program, Major, Block, and one filter bar
 
 Two migrations (037, 038) and a backfill script. A production backup is
-needed before this goes live.
+needed before this goes live. Built 2026-10-12 on localhost.
 
-- [ ] **2.1 Migration 037: academic structure.** colleges, programs,
+Built on the default, awaiting confirmation: the seeded list of colleges,
+programs and majors (038), with these short codes: ABEL, ABEcon, BSBio,
+BSND, BSSW, BPA, BSBA, BSCS, BSIT, BSMath, BSHM, BSEd, BTLEd, BTVTEd,
+BIT. "CIT" under BS Mathematics is seeded as written. Corrections go
+through the Programs page.
+
+Different from the description, or decided where it left room:
+
+- 2.1: the trigger works the link out again only when the program text
+  itself changes, and leaves a program_id the same statement set on
+  purpose. Migration 020's trigger relinks on every write of the text,
+  which would undo the backfill for a student whose text matches nothing
+  ("BS Info Tech") the next time their account is saved. The trigger also
+  clears a major or block that belongs to another program.
+- 2.1: a program's name and its short code are each unique across the
+  campus, so text typed on a student can only mean one program. A short
+  code is required. A block's uniqueness treats "no major" and "no term"
+  as values of their own.
+- 2.1: the migration uses DROP TRIGGER IF EXISTS before CREATE TRIGGER,
+  as migration 020 does, so it can be run twice. No table or column is
+  dropped.
+- 2.1: `terms.closed_block_ids` remembers which blocks a closing switched
+  off, the way `closed_student_ids` does for students, so reopening
+  restores those and not one a coordinator had switched off by hand.
+- 2.3: the mapping file is `backend/src/scripts/program-mapping.json`,
+  shipped empty. A mapping to something that is not a program stops the
+  script before it reads anything.
+- 2.4: nothing is deleted from the Programs page; a row is made inactive.
+  A student of another program is not moved by "add students to a block":
+  their program is changed on their own form first.
+- 2.5: when a program is chosen from the picker its name becomes the
+  student's displayed program text. Free text is kept as typed. In the
+  import, a program that matches nothing is kept as text (as before) and
+  the row says so; it is an error only when the row also names a college,
+  major or block.
+- 2.6: values are bound as parameters through named markers
+  (services/studentScope.ts) rather than by wrapping queries the way
+  listQuery.ts does, because these routes are many queries of different
+  shapes, some already with parameters of their own. Column names are
+  fixed in that module.
+- 2.6: "At risk" stays the chip Monitoring already had; the bar does not
+  repeat it. Monitoring is the only page that has projections to filter.
+- 2.6: the audit log's bar narrows to entries about the chosen students:
+  ones on a student's own record, or that name the student in their
+  details. Most entries about a log, task or document name no student
+  and are left out, and the page says so. It does not use a filter
+  remembered from another page.
+- 2.6: the bar leaves out a level that has nothing to choose from.
+- 2.7: a group is a block, or for an intern with no block, their program.
+- 2.8: a student linked to a program is counted under its name; one who
+  is not, under the text on their account; one with no block, under "No
+  block". Each table adds up to every student.
+
+- [x] **2.1 Migration 037: academic structure.** colleges, programs,
   majors, blocks; students gain program_id, major_id, block_id (NOT VALID
   foreign keys). students.program stays the displayed text; a trigger sets
   program_id from it. Closing a term marks its blocks inactive; reopening
   restores them.
-- [ ] **2.2 Migration 038: seed PSU Lingayen,** six colleges with their
+- [x] **2.2 Migration 038: seed PSU Lingayen,** six colleges with their
   programs and majors, ON CONFLICT DO NOTHING.
-- [ ] **2.3 Backfill script** `backfill-programs.ts`: a dry run by default,
+- [x] **2.3 Backfill script** `backfill-programs.ts`: a dry run by default,
   links only what a mapping file written by a person maps.
-- [ ] **2.4 Coordinator page "Programs":** colleges, programs, majors and
+- [x] **2.4 Coordinator page "Programs":** colleges, programs, majors and
   blocks per term, with audit rules.
-- [ ] **2.5 Student form and import:** College, Program, Major, Block
+- [x] **2.5 Student form and import:** College, Program, Major, Block
   pickers; the import and its dry run take the same four columns.
-- [ ] **2.6 Shared filter bar** (Term, College, Program, Block, Company,
+- [x] **2.6 Shared filter bar** (Term, College, Program, Block, Company,
   Supervisor, At risk) on Dashboard, Monitoring, Analytics, Students,
   Documents, Evaluations and the Audit log; the routes filter in SQL.
-- [ ] **2.7 Supervisor filter:** "Program and block" where the interns
+- [x] **2.7 Supervisor filter:** "Program and block" where the interns
   span more than one.
-- [ ] **2.8 Analytics and exports** gain program and block columns, and
+- [x] **2.8 Analytics and exports** gain program and block columns, and
   tables by program and by block.
 
 ## Still open

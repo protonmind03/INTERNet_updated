@@ -380,8 +380,9 @@ Unset, `SW_KILLSWITCH` does nothing.
 
 ## Running a data script on the hosted database (run by you)
 
-The data scripts (`db:backfill-companies`, `db:fk-orphans`,
-`db:fk-validate`, `privacy:purge-photos`) reach the hosted database the
+The data scripts (`db:backfill-companies`, `db:backfill-programs`,
+`db:fk-orphans`, `db:fk-validate`, `privacy:purge-photos`) reach the
+hosted database the
 way the backup does: through a tunnel, with the Railway CLI supplying the
 database's settings, so nothing is typed in and no password is shown.
 
@@ -404,6 +405,47 @@ both `railway` commands.
 This form has been tried against a local database standing in for the
 tunnel, not yet against the host. `privacy:purge-photos` is the exception:
 the photos are on the server's own disk, so it still has to run there.
+
+## Linking students to programs (run by you, once per database)
+
+Migration 037 adds program records and 038 fills them in. A student whose
+program text is already a program's name or short code ("BSIT", "BS
+Information Technology") is linked the next time their account is saved,
+and new students link themselves. Students who were there before, and
+spellings that match nothing ("BS Info Tech"), are linked by
+`db:backfill-programs`. It is run the same way as any data script above:
+on **staging first**, on test data; on **production after "make it live"**,
+with a fresh backup already taken.
+
+1. Open the tunnel (for staging add `--environment staging` to both
+   `railway` commands):
+   `railway connect Postgres --tunnel-only`
+2. In a second terminal, in `backend`, list what it would do. Nothing is
+   changed:
+   `railway run --service Postgres npm run db:backfill-programs PORT`
+   It prints every spelling of the program typed on students, how many
+   students carry it, and the program it proposes. "exact" means the
+   spelling is a program's name or short code. "no proposal" means it will
+   be left alone.
+3. For each "no proposal" spelling you want linked, add a line to
+   `backend/src/scripts/program-mapping.json` on your computer. It maps a
+   spelling to a program's name or short code:
+   `{ "mappings": { "BS Info Tech": "BSIT", "Information Technology": "BSIT" } }`
+   Run step 2 again and check those rows now say "mapped". A spelling you
+   are not sure of is better left out: it can be set on the student's form.
+4. Apply it:
+   `railway run --service Postgres npm run db:backfill-programs PORT confirm`
+   It says how many students were linked. Running it again links nobody.
+5. Close the tunnel with `Ctrl+C`.
+
+It only sets which program a student is linked to. The program text on
+each account, and majors and blocks, are not touched: majors and blocks
+are set on the Programs page or the student's form. The mapping file holds
+no personal data and is read from your computer; whether to commit your
+edits to it is up to you.
+
+Tried here against a local database with a correct and an incorrect
+mapping file. Not yet tried through the tunnel.
 
 ## Validating the foreign keys (optional, run by you)
 

@@ -1472,3 +1472,61 @@ all 47 pages at both widths: clean.
 data has one student, so most cards have little to count); the exported
 file opened in a spreadsheet; the dashboard's speed with hundreds of
 students.
+
+## 28. Round 2, Phase 2: college, program, major, block, and one filter bar (12 October 2026)
+
+On `ui-redesign`, on localhost. Two additive migrations (037, 038) and a
+backfill script. A production backup is needed before this goes live.
+
+- **Academic structure (2.1, migration 037).** Colleges, programs, majors
+  and blocks are records. Students gain optional links to a program, a
+  major and a block. `students.program` stays the text that is shown; a
+  trigger links a student whose text is a program's name or short code.
+  A block is named from its program, year and section ("BSIT 4A").
+  Closing a term makes its blocks inactive; reopening restores them.
+- **The seeded list (2.2, migration 038).** Six colleges, fifteen
+  programs with short codes, fourteen majors, for PSU Lingayen. Awaiting
+  the OJT office's confirmation.
+- **Backfill (2.3).** `npm run db:backfill-programs` lists every spelling
+  of the program typed on students and what it would link each to. It
+  links exact matches and what a person wrote in a mapping file, nothing
+  else, and only with `confirm`.
+- **Programs page (2.4).** Under Programme: colleges, programs (with an
+  "OJT applies" switch), majors, and blocks by term, with who is in each
+  block and adding students who have none. Each change is in the audit
+  log.
+- **Student form and import (2.5).** College, Program, Major and Block
+  pickers on the form, each narrowing the next; a program not in the list
+  can still be typed. The import takes the same four as columns and says
+  per row what does not fit.
+- **One filter bar (2.6).** Term, College, Program, Block, Company and
+  Supervisor on Dashboard, Monitoring, Analytics, Students, Documents,
+  Evaluations and the Audit log. Kept in the address and for the session.
+  The server filters, with every value bound as a parameter.
+- **Supervisors (2.7).** A "Program and block" choice on their five pages
+  with an intern picker, shown only when their interns span more than one.
+- **Analytics and exports (2.8).** Tables by program and by block beside
+  the company table; exports gain college, program code, major and block
+  columns, the two summaries, and a line saying which students they cover.
+
+**Found on the way:** the company table's phone layout on Analytics still
+said "complaint".
+
+**What was checked:** both migrations run twice on a local database. The
+backfill's dry run, a mapping to a program that does not exist (refused),
+a correct mapping (two students linked, none on a second run), and that a
+student linked from a non-matching spelling stays linked when saved again.
+136 API tests (131 before): placing a student from pickers and from a
+file; filter values bound as parameters; the seeded list; every list
+refusing a malformed filter and matching nobody for an id of nothing; and
+one long test that makes a college, programs, a major, a term and blocks,
+imports and edits students, and checks nine routes under twelve filter
+combinations, the report's sums, the audit entries, and a term's blocks
+closing and reopening. 19 end-to-end tests (17 before). In a browser: the
+bar narrowing, clearing and carrying between pages; the Programs page;
+the student form; the supervisor's choice with interns of two groups. The
+automated accessibility check on 48 pages at both widths: clean.
+
+**Not checked:** the backfill through the tunnel; the migrations on the
+hosted databases; any of it with a real class list (the test data has a
+handful of students); the filter bar's speed with hundreds of students.

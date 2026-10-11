@@ -328,7 +328,7 @@ agree with the following:
 | 2. Use Case | Coordinator has "View Submitted Documents"; "View Analytics & Reports" is extended by Export CSV, Download PDF, and Print Report. If you keep A1 as the system has it, the coordinator is also linked to Confirm/Reject Daily Log. |
 | 3. Context | The System → OJT Coordinator arrow includes submitted documents and PDF reports. |
 | 4. DFD Level 0 | Process 3.0 has an output to the OJT Coordinator, reading D6 and D8. |
-| 5. ERD | Students, Supervisors, and Coordinators include auth_version and must_change_password; Students includes the password hash; Attendance is marked unique on (student_id, date). |
+| 5. ERD | Students, Supervisors, and Coordinators include auth_version and must_change_password; Students includes the password hash; Attendance is marked unique on (student_id, date). Since migration 037: four more entities, Colleges, Programs, Majors and Blocks, drawn as described under E ("The ERD has four more entities"). |
 | 6. Module Diagram | Coordinator Module has eight submodules including Document Oversight; Analytics & Reporting mentions PDF; Search & Filter is drawn as B16 and B19 describe. |
 
 ## E. Sections the document does not have
@@ -517,3 +517,42 @@ are true of the system today, for a scope section:
 - A student's weekly schedule is edited by the coordinator on the
   student's record (a Schedule tab), and still on the Requirements page.
   It is set one student at a time.
+- The ERD has four more entities since October 2026 (migration 037), and
+  Students has three more attributes. If Figure 5 is redrawn:
+  - **Colleges** (id, name, short_name, is_active).
+  - **Programs** (id, college_id, name, short_code, ojt_applies,
+    is_active). A college has many programs.
+  - **Majors** (id, program_id, name, is_active). A program has zero or
+    more majors; "major" also covers a specialization.
+  - **Blocks** (id, program_id, major_id, year_level, section, term_id,
+    is_active). A program has many blocks; a block may be of one major
+    and of one term, and either may be empty. A block has no name
+    attribute: its name ("BSIT 4A") is put together from its program's
+    short code, its year level and its section.
+  - **Students** gains program_id, major_id and block_id, each optional.
+    Students keeps its `program` text attribute, which is what is
+    displayed; program_id is the link. A student belongs to at most one
+    program, major and block.
+  - **Terms** gains closed_block_ids (the blocks a closing switched off).
+  The paper's text should say that a student's program is recorded both
+  as text and as a link, and that the link may be missing for a student
+  whose program was typed in a way the system does not recognise.
+- The list of colleges, programs and majors in the system was entered
+  from a list given to the group and has not been confirmed by the OJT
+  office. If the paper lists the campus's colleges and programs, take
+  them from the office, not from the system.
+- "OJT applies" on a program only keeps it out of the pickers on the
+  coordinator's student form. It does not stop a student of that program
+  from being registered, timing in or being counted.
+- The coordinator's pages (Dashboard, Monitoring, Analytics, Students,
+  Documents, Evaluations, Audit log) share one filter bar: term, college,
+  program, block, company, supervisor. The filtering is done by the
+  server. If the paper describes "search and filter" (B16, B19, and the
+  module diagram), this is what it is now. On the audit log the bar finds
+  only entries about a student's own record or that name the student.
+- Analytics and its exports report by program and by block as well as by
+  company. A student not linked to a program is counted under the text on
+  their account, so a program can appear under more than one spelling
+  until the students are linked.
+- A supervisor whose interns are of more than one program or block can
+  narrow their pages to one. This is a view of their own interns only.

@@ -332,6 +332,24 @@ can wait.
 No setting changes on Vercel in any of these phases, and `vercel.json` is
 unchanged since the enforced policy: no new backend address was added.
 
+### Phase 2: college, program, major, block, and the filter bar (built 2026-10-12, on localhost)
+
+Two additive migrations: 037 (four tables, three nullable columns on
+`students`, one on `terms`, a trigger) and 038 (the seeded list). The
+frontend that is live today keeps working on the new schema: it does not
+read or write the new columns, and the trigger fills `program_id` from
+the program text it already sends. No new variable. No new backend
+address, so `vercel.json` is unchanged.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| On "push" | Railway staging | Nothing by hand: migrations 036, 037 and 038 run on deploy. Wait for it to go green. | The new pages ask for routes only the new backend has. |
+| After the push | Railway staging, through the tunnel (run by you) | The program backfill on the staging database, dry run first: `DEPLOY.md` > "Linking students to programs". Add `--environment staging` to both `railway` commands. Tell me what the dry run printed. | The first run of the script against a hosted database, on test data. |
+| Before "make it live" | Railway production (run by you) | A fresh database backup through the tunnel, and tell me it is done. | The release carries migrations 035 to 038. |
+| On "make it live" | Railway production, Vercel Production | Nothing by hand. Wait for Railway to go green before opening the site. | As on staging. |
+| After "make it live" | Railway production, through the tunnel (run by you) | The program backfill on production: dry run, add mappings for the spellings you recognise, then `confirm`. | Links the students who were there before. Until it is run they show under the program text on their account and are missed by a College or Program filter. |
+| After the backfill | The site, as coordinator | Programs page: check the seeded list against the OJT office's, make blocks for this term, and place students (a block's "Students", or the import with a `block` column). | Blocks are not seeded and no student starts in one. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
