@@ -31,8 +31,10 @@ import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { useProjections } from "../../lib/useProjections";
 import { MissedTimeOutNotice } from "./AttendanceCorrections";
+import TimeInProvider from "./TimeInProvider";
+import { useTimeIn } from "./timeInContext";
 import TodayAttendance from "./TodayAttendance";
-import { logDateKey, useAttendance, type AttendanceLog } from "./useAttendance";
+import { logDateKey, type AttendanceLog } from "./useAttendance";
 
 type DashboardData = {
   hoursRendered: number;
@@ -59,10 +61,19 @@ type ScheduleDay = { day: string; hours: number | string | null };
 
 const OPEN_TASK_STATUSES = ["Pending", "In Progress"];
 
+/** Mounts the shared time-in actions above the page, which reads the attendance before it renders the layout. */
 export default function Dashboard() {
+  return (
+    <TimeInProvider>
+      <DashboardPage />
+    </TimeInProvider>
+  );
+}
+
+function DashboardPage() {
   const student = useAccount("student");
   const studentId = student?.student_id;
-  const attendance = useAttendance(studentId);
+  const { attendance } = useTimeIn();
 
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -151,7 +162,7 @@ export default function Dashboard() {
 
         <MissedTimeOutNotice attendance={attendance} />
 
-        <TodayAttendance attendance={attendance} />
+        <TodayAttendance />
 
         {summary?.completedAt && (
           <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">

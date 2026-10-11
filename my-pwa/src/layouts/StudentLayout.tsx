@@ -10,6 +10,7 @@ import { useNavCounts, type NavCounts } from "../lib/navCounts";
 import { useReportedHeight } from "../lib/layers";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import TimeInProvider from "../pages/student/TimeInProvider";
 
 /*
 |--------------------------------------------------------------------------
@@ -44,18 +45,28 @@ const SECONDARY_NAV: NavItem[] = [
 
 const ACCOUNT_NAV: NavItem = { label: "Profile", path: "/profile", icon: "user" };
 
-export default function StudentLayout({
-  title,
-  subtitle,
-  actions,
-  children,
-}: {
+type LayoutProps = {
   title: string;
   subtitle?: string;
   /** Buttons shown beside the page title. */
   actions?: ReactNode;
   children: ReactNode;
-}) {
+};
+
+/**
+ * Every student page is drawn inside this. It also holds the shared
+ * time-in actions (the day's attendance and its dialogs), so any page can
+ * offer the next step.
+ */
+export default function StudentLayout(props: LayoutProps) {
+  return (
+    <TimeInProvider>
+      <StudentChrome {...props} />
+    </TimeInProvider>
+  );
+}
+
+function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const student = useAccount("student");

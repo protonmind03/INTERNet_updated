@@ -8,12 +8,22 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { useAccount } from "../../lib/session";
 import { useDtrCertifications } from "../../lib/useDtrCertifications";
 import { useHolidays } from "../../lib/useHolidays";
-import { logDateKey, useAttendance } from "./useAttendance";
+import TimeInProvider from "./TimeInProvider";
+import { useTimeIn } from "./timeInContext";
+import { logDateKey } from "./useAttendance";
 
 /** The student's printable Daily Time Record. */
 export default function TimeRecord() {
+  return (
+    <TimeInProvider>
+      <TimeRecordPage />
+    </TimeInProvider>
+  );
+}
+
+function TimeRecordPage() {
   const student = useAccount("student");
-  const attendance = useAttendance(student?.student_id);
+  const { attendance } = useTimeIn();
   const [supervisor, setSupervisor] = useState("");
   const [absences, setAbsences] = useState<DtrAbsence[]>([]);
   const holidays = useHolidays("student");

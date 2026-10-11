@@ -34,8 +34,10 @@ import {
   MissedTimeOutNotice,
   ResubmitDialog,
 } from "./AttendanceCorrections";
+import TimeInProvider from "./TimeInProvider";
+import { useTimeIn } from "./timeInContext";
 import TodayAttendance from "./TodayAttendance";
-import { logDateKey, useAttendance, type AttendanceLog } from "./useAttendance";
+import { logDateKey, type AttendanceLog } from "./useAttendance";
 
 type Filter = "All" | "Verified" | "Pending" | "Rejected";
 
@@ -46,9 +48,18 @@ function matchesFilter(log: AttendanceLog, filter: Filter): boolean {
   return log.status === filter;
 }
 
+/** Mounts the shared time-in actions above the page, which reads the attendance before it renders the layout. */
 export default function DailyLog() {
+  return (
+    <TimeInProvider>
+      <DailyLogPage />
+    </TimeInProvider>
+  );
+}
+
+function DailyLogPage() {
   const student = useAccount("student");
-  const attendance = useAttendance(student?.student_id);
+  const { attendance } = useTimeIn();
   const { logs, loading } = attendance;
 
   const [filter, setFilter] = useState<Filter>("All");
@@ -157,7 +168,7 @@ export default function DailyLog() {
 
         <MissedTimeOutNotice attendance={attendance} />
 
-        <TodayAttendance attendance={attendance} />
+        <TodayAttendance />
 
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <StatTile label="Days logged" value={loading ? "–" : counts.All} icon="calendar" />
