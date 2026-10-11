@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import DtrSheet from "../../components/DtrSheet";
 import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
@@ -34,6 +34,7 @@ import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
 import { useHolidays } from "../../lib/useHolidays";
 import { usePagination } from "../../lib/usePagination";
 import { coordinatorRequest, downloadSubmittedDocument } from "./request";
+import ScheduleEditor from "./ScheduleEditor";
 
 /*
 |--------------------------------------------------------------------------
@@ -159,7 +160,10 @@ type Tab =
   | "documents"
   | "evaluations"
   | "journals"
+  | "schedule"
   | "record";
+
+const TABS: readonly Tab[] = ["overview", "attendance", "tasks", "documents", "evaluations", "journals", "schedule", "record"];
 
 /** A decision the coordinator is making in place of a missing supervisor. */
 type Pending =
@@ -171,7 +175,12 @@ export default function StudentRecord() {
   const [data, setData] = useState<Overview | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [tab, setTab] = useState<Tab>("overview");
+  // "?tab=schedule" in the address opens on that section (the Requirements page links here).
+  const [searchParams] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => {
+    const asked = searchParams.get("tab") as Tab | null;
+    return asked && TABS.includes(asked) ? asked : "overview";
+  });
   const holidays = useHolidays("coordinator");
   const { certifications } = useDtrCertifications("coordinator", studentId || undefined);
   const final = useFinalEvaluation("coordinator", studentId || undefined);
@@ -282,6 +291,7 @@ export default function StudentRecord() {
                   { value: "documents", label: "Documents", count: data.documents.length },
                   { value: "evaluations", label: "Evaluations", count: data.evaluations.length },
                   { value: "journals", label: "Journals", count: (data.journals || []).length },
+                  { value: "schedule", label: "Schedule" },
                   { value: "record", label: "Time record" },
                 ]}
               />
@@ -634,6 +644,24 @@ export default function StudentRecord() {
                     ))}
                   </ul>
                 )}
+              </Card>
+            )}
+
+            {tab === "schedule" && (
+              <Card>
+                <CardHeader
+                  title="Weekly schedule"
+                  description="The days and hours this student reports for OJT. They see it on their Schedule page, and their projected finish is worked out from it."
+                />
+                <div className="mt-3 border-t border-slate-100 px-4 py-4 sm:px-5">
+                  <ScheduleEditor
+                    key={student.student_id}
+                    studentId={student.student_id}
+                    studentName={student.name}
+                    requiredHours={student.required_hours}
+                    onSaved={() => void load()}
+                  />
+                </div>
               </Card>
             )}
 
