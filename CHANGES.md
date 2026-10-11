@@ -944,8 +944,7 @@ steps for going live are in `docs/PLATFORM-CHANGES.md`.
 ## 19. Phase 4, student part (10 and 11 October 2026)
 
 The student items of Phase 4 in `docs/IMPLEMENTATION-PLAN.md`. Seven
-additive migrations (022 to 028). Built and committed locally, not pushed:
-it is waiting to be looked at on localhost. The steps for going live are in
+additive migrations (022 to 028). Live since 11 October 2026. The steps for going live are in
 `docs/PLATFORM-CHANGES.md`.
 
 **What was accomplished, at time-out**
@@ -1057,7 +1056,7 @@ it is waiting to be looked at on localhost. The steps for going live are in
 ## 20. Phase 4, supervisor, coordinator and cross-cutting parts (11 October 2026)
 
 The rest of Phase 4 in `docs/IMPLEMENTATION-PLAN.md`. Six additive
-migrations (029 to 034). Built and committed locally, not pushed.
+migrations (029 to 034). Live since 11 October 2026.
 
 **Supervisor**
 - **Correct the times on a log.** From a log's review, the supervisor can
@@ -1136,7 +1135,7 @@ migrations (029 to 034). Built and committed locally, not pushed.
 
 ## 21. Phase 5: projections, alerts, reports and polish (11 October 2026)
 
-No migrations. Built and committed locally, not pushed.
+No migrations. Live since 11 October 2026.
 
 **Projected finish and "at risk"**
 - A student's remaining hours are counted off against their weekly

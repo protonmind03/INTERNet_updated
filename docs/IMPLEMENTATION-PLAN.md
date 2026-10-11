@@ -9,16 +9,12 @@ out in two pushes, backend first, after a production backup that was
 restored and tested locally. Still owed for Phase 2: the phone checks in
 `DEPLOY.md`, on a real Android phone and a real iPhone.
 
-**Phases 3, 4 and 5 are built and committed locally (2026-10-11), not
-pushed.** Every item is built except the three optional ones (decision
+**Phases 3, 4 and 5 went live on 2026-10-11** in one push, after a
+production backup that was restored and tested locally with all seventeen
+migrations. Every item is built except the three optional ones (decision
 D12) and the switch to an enforcing content security policy, which waits
 for the owner's word. The notes under each phase say where the work falls
 short of the list. What is still open is at the end, under "Still open".
-
-**Phase 3 is built and committed locally (2026-10-10), not pushed.** It
-is waiting for the owner to look at it on localhost. Two parts fall short
-of the list below and are noted under it: the pages have not moved to
-server paging, and the term filter covers the Students page only.
 
 ## Rules
 

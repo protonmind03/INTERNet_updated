@@ -137,7 +137,7 @@ New variables this phase: none.
 
 ## Phase 4
 
-### Student part (built locally, not pushed)
+### Student part (live since 2026-10-11)
 
 Seven additive migrations: 022 (accomplishment note), 023 (student
 contact), 024 (time-out reminders), 025 (holidays), 026 (journals), 027
@@ -170,7 +170,7 @@ New variables in this part: `PRIVACY_CONSENT_REQUIRED` and
 Not added: `TIMEOUT_REMINDER_HOURS`. The reminder is fixed at one hour
 after the scheduled end (decision D11).
 
-### Supervisor, coordinator and cross-cutting parts (built locally, not pushed)
+### Supervisor, coordinator and cross-cutting parts (live since 2026-10-11)
 
 Six more additive migrations: 029 (time correction), 030 (time record
 certifications), 031 (final evaluations, with a sample form), 032
@@ -180,9 +180,10 @@ certifications), 031 (final evaluations, with a sample form), 032
 
 No migrations. Adds an end-to-end test job to CI.
 
-## The one push for everything built so far
+## The one push for Phases 3, 4 and 5 (done 2026-10-11)
 
-Phases 3, 4 and 5 are all local. They can go out as **one push**:
+This went out on 2026-10-11 and all three checks passed. Kept as the
+record of what was done. Phases 3, 4 and 5 went out as **one push**:
 migrations 018 to 034, seventeen in all, each additive. Nothing the new
 frontend sends is misread by the old backend, and nothing the new backend
 requires is missing from the old frontend, so the order the two hosts
