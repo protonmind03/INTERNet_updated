@@ -266,6 +266,30 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.attendance, "id"),
     keep: ["student_id", "reason"],
   },
+  // The programme's settings: targets, and a schedule for a whole block
+  {
+    method: "PUT",
+    path: "/api/coordinator/kpi-targets",
+    action: (source) => (Number(source.result.changed_count) > 0 ? "kpi.targets" : null),
+    entityType: "kpi_targets",
+    entityId: () => null,
+    from: (source) => ({ changed: source.result.changed }),
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/blocks/:id/schedule",
+    action: "schedule.bulk_set",
+    entityType: "block",
+    entityId: param("id"),
+    keep: ["existing"],
+    from: (source) => ({
+      block: source.result.block,
+      schedule: source.result.schedule,
+      applied: source.result.applied,
+      skipped: source.result.skipped,
+      unchanged: source.result.unchanged,
+    }),
+  },
   // Notes between a supervisor and the coordinators, and a coordinator's reminder
   {
     method: "POST",

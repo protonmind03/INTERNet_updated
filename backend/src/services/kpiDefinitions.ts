@@ -9,9 +9,9 @@
 | out from these (services/kpis.ts) and sends the name, definition and
 | target along with each value, so the screens never keep a second copy.
 |
-| The targets are fixed for now. They are the defaults the group was given,
-| built on awaiting confirmation; a later phase lets a coordinator change
-| them.
+| The targets here are the DEFAULTS. A coordinator can change one from the
+| dashboard (table kpi_targets, migration 043); a figure with no row there
+| is judged against the default below.
 |
 */
 
@@ -111,6 +111,28 @@ export const KPI_DEFINITIONS: readonly KpiDefinition[] = [
     link: "/coordinator/companies",
   },
 ];
+
+export type KpiTargets = Partial<Record<KpiKey, number>>;
+
+/** What a target may be set to, by the figure's unit. */
+export const TARGET_LIMITS: Record<KpiDefinition["unit"], { max: number; whole: boolean }> = {
+  percent: { max: 100, whole: true },
+  days: { max: 60, whole: false },
+  count: { max: 1000, whole: true },
+};
+
+/** A target a coordinator typed, if it can be one for this figure; otherwise why not. */
+export function readTarget(definition: KpiDefinition, value: unknown): { target: number } | { problem: string } {
+  const limit = TARGET_LIMITS[definition.unit];
+  const what = `The target for "${definition.label}"`;
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value > limit.max) {
+    return { problem: `${what} must be a number from 0 to ${limit.max}.` };
+  }
+  if (limit.whole ? !Number.isInteger(value) : Math.round(value * 10) !== value * 10) {
+    return { problem: limit.whole ? `${what} must be a whole number.` : `${what} can have one decimal place.` };
+  }
+  return { target: value };
+}
 
 /** True when the value meets its target; null when there is nothing to judge. */
 export function meetsTarget(definition: KpiDefinition, value: number | null): boolean | null {

@@ -33,6 +33,7 @@ import { auditMiddleware } from "./services/audit";
 import { registerAcademicRoutes } from "./routes/academics";
 import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
 import { registerProgrammeRoutes } from "./routes/programme";
+import { readSchedule } from "./services/schedules";
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
@@ -8720,53 +8721,10 @@ app.put(
   requireCoordinator,
   async (req, res) => {
     const { studentId } = req.params;
-    const entries: unknown[] = Array.isArray(req.body?.schedule)
-      ? req.body.schedule
-      : [];
-    const timePattern = /^([01]\d|2[0-3]):[0-5]\d$/;
-    const clean: {
-      day: string;
-      start: string;
-      end: string;
-      focus: string | null;
-      hours: number;
-    }[] = [];
-
-    for (const raw of entries) {
-      const entry = (raw || {}) as Record<string, unknown>;
-      const day = String(entry.day || "");
-      const start = String(entry.start_time || "").slice(0, 5);
-      const end = String(entry.end_time || "").slice(0, 5);
-      if (!SCHEDULE_DAYS.includes(day)) {
-        return res.status(400).json({ message: `Invalid day: ${day || "(blank)"}.` });
-      }
-      if (!timePattern.test(start) || !timePattern.test(end)) {
-        return res
-          .status(400)
-          .json({ message: `Enter start and end times (HH:MM) for ${day}.` });
-      }
-      const [sh, sm] = start.split(":").map(Number);
-      const [eh, em] = end.split(":").map(Number);
-      const minutes = eh * 60 + em - (sh * 60 + sm);
-      if (minutes <= 0) {
-        return res
-          .status(400)
-          .json({ message: `End time must be after start time on ${day}.` });
-      }
-      if (clean.some((item) => item.day === day)) {
-        return res.status(400).json({ message: `${day} is listed more than once.` });
-      }
-      clean.push({
-        day,
-        start,
-        end,
-        focus:
-          typeof entry.focus === "string" && entry.focus.trim()
-            ? entry.focus.trim().slice(0, 200)
-            : null,
-        hours: Math.round((minutes / 60) * 100) / 100,
-      });
-    }
+    // The same checks as a schedule set for a whole block (services/schedules.ts).
+    const read = readSchedule(req.body?.schedule);
+    if ("problem" in read) return res.status(400).json({ message: read.problem });
+    const clean = read.days;
 
     const client = await pool.connect();
     try {
@@ -9368,7 +9326,7 @@ app.get(
 registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
 registerAcademicRoutes(app, { pool, requireCoordinator });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
-registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator });
+registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 
 registerExtensionRoutes(app, {
   pool,

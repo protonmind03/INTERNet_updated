@@ -6904,3 +6904,267 @@ test("the performance table is the coordinator's, takes the filters, and its hou
     await pool.end();
   }
 });
+
+test("a key figure's target can be replaced, within what its unit allows, and nothing else about it changes", () => {
+  require("tsx/cjs");
+  const { KPI_DEFINITIONS, readTarget } = require("../src/services/kpiDefinitions.ts");
+  const { computeKpis } = require("../src/services/kpis.ts");
+  const of = (key) => KPI_DEFINITIONS.find((item) => item.key === key);
+  // Percent: whole, 0 to 100. Days: one decimal, 0 to 60. Count: whole, 0 to 1000.
+  assert.deepEqual(readTarget(of("on_track"), 85), { target: 85 });
+  for (const bad of [-1, 101, 85.5, "85", null, NaN, Infinity]) assert.ok("problem" in readTarget(of("on_track"), bad), String(bad));
+  assert.deepEqual(readTarget(of("review_time"), 1.5), { target: 1.5 });
+  for (const bad of [1.55, 61, -0.1]) assert.ok("problem" in readTarget(of("review_time"), bad), String(bad));
+  assert.deepEqual(readTarget(of("old_concerns"), 3), { target: 3 });
+  for (const bad of [2.5, 1001]) assert.ok("problem" in readTarget(of("old_concerns"), bad), String(bad));
+
+  const inputs = { students: [], holidays: new Set(), decisions: [], requirements: [], concerns: [{ created_on: "2026-09-01", closed_on: null }, { created_on: "2026-09-02", closed_on: null }], expiries: [] };
+  const plain = computeKpis("2026-10-12", inputs).find((kpi) => kpi.key === "old_concerns");
+  assert.deepEqual([plain.value, plain.target, plain.default_target, plain.met], [2, 0, 0, false]);
+  const moved = computeKpis("2026-10-12", inputs, { old_concerns: 2 }).find((kpi) => kpi.key === "old_concerns");
+  assert.deepEqual([moved.value, moved.target, moved.default_target, moved.met], [2, 2, 0, true], "the same count, judged against the new target");
+  assert.equal(moved.label, plain.label);
+  assert.deepEqual(moved.series, plain.series);
+  // The other five are untouched.
+  assert.ok(computeKpis("2026-10-12", inputs, { old_concerns: 2 }).filter((kpi) => kpi.key !== "old_concerns").every((kpi) => kpi.target === kpi.default_target));
+});
+
+test("the coordinator changes the key figures' targets, the defaults come back with null, and a change is logged", async (t) => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/kpi-targets";
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "PUT", { targets: { on_track: 80 } }))).response.status, 403);
+  assert.equal((await jsonRequest(path, jsonBody(supervisor.token, "PUT", { targets: { on_track: 80 } }))).response.status, 403);
+  const put = (targets) => jsonRequest(path, jsonBody(coordinatorToken, "PUT", { targets }));
+  for (const bad of [undefined, [], {}, { nonsense: 5 }, { on_track: 101 }, { on_track: "80" }, { review_time: 1.25 }, { old_concerns: -1 }]) {
+    assert.equal((await put(bad)).response.status, 400, JSON.stringify(bad));
+  }
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const kpi = async (key) => (await jsonRequest("/api/coordinator/kpis", { headers: authHeaders(coordinatorToken) })).body.kpis.find((item) => item.key === key);
+  await pool.query(`DELETE FROM kpi_targets`);
+  try {
+    const before = await kpi("on_track");
+    assert.deepEqual([before.target, before.default_target], [90, 90]);
+    const saved = await put({ on_track: 75, review_time: 3.5 });
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual([saved.body.targets.on_track, saved.body.targets.review_time, saved.body.targets.attendance_rate], [75, 3.5, 95]);
+    assert.equal(saved.body.changed, "on_track: 90 to 75; review_time: 2 to 3.5");
+    const after = await kpi("on_track");
+    assert.deepEqual([after.target, after.default_target, after.value], [75, 90, before.value], "the value is the same; only what it is judged against moved");
+    assert.equal(after.met, after.value === null ? null : after.value >= 75);
+    assert.equal((await pool.query(`SELECT updated_by FROM kpi_targets WHERE key = 'on_track'`)).rows[0].updated_by, coordinator.coordinator_id);
+
+    // Saved again unchanged: nothing moved, nothing logged.
+    const same = await put({ on_track: 75 });
+    assert.deepEqual([same.response.status, same.body.changed_count], [200, 0]);
+    // null, or the default itself, puts the default back and keeps no row.
+    const reset = await put({ on_track: null, review_time: 2 });
+    assert.deepEqual([reset.body.targets.on_track, reset.body.targets.review_time], [90, 2]);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM kpi_targets`)).rows[0].n, 0);
+    assert.equal((await kpi("on_track")).target, 90);
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const audit = await jsonRequest("/api/coordinator/audit?action=kpi.targets&limit=5", { headers: authHeaders(coordinatorToken) });
+    const changes = audit.body.entries.map((entry) => entry.details?.changed);
+    assert.ok(changes.includes("on_track: 90 to 75; review_time: 2 to 3.5"), JSON.stringify(changes));
+    assert.ok(changes.includes("on_track: 75 to 90; review_time: 3.5 to 2"), JSON.stringify(changes));
+    assert.equal(changes.filter((item) => item === "").length, 0, "the unchanged save is not in the log");
+  } finally {
+    await pool.query(`DELETE FROM kpi_targets`);
+    await pool.end();
+  }
+});
+
+test("saved views of the filter bar are each coordinator's own, named once, and hold only the bar's choices", async (t) => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/filter-views";
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  const save = (body) => jsonRequest(path, jsonBody(coordinatorToken, "POST", body));
+  for (const bad of [
+    { name: "", filters: { term: "1" } },
+    { name: "x".repeat(61), filters: { term: "1" } },
+    { name: "Nothing chosen", filters: {} },
+    { name: "Nothing chosen" },
+    { name: "Not an id", filters: { block: "abc" } },
+    { name: "Only strangers", filters: { risk: "1", q: "ana" } },
+  ]) {
+    assert.equal((await save(bad)).response.status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+  assert.equal((await jsonRequest(`${path}/999999999`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+  assert.equal((await jsonRequest(`${path}/abc`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const other = `P5-COORD-${stamp}`;
+  try {
+    const made = await save({ name: `  BSIT 4A ${stamp} `, filters: { program: "9", block: "none", supervisor: "", risk: "1", extra: { a: 1 } } });
+    assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    assert.deepEqual([made.body.view.name, made.body.view.filters], [`BSIT 4A ${stamp}`, { program: "9", block: "none" }], "only the bar's own choices, as text");
+    assert.equal((await save({ name: `bsit 4a ${stamp}`, filters: { term: "none" } })).response.status, 409, "the same name, whatever the capitals");
+    const mine = (await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).body.views;
+    assert.ok(mine.some((view) => view.id === made.body.view.id));
+
+    // Another coordinator's views are not listed, and cannot be removed.
+    await pool.query(`INSERT INTO coordinators (coordinator_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Another Coordinator', TRUE)`, [other, `${other.toLowerCase()}@p5.test`]);
+    const theirs = (await pool.query(`INSERT INTO filter_views (coordinator_id, name, filters) VALUES ($1, $2, '{"term":"none"}') RETURNING id`, [other, `Theirs ${stamp}`])).rows[0].id;
+    assert.ok(!(await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).body.views.some((view) => view.id === theirs));
+    assert.equal((await jsonRequest(`${path}/${theirs}`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM filter_views WHERE id = $1`, [theirs])).rows[0].n, 1);
+
+    const gone = await jsonRequest(`${path}/${made.body.view.id}`, jsonBody(coordinatorToken, "DELETE", {}));
+    assert.equal(gone.response.status, 200);
+    assert.ok(!(await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).body.views.some((view) => view.id === made.body.view.id));
+  } finally {
+    await pool.query(`DELETE FROM filter_views WHERE name LIKE $1`, [`%${stamp}%`]);
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [other]);
+    await pool.end();
+  }
+});
+
+test("a term's setup checklist is seven lines, each counted, none done by saying so", async (t) => {
+  require("tsx/cjs");
+  const { setupLines } = require("../src/services/termSetup.ts");
+  const counts = (over = {}) => ({ students: 12, without_company: 0, without_supervisor: 0, without_block: 0, without_schedule: 0, companies: 3, supervisors: 4, requirements: 6, form_is_sample: false, welcome_title: "Welcome to OJT", ...over });
+  const keys = ["companies", "supervisors", "students", "schedules", "requirements", "evaluation_form", "welcome"];
+  assert.deepEqual(setupLines(7, counts()).map((line) => line.key), keys);
+  assert.ok(setupLines(7, counts()).every((line) => line.done && line.link.startsWith("/coordinator/") && line.detail));
+  const line = (over, key) => setupLines(7, counts(over)).find((item) => item.key === key);
+  // A term with nobody in it has nothing done about its students, however many companies exist.
+  for (const key of ["companies", "supervisors", "students", "schedules"]) {
+    assert.deepEqual([line({ students: 0 }, key).done, line({ students: 0 }, key).detail], [false, "No students are in this term yet."], key);
+  }
+  assert.deepEqual([line({ without_block: 1 }, "students").done, line({ without_block: 1 }, "students").detail], [false, "1 student of 12 is not in a block."]);
+  assert.equal(line({ without_schedule: 5 }, "schedules").detail, "5 students of 12 have no weekly schedule.");
+  assert.equal(line({ companies: 0 }, "companies").done, false);
+  assert.equal(line({ without_supervisor: 2 }, "supervisors").done, false);
+  assert.equal(line({ requirements: 0 }, "requirements").done, false);
+  assert.equal(line({ form_is_sample: true }, "evaluation_form").done, false);
+  assert.equal(line({ form_is_sample: null }, "evaluation_form").done, false);
+  assert.equal(line({ welcome_title: null }, "welcome").done, false);
+  assert.equal(line({}, "students").link, "/coordinator/students?term=7");
+
+  const supervisor = await supervisorSession();
+  assert.equal((await jsonRequest("/api/coordinator/terms/1/setup", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/terms/1/setup", { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/terms/999999999/setup", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/terms/abc/setup", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const sid = `P5-SETUP-${stamp}`;
+  let termId;
+  try {
+    termId = (await pool.query(`INSERT INTO terms (name, start_date, end_date) VALUES ($1, '2099-06-01', '2099-10-30') RETURNING id`, [`Setup test ${stamp}`])).rows[0].id;
+    const get = async () => (await jsonRequest(`/api/coordinator/terms/${termId}/setup`, { headers: authHeaders(coordinatorToken) })).body;
+    const empty = await get();
+    assert.deepEqual(empty.lines.map((item) => item.key), keys);
+    assert.equal(empty.term.name, `Setup test ${stamp}`);
+    assert.equal(empty.lines.find((item) => item.key === "students").done, false);
+    assert.equal(empty.lines.find((item) => item.key === "welcome").done, false, "nothing has been announced near a term that starts in 2099");
+    assert.equal(empty.done, empty.lines.filter((item) => item.done).length);
+
+    // A student with no block and no schedule; then a schedule; the line follows the record.
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, term_id, supervisor_id) VALUES ($1, $2, 'x', 'Setup Student', TRUE, $3, $4)`, [sid, `${sid.toLowerCase()}@p5.test`, termId, supervisor.supervisor.supervisor_id]);
+    await pool.query(`UPDATE students SET term_id = $2 WHERE student_id = $1`, [sid, termId]);
+    const one = await get();
+    assert.equal(one.lines.find((item) => item.key === "students").detail, "1 student of 1 is not in a block.");
+    assert.equal(one.lines.find((item) => item.key === "schedules").done, false);
+    assert.equal(one.lines.find((item) => item.key === "supervisors").done, true);
+    await pool.query(`INSERT INTO ojt_schedule (student_id, day, start_time, end_time, hours, is_active) VALUES ($1, 'Monday', '08:00', '17:00', 8, TRUE)`, [sid]);
+    assert.equal((await get()).lines.find((item) => item.key === "schedules").done, true);
+  } finally {
+    await pool.query(`DELETE FROM ojt_schedule WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    if (termId) await pool.query(`DELETE FROM terms WHERE id = $1`, [termId]);
+    await pool.end();
+  }
+});
+
+test("one schedule is set for a block: a preview first, then those with a different one overwritten or skipped, and logged", async (t) => {
+  require("tsx/cjs");
+  const { readSchedule, compareSchedule, scheduleKey } = require("../src/services/schedules.ts");
+  const week = [{ day: "Monday", start_time: "08:00", end_time: "17:00" }, { day: "Wednesday", start_time: "08:00:00", end_time: "12:30", focus: "  Filing  " }];
+  assert.deepEqual(readSchedule(week).days, [
+    { day: "Monday", start: "08:00", end: "17:00", focus: null, hours: 9 },
+    { day: "Wednesday", start: "08:00", end: "12:30", focus: "Filing", hours: 4.5 },
+  ]);
+  for (const bad of [[{ day: "Funday", start_time: "08:00", end_time: "17:00" }], [{ day: "Monday", start_time: "8", end_time: "17:00" }], [{ day: "Monday", start_time: "17:00", end_time: "08:00" }], [week[0], week[0]]]) {
+    assert.ok("problem" in readSchedule(bad), JSON.stringify(bad).slice(0, 50));
+  }
+  const days = readSchedule(week).days;
+  assert.equal(scheduleKey(days), "Monday 08:00-17:00; Wednesday 08:00-12:30");
+  assert.equal(compareSchedule([], days), "none");
+  assert.equal(compareSchedule([{ day: "Wednesday", start: "08:00", end: "12:30" }, { day: "Monday", start: "08:00", end: "17:00" }], days), "same", "the order does not matter");
+  assert.equal(compareSchedule([{ day: "Monday", start: "08:00", end: "17:00" }], days), "different");
+  assert.equal(compareSchedule([{ day: "Monday", start: "09:00", end: "17:00" }, { day: "Wednesday", start: "08:00", end: "12:30" }], days), "different");
+
+  const supervisor = await supervisorSession();
+  const body = { schedule: week, existing: "skip" };
+  assert.equal((await jsonRequest("/api/coordinator/blocks/1/schedule", jsonBody(studentToken, "PUT", body))).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/blocks/1/schedule", jsonBody(supervisor.token, "PUT", body))).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/blocks/1/schedule/preview", jsonBody(supervisor.token, "POST", body))).response.status, 403);
+  const as = (method, path, payload) => jsonRequest(path, jsonBody(coordinatorToken, method, payload));
+  assert.equal((await as("PUT", "/api/coordinator/blocks/999999999/schedule", body)).response.status, 404);
+  assert.equal((await as("POST", "/api/coordinator/blocks/999999999/schedule/preview", body)).response.status, 404);
+  assert.equal((await as("PUT", "/api/coordinator/blocks/999999999/schedule", { schedule: week })).response.status, 400, "overwrite or skip must be said");
+  assert.equal((await as("PUT", "/api/coordinator/blocks/999999999/schedule", { schedule: [], existing: "skip" })).response.status, 400);
+  assert.equal((await as("POST", "/api/coordinator/blocks/999999999/schedule/preview", { schedule: [{ day: "Monday", start_time: "17:00", end_time: "08:00" }] })).response.status, 400);
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const ids = { none: `P5-SCH-A-${stamp}`, same: `P5-SCH-B-${stamp}`, different: `P5-SCH-C-${stamp}`, inactive: `P5-SCH-D-${stamp}` };
+  let blockId;
+  const active = async (id) => (await pool.query(`SELECT INITCAP(day) AS day, TO_CHAR(start_time, 'HH24:MI') AS start, TO_CHAR(end_time, 'HH24:MI') AS "end", hours::float AS hours FROM ojt_schedule WHERE student_id = $1 AND is_active = TRUE ORDER BY day`, [id])).rows;
+  try {
+    const program = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BSIT'`)).rows[0].id;
+    blockId = (await pool.query(`INSERT INTO blocks (program_id, year_level, section) VALUES ($1, 4, $2) RETURNING id`, [program, `S${String(stamp).slice(-6)}`])).rows[0].id;
+    for (const [kind, id] of Object.entries(ids)) {
+      await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, program_id, block_id) VALUES ($1, $2, 'x', $3, $4, $5, $6)`, [id, `${id.toLowerCase()}@p5.test`, `Sched ${kind}`, kind !== "inactive", program, blockId]);
+    }
+    await pool.query(`INSERT INTO ojt_schedule (student_id, day, start_time, end_time, hours, is_active) VALUES ($1, 'Monday', '08:00', '17:00', 9, TRUE), ($1, 'Wednesday', '08:00', '12:30', 4.5, TRUE)`, [ids.same]);
+    await pool.query(`INSERT INTO ojt_schedule (student_id, day, start_time, end_time, hours, is_active) VALUES ($1, 'Friday', '13:00', '17:00', 4, TRUE)`, [ids.different]);
+
+    // THE PREVIEW changes nothing and names who stands where.
+    const preview = await as("POST", `/api/coordinator/blocks/${blockId}/schedule/preview`, { schedule: week });
+    assert.equal(preview.response.status, 200, JSON.stringify(preview.body));
+    assert.deepEqual([preview.body.none, preview.body.same, preview.body.different], [1, 1, 1]);
+    assert.deepEqual(Object.fromEntries(preview.body.students.map((row) => [row.student_id, row.state])), { [ids.none]: "none", [ids.same]: "same", [ids.different]: "different" }, "a deactivated student is not in it");
+    assert.equal(preview.body.students.find((row) => row.student_id === ids.different).current, "Friday 13:00-17:00");
+    assert.deepEqual(await active(ids.none), []);
+
+    // SKIP: the one with none gets it; the different one is left.
+    const skipped = await as("PUT", `/api/coordinator/blocks/${blockId}/schedule`, { schedule: week, existing: "skip" });
+    assert.deepEqual([skipped.response.status, skipped.body.applied, skipped.body.skipped, skipped.body.unchanged], [200, 1, 1, 1], JSON.stringify(skipped.body));
+    assert.match(skipped.body.message, /1 student with a different schedule was left as it is\./);
+    assert.deepEqual(await active(ids.none), [{ day: "Monday", start: "08:00", end: "17:00", hours: 9 }, { day: "Wednesday", start: "08:00", end: "12:30", hours: 4.5 }]);
+    assert.deepEqual((await active(ids.different)).map((row) => row.day), ["Friday"]);
+    assert.deepEqual(await active(ids.inactive), []);
+
+    // OVERWRITE: now the different one too. The earlier rows are kept, switched off.
+    const over = await as("PUT", `/api/coordinator/blocks/${blockId}/schedule`, { schedule: week, existing: "overwrite" });
+    assert.deepEqual([over.body.applied, over.body.skipped, over.body.unchanged], [1, 0, 2], JSON.stringify(over.body));
+    assert.deepEqual((await active(ids.different)).map((row) => row.day), ["Monday", "Wednesday"]);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM ojt_schedule WHERE student_id = $1 AND is_active = FALSE`, [ids.different])).rows[0].n, 1);
+    // Each student whose schedule changed is told, once.
+    const told = await pool.query(`SELECT student_id FROM notifications WHERE title = 'OJT schedule updated' AND student_id = ANY($1::text[])`, [Object.values(ids)]);
+    assert.deepEqual(told.rows.map((row) => row.student_id).sort(), [ids.none, ids.different].sort());
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const audit = await jsonRequest("/api/coordinator/audit?action=schedule.bulk_set&limit=10", { headers: authHeaders(coordinatorToken) });
+    const mine = audit.body.entries.filter((entry) => String(entry.entity_id) === String(blockId));
+    assert.equal(mine.length, 2);
+    assert.ok(mine.some((entry) => entry.details.existing === "skip" && entry.details.applied === 1 && entry.details.skipped === 1));
+    assert.ok(mine.every((entry) => entry.entity_type === "block" && entry.details.schedule === "Monday 08:00-17:00; Wednesday 08:00-12:30"));
+  } finally {
+    const all = Object.values(ids);
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::text[])`, [all]);
+    await pool.query(`DELETE FROM ojt_schedule WHERE student_id = ANY($1::text[])`, [all]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1::text[])`, [all]);
+    if (blockId) await pool.query(`DELETE FROM blocks WHERE id = $1`, [blockId]);
+    await pool.end();
+  }
+});

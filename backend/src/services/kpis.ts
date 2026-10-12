@@ -34,6 +34,7 @@ import {
   meetsTarget,
   type KpiDefinition,
   type KpiKey,
+  type KpiTargets,
 } from "./kpiDefinitions";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -185,6 +186,8 @@ const FIGURES: Record<KpiKey, (asOf: string, inputs: KpiInputs) => Figure> = {
 };
 
 export type Kpi = KpiDefinition & {
+  /** The target when nobody has changed it. `target` is the one in force. */
+  default_target: number;
   value: number | null;
   /** Whether the target is met; null when there is nothing to judge. */
   met: boolean | null;
@@ -197,8 +200,10 @@ export type Kpi = KpiDefinition & {
 };
 
 /** Every figure as of `today`, with its history, from rows already loaded. */
-export function computeKpis(today: string, inputs: KpiInputs): Kpi[] {
-  return KPI_DEFINITIONS.map((definition) => {
+export function computeKpis(today: string, inputs: KpiInputs, targets: KpiTargets = {}): Kpi[] {
+  return KPI_DEFINITIONS.map((standard) => {
+    // A target the coordinator set replaces the default; nothing else about the figure changes.
+    const definition = { ...standard, target: targets[standard.key] ?? standard.target };
     const figure = FIGURES[definition.key];
     const series = Array.from({ length: KPI_WEEKS }, (_, index) => {
       const date = addDays(today, -7 * (KPI_WEEKS - 1 - index));
@@ -207,6 +212,7 @@ export function computeKpis(today: string, inputs: KpiInputs): Kpi[] {
     const now = figure(today, inputs);
     return {
       ...definition,
+      default_target: standard.target,
       value: now.value,
       met: meetsTarget(definition, now.value),
       basis: now.basis,
@@ -317,5 +323,16 @@ export async function coordinatorKpis(
   now: Date = new Date()
 ): Promise<{ as_of: string; kpis: Kpi[] }> {
   const { date: today } = manilaClock(now);
-  return { as_of: today, kpis: computeKpis(today, await loadKpiInputs(pool, filters, today)) };
+  const [inputs, targets] = await Promise.all([loadKpiInputs(pool, filters, today), loadKpiTargets(pool)]);
+  return { as_of: today, kpis: computeKpis(today, inputs, targets) };
+}
+
+/** The targets a coordinator has set. A figure not listed uses its default. */
+export async function loadKpiTargets(pool: Pool): Promise<KpiTargets> {
+  const rows = await pool.query<{ key: string; target: number }>(`SELECT key, target::float AS target FROM kpi_targets`);
+  const targets: KpiTargets = {};
+  for (const row of rows.rows) {
+    if (KPI_DEFINITIONS.some((definition) => definition.key === row.key)) targets[row.key as KpiKey] = Number(row.target);
+  }
+  return targets;
 }
