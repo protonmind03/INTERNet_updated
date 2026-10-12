@@ -700,3 +700,47 @@ are true of the system today, for a scope section:
   a to-do list the coordinator fills in.
 - A coordinator can save the filter bar's choices under a name ("saved
   views"). They are that coordinator's own.
+
+## After the Round 2 review (12 October 2026)
+
+Figures and claims to use as they stood at the review, in place of older
+ones wherever the paper gives them:
+
+- **Size.** 198 API routes; database migrations 001 to 045; 166 automated
+  API tests and 30 end-to-end browser tests, all passing on a developer's
+  machine. If the paper gives earlier counts (53 tests, 21 journeys),
+  update them or say "as of" a date.
+- **Accessibility.** The claim that can be supported: "checked with
+  axe-core against WCAG 2.1 levels A and AA on every page of the three
+  portals at phone and desktop width, and with menus and dialogs open
+  (about 450 states); one violation was found and is listed for fixing".
+  Do not write "WCAG compliant", "fully accessible" or "tested with
+  screen readers": an automated check finds only part of what a person
+  would, and no screen reader has been tried.
+- **Offline use.** What is true: the student's attendance, tasks,
+  schedule, weekly reports, absences, deliverables and notifications are
+  kept on the device for reading without a connection, and a time-in or
+  time-out made offline is sent later. The supervisor keeps their intern
+  list, schedules and notifications. The coordinator's pages keep
+  nothing. All of it is erased when the account signs out. The service
+  worker stores the application's own files only and never a response
+  from the server. Do not write that "the system works fully offline" or
+  that data is "cached by the service worker".
+- **Roles.** Every API route is checked for the caller's role on the
+  server, and a student or supervisor is limited to their own records.
+  This was re-read for the 40 routes added in Round 2. It is a code
+  review and tests, not a penetration test; do not call it one.
+- **Audit log.** It records decisions and changes made to someone else's
+  record. It does not record a task being assigned, changed or cancelled
+  (only its review). If the paper lists what is audited, leave task
+  assignment out.
+- **Not yet done, so not to be claimed:** use on real phones for anything
+  built in Round 2; email and push notifications (both are built and
+  switched off on the hosts); the university's own final evaluation
+  criteria (the form in use is a sample); a backup of uploaded files on
+  the host.
+- **One word still to settle:** the screens say "requirement" in some
+  places and "deliverable" in others for the same list. Until that is
+  decided, the paper should use "requirement" and describe due dates,
+  weekly requirements and the coordinator as reviewer as properties of a
+  requirement.

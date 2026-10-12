@@ -554,6 +554,32 @@ removes a photo, and it keeps the log, its times and its hours.
 Only logs that are Verified or Rejected are touched. This has been run on
 a local database only, not on the host.
 
+## Before a Round 2 release goes live
+
+Round 2 (migrations 036 to 045) reaches the test site first and the live
+site second. In order:
+
+1. "push": `ui-redesign` deploys to the test site and its own backend.
+   Wait for Railway staging to go green; the migrations run by themselves.
+2. On the staging backend, check Variables has `NODE_ENV` =
+   `production`. A diagnostic route (`/api/test-db`) answers when it is
+   anything else.
+3. Run the program backfill on staging, dry run first ("Linking students
+   to programs" above).
+4. Walk the three portals on the test site at phone and desktop width.
+   The list of pages is in `docs/AUDIT-2026-10.md`, "Round 2 review",
+   R1. The demo accounts are not on staging: use accounts made there.
+5. The phone checks, on a real Android phone and an iPhone (the same
+   section, R6).
+6. Take a fresh production database backup ("Backups" above).
+7. "make it live": `main` is fast-forwarded and both hosts deploy. Wait
+   for Railway production to go green, then run the program backfill on
+   production.
+
+The backend may deploy before the frontend: the frontend from before
+Round 2 was run against the new backend and schema, and its own tests
+pass.
+
 ## Checks after deploying
 
 - As coordinator, Documents > Download as ZIP with a block chosen: the ZIP
