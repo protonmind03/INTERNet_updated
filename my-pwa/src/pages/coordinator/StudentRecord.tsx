@@ -5,6 +5,7 @@ import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport
 import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
+import StudentNotes from "../../components/StudentNotes";
 import {
   Button,
   Card,
@@ -162,9 +163,10 @@ type Tab =
   | "evaluations"
   | "journals"
   | "schedule"
-  | "record";
+  | "record"
+  | "notes";
 
-const TABS: readonly Tab[] = ["overview", "attendance", "tasks", "documents", "evaluations", "journals", "schedule", "record"];
+const TABS: readonly Tab[] = ["overview", "attendance", "tasks", "documents", "evaluations", "journals", "schedule", "record", "notes"];
 
 /** A decision the coordinator is making in place of a missing supervisor. */
 type Pending =
@@ -294,6 +296,7 @@ export default function StudentRecord() {
                   { value: "journals", label: "Weekly reports", count: (data.journals || []).length },
                   { value: "schedule", label: "Schedule" },
                   { value: "record", label: "Time record" },
+                  { value: "notes", label: "Notes" },
                 ]}
               />
             </div>
@@ -642,6 +645,26 @@ export default function StudentRecord() {
                     ))}
                   </ul>
                 )}
+              </Card>
+            )}
+
+            {tab === "notes" && (
+              <Card className="p-4 sm:p-5">
+                <h2 className="text-sm font-semibold text-slate-900">Notes with the supervisor</h2>
+                <div className="mt-2">
+                  {student.supervisor_name ? (
+                    <StudentNotes
+                      key={student.student_id}
+                      studentId={student.student_id}
+                      studentName={student.name}
+                      role="coordinator"
+                    />
+                  ) : (
+                    <p className="text-sm text-slate-600">
+                      This student has no supervisor yet, so there is nobody to write to. Assign one first.
+                    </p>
+                  )}
+                </div>
               </Card>
             )}
 
