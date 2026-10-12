@@ -18,6 +18,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate, localDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import TermSetup from "./TermSetup";
 
 /*
 |--------------------------------------------------------------------------
@@ -41,6 +42,17 @@ type Term = {
   active_students: number;
   deactivated_on_close: number;
 };
+
+/** Days after its start for which a term still shows its setup checklist. */
+const SETUP_SHOWN_FOR_DAYS = 30;
+
+/** True for a term that has not started, or started within the last month, and is not closed. */
+function settingUp(term: Term): boolean {
+  if (term.is_closed) return false;
+  const limit = new Date();
+  limit.setDate(limit.getDate() - SETUP_SHOWN_FOR_DAYS);
+  return term.start_date >= localDateKey(limit);
+}
 
 function standing(term: Term): { label: string; tone: "good" | "waiting" | "neutral" | "info" } {
   if (term.is_closed) return { label: "Closed", tone: "neutral" };
@@ -158,7 +170,7 @@ export default function CoordinatorTerms() {
             <ul className="divide-y divide-slate-100">
               {terms.map((term) => (
                 <li key={term.id} className="flex items-start justify-between gap-3 px-4 py-4 sm:px-5">
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="flex flex-wrap items-center gap-2 text-sm font-semibold text-slate-900">
                       {term.name}
                       <StatusBadge status={standing(term).label} tone={standing(term).tone} />
@@ -179,6 +191,7 @@ export default function CoordinatorTerms() {
                         ? ` · closed ${formatDate(term.closed_at)}`
                         : ""}
                     </p>
+                    {settingUp(term) && <TermSetup termId={term.id} termName={term.name} />}
                   </div>
                   <RowMenu label={`Actions for ${term.name}`} items={menuFor(term)} />
                 </li>
