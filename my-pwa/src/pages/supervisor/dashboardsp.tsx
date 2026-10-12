@@ -29,6 +29,7 @@ import { useFocus } from "../../lib/useFocusRecord";
 import { finalEvaluationPath, useFinalDue, type FinalDue } from "./finalDue";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
+import TodayStrip from "./TodayStrip";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
@@ -348,6 +349,19 @@ export default function SupervisorDashboard() {
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
+
+        {!loading && (
+          <TodayStrip
+            interns={interns.filter((intern) => inGroup(intern.student_id))}
+            work={work}
+            finalDue={finalDue}
+            onOpen={(key) => {
+              setFilter("all");
+              setInternId("");
+              setSelectedKey(key);
+            }}
+          />
+        )}
 
         {/* Where things stand, so the page says something even with an empty queue. */}
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

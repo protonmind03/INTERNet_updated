@@ -6642,3 +6642,52 @@ test("the audit rules cover a note and a reminder, and keep neither's words", ()
   // Reading the thread is not an action.
   assert.equal(auditEntryFor("GET", "/api/student-notes/:studentId", { params: { studentId: "S1" }, body: {}, result: {} }), null);
 });
+
+test("where an intern stands today, and who was late, are worked out from the lists the supervisor holds", () => {
+  require("tsx/cjs");
+  const { todayState, lateDays, daysWaiting, minutesText, clockMinutes, WAITING_TOO_LONG_DAYS } = require("../../my-pwa/src/lib/supervisorDay.ts");
+  const shift = { start_time: "08:00:00" };
+  const at = (clock) => clockMinutes(clock);
+  const day = (over) => todayState({ shift, holiday: false, log: null, absence: false, nowMinutes: at("09:00"), ...over });
+
+  // What happened comes first: a log decides it, whatever the schedule says.
+  assert.equal(day({ log: { time_out: null } }), "on");
+  assert.equal(day({ log: { time_out: "2026-10-12T17:00:00+08:00" } }), "done");
+  assert.equal(day({ log: { time_out: null }, shift: null }), "on", "timed in on a day off");
+  assert.equal(day({ log: { time_out: null }, absence: true }), "on", "a day that was worked is not an absence");
+  // Then an absence filed for the day.
+  assert.equal(day({ absence: true }), "absent");
+  // Then the schedule. Fifteen minutes after the start is still on time; sixteen is not.
+  assert.equal(day({ nowMinutes: at("07:30") }), "expected");
+  assert.equal(day({ nowMinutes: at("08:15") }), "expected");
+  assert.equal(day({ nowMinutes: at("08:16") }), "missing");
+  assert.equal(day({ shift: null }), "off");
+  assert.equal(day({ holiday: true }), "off", "nobody is late on a holiday");
+  assert.equal(day({ shift: { start_time: null } }), "expected", "a shift with no start cannot be late");
+
+  // Late days: against that weekday's shift, in the given time zone, newest first.
+  const shifts = [{ day: "Monday", start_time: "08:00:00" }, { day: "Tuesday", start_time: "13:00:00" }];
+  const late = lateDays(
+    [
+      { date: "2026-10-05", time_in: "2026-10-05T08:15:00+08:00" },
+      { date: "2026-10-12", time_in: "2026-10-12T08:16:00+08:00" },
+      { date: "2026-10-13", time_in: "2026-10-13T14:05:00+08:00" },
+      { date: "2026-10-14", time_in: "2026-10-14T11:00:00+08:00" },
+      { date: "2026-10-19", time_in: null },
+    ],
+    shifts,
+    "Asia/Manila"
+  );
+  assert.deepEqual(late, [{ date: "2026-10-13", minutes: 65 }, { date: "2026-10-12", minutes: 16 }]);
+  assert.deepEqual(lateDays([{ date: "2026-10-12", time_in: "2026-10-12T09:00:00+08:00" }], [], "Asia/Manila"), [], "no schedule, nobody late");
+
+  // Days waited are whole days; the amber mark starts at three.
+  const now = new Date("2026-10-12T10:00:00+08:00");
+  assert.equal(daysWaiting("2026-10-12T08:00:00+08:00", now), 0);
+  assert.equal(daysWaiting("2026-10-09T10:00:00+08:00", now), 3);
+  assert.equal(daysWaiting("2026-10-08T09:00:00+08:00", now), 4);
+  assert.equal(daysWaiting("not a date", now), 0);
+  assert.equal(daysWaiting("2026-10-13T10:00:00+08:00", now), 0, "never negative");
+  assert.equal(WAITING_TOO_LONG_DAYS, 3);
+  assert.deepEqual([16, 60, 65, 125].map(minutesText), ["16 min", "1 h", "1 h 5 min", "2 h 5 min"]);
+});
