@@ -31,6 +31,8 @@ import { startDigestScheduler } from "./services/digests";
 import { sendCoordinatorDigests } from "./services/insights";
 import { auditMiddleware } from "./services/audit";
 import { registerAcademicRoutes } from "./routes/academics";
+import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
+import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
@@ -2032,9 +2034,12 @@ app.get(
             reviewed_at,
             created_at,
             attachment_file,
-            attachment_name
+            attachment_name,
+            group_task_id,
+            (SELECT g.name FROM task_groups g WHERE g.id = tasks.task_group_id) AS team_name
           FROM tasks
           WHERE student_id = $1
+            AND ${released()}
           ORDER BY due_date ASC
           `,
           [studentId]
@@ -2701,7 +2706,7 @@ async function workedTaskIds(
   }
   if (ids.length === 0) return { ids: [] };
   const mine = await pool.query<{ id: number }>(
-    `SELECT id FROM tasks WHERE id = ANY($1::int[]) AND student_id = $2`,
+    `SELECT id FROM tasks WHERE id = ANY($1::int[]) AND student_id = $2 AND ${released()}`,
     [ids, studentId]
   );
   if (mine.rows.length !== ids.length) {
@@ -3832,6 +3837,7 @@ app.get(
                 FROM tasks t
                 WHERE t.student_id::text = s.student_id::text
                   AND t.status IN ('Pending', 'In Progress', 'Submitted')
+                  AND ${released("t.")}
               ) AS "activeTasks"
             FROM students s
             WHERE s.supervisor_id::text = $1::text
@@ -3875,6 +3881,7 @@ app.get(
             INNER JOIN students s ON s.student_id::text = t.student_id::text
             WHERE s.supervisor_id::text = $1::text
               AND t.status IN ('Pending', 'In Progress', 'Submitted')
+              AND ${released("t.")}
             `,
             [supervisorId]
           ),
@@ -3885,6 +3892,7 @@ app.get(
             INNER JOIN students s ON s.student_id::text = t.student_id::text
             WHERE s.supervisor_id::text = $1::text
               AND t.status IN ('Pending', 'In Progress', 'Submitted')
+              AND ${released("t.")}
               AND t.due_date >= CURRENT_DATE
             ORDER BY t.due_date ASC
             LIMIT 10
@@ -4460,6 +4468,7 @@ app.get(
           FROM tasks
 
           WHERE student_id = $1
+            AND ${released()}
           `,
           [studentId]
         );
@@ -6623,6 +6632,7 @@ app.get(
             ) AS overdue_tasks
           FROM tasks t
           WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+            AND ${released("t.")}
         ) tk ON TRUE
         WHERE s.is_active = TRUE${scope.sql}
         ORDER BY s.name ASC
@@ -7126,6 +7136,7 @@ app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), a
       description,
       priority,
       due_date,
+      available_from,
     } = req.body;
 
     if (!student_id || !title || !due_date) {
@@ -7152,6 +7163,11 @@ app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), a
         message: "The due date cannot be in the past.",
       });
     }
+    // Optional: a later day for the intern to first see it (services/taskRelease.ts).
+    const release = readReleaseDay(available_from, todayInManila, due_date);
+    if ("problem" in release) {
+      return res.status(400).json({ message: release.problem });
+    }
 
     const intern = await pool.query(
       `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2 AND is_active = TRUE`,
@@ -7177,8 +7193,8 @@ app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), a
       `
       INSERT INTO tasks
         (student_id, title, description, assigned_by, assigned_by_id, priority, status, due_date, created_at,
-         attachment_file, attachment_name)
-      VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, NOW(), $8, $9)
+         attachment_file, attachment_name, available_from)
+      VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7, NOW(), $8, $9, $10::date)
       RETURNING *
       `,
       [
@@ -7191,20 +7207,24 @@ app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), a
         due_date,
         attachmentFileName ? `/uploads/${attachmentFileName}` : null,
         req.file ? req.file.originalname.slice(0, 200) : null,
+        release.day,
       ]
     );
     taskSaved = true;
 
-    await createNotification({
-      studentId: String(student_id),
-      title: "New task assigned",
-      message: `"${title.trim()}" was assigned to you, due ${due_date}.`,
-      type: "info",
-    });
+    // A task for a later day is announced on that day, by the release loop.
+    if (!release.day) {
+      await createNotification({
+        studentId: String(student_id),
+        title: "New task assigned",
+        message: `"${title.trim()}" was assigned to you, due ${due_date}.`,
+        type: "info",
+      });
+    }
 
     return res.status(201).json({
-      message: "Task assigned.",
-      task: result.rows[0],
+      message: release.day ? `Task scheduled. Your intern will see it on ${release.day}.` : "Task assigned.",
+      task: { ...result.rows[0], scheduled: Boolean(release.day), release_day: release.day },
     });
   } catch (error) {
     if (attachmentFileName && !taskSaved) {
@@ -7240,7 +7260,10 @@ app.get(
       const result = await pool.query(
         `
         SELECT
-          t.*, s.name AS student_name
+          t.*, s.name AS student_name,
+          ${scheduledLater("t.")} AS scheduled,
+          TO_CHAR(t.available_from, 'YYYY-MM-DD') AS release_day,
+          (SELECT g.name FROM task_groups g WHERE g.id = t.task_group_id) AS team_name
         FROM tasks t
         INNER JOIN students s
           ON TRIM(s.student_id::text) = TRIM(t.student_id::text)
@@ -7302,6 +7325,7 @@ app.post(
         WHERE id = $3
           AND student_id = $4
           AND status IN ('Pending', 'In Progress')
+          AND ${released()}
         RETURNING *
         `,
         [submission_notes || null, fileUrl, id, auth.id]
@@ -8250,6 +8274,7 @@ app.get(
           SELECT COUNT(*) FROM tasks t
           WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
             AND t.status IN ('Pending', 'In Progress')
+            AND ${released("t.")}
         ) AS active_tasks,
         (
           SELECT COUNT(*) FROM tasks t
@@ -9267,7 +9292,7 @@ app.get(
                 AND (
                   $1 = 'coordinator'
                   OR
-                  ($1 = 'student' AND t.student_id = $3)
+                  ($1 = 'student' AND t.student_id = $3 AND ${released("t.")})
                   OR (
                     $1 = 'supervisor'
                     AND EXISTS (
@@ -9341,6 +9366,7 @@ app.get(
 
 registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
 registerAcademicRoutes(app, { pool, requireCoordinator });
+registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 
 registerExtensionRoutes(app, {
   pool,

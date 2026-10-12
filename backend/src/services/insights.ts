@@ -232,7 +232,8 @@ export type Alert = {
   title: string;
   /** Where the coordinator goes to act on it. */
   link: string;
-  items: { label: string; detail: string; link?: string }[];
+  /** `id` is the account or record the item is about, when a button needs it. */
+  items: { label: string; detail: string; link?: string; id?: string }[];
 };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -352,6 +353,7 @@ export async function coordinatorAlerts(
       title: `Supervisors with reviews waiting more than ${SLOW_REVIEW_DAYS} days`,
       link: "/coordinator/supervisors",
       items: slow.rows.map((row) => ({
+        id: row.supervisor_id,
         label: row.name,
         detail: `${plural(row.waiting, "item", "items")} waiting; the oldest for ${plural(row.oldest_days, "day", "days")}.`,
         link: `/coordinator/supervisors?q=${encodeURIComponent(row.supervisor_id)}`,

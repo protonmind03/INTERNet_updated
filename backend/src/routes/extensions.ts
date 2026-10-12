@@ -5,6 +5,7 @@ import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
 import { loadCatalogue, resolvePlacement } from "../services/academics";
 import { manilaClock } from "../services/digests";
+import { readReleaseDay, released, scheduledLater } from "../services/taskRelease";
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
 
@@ -449,10 +450,29 @@ export function registerExtensionRoutes(
       // A new file replaces the attachment; remove_attachment drops it.
       const removeAttachment =
         req.body?.remove_attachment === true || req.body?.remove_attachment === "true";
-      const previous = await pool.query<{ attachment_file: string | null }>(
-        `SELECT attachment_file FROM tasks WHERE id = $1`,
+      const previous = await pool.query<{ attachment_file: string | null; release_day: string | null; scheduled: boolean }>(
+        `SELECT attachment_file, TO_CHAR(available_from, 'YYYY-MM-DD') AS release_day,
+                ${scheduledLater()} AS scheduled
+         FROM tasks WHERE id = $1`,
         [req.params.id]
       );
+      // The release day can be moved only while the intern has not been shown
+      // the task. Not sent: it stays. Sent empty or as today: out today.
+      const wasScheduled = previous.rows[0]?.scheduled === true;
+      let releaseDay: string | null = null;
+      if (wasScheduled) {
+        const today = todayInManila();
+        if (req.body?.available_from === undefined) {
+          releaseDay = previous.rows[0].release_day;
+          if (releaseDay && dueDate < releaseDay) {
+            return res.status(400).json({ message: "The due date must be on or after the release date." });
+          }
+        } else {
+          const release = readReleaseDay(req.body.available_from, today, dueDate);
+          if ("problem" in release) return res.status(400).json({ message: release.problem });
+          releaseDay = release.day ?? today;
+        }
+      }
       if (req.file) {
         newFileName = await savePrivateFile(req.file);
       }
@@ -462,6 +482,8 @@ export function registerExtensionRoutes(
         `
         UPDATE tasks t
         SET title = $1, description = $2, priority = $3, due_date = $4::date,
+            available_from = CASE WHEN ${scheduledLater("t.")} AND $10::date IS NOT NULL
+              THEN $10::date ELSE t.available_from END,
             attachment_file = CASE $7::text
               WHEN 'replace' THEN $8::text WHEN 'remove' THEN NULL ELSE t.attachment_file END,
             attachment_name = CASE $7::text
@@ -483,6 +505,7 @@ export function registerExtensionRoutes(
           attachmentMode,
           newFileName ? `/uploads/${newFileName}` : null,
           req.file ? req.file.originalname.slice(0, 200) : null,
+          releaseDay,
         ]
       );
       if (result.rows.length === 0) {
@@ -500,6 +523,8 @@ export function registerExtensionRoutes(
       await quietly("TASK UPDATE NOTIFICATION ERROR", async () => {
         // A moved deadline needs fresh reminders.
         await pool.query(`DELETE FROM task_deadline_reminders WHERE task_id = $1`, [task.id]);
+        // An intern who has not been shown the task yet is not told it changed.
+        if (wasScheduled) return;
         await createNotification({
           studentId: String(task.student_id),
           entity: { type: "task", id: task?.id },
@@ -531,7 +556,7 @@ export function registerExtensionRoutes(
           AND s.student_id = t.student_id
           AND s.supervisor_id = $2
           AND t.status IN ('Pending', 'In Progress')
-        RETURNING t.id, t.student_id, t.title, t.attachment_file
+        RETURNING t.id, t.student_id, t.title, t.attachment_file, ${scheduledLater("t.")} AS scheduled
         `,
         [req.params.id, auth.id]
       );
@@ -545,6 +570,8 @@ export function registerExtensionRoutes(
       await discardUpload(task.attachment_file);
       await quietly("TASK CANCEL NOTIFICATION ERROR", async () => {
         await pool.query(`DELETE FROM task_deadline_reminders WHERE task_id = $1`, [task.id]);
+        // Never shown to the intern, so there is nothing to tell them.
+        if (task.scheduled) return;
         await createNotification({
           studentId: String(task.student_id),
           entity: { type: "task", id: task?.id },
@@ -2942,7 +2969,8 @@ export function registerExtensionRoutes(
           )) AS approved,
         (SELECT COUNT(*)::int FROM tasks t
           WHERE t.student_id = s.student_id
-            AND t.status IN ('Pending', 'In Progress', 'Submitted')) AS open_tasks,
+            AND t.status IN ('Pending', 'In Progress', 'Submitted')
+            AND ${released("t.")}) AS open_tasks,
         (SELECT COUNT(*)::int FROM final_evaluations e
           WHERE e.student_id = s.student_id) AS supervisor_evaluations,
         (SELECT COUNT(*)::int FROM evaluations e
@@ -3174,7 +3202,7 @@ export function registerExtensionRoutes(
         mine(`SELECT * FROM students WHERE student_id = $1`),
         mine(`SELECT * FROM attendance WHERE student_id = $1 ORDER BY date, id`),
         mine(`SELECT * FROM absences WHERE student_id = $1 ORDER BY date, id`),
-        mine(`SELECT * FROM tasks WHERE student_id = $1 ORDER BY created_at, id`),
+        mine(`SELECT * FROM tasks WHERE student_id = $1 AND ${released()} ORDER BY created_at, id`),
         mine(`SELECT * FROM documents WHERE student_id = $1 ORDER BY uploaded_at, id`),
         mine(`SELECT * FROM journals WHERE student_id = $1 ORDER BY week_start`),
         mine(`SELECT * FROM final_evaluations WHERE student_id = $1`),

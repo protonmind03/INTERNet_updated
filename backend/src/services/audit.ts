@@ -266,6 +266,23 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.attendance, "id"),
     keep: ["student_id", "reason"],
   },
+  // Notes between a supervisor and the coordinators, and a coordinator's reminder
+  {
+    method: "POST",
+    path: "/api/student-notes/:studentId",
+    action: "note.create",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ note_id: nested(source.result.note, "id") }),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/supervisors/:supervisorId/remind",
+    action: "supervisor.remind",
+    entityType: "supervisor",
+    entityId: param("supervisorId"),
+    from: (source) => ({ items: source.result.items, oldest_days: source.result.oldest_days }),
+  },
   // Tasks, documents, absences
   {
     method: "PATCH",

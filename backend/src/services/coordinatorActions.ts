@@ -36,6 +36,8 @@ export type ActionRow = {
   link: string;
   /** Up to three names, for rows that are about particular people or companies. */
   names?: string[];
+  /** The supervisors a "slow to review" row is about, each with a Remind button. */
+  people?: { id: string; name: string; detail: string; reminded_today: boolean }[];
 };
 
 export type ActionGroup = { who: "you" | "supervisors" | "students"; title: string; rows: ActionRow[] };
@@ -156,6 +158,17 @@ export async function coordinatorActions(
     carried ? `${path}${path.includes("?") ? "&" : "?"}${carried}` : path;
 
   const slow = alert("slow_supervisors");
+  // Who has had today's reminder already (one a day, routes/supervisorDesk.ts).
+  const reminded = new Set(
+    slow.length === 0
+      ? []
+      : (
+          await pool.query<{ account_id: string }>(
+            `SELECT account_id FROM digest_log WHERE kind = 'coordinator_nudge' AND period_key = $1`,
+            [clock.date]
+          )
+        ).rows.map((row) => String(row.account_id))
+  );
   const agreements = alert("moa_expiring");
   const missed = alert("missed_days");
   const risky = alert("at_risk");
@@ -207,6 +220,14 @@ export async function coordinatorActions(
           reason: `Something has waited on them more than ${SLOW_REVIEW_DAYS} days.`,
           link: "/coordinator/supervisors",
           names: names(slow),
+          people: slow
+            .filter((item) => item.id)
+            .map((item) => ({
+              id: String(item.id),
+              name: item.label,
+              detail: item.detail,
+              reminded_today: reminded.has(String(item.id)),
+            })),
         },
         {
           key: "pending_logs",

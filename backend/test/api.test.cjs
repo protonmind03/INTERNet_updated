@@ -1723,7 +1723,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -6164,4 +6164,481 @@ test("a student's profile says which term they are in", async () => {
     assert.match(mine.body.term.start_date, /^\d{4}-\d{2}-\d{2}$/);
     assert.ok(mine.body.term.start_date <= mine.body.term.end_date);
   }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Round 2, Phase 4: the supervisor's day
+|--------------------------------------------------------------------------
+*/
+
+const needsWrites = (t) => {
+  if (process.env.ALLOW_TEST_WRITES === "true") return false;
+  t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+  return true;
+};
+
+test("the release day is read the same everywhere: optional, today or later, never after the due date", () => {
+  require("tsx/cjs");
+  const { readReleaseDay, released, scheduledLater } = require("../src/services/taskRelease.ts");
+  const today = "2026-10-12";
+  assert.deepEqual(readReleaseDay(undefined, today, "2026-10-20"), { day: null });
+  assert.deepEqual(readReleaseDay("", today, "2026-10-20"), { day: null });
+  assert.deepEqual(readReleaseDay(null, today, "2026-10-20"), { day: null });
+  // Today is the same as not choosing a day.
+  assert.deepEqual(readReleaseDay(today, today, "2026-10-20"), { day: null });
+  assert.deepEqual(readReleaseDay("2026-10-15", today, "2026-10-20"), { day: "2026-10-15" });
+  assert.deepEqual(readReleaseDay("2026-10-20", today, "2026-10-20"), { day: "2026-10-20" }, "released on the day it is due");
+  for (const bad of ["2026-10-11", "2026-10-21", "2026-13-40", "tomorrow", 20261015, ["2026-10-15"]]) {
+    assert.ok("problem" in readReleaseDay(bad, today, "2026-10-20"), JSON.stringify(bad));
+  }
+  // The two conditions are each other's opposite, with or without an alias.
+  assert.equal(released(), "(available_from IS NULL OR available_from <= CURRENT_DATE)");
+  assert.equal(scheduledLater("t."), "(t.available_from IS NOT NULL AND t.available_from > CURRENT_DATE)");
+});
+
+test("a release day is checked before a task is saved", async () => {
+  const supervisor = await supervisorSession();
+  const assign = (body) => jsonRequest("/api/tasks", jsonBody(supervisor.token, "POST", { student_id: student.student_id, title: "Release check", ...body }));
+  for (const [body, word] of [
+    [{ due_date: "2099-01-10", available_from: "2099-01-11" }, /on or after the release date/],
+    [{ due_date: "2099-01-10", available_from: "2001-01-01" }, /cannot be in the past/],
+    [{ due_date: "2099-01-10", available_from: "2099-13-40" }, /valid date/],
+    [{ due_date: "2099-01-10", available_from: 5 }, /valid date/],
+  ]) {
+    const refused = await assign(body);
+    assert.equal(refused.response.status, 400, JSON.stringify(body));
+    assert.match(refused.body.message, word);
+  }
+});
+
+test("a task set for a later day is hidden from the intern until that day, then announced once", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { releaseDueTasks } = require("../src/services/taskRelease.ts");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = student.student_id;
+  const title = `Release test ${Date.now()}`;
+  const days = (await pool.query(`SELECT TO_CHAR(CURRENT_DATE + 1, 'YYYY-MM-DD') AS tomorrow, TO_CHAR(CURRENT_DATE + 2, 'YYYY-MM-DD') AS later, TO_CHAR(CURRENT_DATE + 7, 'YYYY-MM-DD') AS due`)).rows[0];
+  const mine = async () => (await jsonRequest(`/api/tasks/student/${encodeURIComponent(sid)}`, { headers: authHeaders(studentToken) })).body;
+  const theirs = async () => (await jsonRequest(`/api/tasks/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) })).body.tasks;
+  const openTasks = async () => {
+    const answer = await jsonRequest(`/api/students/${encodeURIComponent(sid)}/completion`, { headers: authHeaders(studentToken) });
+    return JSON.stringify(answer.body);
+  };
+  const told = async (id, what) =>
+    (await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND title = $2 AND (entity_id = $3 OR message LIKE $4)`, [sid, what, String(id), `%${title}%`])).rows[0].n;
+  let id;
+  try {
+    const checklistBefore = await openTasks();
+    const made = await jsonRequest("/api/tasks", jsonBody(supervisor.token, "POST", { student_id: sid, title, due_date: days.due, available_from: days.tomorrow }));
+    assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    id = made.body.task.id;
+    assert.equal(made.body.task.scheduled, true);
+    assert.equal(made.body.task.release_day, days.tomorrow);
+    assert.match(made.body.message, /scheduled/i);
+
+    // HIDDEN BEFORE. Not in the intern's list, not in their checklist or their data, not to be submitted, and nothing said.
+    assert.ok(!(await mine()).some((task) => task.id === id), "not in the intern's list");
+    assert.equal(await openTasks(), checklistBefore, "the completion checklist does not count it");
+    const exported = await jsonRequest(`/api/students/${encodeURIComponent(sid)}/data-export`, { headers: authHeaders(studentToken) });
+    assert.ok(!JSON.stringify(exported.body).includes(title), "not in the data download");
+    const form = new FormData();
+    form.set("submission_notes", "Early.");
+    const early = await fetch(new URL(`/api/tasks/${id}/submit`, apiBaseUrl), { method: "POST", headers: authHeaders(studentToken), body: form });
+    assert.equal(early.status, 404, "a task not yet released cannot be submitted");
+    assert.equal(await told(id, "New task assigned"), 0, "not announced when it is made");
+    // The supervisor sees it, marked.
+    const row = (await theirs()).find((task) => task.id === id);
+    assert.deepEqual([row.scheduled, row.release_day], [true, days.tomorrow]);
+
+    // Changed while it waits: the day can move, the intern is still told nothing, and the due date cannot come before it.
+    const edit = (body) => jsonRequest(`/api/tasks/${id}`, jsonBody(supervisor.token, "PUT", { title, priority: "Medium", due_date: days.due, ...body }));
+    assert.equal((await edit({ due_date: days.tomorrow, available_from: days.later })).response.status, 400);
+    const moved = await edit({ available_from: days.later });
+    assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+    assert.equal((await theirs()).find((task) => task.id === id).release_day, days.later);
+    assert.equal((await edit({ due_date: days.tomorrow })).response.status, 400, "the due date cannot come before the day already set");
+    assert.equal((await edit({ priority: "High" })).response.status, 200);
+    assert.equal((await theirs()).find((task) => task.id === id).release_day, days.later, "a form that does not send the day leaves it");
+    assert.equal(await told(id, "Task updated"), 0);
+
+    // A round of the loop before the day: nothing.
+    const sent = [];
+    const collect = async (note) => { sent.push(note); };
+    await releaseDueTasks(pool, collect);
+    assert.equal(sent.filter((note) => note.entity?.id === id).length, 0);
+
+    // THE DAY COMES. The server's own loop may get there first; either way it is said once.
+    await pool.query(`UPDATE tasks SET available_from = CURRENT_DATE WHERE id = $1`, [id]);
+    assert.ok((await mine()).some((task) => task.id === id), "in the intern's list on the day");
+    assert.equal((await theirs()).find((task) => task.id === id).scheduled, false);
+    const announced = async () => sent.filter((note) => note.entity?.id === id && note.title === "New task assigned").length + (await told(id, "New task assigned"));
+    await releaseDueTasks(pool, collect);
+    assert.equal(await announced(), 1, "announced on the day");
+    // NOT TWICE.
+    await releaseDueTasks(pool, collect);
+    await releaseDueTasks(pool, collect);
+    assert.equal(await announced(), 1, "and only once");
+    assert.ok((await pool.query(`SELECT released_notified_at FROM tasks WHERE id = $1`, [id])).rows[0].released_notified_at);
+
+    // Once it is out, the day is no longer changed by an edit.
+    assert.equal((await edit({ available_from: days.later })).response.status, 200);
+    assert.ok((await mine()).some((task) => task.id === id), "still out");
+
+    // A scheduled task cancelled before its day: the intern never hears of it.
+    const second = await jsonRequest("/api/tasks", jsonBody(supervisor.token, "POST", { student_id: sid, title: `${title} B`, due_date: days.due, available_from: days.tomorrow }));
+    const gone = await jsonRequest(`/api/tasks/${second.body.task.id}`, jsonBody(supervisor.token, "DELETE", {}));
+    assert.equal(gone.response.status, 200, JSON.stringify(gone.body));
+    assert.equal(await told(second.body.task.id, "Task cancelled"), 0);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%${title}%`]);
+    await pool.query(`DELETE FROM tasks WHERE title LIKE $1`, [`${title}%`]);
+    await pool.end();
+  }
+});
+
+test("teams are a supervisor's own, with their own interns, and each name once", async () => {
+  const supervisor = await supervisorSession();
+  const path = "/api/supervisor/teams";
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 403);
+  const list = await jsonRequest(path, { headers: authHeaders(supervisor.token) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.teams));
+  const make = (body) => jsonRequest(path, jsonBody(supervisor.token, "POST", body));
+  for (const bad of [
+    { name: "A", student_ids: [student.student_id] },
+    { name: "x".repeat(81), student_ids: [student.student_id] },
+    { name: "Nobody", student_ids: [] },
+    { name: "Nobody" },
+    { name: "Not mine", student_ids: ["NO-SUCH-STUDENT"] },
+    { name: "Not ids", student_ids: [5] },
+  ]) {
+    assert.equal((await make(bad)).response.status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+  // A team, or a team task, that is not there.
+  assert.equal((await jsonRequest(`${path}/999999999`, jsonBody(supervisor.token, "PUT", { name: "Renamed" }))).response.status, 404);
+  assert.equal((await jsonRequest(`${path}/abc`, jsonBody(supervisor.token, "DELETE", {}))).response.status, 404);
+  const due = "2099-01-10";
+  assert.equal((await jsonRequest("/api/tasks/team", jsonBody(supervisor.token, "POST", { group_id: 999999999, title: "T", due_date: due }))).response.status, 404);
+  assert.equal((await jsonRequest("/api/tasks/team", jsonBody(supervisor.token, "POST", { title: "T", due_date: due }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/tasks/team", jsonBody(supervisor.token, "POST", { group_id: 1, title: "", due_date: due }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/tasks/team", jsonBody(supervisor.token, "POST", { group_id: 1, title: "T", due_date: "2001-01-01" }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/tasks/team", jsonBody(supervisor.token, "POST", { group_id: 1, title: "T", due_date: due, available_from: "2099-02-01" }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/tasks/team/999999999", jsonBody(supervisor.token, "PUT", { title: "T", due_date: due }))).response.status, 404);
+  assert.equal((await jsonRequest("/api/tasks/team/999999999", jsonBody(supervisor.token, "DELETE", {}))).response.status, 404);
+  assert.equal((await jsonRequest("/api/tasks/team/1", jsonBody(studentToken, "DELETE", {}))).response.status, 403);
+});
+
+test("a team task is one task for each member; a change or a cancel leaves alone whoever has submitted", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const supervisorId = supervisor.supervisor.supervisor_id;
+  const sid = student.student_id;
+  const stamp = Date.now();
+  const mate = `P4-MATE-${stamp}`;
+  const outsider = `P4-OUT-${stamp}`;
+  const name = `Team test ${stamp}`;
+  const title = `Team task ${stamp}`;
+  const teams = "/api/supervisor/teams";
+  const as = (method, path, body) => jsonRequest(path, jsonBody(supervisor.token, method, body ?? {}));
+  const rows = async () => (await jsonRequest(`/api/tasks/supervisor/${encodeURIComponent(supervisorId)}`, { headers: authHeaders(supervisor.token) })).body.tasks.filter((task) => String(task.title).includes(String(stamp)));
+  const mine = async () => (await jsonRequest(`/api/tasks/student/${encodeURIComponent(sid)}`, { headers: authHeaders(studentToken) })).body.filter((task) => String(task.title).includes(String(stamp)));
+  const due = (await pool.query(`SELECT TO_CHAR(CURRENT_DATE + 7, 'YYYY-MM-DD') AS due, TO_CHAR(CURRENT_DATE + 1, 'YYYY-MM-DD') AS tomorrow`)).rows[0];
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, supervisor_id, is_active) VALUES ($1, $2, 'x', 'Team Mate', $3, TRUE)`, [mate, `mate${stamp}@p4.test`, supervisorId]);
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Someone Elsewhere', TRUE)`, [outsider, `out${stamp}@p4.test`]);
+
+    // Somebody else's intern cannot be put in a team.
+    assert.equal((await as("POST", teams, { name, student_ids: [sid, outsider] })).response.status, 400);
+    const made = await as("POST", teams, { name, student_ids: [sid, mate, sid] });
+    assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    const teamId = made.body.team.id;
+    assert.deepEqual(made.body.team.members.map((member) => member.student_id).sort(), [mate, sid].sort(), "each member once");
+    // The same name again, whatever the capitals.
+    assert.equal((await as("POST", teams, { name: name.toUpperCase(), student_ids: [sid] })).response.status, 409);
+    // Renamed alone, then members alone.
+    const renamed = await as("PUT", `${teams}/${teamId}`, { name: `${name} B` });
+    assert.deepEqual([renamed.response.status, renamed.body.team.name, renamed.body.team.members.length], [200, `${name} B`, 2]);
+    const shrunk = await as("PUT", `${teams}/${teamId}`, { student_ids: [sid] });
+    assert.deepEqual([shrunk.body.team.name, shrunk.body.team.members.length], [`${name} B`, 1]);
+    assert.equal((await as("PUT", `${teams}/${teamId}`, { student_ids: [outsider] })).response.status, 400);
+    await as("PUT", `${teams}/${teamId}`, { student_ids: [sid, mate] });
+
+    // ONE ROW EACH, sharing a number.
+    const given = await as("POST", "/api/tasks/team", { group_id: teamId, title, description: "Count the stock room.", due_date: due.due });
+    assert.equal(given.response.status, 201, JSON.stringify(given.body));
+    assert.equal(given.body.created, 2);
+    const first = await rows();
+    assert.equal(first.length, 2);
+    assert.deepEqual([...new Set(first.map((task) => task.group_task_id))], [given.body.group_task_id]);
+    assert.deepEqual(first.map((task) => task.student_id).sort(), [mate, sid].sort());
+    assert.ok(first.every((task) => task.team_name === `${name} B` && task.status === "Pending"));
+    // Each is told, and the intern sees their own with the team's name.
+    const told = await pool.query(`SELECT student_id FROM notifications WHERE title = 'New task assigned' AND message LIKE $1`, [`%${title}%`]);
+    assert.deepEqual(told.rows.map((row) => row.student_id).sort(), [mate, sid].sort());
+    const own = await mine();
+    assert.deepEqual([own.length, own[0].team_name, own[0].group_task_id], [1, `${name} B`, given.body.group_task_id]);
+
+    // One submits. The supervisor sees one of two.
+    const form = new FormData();
+    form.set("submission_notes", "Counted, sheet attached.");
+    const submitted = await fetch(new URL(`/api/tasks/${own[0].id}/submit`, apiBaseUrl), { method: "POST", headers: authHeaders(studentToken), body: form });
+    assert.equal(submitted.status, 200);
+    assert.deepEqual((await rows()).map((task) => task.status).sort(), ["Pending", "Submitted"]);
+
+    // CHANGED: for the one who has not submitted. It says who was left.
+    const changed = await as("PUT", `/api/tasks/team/${given.body.group_task_id}`, { title: `${title} (aisles 1 to 4)`, priority: "High", due_date: due.due });
+    assert.deepEqual([changed.response.status, changed.body.updated, changed.body.skipped], [200, 1, 1], JSON.stringify(changed.body));
+    assert.match(changed.body.message, /1 member has already submitted/);
+    const after = await rows();
+    assert.equal(after.find((task) => task.student_id === mate).title, `${title} (aisles 1 to 4)`);
+    assert.equal(after.find((task) => task.student_id === sid).title, title, "the submitted one is as it was handed in");
+
+    // CANCELLED: the same way.
+    const cancelled = await as("DELETE", `/api/tasks/team/${given.body.group_task_id}`);
+    assert.deepEqual([cancelled.response.status, cancelled.body.cancelled, cancelled.body.skipped], [200, 1, 1], JSON.stringify(cancelled.body));
+    assert.deepEqual((await rows()).map((task) => task.student_id), [sid]);
+
+    // A team task for a later day is hidden from every member, and nobody is told.
+    const later = await as("POST", "/api/tasks/team", { group_id: teamId, title: `${title} later`, due_date: due.due, available_from: due.tomorrow });
+    assert.equal(later.response.status, 201, JSON.stringify(later.body));
+    assert.match(later.body.message, /scheduled/i);
+    assert.ok(!(await mine()).some((task) => task.title === `${title} later`));
+    assert.equal((await rows()).filter((task) => task.title === `${title} later` && task.scheduled).length, 2);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE message LIKE $1`, [`%${title} later%`])).rows[0].n, 0);
+    const dropped = await as("DELETE", `/api/tasks/team/${later.body.group_task_id}`);
+    assert.deepEqual([dropped.body.cancelled, dropped.body.skipped], [2, 0]);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE title = 'Task cancelled' AND message LIKE $1`, [`%${title} later%`])).rows[0].n, 0);
+
+    // A member who is no longer this supervisor's intern gets no task.
+    await pool.query(`UPDATE students SET is_active = FALSE WHERE student_id = $1`, [mate]);
+    const fewer = await as("POST", "/api/tasks/team", { group_id: teamId, title: `${title} fewer`, due_date: due.due });
+    assert.equal(fewer.body.created, 1);
+
+    // Removing the team keeps the tasks it was given.
+    const removed = await as("DELETE", `${teams}/${teamId}`);
+    assert.equal(removed.response.status, 200, JSON.stringify(removed.body));
+    const kept = await rows();
+    assert.ok(kept.length >= 2 && kept.every((task) => task.team_name === null), "the tasks stay, without the team's name");
+    assert.equal((await as("DELETE", `${teams}/${teamId}`)).response.status, 404);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%${title}%`]);
+    await pool.query(`DELETE FROM tasks WHERE title LIKE $1`, [`${title}%`]);
+    await pool.query(`DELETE FROM task_groups WHERE name LIKE $1`, [`${name}%`]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::text[])`, [[mate, outsider]]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1::text[])`, [[mate, outsider]]);
+    await pool.end();
+  }
+});
+
+test("notes about a student are for their supervisor and the coordinators, and never the student", async (t) => {
+  const supervisor = await supervisorSession();
+  const sid = encodeURIComponent(student.student_id);
+  const path = `/api/student-notes/${sid}`;
+  // The student is refused, to read or to write.
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "POST", { message: "Me." }))).response.status, 403);
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  // Checked before anything is saved.
+  for (const bad of [{}, { message: "   " }, { message: "x".repeat(2001) }, { message: 5 }]) {
+    assert.equal((await jsonRequest(path, jsonBody(supervisor.token, "POST", bad))).response.status, 400, JSON.stringify(bad).slice(0, 40));
+  }
+  assert.equal((await jsonRequest("/api/student-notes/NO-SUCH-STUDENT", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  assert.equal((await jsonRequest("/api/student-notes/NO-SUCH-STUDENT", jsonBody(supervisor.token, "POST", { message: "Hello." }))).response.status, 404);
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const outsider = `P4-NOTE-${stamp}`;
+  const first = `She has been late three times this week. ${stamp}`;
+  const second = `I will call the company on Friday. ${stamp}`;
+  try {
+    // A student who is not this supervisor's: as if not there.
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Not Theirs', TRUE)`, [outsider, `note${stamp}@p4.test`]);
+    assert.equal((await jsonRequest(`/api/student-notes/${outsider}`, { headers: authHeaders(supervisor.token) })).response.status, 404);
+    assert.equal((await jsonRequest(`/api/student-notes/${outsider}`, jsonBody(supervisor.token, "POST", { message: "Hello." }))).response.status, 404);
+    assert.equal((await jsonRequest(`/api/student-notes/${outsider}`, { headers: authHeaders(coordinatorToken) })).response.status, 200, "a coordinator reads any student's");
+
+    const wrote = await jsonRequest(path, jsonBody(supervisor.token, "POST", { message: `  ${first}  ` }));
+    assert.equal(wrote.response.status, 201, JSON.stringify(wrote.body));
+    assert.deepEqual([wrote.body.note.message, wrote.body.note.author_role, wrote.body.note.mine], [first, "supervisor", true]);
+    // The coordinators are told, with a link to the thread.
+    const toCoordinator = await pool.query(`SELECT link FROM notifications WHERE coordinator_id = $1 AND title = 'Note from a supervisor' AND message LIKE $2`, [coordinator.coordinator_id, `%${stamp}%`]);
+    assert.deepEqual(toCoordinator.rows.map((row) => row.link), [`/coordinator/students/${sid}?tab=notes`]);
+
+    const answered = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { message: second }));
+    assert.equal(answered.response.status, 201, JSON.stringify(answered.body));
+    const toSupervisor = await pool.query(`SELECT link FROM notifications WHERE supervisor_id = $1 AND title = 'Note from the OJT coordinator' AND message LIKE $2`, [supervisor.supervisor.supervisor_id, `%${stamp}%`]);
+    assert.deepEqual(toSupervisor.rows.map((row) => row.link), [`/supervisor/interns/${sid}?tab=notes`]);
+
+    // Each reads the whole thread, in order, and knows which are their own.
+    const thread = async (token) => (await jsonRequest(path, { headers: authHeaders(token) })).body.notes.filter((note) => note.message.includes(String(stamp)));
+    assert.deepEqual((await thread(supervisor.token)).map((note) => [note.message, note.author_role, note.mine]), [[first, "supervisor", true], [second, "coordinator", false]]);
+    assert.deepEqual((await thread(coordinatorToken)).map((note) => note.mine), [false, true]);
+    assert.ok((await thread(coordinatorToken)).every((note) => note.author_name && !("author_id" in note)));
+
+    // THE STUDENT: no notification, and not in the copy of their data.
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND message LIKE $2`, [student.student_id, `%${stamp}%`])).rows[0].n, 0);
+    const exported = await jsonRequest(`/api/students/${sid}/data-export`, { headers: authHeaders(studentToken) });
+    assert.ok(!JSON.stringify(exported.body).includes(String(stamp)), "notes are not in the student's download");
+
+    // Each note is in the audit log, without its words.
+    const audit = await jsonRequest("/api/coordinator/audit?action=note.create&limit=20", { headers: authHeaders(coordinatorToken) });
+    const entries = audit.body.entries.filter((entry) => [wrote.body.note.id, answered.body.note.id].includes(Number(entry.details?.note_id)));
+    assert.equal(entries.length, 2);
+    assert.ok(entries.every((entry) => entry.entity_type === "student" && String(entry.entity_id) === student.student_id));
+    assert.ok(!JSON.stringify(entries).includes(String(stamp)));
+  } finally {
+    await pool.query(`DELETE FROM student_notes WHERE message LIKE $1`, [`%${stamp}%`]);
+    await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%${stamp}%`]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [outsider]);
+    await pool.end();
+  }
+});
+
+test("a coordinator reminds a supervisor with reviews waiting, once a day, and it is logged", async (t) => {
+  const supervisor = await supervisorSession();
+  const supervisorId = supervisor.supervisor.supervisor_id;
+  const path = `/api/coordinator/supervisors/${encodeURIComponent(supervisorId)}/remind`;
+  assert.equal((await jsonRequest(path, jsonBody(supervisor.token, "POST", {}))).response.status, 403);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "POST", {}))).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/supervisors/NO-SUCH-SUPERVISOR/remind", jsonBody(coordinatorToken, "POST", {}))).response.status, 404);
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const title = "Reminder from your OJT coordinator";
+  const clear = async () => {
+    await pool.query(`DELETE FROM absences WHERE student_id = $1 AND reason = 'Nudge test.'`, [student.student_id]);
+    await pool.query(`DELETE FROM digest_log WHERE kind = 'coordinator_nudge' AND account_id = $1`, [supervisorId]);
+    await pool.query(`DELETE FROM notifications WHERE supervisor_id = $1 AND title = $2`, [supervisorId, title]);
+  };
+  await clear();
+  try {
+    // Five days waiting: more than the three that make a supervisor "slow".
+    await pool.query(`INSERT INTO absences (student_id, date, reason, status, created_at) VALUES ($1, '2001-03-04', 'Nudge test.', 'Pending', (NOW() AT TIME ZONE 'Asia/Manila') - INTERVAL '5 days')`, [student.student_id]);
+    const person = async () => {
+      const actions = await jsonRequest("/api/coordinator/actions", { headers: authHeaders(coordinatorToken) });
+      const row = actions.body.groups.flatMap((group) => group.rows).find((item) => item.key === "slow_reviews");
+      return row?.people?.find((item) => item.id === supervisorId);
+    };
+    // The action list names them, with what waits, and says nobody has reminded them today.
+    const before = await person();
+    assert.ok(before, "the slow supervisor is on the action list by id");
+    assert.deepEqual([before.name, before.reminded_today], [supervisor.supervisor.name, false]);
+    assert.match(before.detail, /waiting/);
+
+    const sent = await jsonRequest(path, jsonBody(coordinatorToken, "POST", {}));
+    assert.equal(sent.response.status, 200, JSON.stringify(sent.body));
+    assert.ok(sent.body.items >= 1 && sent.body.oldest_days >= 5, JSON.stringify(sent.body));
+    const notes = await pool.query(`SELECT message, link FROM notifications WHERE supervisor_id = $1 AND title = $2`, [supervisorId, title]);
+    assert.equal(notes.rows.length, 1);
+    assert.match(notes.rows[0].message, /absence/);
+    assert.match(notes.rows[0].message, /oldest has waited \d+ days/);
+    assert.equal(notes.rows[0].link, "/supervisor/dashboard");
+
+    // ONCE A DAY, on the server: the second is refused and sends nothing.
+    const again = await jsonRequest(path, jsonBody(coordinatorToken, "POST", {}));
+    assert.equal(again.response.status, 409);
+    assert.match(again.body.message, /already been reminded today/);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE supervisor_id = $1 AND title = $2`, [supervisorId, title])).rows[0].n, 1);
+    assert.equal((await person()).reminded_today, true);
+
+    // Logged once: the refused one is not an action.
+    const audit = await jsonRequest("/api/coordinator/audit?action=supervisor.remind&limit=50", { headers: authHeaders(coordinatorToken) });
+    const mine = audit.body.entries.filter((entry) => String(entry.entity_id) === supervisorId && Number(entry.details?.items) === sent.body.items);
+    assert.ok(mine.length >= 1 && mine[0].entity_type === "supervisor", JSON.stringify(audit.body.entries.slice(0, 2)));
+
+    // Nothing waiting: nothing to remind about, and the day is not used up.
+    await pool.query(`DELETE FROM digest_log WHERE kind = 'coordinator_nudge' AND account_id = $1`, [supervisorId]);
+    const quiet = `P4-QUIET-${Date.now()}`;
+    await pool.query(`INSERT INTO supervisors (supervisor_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Quiet Supervisor', TRUE)`, [quiet, `${quiet.toLowerCase()}@p4.test`]);
+    try {
+      const none = await jsonRequest(`/api/coordinator/supervisors/${quiet}/remind`, jsonBody(coordinatorToken, "POST", {}));
+      assert.equal(none.response.status, 409);
+      assert.match(none.body.message, /Nothing is waiting/);
+      assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM digest_log WHERE kind = 'coordinator_nudge' AND account_id = $1`, [quiet])).rows[0].n, 0);
+    } finally {
+      await pool.query(`DELETE FROM supervisors WHERE supervisor_id = $1`, [quiet]);
+    }
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});
+
+test("a supervisor gets all their interns' schedules in one answer, and the unread announcement without marking it read", async () => {
+  const supervisor = await supervisorSession();
+  for (const path of ["/api/supervisor/schedules", "/api/supervisor/site-visit", "/api/supervisor/announcement-unread"]) {
+    assert.equal((await jsonRequest(path)).response.status, 401, path);
+    assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403, path);
+    assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 403, path);
+  }
+  const schedules = await jsonRequest("/api/supervisor/schedules", { headers: authHeaders(supervisor.token) });
+  assert.equal(schedules.response.status, 200);
+  const interns = await jsonRequest(`/api/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}/interns`, { headers: authHeaders(supervisor.token) });
+  const ids = new Set((interns.body.interns || []).map((intern) => intern.student_id));
+  for (const row of schedules.body.schedules) {
+    assert.ok(ids.has(row.student_id), "only their own interns");
+    assert.match(row.day, /^(Mon|Tues|Wednes|Thurs|Fri|Satur|Sun)day$/);
+    assert.match(String(row.start_time), /^\d{2}:\d{2}/);
+    assert.equal(typeof row.hours, "number");
+  }
+  // The demo intern's own schedule, row for row.
+  const own = await jsonRequest(`/api/ojt-schedule/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+  if (own.response.ok && Array.isArray(own.body.schedule)) {
+    assert.equal(schedules.body.schedules.filter((row) => row.student_id === student.student_id).length, own.body.schedule.length);
+  }
+
+  // Asked twice, the unread announcement is still unread.
+  const first = await jsonRequest("/api/supervisor/announcement-unread", { headers: authHeaders(supervisor.token) });
+  const second = await jsonRequest("/api/supervisor/announcement-unread", { headers: authHeaders(supervisor.token) });
+  assert.equal(first.response.status, 200);
+  assert.equal(typeof first.body.unread, "number");
+  assert.deepEqual(second.body, first.body);
+  assert.ok(first.body.announcement === null || typeof first.body.announcement.title === "string");
+});
+
+test("a supervisor sees the latest visit to their company: its date and follow-up, not the findings", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const supervisorId = supervisor.supervisor.supervisor_id;
+  const visit = async () => (await jsonRequest("/api/supervisor/site-visit", { headers: authHeaders(supervisor.token) })).body.visit;
+  const company = (await pool.query(`SELECT company_id FROM supervisors WHERE supervisor_id = $1`, [supervisorId])).rows[0].company_id;
+  if (!company) {
+    assert.equal(await visit(), null, "no company record, no visit");
+    await pool.end();
+    t.skip("the demo supervisor has no company record");
+    return;
+  }
+  const clear = () => pool.query(`DELETE FROM site_visits WHERE findings LIKE 'P4 visit test%'`);
+  await clear();
+  try {
+    const add = (date, followUp) => pool.query(`INSERT INTO site_visits (company_id, visit_date, visited_by, visited_by_name, findings, follow_up) VALUES ($1, $2, $3, 'A Coordinator', 'P4 visit test: the coordinator saw an unsafe ladder.', $4)`, [company, date, coordinator.coordinator_id, followUp]);
+    await add("2098-01-05", "Older follow-up.");
+    await add("2098-02-10", "Send the signed evaluation forms by Friday.");
+    const latest = await visit();
+    assert.deepEqual([latest.visit_date, latest.follow_up], ["2098-02-10", "Send the signed evaluation forms by Friday."]);
+    assert.equal(typeof latest.company, "string");
+    assert.deepEqual(Object.keys(latest).sort(), ["company", "follow_up", "visit_date"], "nothing else is sent");
+    assert.ok(!JSON.stringify(latest).includes("ladder"), "what the coordinator found stays with the coordinator");
+  } finally {
+    await clear();
+    await pool.end();
+  }
+});
+
+test("the audit rules cover a note and a reminder, and keep neither's words", () => {
+  require("tsx/cjs");
+  const { auditEntryFor } = require("../src/services/audit.ts");
+  const note = auditEntryFor("POST", "/api/student-notes/:studentId", { params: { studentId: "S1" }, body: { message: "Private words." }, result: { note: { id: 9, message: "Private words." } } });
+  assert.deepEqual(note, { action: "note.create", entityType: "student", entityId: "S1", details: { note_id: 9 } });
+  const nudge = auditEntryFor("POST", "/api/coordinator/supervisors/:supervisorId/remind", { params: { supervisorId: "SUP1" }, body: {}, result: { items: 4, oldest_days: 6, message: "x" } });
+  assert.deepEqual(nudge, { action: "supervisor.remind", entityType: "supervisor", entityId: "SUP1", details: { items: 4, oldest_days: 6 } });
+  // Reading the thread is not an action.
+  assert.equal(auditEntryFor("GET", "/api/student-notes/:studentId", { params: { studentId: "S1" }, body: {}, result: {} }), null);
 });

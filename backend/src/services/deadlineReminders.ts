@@ -1,6 +1,7 @@
 import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
+import { releaseDueTasks, released } from "./taskRelease";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -23,6 +24,13 @@ export function startDeadlineReminderScheduler(
     if (running) return;
     running = true;
     try {
+      // Tasks whose release day has come are announced first, once each.
+      try {
+        await releaseDueTasks(pool, createNotification);
+      } catch (error) {
+        console.error("TASK RELEASE ERROR:", error);
+      }
+      // A task the intern cannot see yet gets no deadline reminder.
       await pool.query(
         `
         INSERT INTO task_deadline_reminders(task_id, reminder_type, scheduled_at)
@@ -31,6 +39,7 @@ export function startDeadlineReminderScheduler(
                  AT TIME ZONE 'Asia/Manila')
         FROM tasks t
         WHERE t.status IN ('Pending', 'In Progress')
+          AND ${released("t.")}
           AND (((t.due_date + 1)::timestamp - INTERVAL '1 second' - INTERVAL '24 hours')
                  AT TIME ZONE 'Asia/Manila') BETWEEN NOW() - INTERVAL '24 hours' AND NOW()
         UNION ALL
@@ -39,6 +48,7 @@ export function startDeadlineReminderScheduler(
                  AT TIME ZONE 'Asia/Manila')
         FROM tasks t
         WHERE t.status IN ('Pending', 'In Progress')
+          AND ${released("t.")}
           AND (((t.due_date + 1)::timestamp - INTERVAL '1 second')
                  AT TIME ZONE 'Asia/Manila') BETWEEN NOW() - INTERVAL '24 hours' AND NOW()
         ON CONFLICT (task_id, reminder_type) DO NOTHING
@@ -73,6 +83,7 @@ export function startDeadlineReminderScheduler(
             JOIN students s ON s.student_id = t.student_id
             WHERE r.scheduled_at <= NOW()
               AND t.status IN ('Pending', 'In Progress')
+              AND ${released("t.")}
               AND (
                 r.notification_sent_at IS NULL
                 OR (
