@@ -784,3 +784,195 @@ test.describe("the supervisor's day", () => {
     expect(refused.status).toBe(403);
   });
 });
+
+test.describe("the programme, for the coordinator", () => {
+  test.use({ viewport: { width: 1280, height: 900 } });
+
+  test("Analytics has a student performance table with its rules, any date range, and a chart that zooms", async ({ page }) => {
+    await signIn(page, "coordinator");
+    await page.goto("/coordinator/analytics");
+
+    // Student performance: a status from the rules, a sentence, and the rules behind the "?".
+    const table = page.getByRole("group", { name: "Student performance" });
+    await expect(table.getByRole("link", { name: "Demo Student", exact: true })).toBeVisible();
+    await expect(table.getByText(/^(On track|Behind|At risk|Completed): \d/).first()).toBeVisible();
+    await page.getByRole("button", { name: "What the status words mean" }).click();
+    await expect(page.getByRole("note")).toContainText("It is not a score.");
+    await expect(page.getByRole("note")).toContainText("The same rule as Monitoring.");
+    // Sorted by a column: the header says which way.
+    const hours = table.getByRole("columnheader", { name: /^Hours/ });
+    await hours.getByRole("button").click();
+    await expect(hours).toHaveAttribute("aria-sort", "ascending");
+    await hours.getByRole("button").click();
+    await expect(hours).toHaveAttribute("aria-sort", "descending");
+    // Its own CSV.
+    const download = page.waitForEvent("download");
+    await page.getByRole("button", { name: "CSV of student performance" }).click();
+    expect((await download).suggestedFilename()).toMatch(/^internet-student-performance-\d{4}-\d{2}-\d{2}\.csv$/);
+
+    // Any range, grouped by month.
+    await expect(page.getByText(/^The last 14 days, active students only\.$/)).toBeVisible();
+    await page.getByLabel("From", { exact: true }).fill("2026-01-01");
+    await expect(page.getByRole("alert").filter({ hasText: "Choose both a first and a last day." })).toBeVisible();
+    await page.getByLabel("To", { exact: true }).fill("2026-06-30");
+    await expect(page.getByText(/Jan 1, 2026 to Jun 30, 2026 \(181 days\), active students only\./)).toBeVisible();
+    await page.getByLabel("Group by").selectOption("month");
+    await expect(page.getByRole("heading", { name: "Verified hours per month" })).toBeVisible();
+    // A quick period puts it back.
+    await page.getByRole("tab", { name: "90 days" }).click();
+    await expect(page.getByText(/^The last 90 days, active students only\.$/)).toBeVisible();
+    await page.getByLabel("Group by").selectOption("day");
+    await expect(page.getByRole("heading", { name: "Verified hours per day" })).toBeVisible();
+
+    // The chart: + and - change the columns' width, the card keeps its size, the arrows still read values, and the table is kept.
+    const chart = page.getByRole("img", { name: /^Verified hours per day/ });
+    const plot = chart.locator("> div").first();
+    const size = await chart.boundingBox();
+    const narrow = (await plot.boundingBox())!.width;
+    await page.getByRole("button", { name: "Zoom in: wider columns" }).click();
+    await page.getByRole("button", { name: "Zoom in: wider columns" }).click();
+    expect((await plot.boundingBox())!.width).toBeGreaterThan(narrow);
+    expect((await chart.boundingBox())!.width).toBeCloseTo(size!.width, 0);
+    expect((await chart.boundingBox())!.height).toBeCloseTo(size!.height, 0);
+    await page.getByRole("button", { name: "Zoom out: narrower columns" }).click();
+    await chart.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect(chart).toHaveAccessibleDescription(/: \d/);
+    await expect(page.getByText("View as a table").first()).toBeVisible();
+  });
+
+  test("the key figures' targets are changed from the dashboard and put back", async ({ page }) => {
+    const coordinator = await apiSession("coordinator");
+    await api(coordinator.token, "PUT", "/api/coordinator/kpi-targets", { targets: { on_track: null } });
+    try {
+      await signIn(page, "coordinator");
+      await expect(page.getByText("Target: 90% or more")).toBeVisible();
+      await page.getByRole("button", { name: "Targets", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Targets for the key figures" });
+      const field = dialog.getByLabel("Students on track to finish within the term");
+      await expect(field).toHaveValue("90");
+      await field.fill("85");
+      await expect(dialog.getByRole("button", { name: /Use the default for Students on track/ })).toBeVisible();
+      await dialog.getByRole("button", { name: "Save targets" }).click();
+      await expect(page.getByText("Targets saved.")).toBeVisible();
+      await expect(page.getByText("Target: 85% or more")).toBeVisible();
+      await expect(page.getByText("Target: 90% or more")).toHaveCount(0);
+      // On Analytics the same cards show the same target, and offer no way to change it.
+      await page.goto("/coordinator/analytics");
+      await expect(page.getByText("Target: 85% or more")).toBeVisible();
+      await expect(page.getByRole("button", { name: "Targets", exact: true })).toHaveCount(0);
+    } finally {
+      await api(coordinator.token, "PUT", "/api/coordinator/kpi-targets", { targets: { on_track: null } });
+    }
+  });
+
+  test("a set of filters is saved as a view, chosen again, and removed", async ({ page }) => {
+    const coordinator = await apiSession("coordinator");
+    const name = `E2E no supervisor ${Date.now()}`;
+    const clear = async () => {
+      const views = await api<{ views: { id: number; name: string }[] }>(coordinator.token, "GET", "/api/coordinator/filter-views");
+      for (const view of views.body.views.filter((item) => item.name.startsWith("E2E no supervisor"))) {
+        await api(coordinator.token, "DELETE", `/api/coordinator/filter-views/${view.id}`, {});
+      }
+    };
+    await clear();
+    try {
+      await signIn(page, "coordinator");
+      await page.goto("/coordinator/students");
+      const bar = page.getByRole("region", { name: "Which students" });
+      await bar.getByLabel("Supervisor", { exact: true }).selectOption("none");
+      await expect(page).toHaveURL(/supervisor=none/);
+      await bar.getByRole("button", { name: "Save these filters as a view" }).click();
+      await bar.getByLabel("Name for this view").fill(name);
+      await bar.getByRole("button", { name: "Save view" }).click();
+      await expect(page.getByText(`View "${name}" saved.`)).toBeVisible();
+
+      // Cleared, then chosen again on another page: the bar's choice comes back.
+      await bar.getByRole("button", { name: "Clear filters" }).click();
+      await expect(page).not.toHaveURL(/supervisor=/);
+      await page.goto("/coordinator/monitoring");
+      const other = page.getByRole("region", { name: "Which students" });
+      await other.getByLabel("Saved views").selectOption({ label: name });
+      await expect(page).toHaveURL(/supervisor=none/);
+      await expect(other.getByLabel("Supervisor", { exact: true })).toHaveValue("none");
+      await other.getByRole("button", { name: /^Remove this view/ }).click();
+      await expect(page.getByText(`View "${name}" removed.`)).toBeVisible();
+      await other.getByRole("button", { name: "Clear filters" }).click();
+    } finally {
+      await clear();
+    }
+  });
+
+  test("a block's schedule is previewed before it is set, and Requirements no longer edits schedules", async ({ page }) => {
+    const coordinator = await apiSession("coordinator");
+    const first = await apiSession("student");
+    const found = await api<{ students: { student_id: string; block_id: number | null; block_name?: string | null }[] }>(
+      coordinator.token, "GET", `/api/coordinator/students?limit=5&q=${encodeURIComponent(first.id)}`
+    );
+    const blockId = found.body.students.find((item) => item.student_id === first.id)?.block_id;
+    test.skip(!blockId, "The demo student is not in a block (the programs journey places them).");
+
+    await signIn(page, "coordinator");
+    await page.goto(`/coordinator/students?block=${blockId}`);
+    await page.getByRole("button", { name: "Set schedule for this block" }).click();
+    const dialog = page.getByRole("dialog", { name: /^Set schedule for / });
+    await expect(dialog.getByLabel("Monday start time")).toHaveValue("08:00");
+    // A day that ends before it starts is caught before the server is asked.
+    await dialog.getByLabel("Monday end time").fill("07:00");
+    await dialog.getByRole("button", { name: "Check the block" }).click();
+    await expect(dialog.getByRole("alert")).toContainText("Monday: the end time must be after the start time.");
+    await dialog.getByLabel("Monday end time").fill("12:00");
+    await dialog.getByRole("button", { name: "Check the block" }).click();
+    // The preview: nothing changed yet; whoever has a different schedule is named and a choice is asked for.
+    await expect(dialog.getByText("Nothing has been changed yet.")).toBeVisible();
+    await expect(dialog.getByText("Have a different one")).toBeVisible();
+    await expect(dialog.getByRole("radio", { name: /Skip them/ })).toBeChecked();
+    await expect(dialog.getByRole("radio", { name: /Overwrite them/ })).toBeVisible();
+    await dialog.getByRole("button", { name: "Back to the week" }).click();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toBeHidden();
+
+    // The same on a block's menu on Programs.
+    await page.goto("/coordinator/programs");
+    await page.getByRole("button", { name: /^Actions for BSIT 4/ }).first().click();
+    await expect(page.getByRole("menuitem", { name: "Set schedule" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    await page.goto("/coordinator/requirements");
+    await expect(page.getByRole("heading", { name: "Schedules" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Add a day" })).toHaveCount(0);
+  });
+
+  test("a requirement is given a due date and the coordinator as reviewer, and the student sees the date", async ({ page, browser }) => {
+    const coordinator = await apiSession("coordinator");
+    const name = `E2E clearance ${Date.now()}`;
+    const made = await api<{ requirement: { id: number } }>(coordinator.token, "POST", "/api/coordinator/requirements", { name, sort_order: 990 });
+    expect(made.status).toBe(201);
+    const id = made.body.requirement.id;
+    try {
+      await signIn(page, "coordinator");
+      await page.goto("/coordinator/requirements");
+      await page.getByRole("button", { name: `Due date and reviewer for ${name}` }).click();
+      const dialog = page.getByRole("dialog", { name: `Due date and reviewer: ${name}` });
+      // Every week is offered, with the warning that it is not for the weekly report.
+      await expect(dialog.getByRole("radio", { name: /^Every week/ })).toBeVisible();
+      await expect(dialog.getByText(/Not for the weekly report/)).toBeVisible();
+      await dialog.getByRole("radio", { name: /^On a date/ }).check();
+      await dialog.getByLabel("The day it is due").fill("2031-03-14");
+      await dialog.getByRole("radio", { name: /^The OJT coordinator/ }).check();
+      await dialog.getByRole("button", { name: "Save", exact: true }).click();
+      await expect(page.getByText("Deliverable settings saved.")).toBeVisible();
+      await expect(page.getByRole("listitem").filter({ hasText: name })).toContainText("Due Mar 14, 2031 · Reviewed by the coordinator");
+
+      const studentPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+      await signIn(studentPage, "student");
+      await studentPage.goto("/documents");
+      await expect(studentPage.getByRole("listitem").filter({ hasText: name })).toContainText("Due Mar 14, 2031 · Reviewed by the coordinator");
+      await studentPage.context().close();
+    } finally {
+      // Back to how a requirement is by default, then retired: there is no route that deletes one.
+      await api(coordinator.token, "PUT", `/api/coordinator/requirements/${id}/deliverable`, {});
+      await api(coordinator.token, "PUT", `/api/coordinator/requirements/${id}`, { name, sort_order: 990, is_active: false });
+    }
+  });
+});
