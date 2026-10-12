@@ -397,7 +397,9 @@ test.describe("the coordinator's console", () => {
     await expect(page.getByRole("button", { name: "Add a day" })).toBeVisible();
 
     await page.goto(`/coordinator/requirements?student=${encodeURIComponent(student.id)}`);
-    await expect(page.getByText(/also on their own record, under the Schedule tab/)).toBeVisible();
+    // The editor left this page in Round 2, Phase 5; an old link that names a student still leads to them.
+    await expect(page.getByText(/on their own record, under the Schedule tab/)).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save schedule" })).toHaveCount(0);
     await page.getByRole("link", { name: /Open .* record/ }).click();
     await expect(page).toHaveURL(/\/coordinator\/students\/.+\?tab=schedule$/);
   });

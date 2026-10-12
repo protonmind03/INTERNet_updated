@@ -27,6 +27,7 @@ import ImportAccounts from "./ImportAccounts";
 import CompanyPicker from "./CompanyPicker";
 import { coordinatorRequest } from "./request";
 import FilterBar from "./FilterBar";
+import BlockScheduleDialog from "./BlockScheduleDialog";
 import { useStudentFilters } from "./useStudentFilters";
 import ResetPassword from "./ResetPassword";
 
@@ -110,6 +111,7 @@ export default function CoordinatorStudents() {
   const [toggling, setToggling] = useState<Student | null>(null);
   const [toggleBusy, setToggleBusy] = useState(false);
   const [importing, setImporting] = useState(false);
+  const [settingSchedule, setSettingSchedule] = useState(false);
   // The server searches, filters, orders and pages; only one page is here.
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
@@ -183,12 +185,20 @@ export default function CoordinatorStudents() {
 
   const filtered = search.trim() !== "" || status !== "all";
 
+  const chosenBlock = studentFilters.options.blocks.find((block) => String(block.id) === studentFilters.filters.block);
+
   return (
     <CoordinatorLayout
       title="Students"
       subtitle="Register OJT students, assign their supervisor and set their required hours."
       actions={
         <>
+          {/* Offered once the filters are on one block. */}
+          {chosenBlock && (
+            <Button variant="secondary" icon="calendar" onClick={() => setSettingSchedule(true)}>
+              Set schedule for this block
+            </Button>
+          )}
           <Button variant="secondary" icon="upload" onClick={() => setImporting(true)}>
             Import
           </Button>
@@ -392,6 +402,15 @@ export default function CoordinatorStudents() {
           void load();
         }}
       />
+
+      {settingSchedule && chosenBlock && (
+        <BlockScheduleDialog
+          key={chosenBlock.id}
+          blockId={chosenBlock.id}
+          blockName={chosenBlock.name}
+          onClose={() => setSettingSchedule(false)}
+        />
+      )}
 
       <ImportAccounts
         kind="students"

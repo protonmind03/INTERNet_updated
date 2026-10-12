@@ -16,12 +16,11 @@ import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
-import ScheduleEditor from "./ScheduleEditor";
 
 /*
  * Coordinator use case "Set OJT Requirements":
  *  - the documents every student must submit, and
- *  - each student's weekly OJT schedule.
+ *  - where each student's weekly OJT schedule is set (it is no longer edited here).
  * Required hours stay on the student's account (Students page).
  */
 
@@ -33,18 +32,11 @@ type Requirement = {
   sort_order: number;
 };
 
-type StudentOption = {
-  student_id: string;
-  name: string;
-  company: string | null;
-  required_hours: number;
-};
-
 export default function CoordinatorRequirements() {
   return (
     <CoordinatorLayout
       title="Requirements"
-      subtitle="The documents every student must submit, and each student's weekly schedule."
+      subtitle="The documents every student must submit, and where schedules are set."
     >
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <RequiredDocuments />
@@ -313,31 +305,24 @@ function RequiredDocuments() {
 |--------------------------------------------------------------------------
 */
 
+/**
+ * Schedules used to be edited here, one student at a time. They are now
+ * set where the students are: one student's on their record, a whole
+ * block's from Programs or Students. This card says so, and an old link
+ * that named a student ("?student=") still leads to that student.
+ */
 function StudentSchedule() {
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const selected = searchParams.get("student") || "";
-  const [students, setStudents] = useState<StudentOption[]>([]);
-
-  useEffect(() => {
-    coordinatorRequest<{ students: StudentOption[] }>("/api/coordinator/students?status=active")
-      .then((data) => setStudents(data.students || []))
-      .catch(() => undefined);
-  }, []);
-
-  const student = students.find((item) => item.student_id === selected);
-
   return (
     <Card>
-      <CardHeader
-        title="Student schedule"
-        description="The student sees this on their Schedule page."
-      />
-      <div className="mt-3 space-y-4 border-t border-slate-100 px-4 py-4 sm:px-5">
-        <p className="flex items-start gap-2 rounded-lg bg-slate-100 px-3 py-2.5 text-sm text-slate-700">
+      <CardHeader title="Schedules" description="The days and hours students report for OJT." />
+      <div className="mt-3 space-y-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700 sm:px-5">
+        <p className="flex items-start gap-2 rounded-lg bg-slate-100 px-3 py-2.5">
           <Icon name="info" size={16} className="mt-0.5 shrink-0 text-slate-500" />
           <span>
-            A student's schedule is also on their own record, under the Schedule tab, beside
-            their attendance and hours.
+            A student's schedule is on their own record, under the Schedule tab, beside their attendance
+            and hours.
             {selected && (
               <>
                 {" "}
@@ -345,44 +330,23 @@ function StudentSchedule() {
                   to={`/coordinator/students/${encodeURIComponent(selected)}?tab=schedule`}
                   className="font-semibold text-psu-700 hover:underline"
                 >
-                  Open {student?.name || "this student"}'s record
+                  Open this student's record
                 </Link>
               </>
             )}
           </span>
         </p>
-
-        <FormField label="Student" htmlFor="schedule-student">
-          <select
-            id="schedule-student"
-            value={selected}
-            onChange={(event) =>
-              setSearchParams(event.target.value ? { student: event.target.value } : {})
-            }
-            className="field"
-          >
-            <option value="">Choose a student</option>
-            {students.map((item) => (
-              <option key={item.student_id} value={item.student_id}>
-                {item.name}
-                {item.company ? ` · ${item.company}` : ""}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        {!selected ? (
-          <p className="text-sm text-slate-600">
-            Choose a student to set the days and hours they report for OJT.
-          </p>
-        ) : (
-          <ScheduleEditor
-            key={selected}
-            studentId={selected}
-            studentName={student?.name}
-            requiredHours={student?.required_hours}
-          />
-        )}
+        <p>
+          To give every student of a block the same schedule, open{" "}
+          <Link to="/coordinator/programs" className="font-semibold text-psu-700 hover:underline">
+            Programs
+          </Link>
+          , find the block, and choose "Set schedule". The same button is on{" "}
+          <Link to="/coordinator/students" className="font-semibold text-psu-700 hover:underline">
+            Students
+          </Link>{" "}
+          once a block is chosen in the filters.
+        </p>
       </div>
     </Card>
   );

@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import Icon from "../../components/Icon";
 import { Button, FormError, SkeletonRows } from "../../components/ui";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import ScheduleDays from "./ScheduleDays";
+import { badDayOf, weeklyHoursOf, type ScheduleRow } from "./scheduleRows";
 
 /*
 |--------------------------------------------------------------------------
@@ -12,22 +13,12 @@ import { coordinatorRequest } from "./request";
 |
 | The days and hours a student reports for OJT. The student sees it on
 | their Schedule page, and the projections and attendance figures are
-| worked out from it. It is edited in two places, with this one editor:
-| the Schedule tab of the student's record, and the Requirements page.
+| worked out from it. It is edited on the Schedule tab of the student's
+| record. A whole block is given one schedule from the Programs or
+| Students page (BlockScheduleDialog.tsx), with the same rows.
 |
 */
 
-type ScheduleRow = { day: string; start_time: string; end_time: string; focus: string };
-
-const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-
-function hoursBetween(start: string, end: string): number {
-  if (!start || !end) return 0;
-  const [startHour, startMinute] = start.split(":").map(Number);
-  const [endHour, endMinute] = end.split(":").map(Number);
-  const minutes = endHour * 60 + endMinute - (startHour * 60 + startMinute);
-  return minutes > 0 ? Math.round((minutes / 60) * 100) / 100 : 0;
-}
 
 /**
  * Give it a `key` of the student's id where the student can change, so
@@ -87,28 +78,8 @@ export default function ScheduleEditor({
     void Promise.resolve().then(load);
   }, [load]);
 
-  const usedDays = new Set(schedule.map((row) => row.day));
-  const weeklyHours = schedule.reduce(
-    (sum, row) => sum + hoursBetween(row.start_time, row.end_time),
-    0
-  );
-  const badRow = schedule.find((row) => hoursBetween(row.start_time, row.end_time) <= 0);
-
-  const change = (index: number, patch: Partial<ScheduleRow>) => {
-    setSchedule((rows) => rows.map((row, i) => (i === index ? { ...row, ...patch } : row)));
-    setDirty(true);
-  };
-
-  const addDay = () => {
-    const day = DAYS.find((name) => !usedDays.has(name));
-    if (!day) return;
-    setSchedule((rows) =>
-      [...rows, { day, start_time: "08:00", end_time: "17:00", focus: "" }].sort(
-        (a, b) => DAYS.indexOf(a.day) - DAYS.indexOf(b.day)
-      )
-    );
-    setDirty(true);
-  };
+  const weeklyHours = weeklyHoursOf(schedule);
+  const badRow = badDayOf(schedule);
 
   const save = async () => {
     if (badRow) {
@@ -145,79 +116,17 @@ export default function ScheduleEditor({
         </p>
       )}
 
-      {schedule.length === 0 ? (
-        <p className="text-sm text-slate-600">No working days yet. Add the first one.</p>
-      ) : (
-        <ul className="space-y-3">
-          {schedule.map((row, index) => (
-            <li
-              key={row.day}
-              className="grid grid-cols-2 gap-2 rounded-lg border border-slate-200 p-3 sm:grid-cols-[7.5rem_minmax(0,1fr)_minmax(0,1fr)_2.5rem]"
-            >
-              <label className="col-span-2 sm:col-span-1">
-                <span className="sr-only">Day</span>
-                <select
-                  value={row.day}
-                  onChange={(event) => change(index, { day: event.target.value })}
-                  className="field"
-                >
-                  {DAYS.filter((name) => name === row.day || !usedDays.has(name)).map((name) => (
-                    <option key={name}>{name}</option>
-                  ))}
-                </select>
-              </label>
-              <label>
-                <span className="sr-only">{row.day} start time</span>
-                <input
-                  type="time"
-                  value={row.start_time}
-                  onChange={(event) => change(index, { start_time: event.target.value })}
-                  className="field"
-                />
-              </label>
-              <label>
-                <span className="sr-only">{row.day} end time</span>
-                <input
-                  type="time"
-                  value={row.end_time}
-                  onChange={(event) => change(index, { end_time: event.target.value })}
-                  className="field"
-                />
-              </label>
-              <button
-                type="button"
-                aria-label={`Remove ${row.day}`}
-                onClick={() => {
-                  setSchedule((rows) => rows.filter((_, i) => i !== index));
-                  setDirty(true);
-                }}
-                className="col-span-2 flex h-10 items-center justify-center gap-1.5 rounded-lg text-sm font-medium text-red-600 hover:bg-red-50 sm:col-span-1 sm:w-10"
-              >
-                <Icon name="trash" size={16} />
-                <span className="sm:hidden">Remove</span>
-              </button>
-              <label className="col-span-2 sm:col-span-4">
-                <span className="sr-only">{row.day} focus</span>
-                <input
-                  type="text"
-                  maxLength={150}
-                  value={row.focus}
-                  onChange={(event) => change(index, { focus: event.target.value })}
-                  placeholder="What the day is for (optional)"
-                  className="field"
-                />
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
+      <ScheduleDays
+        rows={schedule}
+        onChange={(rows) => {
+          setSchedule(rows);
+          setDirty(true);
+        }}
+      />
 
       <FormError message={error} />
 
       <div className="flex flex-wrap gap-2">
-        <Button variant="secondary" icon="plus" onClick={addDay} disabled={usedDays.size >= DAYS.length}>
-          Add a day
-        </Button>
         <Button
           onClick={() => void save()}
           busy={saving}

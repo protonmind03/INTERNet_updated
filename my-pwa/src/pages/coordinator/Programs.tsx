@@ -18,6 +18,7 @@ import {
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import BlockScheduleDialog from "./BlockScheduleDialog";
 import { refreshFilterOptions } from "./useStudentFilters";
 
 /*
@@ -86,6 +87,8 @@ export default function CoordinatorPrograms() {
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
   const [roster, setRoster] = useState<Block | null>(null);
+  // The block being given one schedule for all its students.
+  const [scheduling, setScheduling] = useState<Block | null>(null);
   // Which term's blocks are listed: "" for all, "none" for blocks of no term.
   const [blockTerm, setBlockTerm] = useState("");
   const [blockProgram, setBlockProgram] = useState("");
@@ -161,6 +164,7 @@ export default function CoordinatorPrograms() {
   ];
   const blockMenu = (block: Block): RowMenuItem[] => [
     { label: "Students", icon: "users", onSelect: () => setRoster(block) },
+    { label: "Set schedule", icon: "calendar", onSelect: () => setScheduling(block) },
     { label: "Edit", icon: "edit", onSelect: () => setEditing({ kind: "block", row: block }) },
     block.is_active
       ? { label: "Make inactive", icon: "lock", tone: "danger", onSelect: () => setActive("blocks", block.id, false) }
@@ -402,6 +406,15 @@ export default function CoordinatorPrograms() {
             if (saved) setEditing(null);
             return saved;
           }}
+        />
+      )}
+
+      {scheduling && (
+        <BlockScheduleDialog
+          key={scheduling.id}
+          blockId={scheduling.id}
+          blockName={scheduling.name}
+          onClose={() => setScheduling(null)}
         />
       )}
 
