@@ -927,6 +927,30 @@ Different from the description, or decided where it left room:
 - [x] **4.7 Site visits for supervisors:** the latest visit's date and
   follow-up for their company, read only.
 
+### Phase 5: performance summaries, grouped files, deliverables, chart zoom, setup help
+
+Migrations from 043, as needed.
+
+- [ ] **5.1 Performance summary per student:** fixed rules, no composite
+  score. `programmeReport` gains the figures; a templated sentence and a
+  status word (On track / At risk / Behind / Completed) defined in one
+  place; on the student record and as a "Student performance" table in
+  Analytics with the filter bar, CSV and PDF. Hours equal Monitoring's.
+- [ ] **5.2 Documents by group:** the filter bar, a grouped view College
+  to Student with requirement completion, and "Download as ZIP" for the
+  filtered set (streamed, capped, audited as `document.bulk_download`).
+- [ ] **5.3 Programme deliverables:** `ojt_requirements` gains a due
+  date, a due rule, a reviewer and who it applies to; `deliverable_items`
+  for recurring ones; reminders cover them.
+- [ ] **5.4 Chart zoom and scroll:** any date range and Day / Week /
+  Month grouping; a scrolling plot with a fixed value axis and + / -.
+- [ ] **5.5 KPI targets editable:** `kpi_targets`, a settings dialog on
+  the Dashboard, audited.
+- [ ] **5.6 Term setup checklist** on the Terms page, each line computed.
+- [ ] **5.7 Bulk schedules** for a block, with a preview and overwrite or
+  skip; the schedule editor leaves the Requirements page.
+- [ ] **5.8 Saved views** of the filter bar, per coordinator.
+
 ## Still open
 
 Not built, and noted where each was decided:
