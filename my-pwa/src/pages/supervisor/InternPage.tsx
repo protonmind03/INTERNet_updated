@@ -310,8 +310,9 @@ function Overview({ intern, work, onReview }: Reviewable) {
               : "Oldest first."
           }
         />
+        {waiting.length + (finalDue ? 1 : 0) === 0 && <div className="pb-4" />}
         {waiting.length + (finalDue ? 1 : 0) > 0 && (
-          <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
             {waiting.map((item) => {
               const days = daysWaiting(item.waitingSince);
               return (
@@ -356,7 +357,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
             The OJT coordinator has not set a schedule for this intern yet.
           </p>
         ) : (
-          <ul className="divide-y divide-slate-100 border-t border-slate-100">
+          <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
             {shifts.map((shift) => (
               <li
                 key={shift.day}
