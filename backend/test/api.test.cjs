@@ -7168,3 +7168,87 @@ test("one schedule is set for a block: a preview first, then those with a differ
     await pool.end();
   }
 });
+
+test("an analytics range is the last N days, or any first and last day, grouped by day, week or month", () => {
+  require("tsx/cjs");
+  const { readRange, defaultGroup, MAX_RANGE_DAYS } = require("../src/services/analyticsRange.ts");
+  const today = "2026-10-12";
+  // Nothing sent, or the page's old "days": as it always was.
+  assert.deepEqual(readRange({}, today), { from: "2026-09-29", to: "2026-10-12", days: 14, group: "day" });
+  assert.deepEqual(readRange({ days: "30" }, today), { from: "2026-09-13", to: "2026-10-12", days: 30, group: "day" });
+  assert.deepEqual(readRange({ days: "90" }, today), { from: "2026-07-15", to: "2026-10-12", days: 90, group: "week" });
+  assert.equal(readRange({ days: "17" }, today).days, 14, "not one of the quick periods");
+  // Any range, counted with both ends.
+  assert.deepEqual(readRange({ from: "2026-01-01", to: "2026-01-31" }, today), { from: "2026-01-01", to: "2026-01-31", days: 31, group: "day" });
+  assert.deepEqual(readRange({ from: "2026-01-01", to: "2026-01-01" }, today).days, 1);
+  assert.equal(readRange({ from: "2025-01-01", to: "2026-10-12" }, today).group, "month");
+  assert.equal(readRange({ from: "2026-01-01", to: "2026-01-31", group: "month" }, today).group, "month", "the group asked for wins");
+  assert.deepEqual([defaultGroup(31), defaultGroup(32), defaultGroup(184), defaultGroup(185)], ["day", "week", "week", "month"]);
+  // The range wins over "days" when both are sent.
+  assert.equal(readRange({ days: "90", from: "2026-10-01", to: "2026-10-07" }, today).days, 7);
+  for (const bad of [
+    { from: "2026-01-01" },
+    { to: "2026-01-01" },
+    { from: "2026-02-30", to: "2026-03-01" },
+    { from: "01/02/2026", to: "2026-03-01" },
+    { from: "2026-03-02", to: "2026-03-01" },
+    { from: "2024-01-01", to: "2026-10-12" },
+    { group: "year" },
+    { from: "2026-01-01", to: "2026-01-31", group: "hour" },
+  ]) {
+    assert.ok("problem" in readRange(bad, today), JSON.stringify(bad));
+  }
+  assert.equal(MAX_RANGE_DAYS, 731);
+  assert.ok(!("problem" in readRange({ from: "2024-10-12", to: "2026-10-12" }, today)), "two years to the day is allowed");
+});
+
+test("analytics takes a date range and a grouping, and the groups add up to the days", async () => {
+  const path = "/api/coordinator/analytics";
+  const get = (query = "") => jsonRequest(`${path}${query}`, { headers: authHeaders(coordinatorToken) });
+  for (const bad of ["?from=2026-01-01", "?from=2026-02-30&to=2026-03-01", "?from=2026-03-02&to=2026-03-01", "?from=2020-01-01&to=2026-01-01", "?group=year"]) {
+    assert.equal((await get(bad)).response.status, 400, bad);
+  }
+  assert.equal((await jsonRequest(`${path}?from=2026-01-01&to=2026-01-31`, { headers: authHeaders(studentToken) })).response.status, 403);
+
+  // Unsent, the answer is the last 14 days by day, with everything it had before.
+  const plain = (await get()).body;
+  assert.deepEqual([plain.days, plain.group, plain.attendanceTrend.length, plain.trend.length], [14, "day", 14, 14]);
+  for (const key of ["period", "progress", "companies", "complaintsByCategory", "taskFunnel", "evaluationSummary"]) assert.ok(key in plain, key);
+  assert.deepEqual(plain.trend.map((row) => [row.start, row.hours, row.logs, row.students]), plain.attendanceTrend.map((row) => [row.day, row.hours, row.logs, row.students]), "by day, the groups are the days");
+
+  // The same fourteen days asked for by their dates give the same figures.
+  const dated = (await get(`?from=${plain.from}&to=${plain.to}`)).body;
+  assert.deepEqual(dated.period, plain.period);
+  assert.deepEqual(dated.attendanceTrend, plain.attendanceTrend);
+  assert.deepEqual((await get("?days=14")).body.period, plain.period);
+
+  // Ninety days: by week unless told otherwise; every group inside the range; hours and logs add up either way.
+  const sum = (rows, key) => Math.round(rows.reduce((total, row) => total + Number(row[key]), 0) * 100) / 100;
+  const ninety = (await get("?days=90")).body;
+  assert.deepEqual([ninety.days, ninety.group, ninety.attendanceTrend.length], [90, "week", 90]);
+  assert.ok(ninety.trend.length >= 13 && ninety.trend.length <= 14);
+  assert.equal(ninety.trend[0].start, ninety.from);
+  assert.equal(ninety.trend.at(-1).end, ninety.to);
+  for (const [index, row] of ninety.trend.entries()) {
+    assert.ok(row.start <= row.end && row.start >= ninety.from && row.end <= ninety.to);
+    if (index > 0) assert.equal(new Date(`${row.start}T00:00:00Z`).getUTCDay(), 1, "a week starts on Monday");
+  }
+  for (const group of ["day", "week", "month"]) {
+    const grouped = (await get(`?days=90&group=${group}`)).body;
+    assert.equal(grouped.group, group);
+    assert.equal(sum(grouped.trend, "hours"), sum(ninety.attendanceTrend, "hours"), `${group}: hours`);
+    assert.equal(sum(grouped.trend, "logs"), sum(ninety.attendanceTrend, "logs"), `${group}: logs`);
+    assert.equal(sum(grouped.trend, "hours"), Math.round(grouped.period.hours * 100) / 100, `${group}: the chart and the total agree`);
+  }
+  const months = (await get(`?from=${ninety.from}&to=${ninety.to}&group=month`)).body.trend;
+  assert.ok(months.length >= 3 && months.length <= 4);
+  assert.ok(months.slice(1).every((row) => row.start.endsWith("-01")));
+
+  // A range in the past: "previous" is the same number of days just before it, not counted from today.
+  const past = (await get("?from=2001-02-01&to=2001-02-10")).body;
+  assert.deepEqual([past.days, past.from, past.to, past.attendanceTrend.length], [10, "2001-02-01", "2001-02-10", 10]);
+  assert.equal(past.period.logs, sum(past.attendanceTrend, "logs"));
+  const before = (await get("?from=2001-01-22&to=2001-01-31")).body;
+  assert.equal(past.period.previousLogs, before.period.logs);
+  assert.equal(past.period.previousHours, before.period.hours);
+});

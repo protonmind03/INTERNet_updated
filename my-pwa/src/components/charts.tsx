@@ -1,4 +1,4 @@
-import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
 /*
 |--------------------------------------------------------------------------
@@ -14,7 +14,17 @@ import { useId, useState, type KeyboardEvent, type ReactNode } from "react";
 |  - pointing at (or arrowing to) a mark shows its exact figure, and every
 |    chart can also be read as a table.
 |
+| A column chart with many columns can be ZOOMABLE: each column then has a
+| fixed width, the plot scrolls sideways under a value axis that stays
+| put, and "+" and "-" change the column width. The card keeps its size at
+| every zoom. There is no pinch or wheel zoom: a wheel or a swipe scrolls.
+|
 */
+
+/** Column widths, in pixels, for each zoom level of a zoomable chart. */
+const ZOOM_WIDTHS = [6, 10, 16, 26, 40, 60];
+/** Room a label under a column needs, in pixels. */
+const LABEL_ROOM = 64;
 
 /** A round number at or above `value`, and the step between grid lines. */
 function niceScale(value: number): { max: number; step: number } {
@@ -54,6 +64,7 @@ export function ColumnChart({
   axis = true,
   capLabels = "peak",
   wholeNumbers = false,
+  zoomable = false,
 }: {
   points: ColumnPoint[];
   /** What the chart shows, for screen readers. */
@@ -67,9 +78,33 @@ export function ColumnChart({
   capLabels?: "peak" | "all" | "none";
   /** The values are counts, so the scale only uses whole numbers. */
   wholeNumbers?: boolean;
+  /** Fixed-width columns in a sideways-scrolling plot, with + and - to change the width. */
+  zoomable?: boolean;
 }) {
   const [active, setActive] = useState<number | null>(null);
   const hintId = useId();
+  const [zoom, setZoom] = useState(2);
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const columnWidth = ZOOM_WIDTHS[zoom];
+
+  // A zoomable chart opens on its newest columns, and comes back to them when
+  // its columns or its zoom change.
+  useEffect(() => {
+    const element = scroller.current;
+    if (zoomable && element) element.scrollLeft = element.scrollWidth;
+  }, [zoomable, points.length, zoom]);
+
+  // The column the arrow keys are on is kept in view.
+  useEffect(() => {
+    const element = scroller.current;
+    if (!zoomable || !element || active === null || points.length === 0) return;
+    const width = element.scrollWidth / points.length;
+    const left = active * width;
+    if (left < element.scrollLeft) element.scrollLeft = left;
+    else if (left + width > element.scrollLeft + element.clientWidth) {
+      element.scrollLeft = left + width - element.clientWidth;
+    }
+  }, [zoomable, active, points.length]);
 
   const highest = Math.max(0, ...points.map((point) => point.value));
   let { max, step } = niceScale(highest);
@@ -85,13 +120,16 @@ export function ColumnChart({
     0
   );
   // Label about six columns along the bottom, always including both ends.
-  const every = Math.max(1, Math.ceil(points.length / 6));
+  // A zoomable chart labels as many as its column width leaves room for.
+  const every = zoomable
+    ? Math.max(1, Math.ceil(LABEL_ROOM / columnWidth))
+    : Math.max(1, Math.ceil(points.length / 6));
   // A regular label that would crowd the last one gives way to it.
   const last = points.length - 1;
   const showLabel = (index: number) =>
-    points.length <= 8 ||
+    (!zoomable && points.length <= 8) ||
     index === last ||
-    (index % every === 0 && last - index >= Math.max(2, every * 0.75));
+    (index % every === 0 && last - index >= Math.max(zoomable ? 1 : 2, every * 0.75));
 
   const onKey = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
@@ -103,16 +141,59 @@ export function ColumnChart({
   };
 
   const shown = active !== null ? points[active] : null;
+  // What makes the chart one thing a keyboard or a screen reader can be on.
+  // On a zoomable chart that is the scrolling plot itself, so it can be
+  // scrolled from the keyboard.
+  const readable = {
+    role: "img",
+    "aria-label": label,
+    "aria-describedby": hintId,
+    tabIndex: 0,
+    onKeyDown: onKey,
+    onBlur: () => setActive(null),
+  } as const;
 
   return (
     <div>
+      {zoomable && (
+        <div className="mb-1 flex items-center justify-between gap-3 print:hidden">
+          {/* The figure the pointer or the arrow keys are on. Always one line, so nothing moves. */}
+          <p className="h-5 min-w-0 flex-1 truncate text-xs text-slate-700" aria-hidden="true">
+            {shown ? (
+              <>
+                <span className="font-semibold text-slate-900">
+                  {shown.label}: {format(shown.value)}
+                </span>
+                {shown.detail ? ` · ${shown.detail}` : ""}
+              </>
+            ) : (
+              "Point at a column, or use the arrow keys, for its figure."
+            )}
+          </p>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setZoom((level) => Math.max(0, level - 1))}
+              disabled={zoom === 0}
+              aria-label="Zoom out: narrower columns"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-lg font-semibold leading-none text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <span aria-hidden="true">−</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setZoom((level) => Math.min(ZOOM_WIDTHS.length - 1, level + 1))}
+              disabled={zoom === ZOOM_WIDTHS.length - 1}
+              aria-label="Zoom in: wider columns"
+              className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-300 bg-white text-lg font-semibold leading-none text-slate-800 hover:bg-slate-50 disabled:opacity-40"
+            >
+              <span aria-hidden="true">+</span>
+            </button>
+          </div>
+        </div>
+      )}
       <div
-        role="img"
-        aria-label={label}
-        aria-describedby={hintId}
-        tabIndex={0}
-        onKeyDown={onKey}
-        onBlur={() => setActive(null)}
+        {...(zoomable ? {} : readable)}
         onMouseLeave={() => setActive(null)}
         className="relative flex rounded-md"
       >
@@ -123,7 +204,7 @@ export function ColumnChart({
 
         {axis && (
           <div
-            className="tabular relative mr-2 w-9 shrink-0 text-right text-[11px] text-slate-500"
+            className={`tabular relative mr-2 w-9 shrink-0 text-right text-[11px] text-slate-500 ${zoomable ? "mt-5" : ""}`}
             style={{ height }}
             aria-hidden="true"
           >
@@ -139,7 +220,13 @@ export function ColumnChart({
           </div>
         )}
 
-        <div className="min-w-0 flex-1">
+        <div
+          ref={scroller}
+          {...(zoomable ? readable : {})}
+          className={`min-w-0 flex-1 ${zoomable ? "overflow-x-auto rounded-md pt-5" : ""}`}
+        >
+          {/* A zoomable plot is as wide as its columns need, and never narrower than the card. */}
+          <div style={zoomable ? { width: `max(100%, ${points.length * columnWidth}px)` } : undefined}>
           <div className="relative" style={{ height }}>
             {/* Grid lines: faint, solid, behind the columns. */}
             {axis &&
@@ -191,7 +278,9 @@ export function ColumnChart({
               })}
             </div>
 
-            {shown && active !== null && (
+            {/* A zoomable chart says the figure in the line above it: a floating
+                box would be cut off by the scrolling plot. */}
+            {!zoomable && shown && active !== null && (
               <div
                 aria-hidden="true"
                 className="pointer-events-none absolute top-0 z-10 w-max max-w-48 -translate-y-full rounded-lg bg-psu-950 px-2.5 py-1.5 text-xs text-white shadow-raised"
@@ -221,9 +310,9 @@ export function ColumnChart({
                     it; the two end labels stay inside the plot instead. */}
                 <span
                   className={`relative inline-block whitespace-nowrap ${
-                    points.length > 8 && index === 0
+                    (zoomable || points.length > 8) && index === 0
                       ? "left-0 float-left"
-                      : points.length > 8 && index === last
+                      : (zoomable || points.length > 8) && index === last
                         ? "right-0 float-right"
                         : "left-1/2 -translate-x-1/2"
                   }`}
@@ -232,6 +321,7 @@ export function ColumnChart({
                 </span>
               </span>
             ))}
+          </div>
           </div>
         </div>
       </div>

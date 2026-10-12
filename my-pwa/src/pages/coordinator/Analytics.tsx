@@ -21,7 +21,7 @@ import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
 import { saveCsv } from "../../lib/csv";
-import { formatDate, formatDateTime, formatHours } from "../../lib/format";
+import { formatDate, formatDateTime, formatHours, localDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import GroupSummary from "./GroupSummary";
 import KpiCards from "./KpiCards";
@@ -33,8 +33,16 @@ import { describeFilters, useStudentFilters } from "./useStudentFilters";
 
 type TrendDay = { day: string; logs: number; hours: number; students: number };
 
+/** The chart's columns: a day, a week or a month of the range. Missing from an older server. */
+type TrendGroup = { start: string; end: string; logs: number; hours: number; students: number };
+type Grouping = "day" | "week" | "month";
+
 type AnalyticsData = {
   days: number;
+  from?: string;
+  to?: string;
+  group?: Grouping;
+  trend?: TrendGroup[];
   attendanceTrend: TrendDay[];
   period: {
     hours: number;
@@ -102,49 +110,77 @@ function dayLabel(day: string): string {
 const plural = (count: number, one: string, many = `${one}s`) =>
   `${count} ${count === 1 ? one : many}`;
 
+/** "Oct 2026" for the month a "YYYY-MM-DD" day is in. */
+function monthLabel(day: string): string {
+  const [year, month] = day.split("-").map(Number);
+  return new Date(year, month - 1, 1).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
+}
+
+/** The days the attendance figures cover, in the few ways the page says it. */
+function periodWords(data: AnalyticsData): { title: string; sentence: string; plain: string; previous: string } {
+  const quick =
+    !data.from || !data.to || (data.to === localDateKey(new Date()) && PERIODS.some((period) => period === data.days));
+  if (quick) {
+    return {
+      title: `The last ${data.days} days`,
+      sentence: `In the last ${data.days} days`,
+      plain: `the last ${data.days} days`,
+      previous: `the previous ${data.days} days`,
+    };
+  }
+  const span = `${formatDate(data.from)} to ${formatDate(data.to)}`;
+  return {
+    title: `${span} (${plural(data.days, "day")})`,
+    sentence: `From ${span}`,
+    plain: span,
+    previous: `the ${plural(data.days, "day")} before`,
+  };
+}
+
+const GROUP_WORD: Record<Grouping, string> = { day: "day", week: "week", month: "month" };
+
 /**
  * The columns of the hours chart. Up to a month is drawn day by day; a
  * longer period is added up by week, or the columns would be hairlines.
  */
-function trendColumns(days: TrendDay[]): { points: ColumnPoint[]; byWeek: boolean } {
-  if (days.length <= 31) {
-    return {
-      byWeek: false,
-      points: days.map((day) => ({
-        key: day.day,
-        label: dayLabel(day.day),
-        value: day.hours,
-        detail:
-          day.logs === 0
-            ? "No attendance logged"
-            : `${plural(day.logs, "log")} from ${plural(day.students, "student")}`,
-      })),
-    };
-  }
-  const points: ColumnPoint[] = [];
-  for (let start = 0; start < days.length; start += 7) {
-    const week = days.slice(start, start + 7);
-    const logs = week.reduce((sum, day) => sum + day.logs, 0);
-    points.push({
-      key: week[0].day,
-      label: dayLabel(week[0].day),
-      value: week.reduce((sum, day) => sum + day.hours, 0),
-      detail: `${dayLabel(week[0].day)} to ${dayLabel(week[week.length - 1].day)} · ${plural(logs, "log")}`,
-    });
-  }
-  return { byWeek: true, points };
+function trendColumns(data: AnalyticsData): { points: ColumnPoint[]; group: Grouping; rows: (string | number)[][] } {
+  // An older server sends no groups: the days themselves are the columns.
+  const groups: TrendGroup[] =
+    data.trend ?? data.attendanceTrend.map((day) => ({ start: day.day, end: day.day, ...day }));
+  const group: Grouping = data.trend ? (data.group ?? "day") : "day";
+  const name = (row: TrendGroup) =>
+    group === "month"
+      ? monthLabel(row.start)
+      : group === "week" && row.start !== row.end
+        ? `${dayLabel(row.start)} to ${dayLabel(row.end)}`
+        : dayLabel(row.start);
+  return {
+    group,
+    points: groups.map((row) => ({
+      key: row.start,
+      label: name(row),
+      axisLabel: group === "month" ? monthLabel(row.start) : dayLabel(row.start),
+      value: row.hours,
+      detail:
+        row.logs === 0
+          ? "No attendance logged"
+          : `${plural(row.logs, "log")} from ${plural(row.students, "student")}`,
+    })),
+    rows: groups.map((row) => [name(row), formatHours(row.hours), row.logs, row.students]),
+  };
 }
 
 // One definition of the report's tables, shared by the CSV and PDF exports.
 function reportSections(report: AnalyticsData): ReportSection[] {
   const { period, progress } = report;
+  const words = periodWords(report);
   return [
     {
-      title: `Attendance in the last ${report.days} days`,
+      title: `Attendance, ${words.plain}`,
       head: ["Measure", "Value"],
       rows: [
         ["Verified hours", period.hours],
-        [`Verified hours, previous ${report.days} days`, period.previousHours],
+        [`Verified hours, ${words.previous}`, period.previousHours],
         ["Attendance logs", period.logs],
         ["Logs verified", period.verified],
         ["Logs waiting for a supervisor", period.pending],
@@ -156,7 +192,7 @@ function reportSections(report: AnalyticsData): ReportSection[] {
       ],
     },
     {
-      title: `Verified hours per day (last ${report.days} days)`,
+      title: `Verified hours per day (${words.plain})`,
       head: ["Date", "Verified hours", "Attendance logs", "Students"],
       rows: report.attendanceTrend.map((day) => [day.day, day.hours, day.logs, day.students]),
     },
@@ -236,7 +272,12 @@ const reportFileName = (extension: string) =>
   `internet-analytics-${new Date().toISOString().slice(0, 10)}.${extension}`;
 
 export default function CoordinatorAnalytics() {
-  const [days, setDays] = useState<Period>(14);
+  // The days covered: one of the quick periods, or any first and last day.
+  const [range, setRange] = useState<{ days: Period } | { from: string; to: string }>({ days: 14 });
+  // How the chart adds the days up. "auto" leaves it to the server (by day up to a month, then by week, then by month).
+  const [grouping, setGrouping] = useState<Grouping | "auto">("auto");
+  // What is typed in the two date boxes, which is the range only once both are real dates in order.
+  const [typed, setTyped] = useState({ from: "", to: "" });
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   // True while a different period is being fetched; the old figures stay up.
@@ -248,11 +289,15 @@ export default function CoordinatorAnalytics() {
   const term = studentFilters.query;
   const termName = describeFilters(studentFilters);
 
-  const load = useCallback(async (period: Period) => {
+  const rangeQuery =
+    ("days" in range ? `days=${range.days}` : `from=${range.from}&to=${range.to}`) +
+    (grouping === "auto" ? "" : `&group=${grouping}`);
+
+  const load = useCallback(async () => {
     try {
       setData(
         await coordinatorRequest<AnalyticsData>(
-          `/api/coordinator/analytics?days=${period}${term ? `&${term}` : ""}`
+          `/api/coordinator/analytics?${rangeQuery}${term ? `&${term}` : ""}`
         )
       );
       setError("");
@@ -262,16 +307,38 @@ export default function CoordinatorAnalytics() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [term]);
+  }, [term, rangeQuery]);
 
   useEffect(() => {
-    void Promise.resolve().then(() => load(days));
-  }, [load, days]);
+    void Promise.resolve().then(load);
+  }, [load]);
 
   const choosePeriod = (period: Period) => {
-    if (period === days) return;
+    setTyped({ from: "", to: "" });
+    if ("days" in range && range.days === period) return;
     setRefreshing(true);
-    setDays(period);
+    setRange({ days: period });
+  };
+
+  const today = localDateKey(new Date());
+  /** Why the two dates typed cannot be a range yet; "" when they can, or when nothing is typed. */
+  const dateProblem =
+    !typed.from && !typed.to
+      ? ""
+      : !typed.from || !typed.to
+        ? "Choose both a first and a last day."
+        : typed.from > typed.to
+          ? "The first day must not be after the last day."
+          : (Date.parse(typed.to) - Date.parse(typed.from)) / 86_400_000 > 730
+            ? "Choose a range of two years or less."
+            : "";
+  const typeDate = (key: "from" | "to", value: string) => {
+    const next = { ...typed, [key]: value };
+    setTyped(next);
+    if (next.from && next.to && next.from <= next.to && (Date.parse(next.to) - Date.parse(next.from)) / 86_400_000 <= 730) {
+      setRefreshing(true);
+      setRange({ from: next.from, to: next.to });
+    }
   };
 
   const downloadPdf = async () => {
@@ -312,9 +379,10 @@ export default function CoordinatorAnalytics() {
   };
 
   const trend = useMemo(
-    () => (data ? trendColumns(data.attendanceTrend) : { points: [], byWeek: false }),
+    () => (data ? trendColumns(data) : { points: [], group: "day" as Grouping, rows: [] }),
     [data]
   );
+  const words = data ? periodWords(data) : null;
 
   return (
     <CoordinatorLayout
@@ -344,15 +412,14 @@ export default function CoordinatorAnalytics() {
       )}
       {error && (
         <div className="mb-5">
-          <ErrorNotice message={error} onRetry={() => void load(days)} />
+          <ErrorNotice message={error} onRetry={() => void load()} />
         </div>
       )}
 
       {data && (
         <p className="mb-4 hidden text-sm text-slate-600 print:block">
           INTERNet OJT analytics report, generated {formatDateTime(new Date())}. Attendance
-          figures cover the last {data.days} days; all other figures are to date. Active
-          students only.
+          figures cover {words?.plain}; all other figures are to date. Active students only.
         </p>
       )}
 
@@ -367,33 +434,80 @@ export default function CoordinatorAnalytics() {
             {/* ATTENDANCE: follows the period chosen here. */}
             <section className="space-y-4">
               <div className="flex flex-wrap items-end justify-between gap-3">
-                <SectionTitle
-                  title="Attendance"
-                  note={`The last ${data.days} days, active students only.`}
-                />
-                <div
-                  role="tablist"
-                  aria-label="Period for the attendance figures"
-                  className="inline-flex rounded-lg bg-slate-100 p-1 ring-1 ring-inset ring-slate-200/70 print:hidden"
-                >
-                  {PERIODS.map((period) => (
-                    <button
-                      key={period}
-                      type="button"
-                      role="tab"
-                      aria-selected={period === days}
-                      onClick={() => choosePeriod(period)}
-                      className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
-                        period === days
-                          ? "bg-white text-psu-800 shadow-sm ring-1 ring-psu-600/10"
-                          : "text-slate-600 hover:text-slate-900"
-                      }`}
+                <SectionTitle title="Attendance" note={`${words?.title}, active students only.`} />
+                {/* The days covered: a quick period, or any first and last day; and how the chart adds them up. */}
+                <div className="flex flex-wrap items-end gap-x-3 gap-y-2 print:hidden">
+                  <div
+                    role="tablist"
+                    aria-label="Period for the attendance figures"
+                    className="inline-flex rounded-lg bg-slate-100 p-1 ring-1 ring-inset ring-slate-200/70"
+                  >
+                    {PERIODS.map((period) => {
+                      const chosen = "days" in range && range.days === period;
+                      return (
+                        <button
+                          key={period}
+                          type="button"
+                          role="tab"
+                          aria-selected={chosen}
+                          onClick={() => choosePeriod(period)}
+                          className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
+                            chosen
+                              ? "bg-white text-psu-800 shadow-sm ring-1 ring-psu-600/10"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          {period} days
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <label className="text-xs font-medium text-slate-600">
+                    From
+                    <input
+                      type="date"
+                      value={typed.from}
+                      max={typed.to || today}
+                      onChange={(event) => typeDate("from", event.target.value)}
+                      aria-describedby={dateProblem ? "analytics-range-problem" : undefined}
+                      className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    To
+                    <input
+                      type="date"
+                      value={typed.to}
+                      min={typed.from || undefined}
+                      max={today}
+                      onChange={(event) => typeDate("to", event.target.value)}
+                      aria-describedby={dateProblem ? "analytics-range-problem" : undefined}
+                      className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="text-xs font-medium text-slate-600">
+                    Group by
+                    <select
+                      value={grouping}
+                      onChange={(event) => {
+                        setRefreshing(true);
+                        setGrouping(event.target.value as Grouping | "auto");
+                      }}
+                      className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
                     >
-                      {period} days
-                    </button>
-                  ))}
+                      <option value="auto">Automatic</option>
+                      <option value="day">Day</option>
+                      <option value="week">Week</option>
+                      <option value="month">Month</option>
+                    </select>
+                  </label>
                 </div>
               </div>
+              {dateProblem && (
+                <p id="analytics-range-problem" role="alert" className="text-sm text-red-700 print:hidden">
+                  {dateProblem}
+                </p>
+              )}
 
               {/* The six figures with targets: the same cards as the dashboard. */}
               <KpiCards query={term} />
@@ -401,13 +515,13 @@ export default function CoordinatorAnalytics() {
               {/* The chosen period in one line; the charts below break it down. */}
               <p className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-700 shadow-card">
                 <span className="font-semibold text-slate-900">
-                  In the last {data.days} days: {formatHours(data.period.hours)} verified
+                  {words?.sentence}: {formatHours(data.period.hours)} verified
                 </span>{" "}
                 (
                 <Change
                   current={data.period.hours}
                   previous={data.period.previousHours}
-                  versus={`the previous ${data.days} days`}
+                  versus={words?.previous ?? ""}
                 />
                 ), from {data.period.logs} attendance {data.period.logs === 1 ? "log" : "logs"} by{" "}
                 {data.period.studentsLogged} of {data.progress.students} active{" "}
@@ -420,33 +534,31 @@ export default function CoordinatorAnalytics() {
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
                 <Card className="min-w-0 lg:col-span-2">
                   <CardHeader
-                    title={trend.byWeek ? "Verified hours per week" : "Verified hours per day"}
+                    title={`Verified hours per ${GROUP_WORD[trend.group]}`}
                     description={
-                      trend.byWeek
-                        ? "Each column is seven days, labelled by its first day"
-                        : "Days with no column had no verified hours"
+                      trend.group === "week"
+                        ? "Each column is a week, Monday first, labelled by its first day in the range. Scroll sideways for more; + and − change the column width."
+                        : trend.group === "month"
+                          ? "Each column is a month. Scroll sideways for more; + and − change the column width."
+                          : "Days with no column had no verified hours. Scroll sideways for more; + and − change the column width."
                     }
                   />
                   <div className="px-4 pb-4 pt-6 sm:px-5">
                     {data.period.hours === 0 && data.period.logs === 0 ? (
                       <p className="py-10 text-center text-sm text-slate-500">
-                        No attendance was logged in the last {data.days} days.
+                        No attendance was logged {words?.sentence.replace(/^In /, "in ").replace(/^From /, "from ")}.
                       </p>
                     ) : (
                       <ColumnChart
                         points={trend.points}
-                        label={`Verified hours per ${trend.byWeek ? "week" : "day"} over the last ${data.days} days`}
+                        label={`Verified hours per ${GROUP_WORD[trend.group]}, ${words?.plain}`}
                         format={(value) => formatHours(value)}
+                        zoomable
                       />
                     )}
                     <ChartTable
-                      head={["Date", "Verified hours", "Logs", "Students"]}
-                      rows={data.attendanceTrend.map((day) => [
-                        dayLabel(day.day),
-                        formatHours(day.hours),
-                        day.logs,
-                        day.students,
-                      ])}
+                      head={[trend.group === "day" ? "Date" : trend.group === "week" ? "Week" : "Month", "Verified hours", "Logs", "Students"]}
+                      rows={trend.rows}
                     />
                   </div>
                 </Card>

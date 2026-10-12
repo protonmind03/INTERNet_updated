@@ -34,6 +34,7 @@ import { registerAcademicRoutes } from "./routes/academics";
 import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
 import { registerProgrammeRoutes } from "./routes/programme";
 import { readSchedule } from "./services/schedules";
+import { readRange } from "./services/analyticsRange";
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
@@ -6845,7 +6846,6 @@ app.patch(
 |
 */
 
-const ANALYTICS_PERIODS = [14, 30, 90];
 
 // Each active student's verified hours and how far that is toward their
 // requirement (0 to 100).
@@ -6877,11 +6877,17 @@ app.get(
     try {
       const scope = studentScope(req.query);
       if ("problem" in scope) return res.status(400).json({ message: scope.problem });
-      const requested = Number(req.query.days);
-      const days = ANALYTICS_PERIODS.includes(requested) ? requested : 14;
+      // The days covered: "the last N days", or any first and last day (services/analyticsRange.ts).
+      const range = readRange(
+        req.query as Record<string, unknown>,
+        new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date())
+      );
+      if ("problem" in range) return res.status(400).json({ message: range.problem });
+      const days = range.days;
 
       const [
         trend,
+        grouped,
         period,
         progress,
         companies,
@@ -6900,9 +6906,7 @@ app.get(
             COUNT(a.id) AS logs,
             COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours,
             COUNT(DISTINCT a.student_id) AS students
-          FROM generate_series(
-            CURRENT_DATE - ($1::int - 1), CURRENT_DATE, INTERVAL '1 day'
-          ) AS d(day)
+          FROM generate_series($1::date, $2::date, INTERVAL '1 day') AS d(day)
           LEFT JOIN (
             attendance a
             JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
@@ -6910,28 +6914,48 @@ app.get(
           GROUP BY d.day
           ORDER BY d.day
           `,
-          [days]
+          [range.from, range.to]
+        ),
+        // The same days added up for the chart: by day, by week (Monday first)
+        // or by month. A group at either end holds only its days inside the range.
+        scope.query(
+          `
+          SELECT
+            TO_CHAR(MIN(d.day), 'YYYY-MM-DD') AS start,
+            TO_CHAR(MAX(d.day), 'YYYY-MM-DD') AS "end",
+            COUNT(a.id) AS logs,
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified'), 0) AS hours,
+            COUNT(DISTINCT a.student_id) AS students
+          FROM generate_series($1::date, $2::date, INTERVAL '1 day') AS d(day)
+          LEFT JOIN (
+            attendance a
+            JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
+          ) ON a.date = d.day::date
+          GROUP BY DATE_TRUNC($3::text, d.day)
+          ORDER BY MIN(d.day)
+          `,
+          [range.from, range.to, range.group]
         ),
         // This period beside the one before it, for the change figures.
         scope.query(
           `
           SELECT
-            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date > CURRENT_DATE - $1::int), 0) AS hours,
-            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date <= CURRENT_DATE - $1::int), 0) AS previous_hours,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int) AS logs,
-            COUNT(*) FILTER (WHERE a.date <= CURRENT_DATE - $1::int) AS previous_logs,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.status = 'Verified') AS verified,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.status = 'Pending') AS pending,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.status IN ('Rejected', 'Flagged')) AS rejected,
-            COUNT(DISTINCT a.student_id) FILTER (WHERE a.date > CURRENT_DATE - $1::int) AS students_logged,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method = 'liveness') AS camera_checked,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method = 'supervisor') AS by_supervisor,
-            COUNT(*) FILTER (WHERE a.date > CURRENT_DATE - $1::int AND a.capture_method IS NULL) AS unchecked
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date BETWEEN $1::date AND $2::date), 0) AS hours,
+            COALESCE(SUM(a.hours) FILTER (WHERE a.status = 'Verified' AND a.date < $1::date), 0) AS previous_hours,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date) AS logs,
+            COUNT(*) FILTER (WHERE a.date < $1::date) AS previous_logs,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date AND a.status = 'Verified') AS verified,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date AND a.status = 'Pending') AS pending,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date AND a.status IN ('Rejected', 'Flagged')) AS rejected,
+            COUNT(DISTINCT a.student_id) FILTER (WHERE a.date BETWEEN $1::date AND $2::date) AS students_logged,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date AND a.capture_method = 'liveness') AS camera_checked,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date AND a.capture_method = 'supervisor') AS by_supervisor,
+            COUNT(*) FILTER (WHERE a.date BETWEEN $1::date AND $2::date AND a.capture_method IS NULL) AS unchecked
           FROM attendance a
           JOIN students s ON s.student_id = a.student_id AND s.is_active = TRUE${scope.sql}
-          WHERE a.date > CURRENT_DATE - ($1::int * 2)
+          WHERE a.date >= $1::date - $3::int AND a.date <= $2::date
           `,
-          [days]
+          [range.from, range.to, days]
         ),
         scope.query(
           `
@@ -7056,6 +7080,17 @@ app.get(
 
       return res.json({
         days,
+        from: range.from,
+        to: range.to,
+        group: range.group,
+        // The chart's columns. attendanceTrend below stays day by day.
+        trend: grouped.rows.map((row) => ({
+          start: row.start,
+          end: row.end,
+          logs: Number(row.logs),
+          hours: Number(row.hours),
+          students: Number(row.students),
+        })),
         attendanceTrend: trend.rows.map((row) => ({
           day: row.day,
           logs: Number(row.logs),
