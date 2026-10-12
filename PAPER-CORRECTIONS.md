@@ -631,3 +631,72 @@ are true of the system today, for a scope section:
   findings. If the paper says site visit records are "visible to the
   coordinator only", change it to "the findings are visible to the
   coordinator only".
+- **Analytics: student performance (new).** The coordinator's Analytics
+  page has a "Student performance" table, and each student's record opens
+  with the same summary. For each active student the system counts:
+  verified and required hours and the projected finish; attendance on
+  scheduled days; late time-ins; attendance logs rejected and logs with
+  corrected times; tasks submitted on time, tasks late and the average
+  task rating; weekly reports written against weeks worked; requirements
+  approved against those asked of the student; the supervisor's average
+  star rating; the final evaluation's average; and concerns that name the
+  student. It then shows a status word and one sentence made from those
+  numbers by a fixed template.
+  **The paper must not call this a score, a grade, a ranking, AI, a
+  prediction or an "automated assessment".** There is no single number:
+  the figures are not weighted or added together. The status word
+  (Completed, At risk, Behind, On track) comes from four fixed rules that
+  the page shows beside it; nothing is learned from data. If the paper
+  describes "performance analytics", describe it as counts from records
+  and a rule-based status, and list the rules (CHANGES.md section 31).
+- **Analytics: date range and chart.** The attendance figures can cover
+  any first and last day (two years at most), grouped by day, week or
+  month; the chart scrolls sideways and has + and - buttons for the width
+  of its columns. If the paper says analytics cover "the last 14, 30 or
+  90 days" only, add the date range. There is no pinch or mouse-wheel
+  zoom; do not describe one.
+- **Deliverables (changes the "Set OJT Requirements" use case).** A
+  requirement can now have a due date, be due by the end of a numbered
+  week of the term, or be due every week; it can be reviewed by the
+  coordinator instead of the supervisor; and it can be asked only of some
+  programs or blocks. Add to the coordinator's use cases: "Set a
+  deliverable's due date, reviewer and who it applies to" and "Review a
+  deliverable" (only those set to the coordinator). The supervisor's
+  "Review documents" use case now excludes deliverables set to the
+  coordinator. The student's "Upload requirement" use case now includes
+  uploading for one week of a weekly deliverable. A weekly deliverable is
+  separate from the weekly report and is not counted among the documents
+  needed to complete the OJT.
+- **ERD.** New entities:
+  `deliverable_items` (id, requirement_id, student_id, period_start,
+  due_date, document_id, status, reminded_at), between Requirements,
+  Students and Documents: one row per week per student for a weekly
+  deliverable;
+  `deliverable_reminders` (requirement_id, student_id, due_date,
+  sent_at);
+  `kpi_targets` (key, target, updated_by, updated_at);
+  `filter_views` (id, coordinator_id, name, filters, created_at),
+  belonging to Coordinators.
+  New attributes on `ojt_requirements`: due_date, due_rule,
+  reviewer_role, applies_to.
+- The coordinator can download many students' documents as one ZIP
+  (Documents page), limited to 500 files or 500 MB, recorded in the audit
+  log with the filters used. Files are still stored in one place under
+  names that cannot be guessed; if the paper describes "folders per
+  student" or "per program" in storage, that is not how it is stored. The
+  grouping by college, program and block exists only on the page.
+- The targets of the six key figures can be changed by a coordinator
+  (Dashboard > Targets) and each change is in the audit log. If the paper
+  gives the targets as fixed values (90%, 95%, 2 days, 80%, 0, 0), call
+  them defaults.
+- One weekly schedule can be set for every student of a block at once
+  (Programs or Students page), after a preview of who already has a
+  different one. Schedules are no longer edited on the Requirements page;
+  a screen list that shows a schedule editor there should move it to the
+  student's record and the block.
+- The Terms page shows a setup checklist for a term that has not started
+  or has just started. Each line is worked out by the system from its
+  records; the coordinator does not tick anything. Do not describe it as
+  a to-do list the coordinator fills in.
+- A coordinator can save the filter bar's choices under a name ("saved
+  views"). They are that coordinator's own.

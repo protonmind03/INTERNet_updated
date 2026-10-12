@@ -556,6 +556,10 @@ a local database only, not on the host.
 
 ## Checks after deploying
 
+- As coordinator, Documents > Download as ZIP with a block chosen: the ZIP
+  opens and its files are named student, requirement, original name. The
+  server refuses more than 500 files or 500 MB in one ZIP and says so.
+
 - `https://<backend>/api/health` returns `{"status":"ok"}`.
 - Refreshing a page such as `/student/dashboard` reloads it, not a 404.
 - A time-in shows the correct Philippine time.

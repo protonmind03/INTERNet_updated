@@ -1641,3 +1641,73 @@ one assertion changed with the top bar (Evaluations is no longer in it). The aut
 midnight rather than by moving the date in a test. That a deadline
 reminder is held back for an unreleased task (it is in the query; no test
 waits on the minute loop).
+
+## 31. Round 2, Phase 5: the programme, for the coordinator (12 October 2026)
+
+On `ui-redesign`, on localhost. Three additive migrations (043, 044, 045)
+and one new backend package (`fflate`).
+
+- **Student performance (5.1).** For each active student: hours and
+  projected finish, attendance on scheduled days, late time-ins, logs
+  rejected and corrected, tasks on time and late with their average
+  rating, weekly reports against weeks worked, requirements approved, the
+  supervisor's star average, the final evaluation's average, and concerns
+  that name them. A status word and one sentence read them out. No score.
+  The status is the first of these that fits:
+  - *Completed:* all the required hours are verified.
+  - *At risk:* at the scheduled hours the student would finish after the
+    term ends, or hours remain and no working days are scheduled. The same
+    rule as Monitoring.
+  - *Behind:* timed in on fewer than 80% of scheduled days (once 5
+    scheduled days have passed), or 2 or more tasks are late.
+  - *On track:* none of the above.
+  It is at the top of a student's record and is a sortable table on
+  Analytics with the filter bar, its own CSV and PDF, and a "?" that
+  shows these rules.
+- **Documents by group, and as a ZIP (5.2).** Requirement progress can be
+  read by college, program, block and student, each level with its share
+  approved. "Download as ZIP" takes the filter bar, a status and a
+  requirement: built on the server and sent as it is built, at most 500
+  files or 500 MB, each file named student, requirement, original name,
+  and recorded in the audit log with the filters. Storage is unchanged.
+- **Deliverables (5.3, migration 045).** A requirement can be due on a
+  date, by the end of a week of the term, or every week; be reviewed by
+  the coordinator; and be asked only of some programs or blocks. Students
+  see the dates on Documents and as dots on their calendar, with a list
+  of weeks for a weekly one, and are reminded once the day before. The
+  coordinator approves or rejects their own on the Documents page. A
+  weekly deliverable that repeats the weekly report is refused.
+- **Chart zoom and any date range (5.4).** Analytics takes a first and
+  last day and a grouping by day, week or month, beside the three quick
+  periods. The hours chart scrolls sideways under a fixed value axis, with
+  + and - for the column width. "View as a table" is kept.
+- **Targets (5.5, migration 043).** The six key figures' targets are set
+  from the Dashboard; the old values are the defaults. Audited.
+- **Term setup checklist (5.6).** Seven computed lines on a term that has
+  not started or just started, each with a link.
+- **A schedule for a block (5.7).** From Programs or Students: fill in
+  the week, see who already has a different schedule, overwrite or skip
+  them. Audited. The Requirements page no longer edits schedules.
+- **Saved views (5.8, migration 044).** The filter bar's choices under a
+  name, per coordinator.
+
+**What was checked:** the three migrations run twice locally. 166 API
+tests (152 before), all passing: the status rules at their edges (80% is
+not under 80%; four scheduled days is too few to say) and the sentence
+word for word; the performance table's hours against Monitoring's for a
+seeded block, student by student and in sum; a date range against the
+same days asked for as "the last 14", and groups that add up to their
+days; a ZIP opened and compared byte for byte, its names, a missing file,
+the caps, and its audit entry; a deliverable hidden from another
+program's student, a week made once however often the loop runs,
+reminded once, reviewed by the coordinator and refused to the
+supervisor; targets set, reset and logged; views kept from another
+coordinator; the checklist following a record; a block's schedule
+previewed, skipped and overwritten. 30 end-to-end tests (25 before), all
+passing. The automated accessibility check on 61 pages at both widths:
+clean.
+
+**Not checked:** on a real phone. A ZIP near its cap, or built from files
+on the host's volume. A weekly item made by the server on a Monday rather
+than by calling the loop in a test. The PDF of the performance table
+printed.

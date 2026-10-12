@@ -383,6 +383,26 @@ The second demo intern (`student2.demo@internet.test`) is made only by
 `npm run db:seed-demo`, which refuses any database that is not on this
 machine. Nothing is added to staging or production.
 
+### Phase 5: performance, documents as a ZIP, deliverables, chart zoom, setup help (built 2026-10-12, on localhost)
+
+Three additive migrations: 043 (new table `kpi_targets`, empty), 044
+(new table `filter_views`) and 045 (four columns on `ojt_requirements`,
+each defaulting to "as before", and the tables `deliverable_items` and
+`deliverable_reminders`). The frontend that is live today keeps working
+on them. No new variable. No new backend address, so `vercel.json` is
+unchanged.
+
+One new package in the backend, `fflate` (for the ZIP). It is in
+`package.json` and the lock file, so Railway installs it on deploy.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| On "push" | Railway staging, Vercel Preview | Nothing by hand: 043 to 045 run on deploy with the earlier ones, and the new package is installed. Wait for Railway to go green before opening the site. | Analytics, Documents, Requirements and Terms ask for routes only the new backend has. |
+| Before "make it live" | Railway production (run by you) | The fresh database backup already asked for: the release now carries migrations 035 to 045. | |
+| After the push | The test site, as coordinator | Documents > choose a block and "Approved" > Download as ZIP. Open the ZIP and one file in it. | The ZIP was built from files on this machine's disk. On Railway the files are on the volume; this is the first time they are read many at a time. |
+| After the push | Railway staging, Metrics | Watch memory while a large ZIP downloads. | The ZIP is sent as it is built and holds one file at a time, but the cap (500 files or 500 MB) was not tried at its full size. |
+| After either | The site, as coordinator | Requirements > a requirement > Due date and reviewer > Every week. The next Monday, a student of the term should have that week on their Documents page. | The weekly item is made by the server's minute loop. It was tested by calling the loop, not by waiting for a Monday. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.

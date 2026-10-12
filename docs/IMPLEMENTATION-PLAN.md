@@ -929,27 +929,117 @@ Different from the description, or decided where it left room:
 
 ### Phase 5: performance summaries, grouped files, deliverables, chart zoom, setup help
 
-Migrations from 043, as needed.
+Three migrations (043, 044, 045). Built 2026-10-12 on localhost.
 
-- [ ] **5.1 Performance summary per student:** fixed rules, no composite
+Built on the default, awaiting confirmation:
+
+- 5.3: a deliverable is reviewed by the supervisor unless the coordinator
+  sets it to themselves, one requirement at a time.
+
+Chosen where the description left it open, and worth a look:
+
+- 5.1: THE RULES BEHIND THE STATUS WORDS ARE MINE. Completed: all the
+  required hours verified. At risk: the same rule as Monitoring (would
+  finish after the term ends, or hours remain and nothing is scheduled).
+  Behind: timed in on fewer than 80% of scheduled days once 5 scheduled
+  days have passed, or 2 or more tasks late. On track: none of those. The
+  first that fits wins. They are constants at the top of
+  `services/performance.ts`; say if the numbers should be others.
+- 5.6: what makes each of the seven lines "done" (see `services/termSetup.ts`).
+  "Welcome announcement sent" is any announcement to students since 30
+  days before the term starts. "Companies recorded" is every student of
+  the term having a company record.
+
+Different from the description, or decided where it left room:
+
+- 5.1: `programmeReport` carries the figures only when asked
+  (`{ performance: true }`); the plain report, which the older exports
+  use, is unchanged and no slower. The table is
+  `GET /api/coordinator/performance`.
+- 5.1: "concerns filed about the student" counts concerns that name the
+  student, not ones the student filed. Lateness is measured against the
+  schedule as it is now. A deactivated student has no summary.
+- 5.1: the PDF has the columns that fit a page and the sentence; the CSV
+  has every figure in a column of its own.
+- 5.2: the filter bar was on Documents already. The ZIP is a GET that is
+  logged (like the audit export). It takes the filter bar, a status and a
+  requirement, not the search box or the dates. Files are stored in the
+  ZIP, not compressed (PDFs and photos already are). A file that cannot
+  be read from storage is listed in `NOT INCLUDED.txt` inside the ZIP
+  rather than failing the whole download.
+- 5.2: one new dependency in the backend, `fflate` (no dependencies of
+  its own). The first one added in Round 2.
+- 5.3: the four new columns are saved by their own route
+  (`PUT /api/coordinator/requirements/:id/deliverable`), so the older
+  add and edit routes, and the frontend that is live, are untouched.
+- 5.3: two things beyond the tables described: `deliverable_items` has a
+  `reminded_at` column, and there is a small table
+  `deliverable_reminders`, so a reminder goes out once.
+- 5.3: A WEEKLY DELIVERABLE IS NOT COUNTED among the documents a student
+  needs approved (the completion checklist, "requirements approved", the
+  coordinator's progress list). It is one upload a week, not one document.
+- 5.3: a requirement asked only of some programs or blocks is counted
+  only for their students, everywhere a student's requirements are
+  counted. One exception: the key figure "Requirements complete" counts
+  the requirements asked of everyone, because its history is worked out
+  without each student's program.
+- 5.3: "week N" is counted from the start of the student's term; a
+  student in no term has no date for it. A weekly deliverable starts from
+  the week it was last saved, so making one in week ten does not leave
+  nine weeks overdue. Reminders are in the app only, once, on the day
+  before or the day it is due.
+- 5.3: a weekly deliverable whose name says weekly report or journal is
+  refused, with the reason. That is a check on the name; it cannot know
+  what a differently named one asks for.
+- 5.3: a student with no supervisor still cannot upload, as before, even
+  for a deliverable the coordinator reviews.
+- 5.4: the three quick periods are kept beside the two dates. Grouping
+  has an "Automatic" choice (by day up to a month, by week up to half a
+  year, then by month). A range is two years at most. "Previous" is the
+  same number of days just before the range. The range is not kept in the
+  address.
+- 5.4: on a zoomable chart the figure under the pointer is said in a line
+  above the plot, not in a floating box, which the scrolling plot would
+  cut off. Only the hours chart is zoomable; the six-column progress
+  chart has nothing to scroll.
+- 5.5: one set of targets for the programme, not one per coordinator.
+  "Targets" is on the Dashboard only; Analytics shows the same cards.
+- 5.6: the checklist shows on a term that starts in the future or started
+  in the last 30 days and is not closed. With several such terms only the
+  soonest is open.
+- 5.7: two schedules are "the same" when their days and times match; the
+  note on what a day is for is not compared. Deactivated students are
+  left out. Each student whose schedule changed is told; their
+  supervisors are not, to avoid one notice per intern.
+- 5.7: the Requirements page keeps a short card saying where schedules
+  are set, and an old link that names a student still leads to that
+  student's record. One end-to-end assertion followed the wording.
+- 5.8: a view holds the bar's six choices and nothing else. A page's own
+  filters (Monitoring's "At risk", a search) are not part of it, so
+  "BSIT 4A at risk" is saved as "BSIT 4A". Thirty views per coordinator.
+  Not offered on the two pages that hide part of the bar.
+- The backend for 5.5 to 5.8 is one commit (the routes share
+  `routes/programme.ts`).
+
+- [x] **5.1 Performance summary per student:** fixed rules, no composite
   score. `programmeReport` gains the figures; a templated sentence and a
   status word (On track / At risk / Behind / Completed) defined in one
   place; on the student record and as a "Student performance" table in
   Analytics with the filter bar, CSV and PDF. Hours equal Monitoring's.
-- [ ] **5.2 Documents by group:** the filter bar, a grouped view College
+- [x] **5.2 Documents by group:** the filter bar, a grouped view College
   to Student with requirement completion, and "Download as ZIP" for the
   filtered set (streamed, capped, audited as `document.bulk_download`).
-- [ ] **5.3 Programme deliverables:** `ojt_requirements` gains a due
+- [x] **5.3 Programme deliverables:** `ojt_requirements` gains a due
   date, a due rule, a reviewer and who it applies to; `deliverable_items`
   for recurring ones; reminders cover them.
-- [ ] **5.4 Chart zoom and scroll:** any date range and Day / Week /
+- [x] **5.4 Chart zoom and scroll:** any date range and Day / Week /
   Month grouping; a scrolling plot with a fixed value axis and + / -.
-- [ ] **5.5 KPI targets editable:** `kpi_targets`, a settings dialog on
+- [x] **5.5 KPI targets editable:** `kpi_targets`, a settings dialog on
   the Dashboard, audited.
-- [ ] **5.6 Term setup checklist** on the Terms page, each line computed.
-- [ ] **5.7 Bulk schedules** for a block, with a preview and overwrite or
+- [x] **5.6 Term setup checklist** on the Terms page, each line computed.
+- [x] **5.7 Bulk schedules** for a block, with a preview and overwrite or
   skip; the schedule editor leaves the Requirements page.
-- [ ] **5.8 Saved views** of the filter bar, per coordinator.
+- [x] **5.8 Saved views** of the filter bar, per coordinator.
 
 ## Still open
 
