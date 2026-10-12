@@ -138,6 +138,7 @@ const SupervisorAttendanceApproval = page("supervisor", () => import("./pages/su
 const SupervisorTasks = page("supervisor", () => import("./pages/supervisor/tasks"));
 const StudentProfilePage = page("student", () => import("./pages/student/Profile"));
 const SupervisorInterns = page("supervisor", () => import("./pages/supervisor/interns"));
+const SupervisorInternPage = page("supervisor", () => import("./pages/supervisor/InternPage"));
 const SupervisorEvaluation = page("supervisor", () => import("./pages/supervisor/evaluation"));
 const SupervisorComplaints = page("supervisor", () => import("./pages/supervisor/complaints"));
 const SupervisorProfilePage = page("supervisor", () => import("./pages/supervisor/profile"));
@@ -343,6 +344,12 @@ function App() {
   element={<SupervisorInterns />}
 />
 
+<Route
+  path="/supervisor/interns/:studentId"
+  element={<SupervisorInternPage />}
+/>
+
+{/* Evaluations are a tab of each intern's page now; this address leads there. */}
 <Route
   path="/supervisor/evaluation"
   element={<SupervisorEvaluation />}

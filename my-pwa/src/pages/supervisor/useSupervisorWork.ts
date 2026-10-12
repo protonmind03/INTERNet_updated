@@ -32,6 +32,9 @@ export type Intern = {
   phone?: string | null;
   emergency_contact_name?: string | null;
   emergency_contact_phone?: string | null;
+  /** Where the coordinator placed them: "BSIT" and "BSIT 4A". */
+  program_code?: string | null;
+  block_name?: string | null;
 };
 
 export type AttendanceEntry = {
@@ -106,6 +109,14 @@ export type TaskEntry = {
   /** A file the supervisor attached when assigning the task. */
   attachment_file: string | null;
   attachment_name: string | null;
+  /** True while the intern cannot see the task yet: its release day has not come. */
+  scheduled?: boolean;
+  /** "YYYY-MM-DD", when the task was given a day to be released on. */
+  release_day?: string | null;
+  /** Shared by the rows of one team task (one row per member). */
+  group_task_id?: number | null;
+  /** The team it was given to, while that team exists. */
+  team_name?: string | null;
 };
 
 export type DocumentEntry = {

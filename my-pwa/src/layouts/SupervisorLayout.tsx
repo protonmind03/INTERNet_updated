@@ -33,7 +33,6 @@ const NAV = [
   { label: "Tasks", path: "/supervisor/tasks" },
   { label: "Documents", path: "/supervisor/documents" },
   { label: "Weekly reports", path: "/supervisor/journals" },
-  { label: "Evaluations", path: "/supervisor/evaluation" },
 ];
 
 /** In the account menu, beside Profile: used now and then, not daily. */

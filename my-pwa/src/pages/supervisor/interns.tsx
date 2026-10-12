@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon from "../../components/Icon";
 import {
@@ -9,22 +9,13 @@ import {
   Modal,
   ProgressBar,
   Skeleton,
-  StatusBadge,
 } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { API_URL, withSupervisorAuth } from "../../lib/api";
-import {
-  dueLabel,
-  formatDayDate,
-  formatHours,
-  formatTime,
-  getInitials,
-} from "../../lib/format";
+import { formatHours, getInitials } from "../../lib/format";
 import { useAccount } from "../../lib/session";
-import { errorText, toast } from "../../lib/toast";
 import { useProjections } from "../../lib/useProjections";
 import ProjectionLine from "../../components/ProjectionLine";
-import { fetchFinalEvaluation, internSummarySections } from "./internSummary";
+import { internPath } from "./internPath";
 import { useSupervisorWork, type Intern, type SupervisorWork } from "./useSupervisorWork";
 
 export default function SupervisorInterns() {
@@ -164,6 +155,10 @@ function pendingFor(work: SupervisorWork, studentId: string): number {
   return work.queue.filter((item) => item.entry.student_id === studentId).length;
 }
 
+/**
+ * A short look at one intern: where their hours stand, how to reach them,
+ * and what is waiting. Everything else is on their page ("Open").
+ */
 function InternDialog({
   intern,
   work,
@@ -175,78 +170,25 @@ function InternDialog({
 }) {
   const navigate = useNavigate();
   const projections = useProjections("supervisor");
-  const [buildingPdf, setBuildingPdf] = useState(false);
   if (!intern) return null;
-  const projection = projections.get(intern.student_id);
-
-  const logs = work.attendance.filter((entry) => entry.student_id === intern.student_id);
-  const tasks = work.tasks.filter((entry) => entry.student_id === intern.student_id);
-  const documents = work.documents.filter((entry) => entry.student_id === intern.student_id);
   const pending = pendingFor(work, intern.student_id);
-
-  // Everything about this intern as one PDF, from what is on the page.
-  const downloadSummary = async () => {
-    setBuildingPdf(true);
-    try {
-      // Loaded on demand so the PDF library is not part of every page load.
-      const [{ buildAnalyticsPdf }, evaluation] = await Promise.all([
-        import("../../lib/analyticsPdf"),
-        fetchFinalEvaluation(intern.student_id),
-      ]);
-      buildAnalyticsPdf(
-        internSummarySections({ intern, logs, tasks, documents, projection, evaluation }),
-        new Date().toLocaleString(),
-        `OJT Summary: ${intern.name}`
-      ).save(`internet-summary-${intern.student_id}.pdf`);
-      toast.success("Summary PDF ready.");
-    } catch (pdfError) {
-      toast.error(errorText(pdfError, "The summary could not be prepared."));
-    } finally {
-      setBuildingPdf(false);
-    }
-  };
 
   return (
     <Modal
       open
       onClose={onClose}
       title={intern.name}
-      description={[intern.student_id, intern.program].filter(Boolean).join(" · ")}
-      size="lg"
+      description={[intern.student_id, intern.block_name || intern.program].filter(Boolean).join(" · ")}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
             Close
           </Button>
-          <Button
-            variant="secondary"
-            icon="printer"
-            onClick={() =>
-              navigate(
-                `/supervisor/time-record?student=${encodeURIComponent(intern.student_id)}`
-              )
-            }
-          >
-            Time record
-          </Button>
-          <Button
-            variant="secondary"
-            icon="download"
-            busy={buildingPdf}
-            busyProcess="export"
-            onClick={() => void downloadSummary()}
-          >
-            {buildingPdf ? "Preparing" : "Summary PDF"}
-          </Button>
-          {pending > 0 && (
-            <Button onClick={() => navigate("/supervisor/dashboard")}>
-              Review {pending} waiting
-            </Button>
-          )}
+          <Button onClick={() => navigate(internPath(intern.student_id))}>Open</Button>
         </>
       }
     >
-      <div className="space-y-6">
+      <div className="space-y-4">
         <div>
           <div className="flex items-baseline justify-between text-sm">
             <span className="font-medium text-slate-700">Hours verified</span>
@@ -256,191 +198,57 @@ function InternDialog({
             </span>
           </div>
           <ProgressBar value={intern.completion} className="mt-2" />
-          <ProjectionLine projection={projection} className="mt-2" />
-          <a
-            href={`mailto:${intern.email}`}
-            className="mt-3 inline-block text-sm font-semibold text-psu-700 hover:underline"
-          >
-            {intern.email}
-          </a>
-          {(intern.phone || intern.emergency_contact_phone) && (
-            <dl className="mt-3 space-y-1 text-sm text-slate-700">
-              {intern.phone && (
-                <div>
-                  <dt className="inline font-medium">Mobile: </dt>
-                  <dd className="inline">
-                    <a href={`tel:${intern.phone}`} className="text-psu-700 hover:underline">
-                      {intern.phone}
-                    </a>
-                  </dd>
-                </div>
-              )}
-              {intern.emergency_contact_phone && (
-                <div>
-                  <dt className="inline font-medium">In an emergency: </dt>
-                  <dd className="inline">
-                    {intern.emergency_contact_name ? `${intern.emergency_contact_name}, ` : ""}
-                    <a
-                      href={`tel:${intern.emergency_contact_phone}`}
-                      className="text-psu-700 hover:underline"
-                    >
-                      {intern.emergency_contact_phone}
-                    </a>
-                  </dd>
-                </div>
-              )}
-            </dl>
-          )}
+          <ProjectionLine projection={projections.get(intern.student_id)} className="mt-2" />
         </div>
 
-        <InternSchedule key={intern.student_id} studentId={intern.student_id} />
+        <dl className="space-y-1 text-sm text-slate-700">
+          <div>
+            <dt className="inline font-medium">Email: </dt>
+            <dd className="inline">
+              <a href={`mailto:${intern.email}`} className="break-all text-psu-700 hover:underline">
+                {intern.email}
+              </a>
+            </dd>
+          </div>
+          {intern.phone && (
+            <div>
+              <dt className="inline font-medium">Mobile: </dt>
+              <dd className="inline">
+                <a href={`tel:${intern.phone}`} className="text-psu-700 hover:underline">
+                  {intern.phone}
+                </a>
+              </dd>
+            </div>
+          )}
+          {intern.emergency_contact_phone && (
+            <div>
+              <dt className="inline font-medium">In an emergency: </dt>
+              <dd className="inline">
+                {intern.emergency_contact_name ? `${intern.emergency_contact_name}, ` : ""}
+                <a href={`tel:${intern.emergency_contact_phone}`} className="text-psu-700 hover:underline">
+                  {intern.emergency_contact_phone}
+                </a>
+              </dd>
+            </div>
+          )}
+        </dl>
 
-        <Section title="Recent attendance" empty="No attendance logged yet." count={logs.length}>
-          {logs.slice(0, 5).map((entry) => (
-            <Line key={entry.id} status={entry.status}>
-              <span className="font-medium text-slate-900">{formatDayDate(entry.date)}</span>
-              <span className="tabular text-slate-500">
-                {" "}
-                · {formatTime(entry.time_in)} – {formatTime(entry.time_out)}
-                {entry.hours !== null && ` · ${formatHours(entry.hours)}`}
-              </span>
-            </Line>
-          ))}
-        </Section>
-
-        <Section title="Tasks" empty="No tasks assigned yet." count={tasks.length}>
-          {tasks.slice(0, 6).map((entry) => (
-            <Line key={entry.id} status={entry.status === "Pending" ? "To do" : entry.status}>
-              <span className="font-medium text-slate-900">{entry.title}</span>
-              {(entry.status === "Pending" || entry.status === "In Progress") && (
-                <span className="text-slate-500"> · {dueLabel(entry.due_date)}</span>
-              )}
-            </Line>
-          ))}
-        </Section>
-
-        <Section title="Documents" empty="No documents uploaded yet." count={documents.length}>
-          {documents.slice(0, 8).map((entry) => (
-            <Line key={entry.id} status={entry.status}>
-              <span className="font-medium text-slate-900">{entry.doc_type}</span>
-            </Line>
-          ))}
-        </Section>
+        <p className="text-sm text-slate-700">
+          {intern.active_tasks} open {intern.active_tasks === 1 ? "task" : "tasks"}
+          {pending > 0 ? (
+            <span className="font-semibold text-amber-800">
+              {" "}
+              · {pending} waiting for you
+            </span>
+          ) : (
+            " · nothing waiting for you"
+          )}
+        </p>
+        <p className="text-sm text-slate-600">
+          Open their page for attendance, tasks, documents, weekly reports, evaluations, the time record and
+          notes with the coordinator.
+        </p>
       </div>
     </Modal>
-  );
-}
-
-type ScheduleDay = {
-  id: number;
-  day: string;
-  start_time: string | null;
-  end_time: string | null;
-  focus: string | null;
-  hours: number | string | null;
-};
-
-/** "08:00:00" as "8:00 AM". */
-function clockTime(value: string | null): string {
-  const match = /^(\d{1,2}):(\d{2})/.exec(value || "");
-  if (!match) return "";
-  const hour = Number(match[1]);
-  return `${hour % 12 === 0 ? 12 : hour % 12}:${match[2]} ${hour < 12 ? "AM" : "PM"}`;
-}
-
-/** The weekly OJT schedule the coordinator set for this intern. */
-function InternSchedule({ studentId }: { studentId: string }) {
-  const [days, setDays] = useState<ScheduleDay[] | null>(null);
-  const [failed, setFailed] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    fetch(
-      `${API_URL}/api/supervisor/interns/${encodeURIComponent(studentId)}/schedule`,
-      withSupervisorAuth()
-    )
-      .then(async (response) => {
-        const data = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error();
-        if (active) setDays(Array.isArray(data.schedule) ? data.schedule : []);
-      })
-      .catch(() => {
-        if (active) setFailed(true);
-      });
-    return () => {
-      active = false;
-    };
-  }, [studentId]);
-
-  return (
-    <section>
-      <h3 className="text-sm font-semibold text-slate-900">Weekly schedule</h3>
-      {failed ? (
-        <p className="mt-2 text-sm text-red-700">The schedule could not be loaded.</p>
-      ) : days === null ? (
-        <Skeleton className="mt-2 h-10 w-full" />
-      ) : days.length === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">
-          The OJT coordinator has not set a schedule for this intern yet.
-        </p>
-      ) : (
-        <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
-          {days.map((day) => (
-            <li
-              key={day.id}
-              className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-3 py-2.5 text-sm"
-            >
-              <span className="min-w-0">
-                <span className="font-medium text-slate-900">{day.day}</span>
-                {day.focus && <span className="text-slate-500"> · {day.focus}</span>}
-              </span>
-              <span className="tabular shrink-0 text-slate-600">
-                {clockTime(day.start_time)} – {clockTime(day.end_time)}
-                {day.hours !== null && ` · ${formatHours(day.hours)}`}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function Section({
-  title,
-  empty,
-  count,
-  children,
-}: {
-  title: string;
-  empty: string;
-  count: number;
-  children: React.ReactNode;
-}) {
-  return (
-    <section>
-      <h3 className="text-sm font-semibold text-slate-900">
-        {title} <span className="font-normal text-slate-500">({count})</span>
-      </h3>
-      {count === 0 ? (
-        <p className="mt-2 text-sm text-slate-500">{empty}</p>
-      ) : (
-        <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
-          {children}
-        </ul>
-      )}
-    </section>
-  );
-}
-
-function Line({ status, children }: { status: string; children: React.ReactNode }) {
-  return (
-    <li className="flex items-center justify-between gap-3 px-3 py-2.5 text-sm">
-      <span className="min-w-0 truncate">{children}</span>
-      <StatusBadge
-        status={status}
-        tone={status === "To do" ? "neutral" : undefined}
-      />
-    </li>
   );
 }

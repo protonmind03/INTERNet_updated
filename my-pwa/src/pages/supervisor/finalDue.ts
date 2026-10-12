@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
+import { internPath } from "./internPath";
 import type { Intern } from "./useSupervisorWork";
 
 /*
@@ -10,8 +11,8 @@ import type { Intern } from "./useSupervisorWork";
 | An intern who is close to finishing, or has finished, their required
 | hours and has no final evaluation yet is put in the Review queue, so the
 | evaluation is not left until someone asks for it. Unlike the rest of the
-| queue it is not something to approve or reject: it opens the Evaluations
-| page with that intern chosen.
+| queue it is not something to approve or reject: it opens that intern's
+| page on its Evaluate tab.
 |
 */
 
@@ -30,8 +31,7 @@ export type FinalDue = {
 };
 
 /** Where a "final evaluation due" item leads. */
-export const finalEvaluationPath = (studentId: string) =>
-  `/supervisor/evaluation?intern=${encodeURIComponent(studentId)}`;
+export const finalEvaluationPath = (studentId: string) => internPath(studentId, "evaluate");
 
 /** True when this intern's hours put them within reach of finishing. */
 export function nearlyDone(intern: Pick<Intern, "hours_rendered" | "required_hours">): boolean {
