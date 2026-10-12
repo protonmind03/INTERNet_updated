@@ -32,6 +32,7 @@ import { sendCoordinatorDigests } from "./services/insights";
 import { auditMiddleware } from "./services/audit";
 import { registerAcademicRoutes } from "./routes/academics";
 import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
+import { registerProgrammeRoutes } from "./routes/programme";
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
@@ -9367,6 +9368,7 @@ app.get(
 registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
 registerAcademicRoutes(app, { pool, requireCoordinator });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
+registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator });
 
 registerExtensionRoutes(app, {
   pool,

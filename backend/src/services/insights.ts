@@ -27,6 +27,7 @@ import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
 import { clockSetting, manilaClock, sendOnce, type DigestDeps } from "./digests";
 import { bindFilters, filterConditions, type StudentFilters } from "./studentScope";
+import { performanceFigures, withStatus, type Performance } from "./performance";
 
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -203,13 +204,10 @@ export type StudentProjection = Projection & {
   verified_hours: number;
 };
 
-export async function projectionsFor(
-  pool: Pool,
-  scope: { studentId?: string; supervisorId?: string; filters?: StudentFilters },
-  now: Date = new Date()
-): Promise<StudentProjection[]> {
-  const { date: today } = manilaClock(now);
-  const { students, scheduleOf, holidays } = await loadStudents(pool, scope);
+type Loaded = Awaited<ReturnType<typeof loadStudents>>;
+
+/** The projection of each student already loaded. */
+function projectLoaded({ students, scheduleOf, holidays }: Loaded, today: string): StudentProjection[] {
   return students.map((row) => ({
     student_id: row.student_id,
     name: row.name,
@@ -225,6 +223,53 @@ export async function projectionsFor(
       termEnd: row.term_end,
     }),
   }));
+}
+
+export async function projectionsFor(
+  pool: Pool,
+  scope: { studentId?: string; supervisorId?: string; filters?: StudentFilters },
+  now: Date = new Date()
+): Promise<StudentProjection[]> {
+  return projectLoaded(await loadStudents(pool, scope), manilaClock(now).date);
+}
+
+/**
+ * The performance figures, status and sentence of each student loaded
+ * (services/performance.ts). Scheduled days are counted from a student's
+ * first log, or from the start of their term when they have none.
+ */
+async function performanceOf(
+  pool: Pool,
+  loaded: Loaded,
+  projections: StudentProjection[],
+  today: string
+): Promise<Map<string, Performance>> {
+  const figures = await performanceFigures(
+    pool,
+    loaded.students.map((row) => ({ student_id: row.student_id, since: row.first_log ?? row.term_start })),
+    loaded.holidays,
+    today
+  );
+  const result = new Map<string, Performance>();
+  for (const row of projections) {
+    const own = figures.get(row.student_id);
+    if (own) result.set(row.student_id, withStatus(row, own, today));
+  }
+  return result;
+}
+
+/** One active student's hours, projection and performance; null when there is no such active student. */
+export async function studentPerformance(
+  pool: Pool,
+  studentId: string,
+  now: Date = new Date()
+): Promise<(StudentProjection & { performance: Performance }) | null> {
+  const today = manilaClock(now).date;
+  const loaded = await loadStudents(pool, { studentId });
+  const [projection] = projectLoaded(loaded, today);
+  if (!projection) return null;
+  const performance = (await performanceOf(pool, loaded, [projection], today)).get(studentId);
+  return performance ? { ...projection, performance } : null;
 }
 
 export type Alert = {
@@ -472,6 +517,8 @@ export type ReportStudent = StudentProjection & {
   supervisor: string | null;
   term: string | null;
   completion: number;
+  /** Only when the report was asked for with `performance`. */
+  performance?: Performance;
 };
 
 export type ReportCompany = {
@@ -516,14 +563,19 @@ function summed(groups: Map<string, ReportStudent[]>): ReportGroup[] {
 export async function programmeReport(
   pool: Pool,
   filters: StudentFilters = {},
-  now: Date = new Date()
+  now: Date = new Date(),
+  // The performance figures cost four more queries, so only the pages that show them ask.
+  options: { performance?: boolean } = {}
 ): Promise<{
   students: ReportStudent[];
   companies: ReportCompany[];
   programs: ReportGroup[];
   blocks: ReportGroup[];
 }> {
-  const projections = await projectionsFor(pool, { filters }, now);
+  const today = manilaClock(now).date;
+  const loaded = await loadStudents(pool, { filters });
+  const projections = projectLoaded(loaded, today);
+  const performance = options.performance ? await performanceOf(pool, loaded, projections, today) : null;
   const ids = projections.map((row) => row.student_id);
   const [extra, records] = await Promise.all([
     pool.query<{
@@ -571,6 +623,7 @@ export async function programmeReport(
     block: extraOf.get(row.student_id)?.block ?? null,
     completion:
       row.required_hours > 0 ? Math.min(100, Math.round((row.verified_hours / row.required_hours) * 100)) : 0,
+    ...(performance?.has(row.student_id) ? { performance: performance.get(row.student_id) } : {}),
   }));
 
   const recordOf = new Map(records.rows.map((row) => [row.name.trim().toLowerCase(), row]));

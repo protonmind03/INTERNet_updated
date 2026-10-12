@@ -1723,7 +1723,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/programme.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -6704,4 +6704,203 @@ test("where an intern stands today, and who was late, are worked out from the li
   assert.equal(daysWaiting("2026-10-13T10:00:00+08:00", now), 0, "never negative");
   assert.equal(WAITING_TOO_LONG_DAYS, 3);
   assert.deepEqual([16, 60, 65, 125].map(minutesText), ["16 min", "1 h", "1 h 5 min", "2 h 5 min"]);
+});
+
+/*
+|--------------------------------------------------------------------------
+| Round 2, Phase 5: the programme
+|--------------------------------------------------------------------------
+*/
+
+test("a student's status word comes from fixed rules, and the sentence only reads out the figures", () => {
+  require("tsx/cjs");
+  const { performanceStatus, performanceSentence, attendanceFigures, shortDay, PERFORMANCE_RULES, withStatus } = require("../src/services/performance.ts");
+  const figures = (over = {}) => ({
+    attendance: { scheduled_days: 25, attended_days: 24, rate: 96 },
+    late_time_ins: 0,
+    logs_rejected: 0,
+    logs_corrected: 0,
+    tasks: { assigned: 6, on_time: 4, late: 0, average_rating: 4.5 },
+    weekly_reports: { submitted: 5, weeks_worked: 5 },
+    requirements: { approved: 6, required: 6 },
+    supervisor_rating: null,
+    final_evaluation: null,
+    concerns: 0,
+    ...over,
+  });
+  const hours = (over = {}) => ({ required_hours: 600, verified_hours: 412, remaining_hours: 188, projected_finish: "2027-01-14", at_risk: false, ...over });
+  const today = "2026-10-12";
+
+  // The rules, in order: the first that fits.
+  assert.deepEqual(PERFORMANCE_RULES.map((rule) => rule.status), ["Completed", "At risk", "Behind", "On track"]);
+  assert.equal(performanceStatus(hours(), figures()), "On track");
+  assert.equal(performanceStatus(hours({ verified_hours: 600, remaining_hours: 0, projected_finish: null }), figures({ tasks: { assigned: 6, on_time: 0, late: 5, average_rating: null } })), "Completed");
+  assert.equal(performanceStatus(hours({ required_hours: 0, verified_hours: 0, remaining_hours: 0 }), figures()), "On track", "no hours required is not completed");
+  assert.equal(performanceStatus(hours({ at_risk: true }), figures()), "At risk");
+  assert.equal(performanceStatus(hours({ at_risk: true }), figures({ attendance: { scheduled_days: 25, attended_days: 5, rate: 20 } })), "At risk", "at risk comes before behind");
+  // Behind: attendance under 80% once five scheduled days have passed, or two late tasks.
+  assert.equal(performanceStatus(hours(), figures({ attendance: { scheduled_days: 10, attended_days: 7, rate: 70 } })), "Behind");
+  assert.equal(performanceStatus(hours(), figures({ attendance: { scheduled_days: 10, attended_days: 8, rate: 80 } })), "On track", "80% is not under 80%");
+  assert.equal(performanceStatus(hours(), figures({ attendance: { scheduled_days: 4, attended_days: 0, rate: 0 } })), "On track", "four days is too few to say");
+  assert.equal(performanceStatus(hours(), figures({ attendance: { scheduled_days: 0, attended_days: 0, rate: null } })), "On track");
+  assert.equal(performanceStatus(hours(), figures({ tasks: { assigned: 6, on_time: 4, late: 1, average_rating: null } })), "On track");
+  assert.equal(performanceStatus(hours(), figures({ tasks: { assigned: 6, on_time: 4, late: 2, average_rating: null } })), "Behind");
+
+  // The sentence in the brief, from those numbers.
+  assert.equal(
+    performanceSentence("On track", hours(), figures({ tasks: { assigned: 6, on_time: 4, late: 2, average_rating: null }, final_evaluation: { average: 4.4, scale: 5 } }), today),
+    "On track: 412 of 600 hours, finishes 14 Jan 2027. Attendance 96%. 2 tasks late. Final evaluation 4.4 of 5."
+  );
+  assert.equal(shortDay("2026-11-03", today), "3 Nov", "this year needs no year");
+  // Nothing to say, nothing said.
+  assert.equal(performanceSentence("On track", hours({ projected_finish: "2026-12-01" }), figures({ attendance: { scheduled_days: 0, attended_days: 0, rate: null } }), today), "On track: 412 of 600 hours, finishes 1 Dec.");
+  // Everything there is to say, once each, singular where it is one.
+  const full = withStatus(hours({ at_risk: true, projected_finish: null }), figures({
+    late_time_ins: 1, tasks: { assigned: 3, on_time: 1, late: 1, average_rating: 3 }, requirements: { approved: 4, required: 6 }, supervisor_rating: 4.25, concerns: 1,
+  }), today);
+  assert.equal(full.status, "At risk");
+  assert.equal(full.summary, "At risk: 412 of 600 hours, no finish date (no working days scheduled). Attendance 96%. 1 late time-in. 1 task late. Requirements 4 of 6. Supervisor rating 4.3 of 5. 1 concern filed.");
+  assert.equal(withStatus(hours({ verified_hours: 600, remaining_hours: 0, projected_finish: null }), figures(), today).summary, "Completed: 600 of 600 hours. Attendance 96%.");
+  // No single score anywhere in what is sent.
+  assert.ok(!Object.keys(full).some((key) => /score|grade|rank/i.test(key)));
+
+  // Attendance on scheduled days: from the first day to yesterday, holidays out, today out.
+  const shifts = { Monday: { hours: 8, start: "08:00" }, Tuesday: { hours: 8, start: "08:00" }, Wednesday: { hours: 8, start: "13:00" }, Saturday: { hours: 0, start: null } };
+  const counted = attendanceFigures({
+    today: "2026-10-14", // a Wednesday
+    since: "2026-10-05", // a Monday
+    shifts,
+    holidays: new Set(["2026-10-06"]),
+    logs: [
+      { date: "2026-10-05", time_in: "08:15" }, // on time: exactly fifteen minutes
+      { date: "2026-10-07", time_in: "13:16" }, // late by sixteen
+      { date: "2026-10-10", time_in: "09:00" }, // a Saturday, not scheduled: not late, not counted
+      { date: "2026-10-12", time_in: "10:30" }, // late
+      { date: "2026-10-14", time_in: "13:00" }, // today: not counted as a scheduled day yet
+    ],
+  });
+  // Scheduled: Mon 5, Wed 7, Mon 12, Tue 13 (Tue 6 is a holiday). Attended three of them.
+  assert.deepEqual(counted, { attendance: { scheduled_days: 4, attended_days: 3, rate: 75 }, late_time_ins: 2 });
+  assert.deepEqual(attendanceFigures({ today: "2026-10-14", since: null, shifts, holidays: new Set(), logs: [] }).attendance, { scheduled_days: 0, attended_days: 0, rate: null });
+});
+
+test("the performance table is the coordinator's, takes the filters, and its hours equal Monitoring's for a seeded block", async (t) => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/performance";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest(`${path}?block=abc`, { headers: authHeaders(coordinatorToken) })).response.status, 400);
+  const one = `/api/coordinator/students/${encodeURIComponent(student.student_id)}/performance`;
+  assert.equal((await jsonRequest(one, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(one, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+  const get = async (query = "") => (await jsonRequest(`${path}${query}`, { headers: authHeaders(coordinatorToken) })).body;
+  const all = await get();
+  // The rules come with the figures, and every student has a word from them and a sentence that starts with it.
+  assert.deepEqual(all.rules.map((rule) => rule.status), ["Completed", "At risk", "Behind", "On track"]);
+  assert.equal(all.thresholds.late_after_minutes, 15);
+  for (const row of all.students) {
+    assert.ok(all.rules.some((rule) => rule.status === row.performance.status), row.student_id);
+    assert.ok(row.performance.summary.startsWith(`${row.performance.status}: `), row.performance.summary);
+    assert.equal(row.performance.status === "At risk", row.at_risk && !(row.required_hours > 0 && row.remaining_hours === 0), `${row.student_id}: at risk is Monitoring's rule`);
+  }
+  // The same students and hours as Monitoring, unfiltered.
+  const monitoring = (await jsonRequest("/api/coordinator/monitoring", { headers: authHeaders(coordinatorToken) })).body.students;
+  assert.deepEqual(all.students.map((row) => row.student_id).sort(), monitoring.map((row) => row.student_id).sort());
+  // The student record's own answer is the same row.
+  const own = (await jsonRequest(one, { headers: authHeaders(coordinatorToken) })).body;
+  const inTable = all.students.find((row) => row.student_id === student.student_id);
+  assert.deepEqual(own.student.performance, inTable.performance);
+  assert.equal(own.student.verified_hours, inTable.verified_hours);
+  assert.equal((await jsonRequest("/api/coordinator/students/NO-SUCH-STUDENT/performance", { headers: authHeaders(coordinatorToken) })).body.student, null);
+  // The plain report is as it was: no performance unless asked for.
+  const plain = (await jsonRequest("/api/coordinator/report", { headers: authHeaders(coordinatorToken) })).body;
+  assert.ok(plain.students.every((row) => !("performance" in row)));
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const ids = [`P5-A-${stamp}`, `P5-B-${stamp}`];
+  let blockId;
+  try {
+    const program = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BSIT'`)).rows[0].id;
+    blockId = (await pool.query(`INSERT INTO blocks (program_id, year_level, section) VALUES ($1, 4, $2) RETURNING id`, [program, `P${String(stamp).slice(-6)}`])).rows[0].id;
+    for (const [index, id] of ids.entries()) {
+      await pool.query(
+        `INSERT INTO students (student_id, email, password, name, program, required_hours, supervisor_id, is_active, program_id, block_id)
+         VALUES ($1, $2, 'x', $3, 'BS Information Technology', 100, $4, TRUE, $5, $6)`,
+        [id, `${id.toLowerCase()}@p5.test`, `Seeded ${index === 0 ? "One" : "Two"}`, supervisor.supervisor.supervisor_id, program, blockId]
+      );
+      // Every day of the week, so the test reads the same whatever day it is run on.
+      for (const day of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]) {
+        await pool.query(`INSERT INTO ojt_schedule (student_id, day, start_time, end_time, hours, is_active) VALUES ($1, $2, '08:00', '17:00', 8, TRUE)`, [id, day]);
+      }
+    }
+    const [first, second] = ids;
+    // One: 20 verified hours over three days (one late, one with corrected times), 5 pending hours that do not count, one rejected log.
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status, time_corrected_at) VALUES
+        ($1, CURRENT_DATE - 9, (CURRENT_DATE - 9) + TIME '08:00', (CURRENT_DATE - 9) + TIME '17:00', 8, 'Verified', NULL),
+        ($1, CURRENT_DATE - 8, (CURRENT_DATE - 8) + TIME '09:30', (CURRENT_DATE - 8) + TIME '17:00', 6.5, 'Verified', NOW()),
+        ($1, CURRENT_DATE - 7, (CURRENT_DATE - 7) + TIME '08:05', (CURRENT_DATE - 7) + TIME '14:00', 5.5, 'Verified', NULL),
+        ($1, CURRENT_DATE - 6, (CURRENT_DATE - 6) + TIME '08:00', (CURRENT_DATE - 6) + TIME '13:00', 5, 'Pending', NULL),
+        ($1, CURRENT_DATE - 5, (CURRENT_DATE - 5) + TIME '08:00', (CURRENT_DATE - 5) + TIME '12:00', 4, 'Rejected', NULL)`,
+      [first]
+    );
+    // Tasks: one on time and rated, one handed in late, one overdue, one for a later day that counts for nothing.
+    await pool.query(
+      `INSERT INTO tasks (student_id, title, status, due_date, submitted_at, review_rating, available_from) VALUES
+        ($1, 'P5 on time', 'Reviewed', CURRENT_DATE - 3, (CURRENT_DATE - 4) + TIME '10:00', 4, NULL),
+        ($1, 'P5 handed in late', 'Submitted', CURRENT_DATE - 5, (CURRENT_DATE - 2) + TIME '10:00', NULL, NULL),
+        ($1, 'P5 overdue', 'Pending', CURRENT_DATE - 1, NULL, NULL, NULL),
+        ($1, 'P5 not yet released', 'Pending', CURRENT_DATE + 9, NULL, NULL, CURRENT_DATE + 3)`,
+      [first]
+    );
+    await pool.query(`INSERT INTO journals (student_id, week_start, activities, learnings) VALUES ($1, DATE_TRUNC('week', CURRENT_DATE - 9)::date, 'P5 did.', 'P5 learned.')`, [first]);
+    await pool.query(`INSERT INTO evaluations (student_id, evaluator_type, evaluator_id, category, rating) VALUES ($1, 'supervisor', $2, 'Overall Performance', 4), ($1, 'supervisor', $2, 'Punctuality', 3)`, [first, supervisor.supervisor.supervisor_id]);
+    await pool.query(`INSERT INTO complaints (student_id, report_type, category, description, reported_student_id, filed_by_supervisor_id) VALUES (NULL, 'supervisor', 'Conduct', 'P5 concern.', $1, $2)`, [first, supervisor.supervisor.supervisor_id]);
+    // Two: all the hours.
+    await pool.query(`INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 9, (CURRENT_DATE - 9) + TIME '08:00', (CURRENT_DATE - 9) + TIME '17:00', 100, 'Verified')`, [second]);
+
+    const block = await get(`?block=${blockId}`);
+    assert.deepEqual(block.students.map((row) => row.student_id).sort(), [...ids].sort(), "the block filter narrows the table to the block");
+    // THE HOURS EQUAL MONITORING'S, student by student and in sum.
+    const shown = (await jsonRequest(`/api/coordinator/monitoring?block=${blockId}`, { headers: authHeaders(coordinatorToken) })).body.students;
+    assert.equal(shown.length, 2);
+    for (const row of block.students) {
+      const there = shown.find((item) => item.student_id === row.student_id);
+      assert.ok(Math.abs(row.verified_hours - Number(there.hours_rendered)) < 0.01, `${row.student_id}: ${row.verified_hours} vs ${there.hours_rendered}`);
+    }
+    const sum = (rows, key) => rows.reduce((total, row) => total + Number(row[key]), 0);
+    assert.ok(Math.abs(sum(block.students, "verified_hours") - sum(shown, "hours_rendered")) < 0.01);
+    assert.ok(Math.abs(sum(block.students, "verified_hours") - 120) < 0.01, "20 verified for one, 100 for the other; pending and rejected hours are not counted");
+
+    const a = block.students.find((row) => row.student_id === first).performance;
+    assert.deepEqual([a.late_time_ins, a.logs_rejected, a.logs_corrected], [1, 1, 1]);
+    assert.deepEqual(a.tasks, { assigned: 3, on_time: 1, late: 2, average_rating: 4 });
+    assert.deepEqual(a.weekly_reports.submitted, 1);
+    assert.ok(a.weekly_reports.weeks_worked >= 1 && a.weekly_reports.weeks_worked <= 2);
+    assert.equal(a.requirements.approved, 0);
+    assert.ok(a.requirements.required >= 1);
+    assert.equal(a.supervisor_rating, 3.5);
+    assert.equal(a.final_evaluation, null);
+    assert.equal(a.concerns, 1);
+    assert.ok(a.attendance.scheduled_days >= 5 && a.attendance.attended_days <= a.attendance.scheduled_days);
+    assert.equal(a.attendance.rate, Math.round((a.attendance.attended_days / a.attendance.scheduled_days) * 100));
+    assert.match(a.summary, /^(Behind|At risk): 20 of 100 hours/);
+    assert.match(a.summary, /2 tasks late\./);
+    assert.match(a.summary, /Supervisor rating 3\.5 of 5\./);
+    assert.match(a.summary, /1 concern filed\.$/);
+    const b = block.students.find((row) => row.student_id === second).performance;
+    assert.equal(b.status, "Completed");
+    assert.match(b.summary, /^Completed: 100 of 100 hours\./);
+  } finally {
+    await pool.query(`DELETE FROM complaints WHERE reported_student_id = ANY($1::text[])`, [ids]);
+    for (const table of ["evaluations", "journals", "tasks", "attendance", "ojt_schedule", "notifications", "students"]) {
+      await pool.query(`DELETE FROM ${table} WHERE student_id = ANY($1::text[])`, [ids]);
+    }
+    if (blockId) await pool.query(`DELETE FROM blocks WHERE id = $1`, [blockId]);
+    await pool.end();
+  }
 });
