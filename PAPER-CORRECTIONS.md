@@ -587,3 +587,47 @@ are true of the system today, for a scope section:
   means a time-in more than 15 minutes after the scheduled start; that
   number is a default chosen for the system, not a university rule, and
   nothing happens to a student who is late: it is only shown to them.
+- **Use cases: teams (new).** A supervisor can name a team of their own
+  interns and assign one task to the team. Add to the supervisor's use
+  cases: "Manage teams" (create, rename, change members, remove) and
+  "Assign a task to a team". The system stores a team task as one task
+  per member: each member sees it as their own, submits their own work
+  and is reviewed separately, and the supervisor sees how many of the
+  team have submitted. It is not a shared submission; if the paper says
+  "group submission" or "one output per team", that is not what was
+  built. The ERD has two more entities, `task_groups` (id,
+  supervisor_id, name) and `task_group_members` (group_id, student_id),
+  and Tasks has two more attributes, `group_task_id` and
+  `task_group_id`.
+- **Use cases: notes between supervisor and coordinator (new).** For each
+  student there is a thread of notes that the student's supervisor and
+  the OJT coordinators write and read. The student is not an actor in
+  this use case and has no access to it: it is not on any student page,
+  raises no student notification, and is not in the copy of their data a
+  student can download. Add "Write a note about a student" to the
+  supervisor's and the coordinator's use cases, and do not draw a line
+  from the student to it. A note cannot be edited or deleted. The ERD has
+  one more entity, `student_notes` (id, student_id, author_role,
+  author_id, author_name, message, created_at). If the paper's privacy
+  section lists what a student can see about themselves, this is the one
+  record about them that they cannot.
+- A supervisor can set the day a task is released (`tasks.available_from`).
+  Before that day the intern does not see the task and is told nothing;
+  on the day they are notified once. If the paper says a student is
+  notified "as soon as a task is assigned", add "or on its release day".
+- The supervisor's portal has six places in its top bar: Review, Interns,
+  Attendance, Tasks, Documents, Weekly reports. Evaluations is no longer
+  one of them: star ratings and the final evaluation are written on each
+  intern's own page (Interns > an intern > Evaluate). A screen list or
+  navigation diagram that shows "Evaluations" as a supervisor page should
+  show the intern page with its tabs: Overview, Attendance, Tasks,
+  Documents, Weekly reports, Evaluate, Time record, Notes.
+- The coordinator can send a supervisor a reminder of what is waiting for
+  their review, at most once a day per supervisor. Add "Remind a
+  supervisor" to the coordinator's use cases. It is recorded in the audit
+  log.
+- A supervisor can see when the coordinator last visited their company
+  and what was left to follow up. They cannot see the coordinator's
+  findings. If the paper says site visit records are "visible to the
+  coordinator only", change it to "the findings are visible to the
+  coordinator only".

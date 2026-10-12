@@ -363,6 +363,26 @@ tasks writes no rows. No new variable, no new backend address.
 | Before "make it live" | Railway production (run by you) | The fresh database backup already asked for: the release now carries migrations 035 to 040. | |
 | After either | A phone, on the site | Time out with a task ticked, then open the day on Schedule > Month and on the time record. Print the time record to PDF and check the AM/PM columns against the university's form. | The printed columns were checked on screen, not on paper. |
 
+### Phase 4: the supervisor's day, release days, teams, notes, reminders (built 2026-10-12, on localhost)
+
+Two additive migrations: 041 (four nullable columns on `tasks`, a
+sequence, and the tables `task_groups` and `task_group_members`) and 042
+(one new table, `student_notes`). The frontend that is live today keeps
+working on them: it sends none of the new fields, and a task with none of
+them is an ordinary task. No new variable, no new backend address, so
+`vercel.json` is unchanged.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| On "push" | Railway staging, Vercel Preview | Nothing by hand: 041 and 042 run on deploy with the earlier ones. Wait for Railway to go green before opening the site. | The intern page, Teams and Notes ask for routes only the new backend has. |
+| Before "make it live" | Railway production (run by you) | The fresh database backup already asked for: the release now carries migrations 035 to 042. | |
+| After either | The site, as supervisor | Assign a task with "Release on" set to tomorrow, and look the next morning: the intern should have one "New task assigned" notification and the task on their list. | The release is announced by the server's minute loop. It was tested by moving the date, not by waiting for midnight. |
+| After either | The site, as coordinator | Dashboard > Action list > a supervisor slow to review > "Remind". A second press the same day should be refused. | The once-a-day rule is the server's; this checks it on the hosted database's clock. |
+
+The second demo intern (`student2.demo@internet.test`) is made only by
+`npm run db:seed-demo`, which refuses any database that is not on this
+machine. Nothing is added to staging or production.
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.

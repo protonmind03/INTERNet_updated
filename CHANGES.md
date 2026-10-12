@@ -30,6 +30,7 @@
    run `npm run db:seed-demo` from `backend`. The command refuses non-loopback
    hosts and any database other than `internet_ojt`.
    - Student: `student.demo@internet.test` / `StudentDemo123!`
+   - Second student, same supervisor: `student2.demo@internet.test` / `StudentDemo123!`
    - Supervisor: `supervisor.demo@internet.test` / `SupervisorDemo123!`
 5. Default coordinator login seeded by the migration:
    `coordinator@internet.psu.edu.ph` / `Coordinator123!` — change this
@@ -1581,3 +1582,62 @@ month.
 **Not checked:** on a real phone (the calendar's squares under a thumb,
 holding a day on a touch screen). The time record printed on paper. The
 calendar and progress views with a connection really lost.
+
+## 30. Round 2, Phase 4: the supervisor's day (12 October 2026)
+
+On `ui-redesign`, on localhost. Two additive migrations (041, 042).
+
+- **A page for each intern (4.1).** `/supervisor/interns/:studentId`, with
+  tabs: Overview (hours, projected finish, contact and emergency contact,
+  program and block, what is waiting, the weekly schedule), Attendance
+  (the month calendar the student has, totals, late time-ins, absences,
+  logs with corrected times, logs recorded offline), Tasks, Documents,
+  Weekly reports, Evaluate (star ratings and the final evaluation form),
+  Time record (with the month's certification) and Notes. The Interns
+  dialog is a short preview with "Open". Evaluations is out of the top
+  bar; its old address leads to the intern's Evaluate tab, and so does
+  "Final evaluation due" in the Review queue.
+- **Today (4.2, 4.7).** At the top of Review: a chip for each intern (on
+  the clock, done, not in 15 minutes after the start, not scheduled,
+  absence filed), from one request for every intern's schedule. Under it:
+  how long the oldest item has waited (amber from three days), tasks due
+  within a week and who has not submitted, interns within 40 hours of
+  finishing with no final evaluation, the newest unread announcement, and
+  the date and follow-up of the coordinator's latest visit to the company.
+- **Release on (4.3, migration 041).** A task can be given a day to be
+  released. Until then the intern is not shown it anywhere and is told
+  nothing; on the day they get "New task assigned", once. The supervisor
+  sees it marked "Scheduled" and can still move the day.
+- **Teams (4.4, migration 041).** A Teams tab on Tasks: create, rename,
+  change members, remove. A task assigned to a team is one task for each
+  member; the list shows it as one line ("1 of 2 submitted") that opens
+  to each member. Editing or cancelling it changes the members who have
+  not submitted and says how many it left.
+- **Notes with the coordinator (4.5, migration 042).** A thread about one
+  student, on the supervisor's intern page and the coordinator's student
+  record. Each note tells the other side. The student never sees it.
+- **Remind (4.6).** On the coordinator's action list, each supervisor who
+  is slow to review has a "Remind" button: one reminder a day per
+  supervisor, enforced by the server and logged.
+
+**What was checked:** both migrations run twice locally. 152 API tests
+(141 before), all passing: a release day refused when malformed, past or after the due date; a task
+hidden from the intern's list, checklist, data download and submit until
+its day, then announced exactly once however often the loop runs; teams
+made only of the supervisor's own interns; a team task as one row each,
+changed and cancelled around a member who had submitted; notes refused to
+the student and to another supervisor, absent from the student's
+notifications and download, logged without their words; a reminder sent
+once a day and refused with nothing waiting; every schedule in one
+answer; a site visit without its findings; the Today chip for each case
+at 8:15 and 8:16. 25 end-to-end tests (21 before), all passing, among
+them a team task given to two interns, seen by both, submitted by one,
+and shown to the supervisor as 1 of 2. One existing journey gained a
+setup step (the second demo intern is put in the first one's block), and
+one assertion changed with the top bar (Evaluations is no longer in it). The automated accessibility check on 61 pages
+(50 before) at both widths: clean.
+
+**Not checked:** on a real phone. A release announced by the server at
+midnight rather than by moving the date in a test. That a deadline
+reminder is held back for an unreleased task (it is in the query; no test
+waits on the minute loop).

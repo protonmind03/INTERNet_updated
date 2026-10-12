@@ -177,9 +177,13 @@ Turn these on only after the workflow has passed once on `main`.
 ### Running the end-to-end tests yourself
 
 They need the API and the built site running on this machine, with the
-demo accounts (`npm run db:seed-demo` in `backend`). They write records
-(a journal, a holiday) and clear them afterwards, and refuse to run against
-anything that is not this machine.
+demo accounts (`npm run db:seed-demo` in `backend`; run it again after
+pulling, since it now also makes a second demo intern for the team-task
+journey). They write records (a journal, a holiday, a team and its task)
+and clear them afterwards, and refuse to run against anything that is not
+this machine. Two things cannot be cleared through the site and stay in
+the local database: a task once it has been submitted, and notes between
+a supervisor and the coordinator.
 
 1. In `backend`: `npm run dev`
 2. In `my-pwa`: `npm run build`, then `npm run preview` (the site on port 4173)

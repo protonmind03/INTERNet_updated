@@ -833,24 +833,98 @@ Different from the description, or decided where it left room:
 
 ### Phase 4: the supervisor's day, scheduled and team tasks, the intern page, notes
 
-Two migrations (041, 042).
+Two migrations (041, 042). Built 2026-10-12 on localhost.
 
-- [ ] **4.1 Intern page** `/supervisor/interns/:studentId`: Overview,
+Built on the default, awaiting confirmation:
+
+- 4.4: each member of a team submits their own work and is reviewed on
+  their own. Nothing is shared between the members but the assignment.
+- 4.7: a supervisor is sent a visit's date and follow-up only. What the
+  coordinator found is not sent to the supervisor's browser at all.
+
+Different from the description, or decided where it left room:
+
+- 4.1: the notes with the coordinator are an eighth tab, "Notes", so a
+  notification can open them (`?tab=notes`). The tabs are links in the
+  address (`?tab=attendance`), like the coordinator's student record.
+- 4.1: `/supervisor/time-record` is kept as a page as well; the intern
+  page's Time record tab is the same sheet with the intern already
+  chosen. Nothing links to the old page any more.
+- 4.1: "picking an intern anywhere can open the page" is built on the
+  Today chips, the Interns preview's "Open", and the intern's name on a
+  task row. The names in the Review queue, Attendance, Documents and
+  Weekly reports lists still open what they opened before (the item).
+- 4.1: late time-ins are measured against the schedule as it is now, the
+  same as the student's own page. A schedule changed last week moves
+  earlier days' lateness with it.
+- 4.1: one end-to-end assertion was changed, not removed: the supervisor
+  menu test expected an "Evaluations" link in the top bar. It now checks
+  the six links in order and that Evaluations is not among them.
+- 4.2: a sixth chip state, "expected" (scheduled, and not yet 15 minutes
+  past the start), reads "Starts 8:00 AM" and is plain like "not
+  scheduled". Until the schedules have loaded, an intern with no log is
+  not called anything.
+- 4.2: "now" is the clock of the device the supervisor is looking at.
+- 4.3: the release is announced by the loop that sends deadline
+  reminders, which runs every minute, so "on the release day" is within
+  about a minute of midnight in the Philippines if the server is up, or
+  when it next starts. The mark that it was announced is a column on the
+  task (`released_notified_at`), set in the same statement that picks
+  the task.
+- 4.3: "Release on" today is the same as leaving it empty. On a task still
+  waiting, clearing the day releases it today, and the loop announces it.
+  A task already released cannot be given a day. An intern not yet shown
+  a task is not told when it is edited or cancelled.
+- 4.3: unreleased tasks are also left out of what the supervisor's own
+  lists call open ("active tasks" on Interns and the coordinator's
+  Monitoring), since nobody can work on them yet. The coordinator's totals
+  by status on the dashboard and Analytics still count every task row.
+- 4.3: the three behaviours asked for are tested (hidden before, visible
+  and announced on the day, not twice). That deadline reminders skip an
+  unreleased task is in the query and is NOT tested by behaviour: it
+  would need the test to wait on the minute loop.
+- 4.4: besides `group_task_id` each row carries `task_group_id`, the
+  team it was given to, so the list can name the team. Removing a team
+  keeps its tasks; they then read "A team that has since been removed".
+- 4.4: a team task has no attachment (one file cannot belong to several
+  rows without copying it). The form says so.
+- 4.4: changing a team's members does not touch tasks already given.
+  A member who is no longer the supervisor's active intern gets no row
+  when a task is assigned to the team.
+- 4.4: the Tasks page's filter counts still count each member's task; the
+  list underneath shows a team task as one line.
+- 4.4: `db:seed-demo` now makes a second demo intern
+  (`student2.demo@internet.test`), local only as before.
+- 4.5: a note is kept in the audit log by id only (`note.create`), never
+  its words. Notes are not in the student's data download. A note cannot
+  be edited or removed. With no supervisor assigned, the coordinator's
+  tab says there is nobody to write to.
+- 4.6: the reminder lists everything waiting on that supervisor, not only
+  what has waited more than three days, and names the oldest. "Once a
+  day" is per supervisor whoever sends it, kept in `digest_log`
+  (`coordinator_nudge`). A refused second reminder is not logged.
+  Logged as `supervisor.remind`.
+- The backend for 4.2 to 4.7 is one commit, because the new routes share
+  one file (`routes/supervisorDesk.ts`). 4.2 and 4.7 share a frontend
+  commit (the visit is a line of the Today card); 4.3 and 4.4 share one
+  (both are the Tasks page).
+
+- [x] **4.1 Intern page** `/supervisor/interns/:studentId`: Overview,
   Attendance (the month calendar), Tasks, Documents, Weekly reports,
   Evaluate, Time record. Evaluations leaves the top bar;
   `/supervisor/evaluation` redirects.
-- [ ] **4.2 Today strip on Review:** one chip per intern, and under it the
+- [x] **4.2 Today strip on Review:** one chip per intern, and under it the
   oldest item waiting, tasks due in 7 days, final evaluations due and the
   latest unread announcement. `GET /api/supervisor/schedules`.
-- [ ] **4.3 Tasks released later:** `tasks.available_from`; hidden from the
+- [x] **4.3 Tasks released later:** `tasks.available_from`; hidden from the
   intern until the day, then announced once.
-- [ ] **4.4 Teams:** `task_groups`, `task_group_members`,
+- [x] **4.4 Teams:** `task_groups`, `task_group_members`,
   `tasks.group_task_id`; one task row per member.
-- [ ] **4.5 Notes with the coordinator:** `student_notes`, a thread on the
+- [x] **4.5 Notes with the coordinator:** `student_notes`, a thread on the
   intern page and the student record. The student never sees it.
-- [ ] **4.6 Nudges:** "Remind" on the coordinator's slow-supervisor rows,
+- [x] **4.6 Nudges:** "Remind" on the coordinator's slow-supervisor rows,
   once per supervisor per day.
-- [ ] **4.7 Site visits for supervisors:** the latest visit's date and
+- [x] **4.7 Site visits for supervisors:** the latest visit's date and
   follow-up for their company, read only.
 
 ## Still open
