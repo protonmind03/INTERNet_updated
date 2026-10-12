@@ -6072,3 +6072,96 @@ test("a day's times go in the time record's AM and PM columns, and none is made 
 
   assert.deepEqual(STEP_LABELS, { time_in: "Time in", break_time: "Out for lunch", break_end_time: "Back from lunch", time_out: "Time out" });
 });
+
+test("the student's calendar and progress are worked out from the saved lists", () => {
+  require("tsx/cjs");
+  const calendar = require("../../my-pwa/src/lib/studentCalendar.ts");
+  const at = (day, clock) => `${day}T${clock}:00+08:00`;
+  const weekdays = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const shifts = weekdays.map((day) => ({ day, start_time: "08:00:00", end_time: "17:00:00", hours: 8, focus: null }));
+  const log = (date, timeIn, hours, status = "Verified", extra = {}) => ({
+    date, time_in: at(date, timeIn), break_time: null, break_end_time: null, time_out: hours === null ? null : at(date, "17:00"), hours, status, ...extra,
+  });
+
+  // October 2026 starts on a Thursday: the grid runs Monday 28 September to Sunday 1 November.
+  const weeks = calendar.monthWeeks("2026-10");
+  assert.equal(weeks.length, 5);
+  assert.deepEqual([weeks[0][0], weeks[0][3], weeks[4][6]], ["2026-09-28", "2026-10-01", "2026-11-01"]);
+  for (const week of weeks) assert.equal(week.length, 7);
+  assert.equal(calendar.monthWeeks("2027-02").length, 4, "a February that starts on a Monday fits four weeks exactly");
+  assert.equal(calendar.monthWeeks("2026-08").length, 6);
+  assert.deepEqual([calendar.addMonths("2026-12", 1), calendar.addMonths("2026-01", -1)], ["2027-01", "2025-12"]);
+  assert.equal(calendar.mondayOf("2026-10-11"), "2026-10-05", "a Sunday belongs to the week before");
+
+  // Week numbers count from the week of the first log, or of the term's start when there is none.
+  assert.equal(calendar.countedFrom([log("2026-10-07", "08:00", 8), log("2026-09-30", "08:00", 8)], "2026-09-01"), "2026-09-30");
+  assert.equal(calendar.countedFrom([], "2026-09-01"), "2026-09-01");
+  assert.equal(calendar.countedFrom([], null), null);
+  assert.equal(calendar.weekNumber("2026-09-30", "2026-09-30"), 1);
+  assert.equal(calendar.weekNumber("2026-09-28", "2026-09-30"), 1, "the Monday of that same week");
+  assert.equal(calendar.weekNumber("2026-11-04", "2026-09-30"), 6);
+  assert.equal(calendar.weekNumber("2026-09-27", "2026-09-30"), null, "before the OJT");
+  assert.equal(calendar.weekNumber("2026-10-01", null), null);
+
+  // One day's facts.
+  const sources = {
+    shifts,
+    holidays: [{ date: "2026-10-08", name: "Founding Day" }],
+    logs: [
+      log("2026-10-05", "08:00", 8),
+      log("2026-10-06", "08:20", 7.5, "Pending"),
+      log("2026-10-07", "07:50", 8, "Verified", { accomplishments: "Filed the receipts.", tasks: [{ id: 3, title: "Ledger" }] }),
+      log("2026-10-12", "08:05", null, "Pending"),
+    ],
+    absences: [{ date: "2026-10-09", status: "Excused", reason: "Clinic visit" }, { date: "2026-10-05", status: "Pending" }],
+    tasks: [{ id: 3, title: "Ledger", status: "In Progress", due_date: "2026-10-09" }, { id: 4, title: "No date", status: "Pending", due_date: null }],
+  };
+  const day = calendar.calendarIndex(sources);
+  assert.equal(day("2026-10-05").shift.start_time, "08:00:00");
+  assert.equal(day("2026-10-05").absence, null, "a day that was worked is not an absence, whatever was filed");
+  assert.equal(day("2026-10-10").shift, null, "Saturday is a day off");
+  assert.equal(day("2026-10-08").holiday, "Founding Day");
+  assert.deepEqual([day("2026-10-09").absence.status, day("2026-10-09").due.map((task) => task.id)], ["Excused", [3]]);
+  assert.deepEqual(day("2026-10-07").log.tasks, [{ id: 3, title: "Ledger" }]);
+  // What a square says about hours.
+  assert.deepEqual(calendar.hoursMark(day("2026-10-05").log), { text: "8 h", verified: true });
+  assert.deepEqual(calendar.hoursMark(day("2026-10-06").log), { text: "7.5 h", verified: false });
+  assert.deepEqual(calendar.hoursMark(day("2026-10-12").log), { text: "open", verified: false });
+  assert.equal(calendar.hoursMark(null), null);
+
+  // Hours by week: a holiday takes its day off what was scheduled; only verified hours count.
+  const byWeek = calendar.weeklyHours("2026-10-12", "2026-10-05", sources, 3);
+  assert.deepEqual(byWeek, [
+    { week_start: "2026-09-28", scheduled: 0, verified: 0 },
+    { week_start: "2026-10-05", scheduled: 32, verified: 16 },
+    { week_start: "2026-10-12", scheduled: 40, verified: 0 },
+  ]);
+  assert.equal(calendar.weeklyHours("2026-10-12", null, sources).length, 8);
+
+  // Attendance on scheduled days, up to yesterday: Mon, Tue, Wed attended; Thu a holiday; Fri missed.
+  assert.deepEqual(calendar.attendanceOnScheduledDays("2026-10-12", "2026-10-05", sources), { scheduled: 4, attended: 3 });
+  // Today is not counted until it is over.
+  assert.deepEqual(calendar.attendanceOnScheduledDays("2026-10-13", "2026-10-05", sources), { scheduled: 5, attended: 4 });
+  assert.deepEqual(calendar.attendanceOnScheduledDays("2026-10-12", null, sources), { scheduled: 0, attended: 0 });
+
+  // Time-in against the shift's start: on time, 20 late, 10 early, 5 late. Late is more than 15 minutes.
+  assert.equal(calendar.LATE_AFTER_MINUTES, 15);
+  assert.deepEqual(calendar.punctuality(sources, "Asia/Manila"), { days: 4, average: 4, late: 1 });
+  // Exactly 15 minutes after is not late; 16 is. A day with no shift is left out.
+  const edge = { shifts, logs: [log("2026-10-05", "08:15", 8), log("2026-10-06", "08:16", 8), log("2026-10-10", "11:00", 4)] };
+  assert.deepEqual(calendar.punctuality(edge, "Asia/Manila"), { days: 2, average: 16, late: 1 });
+  assert.deepEqual(calendar.punctuality({ shifts, logs: [] }, "Asia/Manila"), { days: 0, average: 0, late: 0 });
+});
+
+test("a student's profile says which term they are in", async () => {
+  const mine = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
+  assert.equal(mine.response.status, 200);
+  // What it always answered is still there.
+  assert.ok(mine.body.student && "coordinator" in mine.body);
+  assert.ok("term" in mine.body);
+  if (mine.body.term !== null) {
+    assert.deepEqual(Object.keys(mine.body.term).sort(), ["end_date", "name", "start_date"]);
+    assert.match(mine.body.term.start_date, /^\d{4}-\d{2}-\d{2}$/);
+    assert.ok(mine.body.term.start_date <= mine.body.term.end_date);
+  }
+});

@@ -537,7 +537,8 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-(--z-modal) flex animate-fade-in items-end justify-center bg-psu-950/50 sm:items-center sm:p-4"
+      // The page behind is dimmed and softened, so the dialog reads as the one thing to attend to.
+      className="fixed inset-0 z-(--z-modal) flex animate-fade-in items-end justify-center bg-psu-950/50 backdrop-blur-sm sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !locked) onClose();
       }}

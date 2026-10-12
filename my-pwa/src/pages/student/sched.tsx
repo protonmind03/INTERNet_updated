@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
 import {
   Card,
   CardHeader,
   EmptyState,
   ErrorNotice,
+  FilterChips,
   Skeleton,
   SkeletonRows,
 } from "../../components/ui";
@@ -25,6 +26,18 @@ import { downloadCalendar, scheduleCalendar } from "../../lib/ics";
 import { errorText, toast } from "../../lib/toast";
 import { useProjections } from "../../lib/useProjections";
 import { useHolidays } from "../../lib/useHolidays";
+import ScheduleMonth from "./ScheduleMonth";
+import ScheduleProgress from "./ScheduleProgress";
+
+/** The page's three views. The one shown is in the address, so Back returns to it. */
+type View = "week" | "month" | "progress";
+const VIEWS: readonly { value: View; label: string }[] = [
+  { value: "week", label: "Week" },
+  { value: "month", label: "Month" },
+  { value: "progress", label: "My progress" },
+];
+
+type Absence = { date: string; status: string; reason?: string | null };
 
 type ScheduleDay = {
   id: number;
@@ -89,6 +102,13 @@ export default function OjtSchedule() {
   const [company, setCompany] = useState<Company | null>(null);
   const [coordinator, setCoordinator] = useState<{ name: string; email: string } | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [absences, setAbsences] = useState<Absence[]>([]);
+  // The start of the student's term: the weeks of the OJT are counted from
+  // it when there is no log yet.
+  const [termStart, setTermStart] = useState<string | null>(null);
+  const [params, setParams] = useSearchParams();
+  const asked = params.get("view");
+  const view: View = asked === "month" || asked === "progress" ? asked : "week";
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const holidays = useHolidays("student");
@@ -118,7 +138,15 @@ export default function OjtSchedule() {
       // Who to ask at the university. Extra to the page: a failure here is not shown.
       savedFetch("student", "profile", `${API_URL}/api/students/${id}/profile`, withStudentAuth())
         .then((response) => (response.ok ? response.json() : null))
-        .then((data) => setCoordinator(data?.coordinator ?? null))
+        .then((data) => {
+          setCoordinator(data?.coordinator ?? null);
+          setTermStart(data?.term?.start_date ?? null);
+        })
+        .catch(() => undefined);
+      // The absences filed, for the month view. Kept for offline like the rest.
+      savedFetch("student", "absences", `${API_URL}/api/absences/student/${id}`, withStudentAuth())
+        .then((response) => (response.ok ? response.json() : null))
+        .then((data) => setAbsences(Array.isArray(data?.absences) ? data.absences : []))
         .catch(() => undefined);
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your schedule."));
@@ -183,10 +211,32 @@ export default function OjtSchedule() {
   );
 
   return (
-    <StudentLayout title="Schedule" subtitle="Your weekly OJT hours and where you report.">
+    <StudentLayout title="Schedule" subtitle="Your OJT days, what happened on each, and how you are getting on.">
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
+        <FilterChips
+          label="View"
+          value={view}
+          onChange={(next) => setParams(next === "week" ? {} : { view: next }, { replace: true })}
+          options={VIEWS}
+        />
+
+        {view === "month" && (
+          <ScheduleMonth
+            shifts={schedule}
+            holidays={holidays}
+            absences={absences}
+            tasks={tasks}
+            termStart={termStart}
+          />
+        )}
+        {view === "progress" && (
+          <ScheduleProgress shifts={schedule} holidays={holidays} termStart={termStart} />
+        )}
+
+        {view === "week" && (
+        <>
         <div className="grid gap-5 lg:grid-cols-3">
           <Card className="lg:col-span-2">
             <CardHeader
@@ -429,6 +479,8 @@ export default function OjtSchedule() {
             )}
           </div>
         </Card>
+        </>
+        )}
       </div>
     </StudentLayout>
   );

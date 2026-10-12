@@ -473,3 +473,79 @@ test.describe("programs, blocks and the filter bar", () => {
     await expect(page.getByRole("combobox", { name: /^Program and block/ })).toHaveCount(0);
   });
 });
+
+test.describe("what a student reads about their days", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the schedule has a month to tap through and a progress tab, and the time record prints AM and PM columns", async ({ page }) => {
+    await signIn(page, "student");
+    await page.goto("/schedule");
+    await expect(page.getByRole("tab", { name: "Week" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "Weekly schedule" })).toBeVisible();
+
+    // The month: a grid of days, one of them today, and a tap opens the day.
+    await page.getByRole("tab", { name: "Month" }).click();
+    await expect(page).toHaveURL(/\/schedule\?view=month$/);
+    const grid = page.getByRole("grid");
+    await expect(grid).toBeVisible();
+    const todayCell = grid.locator('[aria-current="date"]');
+    await expect(todayCell).toHaveCount(1);
+    await todayCell.click();
+    const sheet = page.getByRole("dialog");
+    await expect(sheet).toBeVisible();
+    await expect(sheet.getByText("Shift", { exact: true })).toBeVisible();
+    await expect(sheet.getByText(/^Today$|· Today$|Today/).first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(sheet).toBeHidden();
+    // The arrow keys move between days, and Enter opens the one they land on.
+    await todayCell.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect(todayCell).not.toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.getByRole("button", { name: "Next month" }).click();
+    await page.getByRole("button", { name: "This month" }).click();
+    await expect(todayCell).toHaveCount(1);
+
+    // My progress: the figures, and the rule for "late" behind the "?".
+    await page.getByRole("tab", { name: "My progress" }).click();
+    await expect(page).toHaveURL(/view=progress$/);
+    for (const name of ["Verified hours each week", "Projected finish"]) {
+      await expect(page.getByRole("heading", { name })).toBeVisible();
+    }
+    await expect(page.getByText("Attendance on scheduled days", { exact: true })).toBeVisible();
+    await expect(page.getByText("Hours still needed", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: 'How "Average time-in" is counted' }).click();
+    await expect(page.getByText(/more than 15 minutes after the shift starts counts as late/)).toBeVisible();
+
+    // The time record: the Civil Service columns.
+    await page.goto("/time-record");
+    const table = page.getByRole("region", { name: "Time record table" });
+    await expect(table.getByRole("columnheader")).toHaveText(["Day", "AM In", "AM Out", "PM In", "PM Out", "Hours", "Status"]);
+  });
+
+  test("the weekly report asks for four things and shows the week's daily accomplishments", async ({ page }) => {
+    const student = await apiSession("student");
+    const journals = await api<{ current_week_start: string; journals: { week_start: string; status: string }[] }>(
+      student.token,
+      "GET",
+      `/api/journals/student/${encodeURIComponent(student.id)}`
+    );
+    const existing = journals.body.journals.find((item) => item.week_start === journals.body.current_week_start);
+    test.skip(existing?.status === "Reviewed", "This week's report is already reviewed and closed.");
+
+    await signIn(page, "student");
+    await page.getByRole("button", { name: "More" }).click();
+    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Weekly report" }).click();
+    await expect(page).toHaveURL(/\/journal$/);
+    await page.getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing }).first().click();
+    const form = page.getByRole("dialog");
+    await expect(form.getByRole("region", { name: "Daily accomplishments this week" })).toBeVisible();
+    for (const id of ["#journal-activities", "#journal-learnings", "#journal-challenges", "#journal-solutions"]) {
+      await expect(form.locator(id)).toBeVisible();
+    }
+    await expect(form.getByText("Problems encountered (optional)")).toBeVisible();
+    await expect(form.getByText("Solutions tried or identified (optional)")).toBeVisible();
+  });
+});

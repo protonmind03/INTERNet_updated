@@ -7759,7 +7759,21 @@ app.get(
       [studentId]
     );
 
-    return res.json({ student: result.rows[0], coordinator: coordinator.rows[0] ?? null });
+    // The term the student is in, for counting the weeks of their OJT from
+    // its start when they have no log yet.
+    const term = await pool.query(
+      `SELECT t.name, TO_CHAR(t.start_date, 'YYYY-MM-DD') AS start_date,
+              TO_CHAR(t.end_date, 'YYYY-MM-DD') AS end_date
+       FROM terms t JOIN students s ON s.term_id = t.id
+       WHERE s.student_id = $1`,
+      [studentId]
+    );
+
+    return res.json({
+      student: result.rows[0],
+      coordinator: coordinator.rows[0] ?? null,
+      term: term.rows[0] ?? null,
+    });
   } catch (error) {
     console.error("GET STUDENT PROFILE ERROR:", error);
     return res.status(500).json({
