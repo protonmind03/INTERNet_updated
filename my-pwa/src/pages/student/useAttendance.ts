@@ -41,6 +41,8 @@ export type AttendanceLog = {
   recorded_offline?: boolean;
   /** What the student wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** The tasks the student said they worked on that day. Missing from an older server. */
+  tasks?: { id: number; title: string }[];
   /** Set when the supervisor corrected the times on this log, with their reason. */
   time_corrected_at?: string | null;
   time_correction_reason?: string | null;
@@ -249,7 +251,7 @@ export function useAttendance(studentId: string | undefined) {
     async (
       path: StepPath,
       fallback: string,
-      extra?: Record<string, string>
+      extra?: Record<string, unknown>
     ): Promise<"sent" | "queued"> => {
       if (!todayLog) throw new Error("Time in first.");
       // Earlier steps are still waiting: this one has to wait behind them,
@@ -344,9 +346,12 @@ export function useAttendance(studentId: string | undefined) {
     startBreak: () => step("break", "Could not record your break."),
     endBreak: () => step("break-end", "Could not record your return from break."),
     /** Times out, with the student's note of what they did today. */
-    timeOut: (accomplishments: string) =>
+    /** `taskIds`: the tasks worked on today, if the student chose any. */
+    timeOut: (accomplishments: string, taskIds: number[] = []) =>
       step("time-out", "Could not record your time-out.", {
         accomplishments: accomplishments.trim(),
+        // Left out when none is chosen, so the request is what it always was.
+        ...(taskIds.length > 0 ? { task_ids: taskIds } : {}),
       }),
   };
 }

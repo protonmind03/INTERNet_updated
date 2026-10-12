@@ -1416,7 +1416,10 @@ export function registerExtensionRoutes(
           pool.query(
             `SELECT id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
                     time_out, hours, note, status, review_notes, correction_note,
-                    accomplishments, recorded_offline
+                    accomplishments, recorded_offline,
+                    (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
+               FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
+              WHERE wx.attendance_id = attendance.id) AS tasks
              FROM attendance WHERE student_id = $1
              ORDER BY date DESC, id DESC LIMIT 1000`,
             [id]

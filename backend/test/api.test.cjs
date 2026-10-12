@@ -5916,3 +5916,100 @@ test("a weekly report may say what was tried about its problems, and a form that
     await pool.end();
   }
 });
+
+test("tasks worked on are chosen at time-out, must be the student's own, and are read back with the log", async (t) => {
+  // A log id that does not exist: these requests can change nothing.
+  const nowhere = (body) => jsonRequest("/api/attendance/999999999/time-out", jsonBody(studentToken, "PUT", body));
+  const note = "Filed and labelled the week's delivery receipts.";
+  for (const bad of ["12", { id: 1 }, ["x"], [0], [-4], [1.5], Array.from({ length: 21 }, (_, index) => index + 1)]) {
+    const refused = await nowhere({ accomplishments: note, task_ids: bad });
+    assert.equal(refused.response.status, 400, JSON.stringify(bad).slice(0, 40));
+  }
+  // None chosen, or the field not sent: as before.
+  assert.equal((await nowhere({ accomplishments: note, task_ids: [] })).response.status, 404);
+  assert.equal((await nowhere({ accomplishments: note })).response.status, 404);
+  // Every log the student reads says which tasks, even if none.
+  const own = await jsonRequest(`/api/attendance/${encodeURIComponent(student.student_id)}`, { headers: authHeaders(studentToken) });
+  for (const log of own.body.attendance) assert.ok(Array.isArray(log.tasks), "each log carries its tasks");
+
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = student.student_id;
+  // A day long ago, so it cannot collide with a real log; timed in an hour ago, so it can still be timed out.
+  const DAY = "2001-02-03";
+  const made = { logs: [], tasks: [], other: "TASKLINK-OTHER" };
+  const openLog = async () => {
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND date = $2`, [sid, DAY]);
+    const id = (await pool.query(`INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2, NOW() - INTERVAL '1 hour', 'Pending') RETURNING id`, [sid, DAY])).rows[0].id;
+    made.logs.push(id);
+    return id;
+  };
+  const timeOut = (logId, body) => jsonRequest(`/api/attendance/${logId}/time-out`, jsonBody(studentToken, "PUT", body));
+  try {
+    const task = async (owner, title) => {
+      const id = (await pool.query(`INSERT INTO tasks (student_id, title, status, due_date) VALUES ($1, $2, 'In Progress', CURRENT_DATE + 7) RETURNING id`, [owner, title])).rows[0].id;
+      made.tasks.push(id);
+      return id;
+    };
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, 'tasklink@other.test', 'x', 'Someone Else', FALSE) ON CONFLICT DO NOTHING`, [made.other]);
+    const ledger = await task(sid, "Balance the petty cash ledger");
+    const filing = await task(sid, "File the delivery receipts");
+    const theirs = await task(made.other, "Somebody else's task");
+
+    // Someone else's task in the list: refused whole, and the log stays open.
+    let logId = await openLog();
+    const stolen = await timeOut(logId, { accomplishments: note, task_ids: [ledger, theirs] });
+    assert.equal(stolen.response.status, 400);
+    assert.match(stolen.body.message, /assigned to you/);
+    assert.equal((await pool.query(`SELECT time_out FROM attendance WHERE id = $1`, [logId])).rows[0].time_out, null);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attendance_tasks WHERE attendance_id = $1`, [logId])).rows[0].n, 0);
+
+    // Two of their own, one named twice: the time-out is recorded and both are linked once.
+    const done = await timeOut(logId, { accomplishments: note, task_ids: [filing, ledger, filing] });
+    assert.equal(done.response.status, 200, JSON.stringify(done.body));
+    assert.deepEqual(done.body.attendance.tasks, [{ id: ledger, title: "Balance the petty cash ledger" }, { id: filing, title: "File the delivery receipts" }]);
+    assert.equal(done.body.attendance.accomplishments, note);
+    // The student, the supervisor and the coordinator read the same links.
+    const mine = (await jsonRequest(`/api/attendance/${encodeURIComponent(sid)}`, { headers: authHeaders(studentToken) })).body.attendance.find((log) => log.id === logId);
+    assert.deepEqual(mine.tasks.map((item) => item.title), ["Balance the petty cash ledger", "File the delivery receipts"]);
+    const seen = (await jsonRequest(`/api/supervisor/attendance/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) })).body.attendance.find((log) => log.id === logId);
+    assert.deepEqual(seen.tasks.map((item) => item.id), [ledger, filing]);
+    const record = (await jsonRequest(`/api/coordinator/students/${encodeURIComponent(sid)}/overview`, { headers: authHeaders(coordinatorToken) })).body.attendance.find((log) => log.id === logId);
+    assert.deepEqual(record.tasks.map((item) => item.id), [ledger, filing]);
+
+    // A time-out recorded offline carries its tasks, and a repeat of it answers the same.
+    logId = await openLog();
+    const timeIn = new Date((await pool.query(`SELECT time_in FROM attendance WHERE id = $1`, [logId])).rows[0].time_in).getTime();
+    const offline = {
+      accomplishments: note,
+      task_ids: [ledger],
+      occurred_at: new Date(Math.floor(timeIn / 1000) * 1000 + 30 * 60 * 1000).toISOString(),
+      client_request_id: require("node:crypto").randomUUID(),
+    };
+    const queued = await timeOut(logId, offline);
+    assert.equal(queued.response.status, 200, JSON.stringify(queued.body));
+    assert.equal(queued.body.attendance.recorded_offline, true);
+    assert.deepEqual(queued.body.attendance.tasks, [{ id: ledger, title: "Balance the petty cash ledger" }]);
+    const repeat = await timeOut(logId, offline);
+    assert.equal(repeat.response.status, 200);
+    assert.equal(repeat.body.replayed, true);
+    assert.deepEqual(repeat.body.attendance.tasks, [{ id: ledger, title: "Balance the petty cash ledger" }], "the ledger kept the tasks with the answer");
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attendance_tasks WHERE attendance_id = $1`, [logId])).rows[0].n, 1);
+
+    // A link goes when its task does, and when its log does.
+    await pool.query(`DELETE FROM tasks WHERE id = $1`, [ledger]);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attendance_tasks WHERE task_id = $1`, [ledger])).rows[0].n, 0);
+  } finally {
+    await pool.query(`DELETE FROM offline_action_ledger WHERE attendance_id = ANY($1::int[])`, [made.logs]);
+    await pool.query(`DELETE FROM attendance WHERE id = ANY($1::int[])`, [made.logs]);
+    await pool.query(`DELETE FROM attendance_tasks WHERE attendance_id = ANY($1::int[])`, [made.logs]);
+    await pool.query(`DELETE FROM tasks WHERE id = ANY($1::int[])`, [made.tasks]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE '%2001-02-03%'`, [made.other]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [made.other]);
+    await pool.end();
+  }
+});

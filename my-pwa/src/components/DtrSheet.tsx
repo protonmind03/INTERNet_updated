@@ -14,7 +14,13 @@ export type DtrLog = {
   status: string;
   /** What the student wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** The tasks the student said they worked on that day. */
+  tasks?: { id: number; title: string }[];
 };
+
+/** True when a day has a line of its own under its times: a note, or tasks worked on. */
+const hasNote = (log: DtrLog | undefined) =>
+  Boolean(log && (log.accomplishments || (log.tasks && log.tasks.length > 0)));
 
 export type DtrAbsence = { date: string; status: string };
 
@@ -245,7 +251,7 @@ export default function DtrSheet({
               {rows.map((row) => (
                 <Fragment key={row.key}>
                 <tr
-                  className={`${row.log?.accomplishments ? "" : "border-b border-slate-200"} ${
+                  className={`${hasNote(row.log) ? "" : "border-b border-slate-200"} ${
                     row.log || row.absence || row.holiday ? "" : "text-slate-500"
                   }`}
                 >
@@ -285,11 +291,17 @@ export default function DtrSheet({
                             : "")}
                   </td>
                 </tr>
-                {row.log?.accomplishments && (
+                {row.log && hasNote(row.log) && (
                   <tr className="border-b border-slate-200">
                     <td />
                     <td colSpan={5} className="px-2 pb-1.5 text-[11px] leading-snug text-slate-600">
                       {row.log.accomplishments}
+                      {row.log.tasks && row.log.tasks.length > 0 && (
+                        <span className="block">
+                          <span className="font-semibold">Tasks worked on:</span>{" "}
+                          {row.log.tasks.map((task) => task.title).join("; ")}
+                        </span>
+                      )}
                     </td>
                   </tr>
                 )}

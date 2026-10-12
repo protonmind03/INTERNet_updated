@@ -63,6 +63,8 @@ export type AttendanceEntry = {
   recorded_offline?: boolean;
   /** What the intern wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** The tasks the intern said they worked on that day. */
+  tasks?: { id: number; title: string }[];
   /** Set when the supervisor corrected the times on this log, with the reason. */
   time_corrected_at?: string | null;
   time_correction_reason?: string | null;

@@ -34,8 +34,8 @@ export type QueuedStep = {
   path: StepPath;
   occurredAt: string;
   requestId: string;
-  /** Anything else the step carries: the accomplishment note at time-out. */
-  extra?: Record<string, string>;
+  /** Anything else the step carries: at time-out, the accomplishment note and the tasks worked on. */
+  extra?: Record<string, unknown>;
 };
 
 /** Sent to the pages that show attendance, so they reload after a step is sent. */
@@ -59,7 +59,7 @@ function requestId(): string {
 export async function queueStep(
   logId: number,
   path: StepPath,
-  extra?: Record<string, string>
+  extra?: Record<string, unknown>
 ): Promise<QueuedStep | null> {
   const step: QueuedStep = {
     logId,

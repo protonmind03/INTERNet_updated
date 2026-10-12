@@ -155,6 +155,18 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
       {entry.accomplishments && (
         <Quote label="What the intern accomplished">{entry.accomplishments}</Quote>
       )}
+      {entry.tasks && entry.tasks.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-slate-600">Tasks they said they worked on</p>
+          <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-slate-800">
+            {entry.tasks.map((task) => (
+              <li key={task.id} className="break-words">
+                {task.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {entry.note && <Quote label="Intern's note">{entry.note}</Quote>}
 
       {entry.correction_note && (

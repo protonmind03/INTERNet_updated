@@ -2115,7 +2115,11 @@ app.get(
             recorded_offline,
             accomplishments,
             time_corrected_at,
-            time_correction_reason
+            time_correction_reason,
+            -- The tasks the student said they worked on that day.
+            (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
+               FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
+              WHERE wx.attendance_id = attendance.id) AS tasks
           FROM attendance
           WHERE student_id = $1
           ORDER BY
@@ -2674,6 +2678,38 @@ async function attendanceStepFor(
 }
 
 /** Remembers an offline action by its id, so sending it again changes nothing. */
+/** The most tasks one day's log can be linked to. */
+const MAX_WORKED_TASKS = 20;
+
+/**
+ * Reads the tasks a student says they worked on, or says what is wrong
+ * with the list. Every id must be a task assigned to that student; a list
+ * naming someone else's task is refused whole, not quietly trimmed.
+ */
+async function workedTaskIds(
+  value: unknown,
+  studentId: string
+): Promise<{ ids: number[] } | { problem: string }> {
+  if (value === undefined || value === null) return { ids: [] };
+  if (!Array.isArray(value)) return { problem: "Send the tasks you worked on as a list." };
+  if (value.length > MAX_WORKED_TASKS) {
+    return { problem: `Choose at most ${MAX_WORKED_TASKS} tasks.` };
+  }
+  const ids = [...new Set(value.map((item) => Number(item)))];
+  if (ids.some((id) => !Number.isSafeInteger(id) || id < 1)) {
+    return { problem: "That is not a task." };
+  }
+  if (ids.length === 0) return { ids: [] };
+  const mine = await pool.query<{ id: number }>(
+    `SELECT id FROM tasks WHERE id = ANY($1::int[]) AND student_id = $2`,
+    [ids, studentId]
+  );
+  if (mine.rows.length !== ids.length) {
+    return { problem: "You can only choose tasks that are assigned to you." };
+  }
+  return { ids };
+}
+
 async function rememberOfflineStep(
   step: AttendanceStep,
   action: OfflineAction,
@@ -2911,6 +2947,13 @@ app.put(
         accomplishments = written;
       }
 
+      // Which of their tasks they worked on today. Optional: a time-out
+      // that names none, or an older copy of the app, links nothing.
+      const worked = await workedTaskIds(req.body?.task_ids, String(auth?.id));
+      if ("problem" in worked) {
+        return res.status(400).json({ message: worked.problem });
+      }
+
       const result =
         await pool.query(
           `
@@ -3015,6 +3058,27 @@ app.put(
           message:
             "Attendance record not found or time-out was already recorded.",
         });
+      }
+
+      // The links are extra to the time-out: if they cannot be saved the
+      // time-out still stands, with its note.
+      result.rows[0].tasks = [];
+      if (worked.ids.length > 0) {
+        try {
+          const linked = await pool.query(
+            `WITH added AS (
+               INSERT INTO attendance_tasks (attendance_id, task_id)
+               SELECT $1, UNNEST($2::int[])
+               ON CONFLICT DO NOTHING
+               RETURNING task_id
+             )
+             SELECT t.id, t.title FROM tasks t WHERE t.id IN (SELECT task_id FROM added) ORDER BY t.id`,
+            [result.rows[0].id, worked.ids]
+          );
+          result.rows[0].tasks = linked.rows;
+        } catch (linkError) {
+          console.error("TIME-OUT TASK LINK ERROR:", linkError);
+        }
       }
 
       await rememberOfflineStep(step, "time-out", result.rows[0]);
@@ -3495,7 +3559,10 @@ app.get(
             a.time_corrected_at,
             a.time_correction_reason,
             a.liveness_checks,
-            a.capture_reason
+            a.capture_reason,
+            (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
+               FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
+              WHERE wx.attendance_id = a.id) AS tasks
 
           FROM attendance a
 
