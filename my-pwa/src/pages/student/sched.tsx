@@ -27,6 +27,7 @@ import { errorText, toast } from "../../lib/toast";
 import { useProjections } from "../../lib/useProjections";
 import { useHolidays } from "../../lib/useHolidays";
 import ScheduleMonth from "./ScheduleMonth";
+import { deliverablesForCalendar, useDeliverables } from "./useDeliverables";
 import ScheduleProgress from "./ScheduleProgress";
 
 /** The page's three views. The one shown is in the address, so Back returns to it. */
@@ -112,6 +113,12 @@ export default function OjtSchedule() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const holidays = useHolidays("student");
+  // What is due of the student besides tasks: a dot on the calendar for each.
+  const due = useDeliverables(studentId);
+  const dueOnCalendar = useMemo(
+    () => [...tasks, ...deliverablesForCalendar(due.deliverables, due.weekly)],
+    [tasks, due.deliverables, due.weekly]
+  );
 
   const load = useCallback(async () => {
     if (!studentId) return;
@@ -227,7 +234,7 @@ export default function OjtSchedule() {
             shifts={schedule}
             holidays={holidays}
             absences={absences}
-            tasks={tasks}
+            tasks={dueOnCalendar}
             termStart={termStart}
           />
         )}

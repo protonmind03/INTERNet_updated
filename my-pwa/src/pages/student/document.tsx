@@ -14,7 +14,9 @@ import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
-import { formatDate } from "../../lib/format";
+import { formatDate, localDateKey } from "../../lib/format";
+import { useAccount } from "../../lib/session";
+import { useDeliverables, type WeeklyItem } from "./useDeliverables";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
 
 type DocumentStatus = "Pending" | "Approved" | "Rejected";
@@ -29,7 +31,17 @@ type StudentDocument = {
   uploaded_at: string;
 };
 
-type Requirement = { id: number; name: string; description: string | null };
+type Requirement = {
+  id: number;
+  name: string;
+  description: string | null;
+  /** "YYYY-MM-DD" when the coordinator gave it a due date. Missing from an older server. */
+  due_on?: string | null;
+  reviewer_role?: "supervisor" | "coordinator";
+};
+
+/** Who reviews a file, in the words shown after an upload. */
+const reviewerOf = (role: string | undefined) => (role === "coordinator" ? "Your OJT coordinator" : "Your supervisor");
 
 const MAX_DOCUMENT_MB = 10;
 
@@ -52,6 +64,10 @@ export default function Documents() {
 
   const fileInput = useRef<HTMLInputElement | null>(null);
   const targetType = useRef<string | null>(null);
+  // Set when the upload is for one week of a weekly deliverable.
+  const targetItem = useRef<WeeklyItem | null>(null);
+  const account = useAccount("student");
+  const due = useDeliverables(account?.student_id);
 
   const load = useCallback(async () => {
     try {
@@ -104,8 +120,9 @@ export default function Documents() {
     return state === "missing" || state === "rejected";
   }).length;
 
-  const startUpload = (docType: string) => {
+  const startUpload = (docType: string, item: WeeklyItem | null = null) => {
     targetType.current = docType;
+    targetItem.current = item;
     fileInput.current?.click();
   };
 
@@ -121,10 +138,12 @@ export default function Documents() {
       return;
     }
 
+    const item = targetItem.current;
     const form = new FormData();
     form.append("file", file);
     form.append("doc_type", docType);
-    setUploadingType(docType);
+    if (item) form.append("item_id", String(item.item_id));
+    setUploadingType(item ? `${docType}#${item.item_id}` : docType);
     try {
       const response = await fetch(
         `${API_URL}/api/documents`,
@@ -134,8 +153,9 @@ export default function Documents() {
       if (!response.ok) {
         throw new Error(data.message || "The document could not be uploaded.");
       }
-      toast.success(`${docType} uploaded. Your supervisor will review it.`);
-      await load();
+      const reviewer = item?.reviewer_role ?? requirements.find((row) => row.name === docType)?.reviewer_role;
+      toast.success(`${docType} uploaded. ${reviewerOf(reviewer)} will review it.`);
+      await Promise.all([load(), due.reload()]);
     } catch (uploadError) {
       toast.error(errorText(uploadError, "The document could not be uploaded."));
     } finally {
@@ -168,7 +188,7 @@ export default function Documents() {
   return (
     <StudentLayout
       title="Documents"
-      subtitle="Upload each OJT requirement. Your supervisor reviews every file."
+      subtitle="Upload each OJT requirement. Your supervisor reviews every file, unless it says the coordinator does."
     >
       <input
         ref={fileInput}
@@ -237,6 +257,62 @@ export default function Documents() {
             )}
           </div>
         </Card>
+
+        {due.weekly.length > 0 && (
+          <Card>
+            <CardHeader
+              title="Weekly deliverables"
+              description="One upload for each week, due on its Sunday. These are separate from your weekly report."
+            />
+            <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+              {due.weekly.map((item) => {
+                const late = item.status === "Not submitted" && item.due_date < localDateKey(new Date());
+                const canUpload = item.status === "Not submitted" || item.status === "Rejected";
+                const busy = uploadingType === `${item.name}#${item.item_id}`;
+                return (
+                  <li key={item.item_id} className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                        <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                        <StatusBadge
+                          status={item.status === "Submitted" ? "Under review" : late ? "Overdue" : item.status}
+                          tone={item.status === "Not submitted" ? (late ? "bad" : "neutral") : undefined}
+                        />
+                      </div>
+                      <p className="mt-0.5 text-sm text-slate-600">
+                        Week of {formatDate(item.period_start)} · due {formatDate(item.due_date)}
+                        {item.reviewer_role === "coordinator" ? " · reviewed by the coordinator" : ""}
+                      </p>
+                      {item.original_filename && (
+                        <p className="mt-0.5 truncate text-sm text-slate-600">{item.original_filename}</p>
+                      )}
+                      {item.status === "Rejected" && item.review_notes && (
+                        <p className="mt-2 rounded-md bg-red-50 px-2.5 py-1.5 text-sm text-red-800">
+                          <span className="font-semibold">Reviewer:</span> {item.review_notes}
+                        </p>
+                      )}
+                    </div>
+                    {canUpload && (
+                      <button
+                        type="button"
+                        onClick={() => startUpload(item.name, item)}
+                        disabled={uploadingType !== null}
+                        className="inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busy ? <BrandLoader variant="button" role="student" process="upload" /> : <Icon name="upload" size={16} />}
+                        {busy ? "Uploading" : item.status === "Rejected" ? "Upload again" : "Upload"}
+                        <span className="sr-only">
+                          {" "}
+                          {item.name}, week of {formatDate(item.period_start)}
+                        </span>
+                      </button>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </Card>
+        )}
 
         {!loading && documents.length > 0 && (
           <Card>
@@ -331,6 +407,24 @@ function RequirementRow({
           </div>
           {requirement.description && (
             <p className="mt-0.5 text-sm text-slate-600">{requirement.description}</p>
+          )}
+          {(requirement.due_on || requirement.reviewer_role === "coordinator") && (
+            <p
+              className={`mt-0.5 text-sm ${
+                requirement.due_on && canUpload && requirement.due_on < localDateKey(new Date())
+                  ? "font-semibold text-red-700"
+                  : "text-slate-600"
+              }`}
+            >
+              {[
+                requirement.due_on
+                  ? `${canUpload && requirement.due_on < localDateKey(new Date()) ? "Was due" : "Due"} ${formatDate(requirement.due_on)}`
+                  : "",
+                requirement.reviewer_role === "coordinator" ? "Reviewed by the coordinator" : "",
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+            </p>
           )}
           {latest && (
             <button

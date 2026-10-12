@@ -85,7 +85,7 @@ function describe(facts: DayFacts): string {
   const mark = hoursMark(facts.log);
   if (mark) parts.push(mark.text === "open" ? "timed in, not yet timed out" : `${mark.text}${mark.verified ? " verified" : " logged"}`);
   if (facts.absence) parts.push("absence filed");
-  if (facts.due.length > 0) parts.push(`${facts.due.length} ${facts.due.length === 1 ? "task" : "tasks"} due`);
+  if (facts.due.length > 0) parts.push(`${facts.due.length} due`);
   return parts.join("; ");
 }
 
@@ -351,7 +351,7 @@ export default function MonthCalendar({
         </li>
         <li className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-psu-600" aria-hidden="true" />
-          Task due
+          Task or deliverable due
         </li>
         <li>
           <span className="font-semibold text-emerald-800">8 h</span> verified hours ·{" "}
@@ -483,7 +483,7 @@ function DayDetails({
       )}
       {facts.due.length > 0 && (
         <div>
-          <p className="text-xs font-medium text-slate-600">Tasks due this day</p>
+          <p className="text-xs font-medium text-slate-600">Due this day</p>
           <ul className="mt-1 space-y-1 text-sm text-slate-800">
             {facts.due.map((task) => (
               <li key={task.id} className="flex items-start justify-between gap-3">

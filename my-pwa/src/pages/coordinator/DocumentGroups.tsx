@@ -17,6 +17,8 @@ export type GroupedStudent = {
   program_name?: string | null;
   block?: string | null;
   approved: number;
+  /** How many documents are asked of this student. Missing from an older server. */
+  required?: number;
   missing: string[];
 };
 
@@ -45,8 +47,8 @@ function tree(students: GroupedStudent[]): Node[] {
 const LEVEL_WORD = ["College", "Program", "Block"];
 
 function Summary({ node, total, level }: { node: Node; total: number; level: number }) {
-  const owed = node.students.length * total;
-  const approved = node.students.reduce((sum, student) => sum + Math.min(total, student.approved), 0);
+  const owed = node.students.reduce((sum, student) => sum + (student.required ?? total), 0);
+  const approved = node.students.reduce((sum, student) => sum + Math.min(student.required ?? total, student.approved), 0);
   const complete = node.students.filter((student) => student.missing.length === 0).length;
   const percent = owed > 0 ? Math.round((approved / owed) * 100) : 0;
   return (
@@ -80,7 +82,7 @@ function Branch({ node, total, level }: { node: Node; total: number; level: numb
                 <span className="min-w-0 font-medium text-slate-900">{student.name}</span>
                 <span className="flex items-center gap-3">
                   <span className="tabular text-slate-700">
-                    {student.approved}/{total}
+                    {student.approved}/{student.required ?? total}
                   </span>
                   {student.missing.length === 0 ? (
                     <StatusBadge status="Complete" tone="good" />

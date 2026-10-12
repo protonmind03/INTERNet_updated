@@ -29,12 +29,14 @@ export default function ScheduleMonth(props: {
       logs={attendance.logs}
       dayFooter={(facts) => {
         const toTasks = facts.due.length > 0 && !facts.log;
+        // A deliverable (its id is negative) is handed in on the Documents page.
+        const toDocuments = toTasks && facts.due.every((item) => item.id < 0);
         return (
           <Link
-            to={toTasks ? "/task" : "/daily-log"}
+            to={toDocuments ? "/documents" : toTasks ? "/task" : "/daily-log"}
             className="inline-flex items-center gap-1 text-sm font-semibold text-psu-700 hover:underline"
           >
-            {toTasks ? "Go to tasks" : "Go to attendance"}
+            {toDocuments ? "Go to documents" : toTasks ? "Go to tasks" : "Go to attendance"}
             <Icon name="chevron-right" size={14} />
           </Link>
         );

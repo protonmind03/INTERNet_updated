@@ -16,6 +16,8 @@ import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import DeliverableDialog from "./DeliverableDialog";
+import { deliverableLine, type DeliverableFields } from "./deliverableText";
 
 /*
  * Coordinator use case "Set OJT Requirements":
@@ -30,13 +32,13 @@ type Requirement = {
   description: string | null;
   is_active: boolean;
   sort_order: number;
-};
+} & DeliverableFields;
 
 export default function CoordinatorRequirements() {
   return (
     <CoordinatorLayout
       title="Requirements"
-      subtitle="The documents every student must submit, and where schedules are set."
+      subtitle="What students must submit, when it is due and who reviews it; and where schedules are set."
     >
       <div className="grid items-start gap-6 xl:grid-cols-2">
         <RequiredDocuments />
@@ -63,6 +65,8 @@ function RequiredDocuments() {
   const [adding, setAdding] = useState(false);
 
   const [editing, setEditing] = useState<Requirement | null>(null);
+  // The requirement whose due date, reviewer and reach are being set.
+  const [settingUp, setSettingUp] = useState<Requirement | null>(null);
   const [savingId, setSavingId] = useState<number | null>(null);
 
   const load = useCallback(async () => {
@@ -225,14 +229,24 @@ function RequiredDocuments() {
                     {item.description && (
                       <p className="mt-0.5 text-sm text-slate-500">{item.description}</p>
                     )}
+                    {deliverableLine(item) && (
+                      <p className="mt-0.5 text-sm font-medium text-slate-700">{deliverableLine(item)}</p>
+                    )}
                   </div>
-                  <div className="flex shrink-0 gap-1">
+                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setSettingUp(item)}
+                      className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                    >
+                      Due date and reviewer<span className="sr-only"> for {item.name}</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setEditing(item)}
                       className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
                     >
-                      Edit
+                      Edit<span className="sr-only"> {item.name}</span>
                     </button>
                     <button
                       type="button"
@@ -259,6 +273,18 @@ function RequiredDocuments() {
               )
             )}
           </ul>
+        )}
+
+        {settingUp && (
+          <DeliverableDialog
+            key={settingUp.id}
+            requirement={settingUp}
+            onClose={() => setSettingUp(null)}
+            onSaved={() => {
+              setSettingUp(null);
+              void load();
+            }}
+          />
         )}
 
         <form
