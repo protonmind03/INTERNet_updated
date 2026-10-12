@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { ColumnChart, ShareBar } from "../../components/charts";
 import Icon, { type IconName } from "../../components/Icon";
 import {
+  Button,
   Card,
   CardHeader,
   EmptyState,
@@ -14,7 +15,7 @@ import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate, formatHours, formatLongDate, greetingFor } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
-import { errorText } from "../../lib/toast";
+import { errorText, toast } from "../../lib/toast";
 import KpiCards from "./KpiCards";
 import { coordinatorRequest } from "./request";
 import FilterBar from "./FilterBar";
@@ -47,6 +48,8 @@ type ActionRow = {
   reason: string;
   link: string;
   names?: string[];
+  /** The supervisors a "slow to review" row is about. */
+  people?: { id: string; name: string; detail: string; reminded_today: boolean }[];
 };
 
 type ActionGroup = { who: "you" | "supervisors" | "students"; title: string; rows: ActionRow[] };
@@ -230,6 +233,9 @@ export default function CoordinatorDashboard() {
                                 </span>
                                 <Icon name="chevron-right" size={16} className="mt-1 shrink-0 text-slate-400" />
                               </Link>
+                              {row.people && row.people.length > 0 && (
+                                <RemindList people={row.people} onSent={() => void load()} />
+                              )}
                             </li>
                           ))}
                         </ul>
@@ -375,5 +381,64 @@ function CardLink({ to, label }: { to: string; label: string }) {
       {label}
       <Icon name="chevron-right" size={14} />
     </Link>
+  );
+}
+
+/**
+ * The supervisors who are slow to review, each with a button that sends
+ * them a reminder of what is waiting. The server allows one a day for each
+ * supervisor, whoever sends it; after that the button says so.
+ */
+function RemindList({
+  people,
+  onSent,
+}: {
+  people: NonNullable<ActionRow["people"]>;
+  onSent: () => void;
+}) {
+  const [busy, setBusy] = useState<string | null>(null);
+  // Reminded from this page since it loaded.
+  const [sent, setSent] = useState<Set<string>>(() => new Set());
+
+  const remind = async (person: { id: string; name: string }) => {
+    setBusy(person.id);
+    try {
+      const data = await coordinatorRequest<{ message?: string }>(
+        `/api/coordinator/supervisors/${encodeURIComponent(person.id)}/remind`,
+        { method: "POST", body: {} }
+      );
+      toast.success(data.message || `${person.name} was reminded.`);
+      setSent((current) => new Set(current).add(person.id));
+      onSent();
+    } catch (error) {
+      toast.error(errorText(error, "The reminder could not be sent."));
+      // Refused because someone already sent today's: the list is out of date.
+      onSent();
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <ul className="mx-4 mb-3 divide-y divide-slate-100 rounded-lg border border-slate-200 sm:mx-5">
+      {people.map((person) => {
+        const done = person.reminded_today || sent.has(person.id);
+        return (
+          <li key={person.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium text-slate-900">{person.name}</span>
+              <span className="block text-xs text-slate-600">{person.detail}</span>
+            </span>
+            {done ? (
+              <span className="text-sm text-slate-600">Reminded today</span>
+            ) : (
+              <Button variant="secondary" busy={busy === person.id} onClick={() => void remind(person)}>
+                Remind<span className="sr-only"> {person.name}</span>
+              </Button>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
