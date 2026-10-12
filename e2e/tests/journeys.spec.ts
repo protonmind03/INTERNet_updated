@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ACCOUNTS, api, apiSession, signIn, today, type Role } from "./helpers";
+import { ACCOUNTS, SECOND_STUDENT, api, apiSession, signIn, today, type Role } from "./helpers";
 
 /*
 | The journeys a real person takes, start to finish, in a real browser.
@@ -286,7 +286,11 @@ test.describe("the supervisor's menu, and one word for a concern", () => {
   test("Concerns is under the account menu with the coordinator's contact, and announcements are under the bell", async ({ page }) => {
     await signIn(page, "supervisor");
     const bar = page.getByRole("navigation", { name: "Main" }).first();
-    await expect(bar.getByRole("link", { name: "Evaluations" })).toBeVisible();
+    // Six places, in this order. Evaluations is a tab of each intern's page (Round 2, Phase 4).
+    await expect(bar.getByRole("link")).toHaveText(
+      [/^Review/, /^Interns/, /^Attendance/, /^Tasks/, /^Documents/, /^Weekly reports/]
+    );
+    await expect(bar.getByRole("link", { name: "Evaluations" })).toHaveCount(0);
     await expect(bar.getByRole("link", { name: /Incidents|Concerns/ })).toHaveCount(0);
 
     await page.getByRole("button", { name: /Account menu/ }).click();
@@ -465,6 +469,22 @@ test.describe("programs, blocks and the filter bar", () => {
   });
 
   test("a supervisor with interns of one program and block is not asked to choose between them", async ({ page }) => {
+    // The demo supervisor has two interns. The journey above moves the first
+    // into a new block each run, so the second is put beside them first.
+    const coordinator = await apiSession("coordinator");
+    const first = await apiSession("student");
+    const found = await api<{ students: { student_id: string; block_id: number | null }[] }>(
+      coordinator.token,
+      "GET",
+      `/api/coordinator/students?limit=5&q=${encodeURIComponent(first.id)}`
+    );
+    const blockId = found.body.students.find((item) => item.student_id === first.id)?.block_id;
+    if (blockId) {
+      const placed = await api(coordinator.token, "POST", `/api/coordinator/blocks/${blockId}/students`, {
+        student_ids: ["DEMO-STU-0002"],
+      });
+      expect(placed.status).toBe(200);
+    }
     await signIn(page, "supervisor");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.getByRole("combobox", { name: /^Program and block/ })).toHaveCount(0);
@@ -547,5 +567,218 @@ test.describe("what a student reads about their days", () => {
     }
     await expect(form.getByText("Problems encountered (optional)")).toBeVisible();
     await expect(form.getByText("Solutions tried or identified (optional)")).toBeVisible();
+  });
+});
+
+test.describe("the supervisor's day", () => {
+  test("an intern's page has every section, and the old Evaluations address leads to its Evaluate tab", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const student = await apiSession("student");
+    await signIn(page, "supervisor");
+    // Today, on the Review page: a chip for each intern.
+    const todayList = page.getByRole("list", { name: "Your interns today" });
+    await expect(todayList.getByRole("link", { name: /Demo Student Two/ })).toBeVisible();
+
+    // Interns: the dialog is a short preview with a way in.
+    await page.getByRole("navigation", { name: "Main" }).first().getByRole("link", { name: /^Interns/ }).click();
+    await page.getByRole("button", { name: /Demo Student(?! Two)/ }).first().click();
+    const preview = page.getByRole("dialog");
+    await expect(preview.getByText("Hours verified")).toBeVisible();
+    await preview.getByRole("button", { name: "Open", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/supervisor/interns/${student.id}$`));
+    await expect(page.getByRole("heading", { level: 1, name: "Demo Student" })).toBeVisible();
+
+    const sections = page.getByRole("tablist", { name: "Section" });
+    await expect(sections.getByRole("tab")).toHaveText([
+      "Overview", "Attendance", "Tasks", "Documents", "Weekly reports", "Evaluate", "Time record", "Notes",
+    ]);
+    await expect(page.getByRole("heading", { name: "Contact" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Waiting for you" })).toBeVisible();
+
+    await sections.getByRole("tab", { name: "Attendance" }).click();
+    await expect(page).toHaveURL(/tab=attendance/);
+    await expect(page.getByRole("grid")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Late time-ins/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^Logs recorded offline/ })).toBeVisible();
+
+    await sections.getByRole("tab", { name: "Time record" }).click();
+    await expect(page.getByText(/Daily Time Record/i).first()).toBeVisible();
+
+    // The address Evaluations used to have.
+    await page.goto(`/supervisor/evaluation?intern=${student.id}`);
+    await expect(page).toHaveURL(new RegExp(`/supervisor/interns/${student.id}\\?tab=evaluate$`));
+    await expect(page.getByRole("heading", { name: "New evaluation" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Final evaluation" })).toBeVisible();
+    await page.goto("/supervisor/evaluation");
+    await expect(page).toHaveURL(/\/supervisor\/interns$/);
+  });
+
+  test("a team task goes to two interns, both see it, one submits, and the supervisor sees 1 of 2", async ({ browser }) => {
+    const supervisor = await apiSession("supervisor");
+    const stamp = Date.now();
+    const teamName = `E2E team ${stamp}`;
+    const title = `E2E count the stock room ${stamp}`;
+    type Task = { id: number; title: string; status: string; group_task_id: number | null };
+    type Team = { id: number; name: string };
+    const clear = async () => {
+      const tasks = await api<{ tasks: Task[] }>(supervisor.token, "GET", `/api/tasks/supervisor/${supervisor.id}`);
+      for (const task of tasks.body.tasks.filter((item) => item.title.startsWith("E2E count the stock room"))) {
+        // What was submitted is reviewed, so it does not sit in the queue; the rest is cancelled.
+        if (task.status === "Submitted") await api(supervisor.token, "PATCH", `/api/tasks/${task.id}/review`, { status: "Reviewed", review_notes: "E2E." });
+        else if (task.status !== "Reviewed") await api(supervisor.token, "DELETE", `/api/tasks/${task.id}`);
+      }
+      const teams = await api<{ teams: Team[] }>(supervisor.token, "GET", "/api/supervisor/teams");
+      for (const team of teams.body.teams.filter((item) => item.name.startsWith("E2E team"))) {
+        await api(supervisor.token, "DELETE", `/api/supervisor/teams/${team.id}`);
+      }
+    };
+    await clear();
+
+    const wide = { viewport: { width: 1280, height: 900 }, isMobile: false };
+    const supervisorPage = await (await browser.newContext(wide)).newPage();
+    try {
+      // The supervisor makes a team of the two demo interns.
+      await signIn(supervisorPage, "supervisor");
+      await supervisorPage.goto("/supervisor/tasks");
+      await supervisorPage.getByRole("tab", { name: /^Teams/ }).click();
+      await expect(supervisorPage).toHaveURL(/view=teams/);
+      await supervisorPage.getByRole("button", { name: "New team" }).click();
+      const teamDialog = supervisorPage.getByRole("dialog", { name: "New team" });
+      await teamDialog.locator("#team-name").fill(teamName);
+      await teamDialog.getByRole("checkbox", { name: /^Demo Student(?! Two)/ }).check();
+      await teamDialog.getByRole("checkbox", { name: /^Demo Student Two/ }).check();
+      await teamDialog.getByRole("button", { name: "Create team" }).click();
+      const teamRow = supervisorPage.getByRole("listitem").filter({ hasText: teamName });
+      await expect(teamRow).toContainText("Demo Student, Demo Student Two");
+
+      // And gives it one task.
+      await teamRow.getByRole("button", { name: "Assign a task" }).click();
+      const taskDialog = supervisorPage.getByRole("dialog", { name: "Assign a task" });
+      await expect(taskDialog.locator("#task-intern")).toHaveValue(/^team:\d+$/);
+      await expect(taskDialog.getByText(/Each member gets their own copy/)).toBeVisible();
+      await taskDialog.locator("#task-title").fill(title);
+      const due = new Date(Date.now() + 5 * 86_400_000);
+      await taskDialog.locator("#task-due").fill(new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(due));
+      await taskDialog.getByRole("button", { name: "Assign task" }).click();
+      await expect(supervisorPage.getByText(new RegExp(`Task assigned to 2 members of ${teamName}`))).toBeVisible();
+
+      // One line for the team, nobody in yet.
+      await supervisorPage.getByRole("tab", { name: /^Tasks/ }).click();
+      const line = supervisorPage.getByRole("listitem").filter({ hasText: title }).first();
+      await expect(line).toContainText("Team task");
+      await expect(line).toContainText("0 of 2 submitted");
+
+      // Both interns see it as their own.
+      const onePage = await (await browser.newContext(wide)).newPage();
+      await signIn(onePage, "student");
+      await onePage.goto("/task");
+      const mine = onePage.getByRole("listitem").filter({ hasText: title }).first();
+      await expect(mine).toContainText(`Team task: ${teamName}`);
+
+      const twoPage = await (await browser.newContext(wide)).newPage();
+      await signIn(twoPage, "student", SECOND_STUDENT);
+      await twoPage.goto("/task");
+      await expect(twoPage.getByRole("listitem").filter({ hasText: title }).first()).toContainText("You submit your own work");
+      await twoPage.context().close();
+
+      // One submits.
+      await mine.getByRole("button", { name: "Submit work" }).click();
+      const submit = onePage.getByRole("dialog", { name: "Submit work" });
+      await submit.locator("#submission-notes").fill("Counted aisles 1 to 4; sheet on your desk.");
+      await submit.getByRole("button", { name: "Submit", exact: true }).click();
+      await expect(submit).toBeHidden({ timeout: 15_000 });
+      await onePage.context().close();
+
+      // The supervisor sees one of two, and who.
+      await supervisorPage.reload();
+      const after = supervisorPage.getByRole("listitem").filter({ hasText: title }).first();
+      await expect(after).toContainText("1 of 2 submitted");
+      const members = after.getByRole("list");
+      await expect(members.getByRole("listitem").filter({ hasText: "Demo Student Two" })).toContainText("Not started");
+      await expect(members.getByRole("listitem").filter({ hasText: /Demo Student(?! Two)/ })).toContainText("To review");
+
+      // Cancelling says who was left alone.
+      await after.getByRole("button", { name: "Cancel task" }).click();
+      const confirm = supervisorPage.getByRole("alertdialog").or(supervisorPage.getByRole("dialog", { name: "Cancel this task?" }));
+      await expect(confirm).toContainText("1 member has already submitted");
+      await confirm.getByRole("button", { name: "Cancel task" }).click();
+      await expect(supervisorPage.getByText(/Task cancelled for 1 member\. 1 member has already submitted/)).toBeVisible();
+    } finally {
+      await supervisorPage.context().close();
+      await clear();
+    }
+  });
+
+  test("a task with a later release day reads Scheduled for the supervisor and is not on the intern's list", async ({ page, browser }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    const supervisor = await apiSession("supervisor");
+    const student = await apiSession("student");
+    const title = `E2E release later ${Date.now()}`;
+    const day = (offset: number) =>
+      new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date(Date.now() + offset * 86_400_000));
+    let id: number | undefined;
+    try {
+      await signIn(page, "supervisor");
+      await page.goto(`/supervisor/tasks?intern=${student.id}`);
+      await page.getByRole("button", { name: "Assign a task" }).first().click();
+      const dialog = page.getByRole("dialog", { name: "Assign a task" });
+      await expect(dialog.locator("#task-intern")).toHaveValue(student.id);
+      await dialog.locator("#task-title").fill(title);
+      await dialog.locator("#task-due").fill(day(6));
+      await dialog.locator("#task-release").fill(day(2));
+      await dialog.getByRole("button", { name: "Assign task" }).click();
+      await expect(page.getByText(/Task scheduled\. Demo Student will see it on/)).toBeVisible();
+      const row = page.getByRole("listitem").filter({ hasText: title }).first();
+      await expect(row).toContainText("Scheduled");
+      await expect(row).toContainText("They will see it on");
+
+      const tasks = await api<{ tasks: { id: number; title: string }[] }>(supervisor.token, "GET", `/api/tasks/supervisor/${supervisor.id}`);
+      id = tasks.body.tasks.find((task) => task.title === title)?.id;
+      expect(id).toBeTruthy();
+
+      const studentPage = await (await browser.newContext()).newPage();
+      await signIn(studentPage, "student");
+      await studentPage.goto("/task");
+      await expect(studentPage.getByRole("tab", { name: /^Submitted/ })).toBeVisible();
+      await expect(studentPage.getByText(title)).toHaveCount(0);
+      await studentPage.context().close();
+    } finally {
+      if (id) await api(supervisor.token, "DELETE", `/api/tasks/${id}`);
+    }
+  });
+
+  test("a supervisor and a coordinator write notes about a student that the student cannot open", async ({ browser }) => {
+    const student = await apiSession("student");
+    const wide = { viewport: { width: 1280, height: 900 }, isMobile: false };
+    const stamp = Date.now();
+    const first = `Late twice this week. ${stamp}`;
+    const second = `I will call the company. ${stamp}`;
+
+    const supervisorPage = await (await browser.newContext(wide)).newPage();
+    await signIn(supervisorPage, "supervisor");
+    await supervisorPage.goto(`/supervisor/interns/${student.id}?tab=notes`);
+    await expect(supervisorPage.getByRole("heading", { name: "Notes with the coordinator" })).toBeVisible();
+    await expect(supervisorPage.getByText(/cannot\s+see these notes/)).toBeVisible();
+    await supervisorPage.getByLabel("Your note").fill(first);
+    await supervisorPage.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(supervisorPage.getByText(first)).toBeVisible();
+
+    const coordinatorPage = await (await browser.newContext(wide)).newPage();
+    await signIn(coordinatorPage, "coordinator");
+    await coordinatorPage.goto(`/coordinator/students/${student.id}?tab=notes`);
+    await expect(coordinatorPage.getByRole("heading", { name: "Notes with the supervisor" })).toBeVisible();
+    await expect(coordinatorPage.getByText(first)).toBeVisible();
+    await coordinatorPage.getByLabel("Your note").fill(second);
+    await coordinatorPage.getByRole("button", { name: "Send", exact: true }).click();
+    await expect(coordinatorPage.getByText(second)).toBeVisible();
+    await coordinatorPage.context().close();
+
+    await supervisorPage.reload();
+    await expect(supervisorPage.getByText(second)).toBeVisible();
+    await supervisorPage.context().close();
+
+    // The student's own session is refused the thread.
+    const refused = await api(student.token, "GET", `/api/student-notes/${student.id}`);
+    expect(refused.status).toBe(403);
   });
 });

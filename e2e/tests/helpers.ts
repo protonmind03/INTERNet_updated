@@ -30,9 +30,15 @@ export const ACCOUNTS: Record<Role, { email: string; password: string; tab: stri
   },
 };
 
+/** The second demo intern of the same supervisor, for things done for several interns at once. */
+export const SECOND_STUDENT = {
+  ...ACCOUNTS.student,
+  email: "student2.demo@internet.test",
+  name: "Demo Student Two",
+};
+
 /** Signs in through the real sign-in page. */
-export async function signIn(page: Page, role: Role): Promise<void> {
-  const account = ACCOUNTS[role];
+export async function signIn(page: Page, role: Role, account = ACCOUNTS[role]): Promise<void> {
   await page.goto("/");
   await page.getByRole("group", { name: "Role" }).getByRole("button", { name: account.tab }).click();
   await page.locator("#inb-login-id").fill(account.email);

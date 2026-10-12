@@ -22,6 +22,17 @@ const demoStudent = {
   company: demoSupervisor.company,
 };
 
+// A second intern of the same supervisor, in the same program, so that
+// things done for several interns at once (a team task) can be tried.
+const demoStudentTwo = {
+  id: "DEMO-STU-0002",
+  email: "student2.demo@internet.test",
+  password: demoStudent.password,
+  name: "Demo Student Two",
+  program: demoStudent.program,
+  company: demoSupervisor.company,
+};
+
 async function seedDemoData() {
   const connectionString = process.env.DATABASE_PUBLIC_URL;
   if (!connectionString) {
@@ -95,6 +106,7 @@ async function seedDemoData() {
       );
     }
 
+    for (const each of [demoStudent, demoStudentTwo]) {
     const studentResult = await client.query(
       `
       INSERT INTO students
@@ -111,18 +123,18 @@ async function seedDemoData() {
       RETURNING student_id
       `,
       [
-        demoStudent.id,
-        demoStudent.email,
+        each.id,
+        each.email,
         studentPassword,
-        demoStudent.name,
-        demoStudent.program,
-        demoStudent.company,
+        each.name,
+        each.program,
+        each.company,
         demoSupervisor.id,
       ]
     );
     if (studentResult.rows.length !== 1) {
       throw new Error(
-        "The demo student ID is already used by a different account."
+        `The demo student ID ${each.id} is already used by a different account.`
       );
     }
 
@@ -135,7 +147,7 @@ async function seedDemoData() {
     ] as const) {
       const scheduleExists = await client.query(
         `SELECT 1 FROM ojt_schedule WHERE student_id = $1 AND day = $2 LIMIT 1`,
-        [demoStudent.id, day]
+        [each.id, day]
       );
       if (scheduleExists.rows.length === 0) {
         await client.query(
@@ -144,10 +156,22 @@ async function seedDemoData() {
             (student_id, day, start_time, end_time, focus, hours, is_active)
           VALUES ($1, $2, TIME '08:00', TIME '17:00', $3, $4, TRUE)
           `,
-          [demoStudent.id, day, "OJT training and assigned tasks", hours]
+          [each.id, day, "OJT training and assigned tasks", hours]
         );
       }
     }
+    }
+
+    // The second intern is placed where the first is (program, major, block),
+    // when the coordinator has placed the first.
+    await client.query(
+      `UPDATE students two
+       SET program_id = one.program_id, major_id = one.major_id, block_id = one.block_id
+       FROM students one
+       WHERE one.student_id = $1 AND two.student_id = $2
+         AND (two.program_id, two.major_id, two.block_id) IS DISTINCT FROM (one.program_id, one.major_id, one.block_id)`,
+      [demoStudent.id, demoStudentTwo.id]
+    );
 
     const taskExists = await client.query(
       `SELECT 1 FROM tasks WHERE student_id = $1 AND title = $2 LIMIT 1`,
@@ -184,6 +208,9 @@ async function seedDemoData() {
   console.log("Local demo accounts and sample OJT data are ready.");
   console.log(
     `Student: ${demoStudent.email} / ${demoStudent.password} (${demoStudent.id})`
+  );
+  console.log(
+    `Second student: ${demoStudentTwo.email} / ${demoStudentTwo.password} (${demoStudentTwo.id})`
   );
   console.log(
     `Supervisor: ${demoSupervisor.email} / ${demoSupervisor.password} (${demoSupervisor.id})`
