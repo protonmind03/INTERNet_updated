@@ -244,7 +244,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
                     const p = row.performance;
                     return (
                       <tr key={row.student_id} className="align-top hover:bg-slate-50">
-                        <th scope="row" className="py-3 pl-5 pr-3 text-left font-normal">
+                        <th scope="row" className="min-w-64 py-3 pl-5 pr-3 text-left font-normal">
                           <Link
                             to={`/coordinator/students/${encodeURIComponent(row.student_id)}`}
                             className="font-semibold text-psu-700 hover:underline"

@@ -105,6 +105,9 @@ export default function CoordinatorTerms() {
     }
   };
 
+  // Of the terms still being set up, the one that starts soonest: its checklist is the one shown open.
+  const nextUp = terms.filter(settingUp).sort((a, b) => a.start_date.localeCompare(b.start_date))[0];
+
   const menuFor = (term: Term): RowMenuItem[] => {
     const items: RowMenuItem[] = [{ label: "Edit", icon: "edit", onSelect: () => setEditing(term) }];
     if (!term.is_closed && unassigned > 0) {
@@ -191,7 +194,9 @@ export default function CoordinatorTerms() {
                         ? ` · closed ${formatDate(term.closed_at)}`
                         : ""}
                     </p>
-                    {settingUp(term) && <TermSetup termId={term.id} termName={term.name} />}
+                    {settingUp(term) && (
+                      <TermSetup termId={term.id} termName={term.name} startsOpen={term.id === nextUp?.id} />
+                    )}
                   </div>
                   <RowMenu label={`Actions for ${term.name}`} items={menuFor(term)} />
                 </li>

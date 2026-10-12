@@ -40,7 +40,7 @@ export default function CoordinatorRequirements() {
       title="Requirements"
       subtitle="What students must submit, when it is due and who reviews it; and where schedules are set."
     >
-      <div className="grid items-start gap-6 xl:grid-cols-2">
+      <div className="grid items-start gap-6 xl:grid-cols-3">
         <RequiredDocuments />
         <StudentSchedule />
       </div>
@@ -136,7 +136,7 @@ function RequiredDocuments() {
   const active = requirements.filter((item) => item.is_active).length;
 
   return (
-    <Card>
+    <Card className="xl:col-span-2">
       <CardHeader
         title="Required documents"
         description={

@@ -13,7 +13,16 @@ import { coordinatorRequest } from "./request";
 
 type Line = { key: string; label: string; done: boolean; detail: string; link: string };
 
-export default function TermSetup({ termId, termName }: { termId: number; termName: string }) {
+export default function TermSetup({
+  termId,
+  termName,
+  startsOpen,
+}: {
+  termId: number;
+  termName: string;
+  /** Open to begin with: for the one term being set up now, so several upcoming terms do not fill the page. */
+  startsOpen: boolean;
+}) {
   const [state, setState] = useState<{ lines: Line[]; done: number } | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -36,7 +45,7 @@ export default function TermSetup({ termId, termName }: { termId: number; termNa
   const all = state.done === state.lines.length;
 
   return (
-    <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50" open={!all}>
+    <details className="mt-3 rounded-lg border border-slate-200 bg-slate-50" open={startsOpen && !all}>
       <summary className="cursor-pointer px-3 py-2.5 text-sm font-semibold text-slate-900">
         Setup for {termName}: {state.done} of {state.lines.length} done
       </summary>
