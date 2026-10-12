@@ -1530,3 +1530,54 @@ automated accessibility check on 48 pages at both widths: clean.
 **Not checked:** the backfill through the tunnel; the migrations on the
 hosted databases; any of it with a real class list (the test data has a
 handful of students); the filter bar's speed with hundreds of students.
+
+## 29. Round 2, Phase 3: what students write and read about their days (12 October 2026)
+
+On `ui-redesign`, on localhost. Two additive migrations (039, 040).
+
+- **Weekly report (3.1, migration 039).** The weekly journal under a new
+  name for students, supervisors and the coordinator, with a fourth,
+  optional part: What I did, What I learned, Problems encountered,
+  Solutions tried or identified. Above the form, and beside the report
+  where it is reviewed or read, is what the student wrote at time-out on
+  each day of that week. Reviewing and returning work as before. It does
+  not count toward completion.
+- **Tasks worked on (3.2, migration 040).** The time-out confirmation
+  lists the student's open tasks to tick, optionally; the accomplishment
+  note stays required. The choice travels with a time-out kept offline.
+  The titles show under the note in the supervisor's review and on the
+  time record.
+- **Lunch, and the time record (3.3).** The steps are "Time in", "Out for
+  lunch", "Back from lunch", "Time out" everywhere. The time record
+  prints Day, AM In, AM Out, PM In, PM Out, Hours, Status, and never a
+  time that did not happen: a day with no lunch reads "No break" across
+  the two middle cells; a morning or an afternoon alone fills only its
+  two columns.
+- **Schedule (3.4).** Three views. Week is the page as it was. Month is a
+  calendar: working day or day off, holiday, a dot for a task due, a mark
+  for an absence, the hours at the bottom, and the week of the OJT down
+  the side; a tap on a day (or holding it, or Enter) opens everything
+  about it, and the arrow keys move between days. My progress shows
+  verified hours each week against the schedule, attendance on scheduled
+  days, the average time-in against the shift's start, hours still
+  needed, and the projected finish. All but the projection work offline.
+- Every dialog's backdrop is now blurred.
+
+**What was checked:** both migrations run twice locally. 141 API tests
+(136 before): the report's new part, including a form that does not send
+it; tasks at time-out, refused when not the student's own, read back by
+all three roles, and carried by an offline time-out replayed twice; the
+time record's columns in twenty cases, among them a break at 10:00 AM, a
+day ending at 12:59 and at 1:00, and a session after midnight; the
+calendar's weeks, week numbers, day facts and weekly figures; the term on
+the student's profile. 21 end-to-end tests (19 before). In a browser at
+390 px and 1280 px: the calendar, its sheet, the keyboard, holding a day,
+the progress tab, the time record's merged "No break" cell, the report
+form, and the time-out dialog's task list. The automated accessibility
+check on 50 pages at both widths: clean, after giving each calendar day a
+spoken name of its own and keeping the contrast of days outside the
+month.
+
+**Not checked:** on a real phone (the calendar's squares under a thumb,
+holding a day on a touch screen). The time record printed on paper. The
+calendar and progress views with a connection really lost.

@@ -768,21 +768,66 @@ Different from the description, or decided where it left room:
 
 ### Phase 3: what students write and read about their days
 
-Two migrations (039, 040).
+Two migrations (039, 040). Built 2026-10-12 on localhost.
 
-- [ ] **3.1 Weekly report.** The weekly journal, extended, under a new
+Built on the default, awaiting confirmation:
+
+- 3.1: the weekly report does NOT count toward completion. The checklist
+  is as it was.
+- 3.3: a day with no lunch prints "No break" across AM Out and PM In.
+  Whether the university's form needs four filled cells is not known.
+- 3.4: late is more than 15 minutes after the scheduled start.
+
+Different from the description, or decided where it left room:
+
+- 3.1: new notifications are titled "Weekly report ..."; stored ones keep
+  "Weekly journal ..." and the link rule matches both. A form that does
+  not send `solutions` leaves what is saved alone. The supervisor's page
+  loads their interns' logs to show each week's daily list.
+- 3.2: a list naming a task that is not the student's is refused whole
+  (400) and the day stays open; at most 20 tasks. If the links cannot be
+  saved the time-out still stands with its note. "Open" is Pending or In
+  Progress.
+- 3.3: this settles the "Lunch or break" question left open in Phase 1A.
+  A combined cell in a list is headed "Lunch". The text kept in audit
+  entries about corrected times still says "break": it is stored, and old
+  entries say the same. The printed sheet is still headed "Daily Time
+  Record".
+- 3.3: a single session that starts at noon or later is put in the PM
+  columns even if it ends by 12:59 PM (12:10 to 12:50 is an afternoon's
+  work). The two rules as written would each claim it. A day still open
+  prints only the times recorded so far.
+- 3.4: no new endpoint, but the student's own profile answer gained
+  `term` (name and dates), so the weeks can be counted from the term's
+  start when there is no log yet. Weeks count from the first log when
+  there is one.
+- 3.4: the chart component draws one series, so the weeks are columns of
+  verified hours, darker when a week met its schedule, with the scheduled
+  hours in each column's note.
+- 3.4: the projected finish is the server's and is not kept offline, so
+  with no connection that one card says it needs one. Everything else on
+  both views comes from the saved lists. Absences are now kept offline
+  for the month view.
+- 3.4: attendance on scheduled days counts a filed absence as a day not
+  timed in, and leaves today out. Time-in is measured against the
+  schedule as it is now.
+- The tests for the three plain functions the pages use (time columns,
+  the calendar, the weekly figures) are in the backend's test file, which
+  loads them from `my-pwa/src/lib`: the frontend has no test runner.
+
+- [x] **3.1 Weekly report.** The weekly journal, extended, under a new
   name for all three roles: What I did, What I learned, Problems
   encountered, Solutions tried or identified (new, migration 039). Above
   the form, that week's daily accomplishments. Review flow unchanged.
-- [ ] **3.2 Tasks worked on, at time-out** (migration 040,
+- [x] **3.2 Tasks worked on, at time-out** (migration 040,
   attendance_tasks). An optional choice of open tasks on the time-out
   confirmation, carried through the offline queue; shown under the note
   in the supervisor's review and on the time record.
-- [ ] **3.3 AM / PM labels and the time record.** "Time in", "Out for
+- [x] **3.3 AM / PM labels and the time record.** "Time in", "Out for
   lunch", "Back from lunch", "Time out". The time record prints Day, AM
   In, AM Out, PM In, PM Out, Hours, Status, and never a time that did not
   happen.
-- [ ] **3.4 Calendar schedule.** Week and Month views and a "My progress"
+- [x] **3.4 Calendar schedule.** Week and Month views and a "My progress"
   tab on the student's Schedule page, from data already loaded and saved
   offline. Every Modal's backdrop is blurred.
 

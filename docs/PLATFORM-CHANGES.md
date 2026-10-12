@@ -350,6 +350,19 @@ address, so `vercel.json` is unchanged.
 | After "make it live" | Railway production, through the tunnel (run by you) | The program backfill on production: dry run, add mappings for the spellings you recognise, then `confirm`. | Links the students who were there before. Until it is run they show under the program text on their account and are missed by a College or Program filter. |
 | After the backfill | The site, as coordinator | Programs page: check the seeded list against the OJT office's, make blocks for this term, and place students (a block's "Students", or the import with a `block` column). | Blocks are not seeded and no student starts in one. |
 
+### Phase 3: weekly report, tasks at time-out, the time record, the calendar (built 2026-10-12, on localhost)
+
+Two additive migrations: 039 (one nullable column, `journals.solutions`)
+and 040 (one new table, `attendance_tasks`). The frontend that is live
+today keeps working on them: it sends neither, and a time-out with no
+tasks writes no rows. No new variable, no new backend address.
+
+| When | Platform | Change | Why |
+|---|---|---|---|
+| On "push" | Railway staging, Vercel Preview | Nothing by hand: 039 and 040 run on deploy with the earlier ones. Wait for Railway to go green. | The new time-out dialog and weekly report form send fields only the new backend reads; an older backend ignores them, so nothing fails, but the tasks chosen would not be kept. |
+| Before "make it live" | Railway production (run by you) | The fresh database backup already asked for: the release now carries migrations 035 to 040. | |
+| After either | A phone, on the site | Time out with a task ticked, then open the day on Schedule > Month and on the time record. Print the time record to PDF and check the AM/PM columns against the university's form. | The printed columns were checked on screen, not on paper. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.

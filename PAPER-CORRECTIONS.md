@@ -556,3 +556,34 @@ are true of the system today, for a scope section:
   until the students are linked.
 - A supervisor whose interns are of more than one program or block can
   narrow their pages to one. This is a view of their own interns only.
+- **Feature 3 (attendance), wording.** The four steps of a day are called
+  "Time in", "Out for lunch", "Back from lunch" and "Time out" on every
+  screen. If the paper says "break", "start break" or "end break", use
+  these. The time record is printed with the columns Day, AM In, AM Out,
+  PM In, PM Out, Hours, Status: time in is AM In, out for lunch AM Out,
+  back from lunch PM In, time out PM Out. The system does not ask for four
+  times: lunch is optional. A day worked without one prints "No break" in
+  place of AM Out and PM In, and a morning-only or afternoon-only day
+  fills only its two columns. The system never prints a time that was not
+  recorded; if the paper says the DTR "always shows four entries" or that
+  the system "computes" the lunch hour, that is not what it does.
+- **The weekly journal is now the weekly report.** One entry a week with
+  four parts: What I did, What I learned, Problems encountered, and
+  Solutions tried or identified (the last two optional). Beside it the
+  system shows what the student wrote at time-out on each day of that
+  week. The supervisor still marks it reviewed or returns it. It is not
+  graded and, as before, is not counted toward completion. Use "weekly
+  report" in the text; the table in the ERD is still `journals`, with one
+  more attribute, `solutions`.
+- At time-out a student may tick which of their assigned tasks they
+  worked on that day. It is optional and is the student's own statement:
+  the system does not check it against anything, and it does not change a
+  task's status. The ERD has one more entity for it, `attendance_tasks`
+  (attendance_id, task_id), between Attendance and Tasks.
+- The student's Schedule page has three views: the week, a month
+  calendar, and "My progress". The calendar and the progress figures are
+  put together on the student's device from records already loaded, and
+  work from the saved copies without a connection. "Late" on that page
+  means a time-in more than 15 minutes after the scheduled start; that
+  number is a default chosen for the system, not a university rule, and
+  nothing happens to a student who is late: it is only shown to them.
