@@ -9009,6 +9009,9 @@ app.get(
           `
           SELECT s.student_id, s.name, s.program, s.company,
                  sup.name AS supervisor_name,
+                 MAX(col.name) AS college, MAX(prog.name) AS program_name,
+                 MAX(CASE WHEN blk.id IS NULL THEN NULL
+                          ELSE bprog.short_code || ' ' || blk.year_level || UPPER(TRIM(blk.section)) END) AS block,
                  COUNT(DISTINCT d.doc_type)
                    FILTER (WHERE d.status = 'Approved')::int AS approved,
                  COUNT(DISTINCT d.doc_type)
@@ -9022,6 +9025,10 @@ app.get(
                  ) AS approved_types
           FROM students s
           LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+          LEFT JOIN programs prog ON prog.id = s.program_id
+          LEFT JOIN colleges col ON col.id = prog.college_id
+          LEFT JOIN blocks blk ON blk.id = s.block_id
+          LEFT JOIN programs bprog ON bprog.id = blk.program_id
           LEFT JOIN documents d
             ON d.student_id = s.student_id
            AND d.doc_type IN (
@@ -9051,6 +9058,9 @@ app.get(
           program: row.program,
           company: row.company,
           supervisor_name: row.supervisor_name,
+          college: row.college,
+          program_name: row.program_name,
+          block: row.block,
           approved: row.approved,
           pending: row.pending,
           rejected: row.rejected,

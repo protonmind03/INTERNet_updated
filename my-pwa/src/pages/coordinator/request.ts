@@ -34,6 +34,30 @@ export async function coordinatorRequest<T = Record<string, unknown>>(
 }
 
 /** Downloads a submitted document through the coordinator's session. */
+/**
+ * Downloads the documents the filters leave as one ZIP. `query` is the
+ * filter bar's choices with, optionally, a status and a requirement. The
+ * server refuses a set that is empty or over its cap, and says why.
+ */
+export async function downloadDocumentsZip(query: string): Promise<void> {
+  const response = await withWorkingToast("Building the ZIP…", () =>
+    fetch(`${API_URL}/api/coordinator/documents/zip${query ? `?${query}` : ""}`, withCoordinatorAuth())
+  );
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || "The ZIP could not be built.");
+  }
+  const objectUrl = URL.createObjectURL(await response.blob());
+  const link = window.document.createElement("a");
+  link.href = objectUrl;
+  // Named here: the browser cannot read the server's file name across origins.
+  link.download = `internet-documents-${new Date().toISOString().slice(0, 10)}.zip`;
+  window.document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
+}
+
 export async function downloadSubmittedDocument(id: number, filename: string): Promise<void> {
   const response = await withWorkingToast("Preparing the file…", () =>
     fetch(`${API_URL}/api/documents/${id}/file`, withCoordinatorAuth())

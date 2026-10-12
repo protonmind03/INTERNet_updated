@@ -7252,3 +7252,122 @@ test("analytics takes a date range and a grouping, and the groups add up to the 
   assert.equal(past.period.previousLogs, before.period.logs);
   assert.equal(past.period.previousHours, before.period.hours);
 });
+
+test("files in a ZIP are named for a person, never collide, and a ZIP is capped by count and size", () => {
+  require("tsx/cjs");
+  const { zipNames, zipProblem, ZIP_MAX_FILES, ZIP_MAX_BYTES } = require("../src/services/documentZip.ts");
+  assert.deepEqual([ZIP_MAX_FILES, ZIP_MAX_BYTES], [500, 500 * 1024 * 1024]);
+  assert.equal(zipProblem(0, 0), "No documents match those filters.");
+  assert.equal(zipProblem(1, 10), "");
+  assert.equal(zipProblem(500, ZIP_MAX_BYTES), "", "exactly at both caps is allowed");
+  assert.match(zipProblem(501, 1024 * 1024), /^That is 501 files \(1 MB\)\. One ZIP holds at most 500 files or 500 MB\. Narrow the filters/);
+  assert.match(zipProblem(3, ZIP_MAX_BYTES + 1), /^That is 3 files \(500 MB\)\./);
+  assert.match(zipProblem(40, 3 * 1024 * 1024 * 1024), /\(3\.0 GB\)/);
+
+  const names = zipNames([
+    { student_name: "Ana Reyes", doc_type: "MOA", original_filename: "moa.pdf" },
+    { student_name: "Ana Reyes", doc_type: "MOA", original_filename: "MOA.pdf" },
+    { student_name: "Ana Reyes", doc_type: "MOA", original_filename: "moa.pdf" },
+    { student_name: "Ben / Cruz", doc_type: "Medical: 2026", original_filename: "..\\..\\etc\\passwd" },
+    { student_name: null, doc_type: "", original_filename: "" },
+    { student_name: "Dela Cruz, Juan", doc_type: "Waiver", original_filename: "scan.final.JPG" },
+    { student_name: "Eve", doc_type: "Waiver", original_filename: "x".repeat(300) + ".pdf" },
+  ]);
+  assert.deepEqual(names.slice(0, 6), [
+    "Ana Reyes - MOA - moa.pdf",
+    "Ana Reyes - MOA - MOA (2).pdf",
+    "Ana Reyes - MOA - moa (3).pdf",
+    "Ben Cruz - Medical 2026 - etc passwd",
+    "Unknown student - Document - file",
+    "Dela Cruz, Juan - Waiver - scan.final.JPG",
+  ]);
+  assert.equal(new Set(names.map((name) => name.toLowerCase())).size, names.length, "no two names are the same, whatever the capitals");
+  for (const name of names) {
+    assert.ok(!/[\\/:*?"<>|]/.test(name) && !name.includes(".."), name);
+    assert.ok(name.length <= 260, "short enough for any file system");
+  }
+});
+
+test("the coordinator downloads the filtered documents as one ZIP, named for people, and it is logged with the filters", async (t) => {
+  const supervisor = await supervisorSession();
+  const path = "/api/coordinator/documents/zip";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  const refused = async (query, status) => {
+    const answer = await jsonRequest(`${path}${query}`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(answer.response.status, status, query);
+    return answer.body.message;
+  };
+  await refused("?status=Lost", 400);
+  await refused("?block=abc", 400);
+  await refused(`?doc_type=${"x".repeat(101)}`, 400);
+  assert.equal(await refused("?doc_type=No%20such%20requirement", 404), "No documents match those filters.");
+
+  // The list now says where each student is placed, for the grouped view.
+  const list = (await jsonRequest("/api/coordinator/documents", { headers: authHeaders(coordinatorToken) })).body;
+  for (const row of list.students) for (const key of ["college", "program_name", "block"]) assert.ok(key in row, key);
+
+  if (needsWrites(t)) return;
+  const { unzipSync } = require("fflate");
+  const pool = localTestPool();
+  const stamp = Date.now();
+  const requirement = list.requirements[0];
+  assert.ok(requirement, "an active requirement to upload against");
+  const made = [];
+  try {
+    const upload = async (name) => {
+      const form = new FormData();
+      form.append("doc_type", requirement);
+      form.append("file", new Blob([sampleFiles.pdf], { type: "application/pdf" }), name);
+      const answer = await jsonRequest("/api/documents", { method: "POST", headers: authHeaders(studentToken), body: form });
+      assert.equal(answer.response.status, 201, JSON.stringify(answer.body));
+      made.push(answer.body.document.id);
+      return answer.body.document.id;
+    };
+    const first = await upload(`zip test ${stamp}.pdf`);
+    const second = await upload(`zip test ${stamp}.pdf`);
+    await pool.query(`UPDATE documents SET status = 'Approved' WHERE id = $1`, [first]);
+    // A record whose file is gone from storage.
+    made.push((await pool.query(`INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status) VALUES ($1, $2, $3, $4, 'application/pdf', 10, 'Approved') RETURNING id`, [student.student_id, requirement, `lost ${stamp}.pdf`, `${stamp}-aaaaaaaaaaaa.pdf`])).rows[0].id);
+
+    const fetchZip = async (query) => {
+      const response = await fetch(new URL(`${path}${query}`, apiBaseUrl), { headers: authHeaders(coordinatorToken) });
+      assert.equal(response.status, 200, query);
+      assert.match(response.headers.get("content-type"), /application\/zip/);
+      return unzipSync(new Uint8Array(await response.arrayBuffer()));
+    };
+    const supervisorId = encodeURIComponent(supervisor.supervisor.supervisor_id);
+    const mineOnly = (files) => Object.keys(files).filter((name) => name.includes(String(stamp)) || name === "NOT INCLUDED.txt").sort();
+
+    // Approved only, this requirement, this supervisor's students: the approved upload, and a note about the lost one.
+    const approved = await fetchZip(`?supervisor=${supervisorId}&status=Approved&doc_type=${encodeURIComponent(requirement)}`);
+    const readable = `${student.name} - ${requirement} - zip test ${stamp}.pdf`;
+    assert.deepEqual(mineOnly(approved), ["NOT INCLUDED.txt", readable].sort());
+    assert.deepEqual(Buffer.from(approved[readable]), sampleFiles.pdf, "the file itself, byte for byte");
+    assert.match(Buffer.from(approved["NOT INCLUDED.txt"]).toString(), new RegExp(`${student.name} - ${requirement} - lost ${stamp}\\.pdf`));
+    // The stored names never appear.
+    const stored = (await pool.query(`SELECT file_path FROM documents WHERE id = ANY($1::int[])`, [made])).rows.map((row) => row.file_path.split("/").pop());
+    for (const name of Object.keys(approved)) assert.ok(!stored.some((secret) => name.includes(secret.replace(/\.[a-z]+$/, ""))), name);
+
+    // Every status: both uploads, the second told apart from the first.
+    const all = await fetchZip(`?supervisor=${supervisorId}&doc_type=${encodeURIComponent(requirement)}`);
+    assert.ok(mineOnly(all).includes(readable));
+    assert.ok(mineOnly(all).includes(`${student.name} - ${requirement} - zip test ${stamp} (2).pdf`));
+    assert.ok(second);
+    // Filters that leave nobody: nothing to send.
+    await refused(`?supervisor=none&doc_type=${encodeURIComponent(requirement)}&company=999999999`, 404);
+
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=document.bulk_download&limit=5", { headers: authHeaders(coordinatorToken) });
+    const entries = audit.body.entries.filter((entry) => String(entry.details?.filters || "").includes(`doc_type=${requirement}`));
+    assert.ok(entries.length >= 2, JSON.stringify(audit.body.entries.slice(0, 2)));
+    const logged = entries.find((entry) => String(entry.details.filters).includes("status=Approved"));
+    assert.equal(logged.details.filters, `supervisor=${supervisor.supervisor.supervisor_id}; status=Approved; doc_type=${requirement}`);
+    assert.ok(logged.details.files >= 1 && logged.details.missing >= 1 && logged.details.bytes > 0);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%zip test ${stamp}%`]);
+    await pool.query(`DELETE FROM documents WHERE id = ANY($1::int[])`, [made]);
+    await pool.end();
+  }
+});

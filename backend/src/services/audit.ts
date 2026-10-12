@@ -220,6 +220,21 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     from: (source) => ({ students: source.result.count, left_out: source.result.skipped }),
   },
+  // Many students' documents taken out at once, with the filters used.
+  {
+    method: "GET",
+    path: "/api/coordinator/documents/zip",
+    action: "document.bulk_download",
+    entityType: "document",
+    entityId: () => null,
+    roles: ["coordinator"],
+    from: (source) => ({
+      filters: source.noted?.filters,
+      files: source.noted?.files,
+      missing: source.noted?.missing,
+      bytes: source.noted?.bytes,
+    }),
+  },
   // The log itself: taking a copy of it out is recorded in it.
   {
     method: "GET",

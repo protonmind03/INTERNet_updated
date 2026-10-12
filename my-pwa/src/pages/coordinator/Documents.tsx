@@ -3,6 +3,7 @@ import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
+  Button,
   Card,
   CardHeader,
   EmptyState,
@@ -20,7 +21,8 @@ import { formatDate, localDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import FilterBar from "./FilterBar";
-import { coordinatorRequest, downloadSubmittedDocument } from "./request";
+import { coordinatorRequest, downloadDocumentsZip, downloadSubmittedDocument } from "./request";
+import DocumentGroups from "./DocumentGroups";
 import { useStudentFilters } from "./useStudentFilters";
 
 type DocumentStatus = "Pending" | "Approved" | "Rejected";
@@ -45,6 +47,10 @@ type StudentProgress = {
   program: string | null;
   company: string | null;
   supervisor_name: string | null;
+  /** Where the student is placed, for the grouped view. Missing from an older server. */
+  college?: string | null;
+  program_name?: string | null;
+  block?: string | null;
   approved: number;
   pending: number;
   rejected: number;
@@ -64,6 +70,11 @@ export default function CoordinatorDocuments() {
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<Scope>("all");
   const [status, setStatus] = useState<StatusFilter>("all");
+  // Requirement progress as a list of students, or as College > Program > Block > Student.
+  const [layout, setLayout] = useState<"students" | "groups">("students");
+  // One requirement's files, or every requirement's.
+  const [docType, setDocType] = useState("");
+  const [zipping, setZipping] = useState(false);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
 
@@ -126,6 +137,7 @@ export default function CoordinatorDocuments() {
       documents.filter(
         (item) =>
           (status === "all" || item.status === status) &&
+          (!docType || item.doc_type === docType) &&
           isWithinDateRange(localDateKey(item.uploaded_at), dateFrom, dateTo) &&
           matches([
             item.student_name,
@@ -136,8 +148,25 @@ export default function CoordinatorDocuments() {
             item.original_filename,
           ])
       ),
-    [documents, status, dateFrom, dateTo, matches]
+    [documents, status, docType, dateFrom, dateTo, matches]
   );
+
+  // The ZIP takes the filter bar, the status and the requirement. It is built
+  // on the server from every matching file, not only the ones listed here.
+  const downloadZip = async () => {
+    const sent = new URLSearchParams(chosen);
+    if (status !== "all") sent.set("status", status);
+    if (docType) sent.set("doc_type", docType);
+    setZipping(true);
+    try {
+      await downloadDocumentsZip(sent.toString());
+      toast.success("ZIP ready. The download is recorded in the audit log.");
+    } catch (zipError) {
+      toast.error(errorText(zipError, "The ZIP could not be built."));
+    } finally {
+      setZipping(false);
+    }
+  };
 
   const studentPager = usePagination(visibleStudents, 20);
   const filePager = usePagination(visibleDocuments, 15);
@@ -176,7 +205,7 @@ export default function CoordinatorDocuments() {
               total === 1 ? "requirement" : "requirements"
             }.`}
           />
-          <div className="border-b border-slate-100 px-4 pb-4 pt-3 sm:px-5">
+          <div className="space-y-3 border-b border-slate-100 px-4 pb-4 pt-3 sm:px-5">
             <FilterChips
               label="Which students"
               value={scope}
@@ -184,6 +213,15 @@ export default function CoordinatorDocuments() {
               options={[
                 { value: "all", label: "All students", count: students.length },
                 { value: "incomplete", label: "Incomplete", count: incomplete },
+              ]}
+            />
+            <FilterChips
+              label="How the students are listed"
+              value={layout}
+              onChange={setLayout}
+              options={[
+                { value: "students", label: "By student" },
+                { value: "groups", label: "By college, program and block" },
               ]}
             />
           </div>
@@ -194,6 +232,8 @@ export default function CoordinatorDocuments() {
               icon={students.length === 0 ? "users" : "search"}
               title={students.length === 0 ? "No active students" : "No students match"}
             />
+          ) : layout === "groups" ? (
+            <DocumentGroups students={visibleStudents} total={total} />
           ) : (
             <>
             <ul className="divide-y divide-slate-100">
@@ -265,6 +305,29 @@ export default function CoordinatorDocuments() {
                 { value: "Rejected", label: "Rejected" },
               ]}
             />
+            <div className="flex flex-wrap items-end gap-3">
+              <label className="text-xs font-medium text-slate-600">
+                Requirement
+                <select
+                  value={docType}
+                  onChange={(event) => setDocType(event.target.value)}
+                  className="mt-1 block h-10 min-w-48 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
+                >
+                  <option value="">All requirements</option>
+                  {requirements.map((name) => (
+                    <option key={name}>{name}</option>
+                  ))}
+                </select>
+              </label>
+              <Button variant="secondary" icon="download" busy={zipping} busyProcess="export" onClick={() => void downloadZip()}>
+                {zipping ? "Building" : "Download as ZIP"}
+              </Button>
+            </div>
+            <p className="text-xs text-slate-600">
+              The ZIP holds every file that fits the filter bar at the top, the status and the requirement chosen
+              here, up to 500 files or 500 MB. The search box and the dates do not narrow it. Each file is named
+              with the student, the requirement and its original name.
+            </p>
             <DateRangeFilter
               from={dateFrom}
               to={dateTo}

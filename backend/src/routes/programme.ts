@@ -1,5 +1,11 @@
+import { once } from "node:events";
+import nodePath from "node:path";
 import type express from "express";
+import { Zip, ZipPassThrough } from "fflate";
 import type { Pool } from "pg";
+import { manilaClock } from "../services/digests";
+import { zipNames, zipProblem } from "../services/documentZip";
+import { readPrivateFile } from "../services/privateFileStore";
 import { programmeReport, studentPerformance } from "../services/insights";
 import {
   BEHIND_AFTER_SCHEDULED_DAYS,
@@ -8,7 +14,7 @@ import {
   LATE_AFTER_MINUTES,
   PERFORMANCE_RULES,
 } from "../services/performance";
-import { readStudentFilters } from "../services/studentScope";
+import { bindFilters, filterConditions, readStudentFilters } from "../services/studentScope";
 import { BLOCK_NAME_SQL } from "../services/academics";
 import { KPI_DEFINITIONS, readTarget, type KpiDefinition } from "../services/kpiDefinitions";
 import { loadKpiTargets } from "../services/kpis";
@@ -21,6 +27,7 @@ import { termSetup } from "../services/termSetup";
 |--------------------------------------------------------------------------
 |
 |   performance   each student's figures, status word and sentence
+|   documents zip the filtered documents as one download
 |   kpi targets   the six key figures' targets, changed from the dashboard
 |   filter views  a coordinator's saved choices of the filter bar
 |   term setup    what a term still needs, counted
@@ -225,6 +232,109 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
     } catch (error) {
       console.error("REMOVE FILTER VIEW ERROR:", error);
       return res.status(500).json({ message: "Failed to remove the view." });
+    }
+  });
+
+  /*
+  | The documents the filters leave, as one ZIP (services/documentZip.ts).
+  | Takes the filter bar's choices, and optionally `status` and `doc_type`.
+  | Built file by file and sent as it is built, so the server never holds
+  | the whole ZIP.
+  */
+
+  app.get("/api/coordinator/documents/zip", requireCoordinator, async (req, res) => {
+    try {
+      const read = readStudentFilters(req.query as Record<string, unknown>);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      const status = typeof req.query.status === "string" ? req.query.status.trim() : "";
+      if (status && !["Pending", "Approved", "Rejected"].includes(status)) {
+        return res.status(400).json({ message: "That is not a document status." });
+      }
+      const docType = typeof req.query.doc_type === "string" ? req.query.doc_type.trim() : "";
+      if (docType.length > 100) return res.status(400).json({ message: "That is not a requirement." });
+
+      const bound = bindFilters(
+        `SELECT d.id, d.file_path, d.doc_type, d.original_filename, d.size_bytes::float AS size_bytes, s.name AS student_name
+         FROM documents d
+         JOIN students s ON s.student_id = d.student_id
+         WHERE ($1::text = '' OR d.status = $1) AND ($2::text = '' OR d.doc_type = $2)${filterConditions(read.filters, "s")}
+         ORDER BY s.name, d.doc_type, d.uploaded_at, d.id`,
+        [status, docType],
+        read.filters
+      );
+      const found = await pool.query<{
+        id: number;
+        file_path: string;
+        doc_type: string;
+        original_filename: string;
+        size_bytes: number;
+        student_name: string | null;
+      }>(bound.text, bound.values);
+      const bytes = found.rows.reduce((sum, row) => sum + (Number(row.size_bytes) || 0), 0);
+      const problem = zipProblem(found.rows.length, bytes);
+      if (problem) return res.status(found.rows.length === 0 ? 404 : 413).json({ message: problem });
+
+      const names = zipNames(found.rows);
+      // What was asked for, in words, for the audit log.
+      const filterText =
+        [
+          ...Object.entries(read.filters).map(([key, value]) => `${key}=${value}`),
+          status ? `status=${status}` : "",
+          docType ? `doc_type=${docType}` : "",
+        ]
+          .filter(Boolean)
+          .join("; ") || "none";
+
+      res.status(200).type("application/zip").attachment(`internet-documents-${manilaClock(new Date()).date}.zip`);
+      let failed = false;
+      const zip = new Zip((error, chunk, final) => {
+        if (error) {
+          failed = true;
+          res.destroy(error);
+          return;
+        }
+        res.write(Buffer.from(chunk));
+        if (final) res.end();
+      });
+      const missing: string[] = [];
+      let sent = 0;
+      for (const [index, row] of found.rows.entries()) {
+        // The coordinator closed the page: stop reading files nobody is waiting for.
+        if (failed || res.destroyed) return;
+        let buffer: Buffer;
+        try {
+          buffer = (await readPrivateFile(nodePath.basename(row.file_path))).buffer;
+        } catch {
+          missing.push(names[index]);
+          continue;
+        }
+        // Stored, not squeezed: PDFs and photos are compressed already.
+        const entry = new ZipPassThrough(names[index]);
+        zip.add(entry);
+        entry.push(buffer, true);
+        sent += 1;
+        if (res.writableNeedDrain) await once(res, "drain");
+      }
+      if (missing.length > 0) {
+        const note = new ZipPassThrough("NOT INCLUDED.txt");
+        zip.add(note);
+        note.push(
+          Buffer.from(
+            `These documents are on record but their files could not be read from storage, so they are not in this ZIP:\r\n\r\n${missing.join("\r\n")}\r\n`
+          ),
+          true
+        );
+      }
+      res.locals.auditNote = { filters: filterText, files: sent, missing: missing.length, bytes };
+      zip.end();
+      return undefined;
+    } catch (error) {
+      console.error("DOCUMENT ZIP ERROR:", error);
+      if (res.headersSent) {
+        res.destroy();
+        return undefined;
+      }
+      return res.status(500).json({ message: "Failed to build the ZIP." });
     }
   });
 
