@@ -37,6 +37,7 @@ import { useHolidays } from "../../lib/useHolidays";
 import { usePagination } from "../../lib/usePagination";
 import { coordinatorRequest, downloadSubmittedDocument } from "./request";
 import ScheduleEditor from "./ScheduleEditor";
+import { PerformanceSummary } from "./StudentPerformance";
 
 /*
 |--------------------------------------------------------------------------
@@ -315,6 +316,9 @@ export default function StudentRecord() {
 
             {tab === "overview" && (
               <div className="grid items-start gap-5 lg:grid-cols-5">
+                <div className="empty:hidden lg:col-span-5">
+                  <PerformanceSummary key={student.student_id} studentId={student.student_id} />
+                </div>
                 <Card className="p-4 sm:p-5 lg:col-span-3">
                   <div className="flex flex-wrap items-center gap-2">
                     <StatusBadge

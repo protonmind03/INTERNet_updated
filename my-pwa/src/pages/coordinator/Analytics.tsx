@@ -20,11 +20,13 @@ import {
 import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
+import { saveCsv } from "../../lib/csv";
 import { formatDate, formatDateTime, formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import GroupSummary from "./GroupSummary";
 import KpiCards from "./KpiCards";
 import { fetchProgrammeReport, programmeSections } from "./programmeReport";
+import StudentPerformance from "./StudentPerformance";
 import { coordinatorRequest } from "./request";
 import FilterBar from "./FilterBar";
 import { describeFilters, useStudentFilters } from "./useStudentFilters";
@@ -90,16 +92,6 @@ const EVALUATORS: { type: string; label: string }[] = [
   { type: "coordinator", label: "Coordinator, about students" },
   { type: "student", label: "Students, about their company" },
 ];
-
-// Tells spreadsheet programs the file is UTF-8, so accented names open correctly.
-const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
-
-/** Guards a spreadsheet cell against being read as a formula. */
-function csvCell(value: string | number): string {
-  let text = String(value);
-  if (/^[\s]*[=+\-@]/.test(text)) text = `'${text}`;
-  return `"${text.replace(/"/g, '""')}"`;
-}
 
 /** "Oct 6" for a "YYYY-MM-DD" day; falls back to the raw value. */
 function dayLabel(day: string): string {
@@ -316,15 +308,7 @@ export default function CoordinatorAnalytics() {
         ...section.rows,
       ]),
     ];
-    const csv = `${BYTE_ORDER_MARK}${rows.map((row) => row.map(csvCell).join(",")).join("\r\n")}`;
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = reportFileName("csv");
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    URL.revokeObjectURL(url);
+    saveCsv(rows, reportFileName("csv"));
   };
 
   const trend = useMemo(
@@ -573,6 +557,9 @@ export default function CoordinatorAnalytics() {
 
               {/* The company table's twins. */}
               <GroupSummary query={term} />
+
+              {/* Student by student, with its own CSV and PDF. */}
+              <StudentPerformance query={term} covered={termName} />
 
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
                 <Card className="min-w-0">
