@@ -11,6 +11,7 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
+import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
@@ -18,13 +19,19 @@ import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
+import { useTimeIn } from "./timeInContext";
 
 /*
 |--------------------------------------------------------------------------
-| WEEKLY JOURNAL
+| WEEKLY REPORT
 |--------------------------------------------------------------------------
 |
-| Once a week the student writes what they did and what they learned. The
+| Called the weekly journal until Round 2; the file, the address (/journal)
+| and the routes keep that name.
+|
+| Once a week the student writes what they did, what they learned, the
+| problems they met and what they tried about them. Above the form is what
+| they wrote at each time-out that week, to write the report from. The
 | supervisor marks the entry reviewed, or returns it with a note; a
 | returned entry can be edited and sent again. A reviewed entry is closed.
 |
@@ -36,6 +43,8 @@ type Journal = {
   activities: string;
   learnings: string;
   challenges: string | null;
+  /** Missing on a report written before the field existed. */
+  solutions?: string | null;
   status: "Submitted" | "Reviewed" | "Returned";
   review_notes: string | null;
   submitted_at: string;
@@ -82,13 +91,13 @@ export default function WeeklyJournal() {
         withStudentAuth()
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Could not load your journal.");
+      if (!response.ok) throw new Error(data.message || "Could not load your weekly reports.");
       setJournals(data.journals || []);
       setThisWeek(data.current_week_start || "");
       if (data.limits) setLimits(data.limits);
       setError("");
     } catch (loadError) {
-      setError(errorText(loadError, "Could not load your journal."));
+      setError(errorText(loadError, "Could not load your weekly reports."));
     } finally {
       setLoading(false);
     }
@@ -120,8 +129,8 @@ export default function WeeklyJournal() {
 
   return (
     <StudentLayout
-      title="Weekly journal"
-      subtitle="Once a week, write what you did and what you learned. Your supervisor reviews it."
+      title="Weekly report"
+      subtitle="Once a week, write what you did, what you learned, and the problems you met. Your supervisor reviews it."
     >
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
@@ -170,7 +179,7 @@ export default function WeeklyJournal() {
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
                           <p className="text-sm font-semibold text-slate-900">{weekLabel(week)}</p>
-                          <p className="text-sm text-slate-500">No journal written.</p>
+                          <p className="text-sm text-slate-600">No report written.</p>
                         </div>
                         <Button variant="secondary" size="sm" icon="edit" onClick={() => setWriting(week)}>
                           Write
@@ -239,24 +248,13 @@ function Entry({
         </p>
       )}
 
-      <Part label="What I did">{journal.activities}</Part>
-      <Part label="What I learned">{journal.learnings}</Part>
-      {journal.challenges && <Part label="Difficulties I met">{journal.challenges}</Part>}
+      <ReportParts report={journal} />
 
       {journal.status !== "Reviewed" && (
         <Button variant="secondary" size="sm" icon="edit" onClick={onEdit}>
           {journal.status === "Returned" ? "Edit and send again" : "Edit"}
         </Button>
       )}
-    </div>
-  );
-}
-
-function Part({ label, children }: { label: string; children: string }) {
-  return (
-    <div>
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-0.5 whitespace-pre-line break-words text-sm text-slate-800">{children}</p>
     </div>
   );
 }
@@ -279,6 +277,10 @@ function JournalDialog({
   const [activities, setActivities] = useState(journal?.activities || "");
   const [learnings, setLearnings] = useState(journal?.learnings || "");
   const [challenges, setChallenges] = useState(journal?.challenges || "");
+  const [solutions, setSolutions] = useState(journal?.solutions || "");
+  // The week's logs are already loaded for the page: what was written at
+  // each time-out is shown above the form.
+  const { attendance } = useTimeIn();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -287,6 +289,7 @@ function JournalDialog({
   const clearActivities = useDraft("student", draft && `journal-did:${draft}`, activities, setActivities);
   const clearLearnings = useDraft("student", draft && `journal-learned:${draft}`, learnings, setLearnings);
   const clearChallenges = useDraft("student", draft && `journal-hard:${draft}`, challenges, setChallenges);
+  const clearSolutions = useDraft("student", draft && `journal-solved:${draft}`, solutions, setSolutions);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -304,24 +307,25 @@ function JournalDialog({
         withStudentAuth({
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ activities, learnings, challenges }),
+          body: JSON.stringify({ activities, learnings, challenges, solutions }),
         })
       );
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "The journal could not be saved.");
+      if (!response.ok) throw new Error(data.message || "The weekly report could not be saved.");
       clearActivities();
       clearLearnings();
       clearChallenges();
+      clearSolutions();
       toast.success(
         journal?.status === "Returned"
-          ? "Journal sent to your supervisor again."
+          ? "Weekly report sent to your supervisor again."
           : journal
-            ? "Journal updated."
-            : "Journal sent to your supervisor."
+            ? "Weekly report updated."
+            : "Weekly report sent to your supervisor."
       );
       onSaved();
     } catch (saveError) {
-      setError(errorText(saveError, "The journal could not be saved."));
+      setError(errorText(saveError, "The weekly report could not be saved."));
     } finally {
       setSaving(false);
     }
@@ -352,7 +356,7 @@ function JournalDialog({
     <Modal
       open
       onClose={() => !saving && onClose()}
-      title={journal ? "Edit journal" : "Write journal"}
+      title={journal ? "Edit weekly report" : "Write weekly report"}
       description={`Week of ${weekLabel(week)}`}
       locked={saving}
       footer={
@@ -367,6 +371,7 @@ function JournalDialog({
       }
     >
       <form id="journal-form" onSubmit={submit} className="space-y-4">
+        <DailyAccomplishments weekStart={week} logs={attendance.logs} />
         {journal?.status === "Returned" && journal.review_notes && (
           <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
             <span className="font-semibold">Your supervisor:</span> {journal.review_notes}
@@ -374,7 +379,7 @@ function JournalDialog({
         )}
         {field(
           "journal-activities",
-          "What I did this week",
+          "What I did",
           "The tasks you worked on and what you finished.",
           activities,
           setActivities,
@@ -390,10 +395,18 @@ function JournalDialog({
         )}
         {field(
           "journal-challenges",
-          "Difficulties I met (optional)",
-          "Anything that slowed you down, and how you dealt with it.",
+          "Problems encountered (optional)",
+          "Anything that slowed you down or that you could not do.",
           challenges,
           setChallenges,
+          false
+        )}
+        {field(
+          "journal-solutions",
+          "Solutions tried or identified (optional)",
+          "What you did about those problems, or what you now think would work.",
+          solutions,
+          setSolutions,
           false
         )}
         <FormError message={error} />

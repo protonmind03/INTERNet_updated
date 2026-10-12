@@ -122,7 +122,7 @@ test.describe("the floating next-step button", () => {
   });
 });
 
-test.describe("weekly journal", () => {
+test.describe("weekly report", () => {
   test("a student writes it, the supervisor returns it, the student sends it again, and it is reviewed", async ({ browser }) => {
     const student = await apiSession("student");
     const supervisor = await apiSession("supervisor");
@@ -149,11 +149,11 @@ test.describe("weekly journal", () => {
 
     const supervisorPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, isMobile: false })).newPage();
     await signIn(supervisorPage, "supervisor");
-    await supervisorPage.getByRole("tab", { name: /^Journals/ }).click();
+    await supervisorPage.getByRole("tab", { name: /^Weekly reports/ }).click();
     await expect(supervisorPage.getByText(did)).toBeVisible();
     await supervisorPage.locator("#decision-note").fill("Name the tasks that were yours.");
     await supervisorPage.getByRole("button", { name: "Return", exact: true }).click();
-    await expect(supervisorPage.getByText(/Journal returned to/)).toBeVisible();
+    await expect(supervisorPage.getByText(/Weekly report returned to/)).toBeVisible();
 
     await studentPage.reload();
     await expect(studentPage.getByText("Returned to you").first()).toBeVisible();
@@ -163,9 +163,9 @@ test.describe("weekly journal", () => {
     await expect(studentPage.getByText("Waiting for your supervisor").first()).toBeVisible();
 
     await supervisorPage.reload();
-    await supervisorPage.getByRole("tab", { name: /^Journals/ }).click();
+    await supervisorPage.getByRole("tab", { name: /^Weekly reports/ }).click();
     await supervisorPage.getByRole("button", { name: "Mark reviewed" }).click();
-    await expect(supervisorPage.getByText(/journal marked reviewed/)).toBeVisible();
+    await expect(supervisorPage.getByText(/weekly report marked reviewed/)).toBeVisible();
 
     // Put it back to waiting, so the next run can do the same.
     const after = await api<{ journals: { id: number; week_start: string }[] }>(supervisor.token, "GET", "/api/journals/supervisor");
@@ -240,7 +240,7 @@ test.describe("the student's menu", () => {
 
     await bar.getByRole("button", { name: "More" }).click();
     const more = page.getByRole("dialog", { name: "More" });
-    await expect(more.getByRole("link")).toHaveText(["Schedule", "Weekly journal"]);
+    await expect(more.getByRole("link")).toHaveText(["Schedule", "Weekly report"]);
     await more.getByRole("link", { name: "Schedule" }).click();
     await expect(page).toHaveURL(/\/schedule$/);
 

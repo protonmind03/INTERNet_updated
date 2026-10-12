@@ -141,6 +141,8 @@ export type JournalEntry = {
   activities: string;
   learnings: string;
   challenges: string | null;
+  /** Missing on a report written before the field existed. */
+  solutions?: string | null;
   status: "Submitted" | "Reviewed" | "Returned";
   /** What the supervisor wrote; on a resubmitted journal, what they asked for. */
   review_notes: string | null;
@@ -570,7 +572,7 @@ export function useSupervisorWork(
           "PATCH",
           `/api/journals/${id}/review`,
           { status, notes: notes.trim() },
-          "The journal could not be reviewed."
+          "The weekly report could not be reviewed."
         )
       ),
     [change]

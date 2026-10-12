@@ -75,7 +75,7 @@ const JOURNAL_MAX = 3000;
 
 const JOURNAL_COLUMNS = `
   j.id, j.student_id, TO_CHAR(j.week_start, 'YYYY-MM-DD') AS week_start,
-  j.activities, j.learnings, j.challenges, j.status, j.review_notes,
+  j.activities, j.learnings, j.challenges, j.solutions, j.status, j.review_notes,
   j.submitted_at, j.updated_at, j.reviewed_at
 `;
 
@@ -2587,6 +2587,11 @@ export function registerExtensionRoutes(
   | WEEKLY JOURNAL
   |--------------------------------------------------------------------------
   |
+  | On screen this is the "weekly report"; the table and the routes keep the
+  | name it had first. Its four parts: what I did (activities), what I
+  | learned (learnings), problems encountered (challenges), and solutions
+  | tried or identified (solutions, added in migration 039, optional).
+  |
   | Once a week a student writes what they did and what they learned. The
   | entry is kept under the Monday its week starts on, one per week. Their
   | supervisor marks it reviewed, or returns it with a note saying what to
@@ -2603,12 +2608,27 @@ export function registerExtensionRoutes(
 
   function readJournal(
     body: unknown
-  ): { journal: { activities: string; learnings: string; challenges: string | null } } | { problem: string } {
-    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
-    for (const key of ["activities", "learnings", "challenges"]) {
-      if (input[key] !== undefined && input[key] !== null && typeof input[key] !== "string") {
-        return { problem: "Write each part of the journal as text." };
+  ):
+    | {
+        journal: {
+          activities: string;
+          learnings: string;
+          challenges: string | null;
+          solutions: string | null;
+          /** False for a form that does not know the field: what is saved is then left alone. */
+          solutionsSent: boolean;
+        };
       }
+    | { problem: string } {
+    const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    for (const key of ["activities", "learnings", "challenges", "solutions"]) {
+      if (input[key] !== undefined && input[key] !== null && typeof input[key] !== "string") {
+        return { problem: "Write each part of the report as text." };
+      }
+    }
+    const solutions = text(input.solutions);
+    if (solutions.length > JOURNAL_MAX) {
+      return { problem: `Keep the solutions you tried to ${JOURNAL_MAX} characters.` };
     }
     const activities = text(input.activities);
     const learnings = text(input.learnings);
@@ -2620,16 +2640,24 @@ export function registerExtensionRoutes(
       return { problem: `Say what you learned this week in ${JOURNAL_MIN} to ${JOURNAL_MAX} characters.` };
     }
     if (challenges.length > JOURNAL_MAX) {
-      return { problem: `Keep the difficulties you met to ${JOURNAL_MAX} characters.` };
+      return { problem: `Keep the problems you met to ${JOURNAL_MAX} characters.` };
     }
-    return { journal: { activities, learnings, challenges: challenges || null } };
+    return {
+      journal: {
+        activities,
+        learnings,
+        challenges: challenges || null,
+        solutions: solutions || null,
+        solutionsSent: Object.prototype.hasOwnProperty.call(input, "solutions"),
+      },
+    };
   }
 
   app.get("/api/journals/student/:studentId", requireRole("student"), async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth!;
       if (auth.id !== req.params.studentId) {
-        return res.status(403).json({ message: "You can only read your own journal." });
+        return res.status(403).json({ message: "You can only read your own weekly report." });
       }
       const result = await pool.query(
         `SELECT ${JOURNAL_COLUMNS} FROM journals j WHERE j.student_id = $1
@@ -2643,7 +2671,7 @@ export function registerExtensionRoutes(
       });
     } catch (error) {
       console.error("GET JOURNALS ERROR:", error);
-      return res.status(500).json({ message: "Failed to load your journal." });
+      return res.status(500).json({ message: "Failed to load your weekly reports." });
     }
   });
 
@@ -2655,14 +2683,14 @@ export function registerExtensionRoutes(
       try {
         const auth = (req as AuthedRequest).auth!;
         if (auth.id !== req.params.studentId) {
-          return res.status(403).json({ message: "You can only write your own journal." });
+          return res.status(403).json({ message: "You can only write your own weekly report." });
         }
         const week = String(req.params.weekStart);
         if (!DATE_PATTERN.test(week) || Number.isNaN(Date.parse(`${week}T00:00:00Z`))) {
           return res.status(400).json({ message: "Name the week by its Monday, written as YYYY-MM-DD." });
         }
         if (mondayOf(week) !== week) {
-          return res.status(400).json({ message: "A journal week starts on a Monday." });
+          return res.status(400).json({ message: "A report's week starts on a Monday." });
         }
         if (week > mondayOf(todayInManila())) {
           return res.status(400).json({ message: "That week has not started yet." });
@@ -2677,7 +2705,7 @@ export function registerExtensionRoutes(
         const before = existing.rows[0]?.status;
         if (before === "Reviewed") {
           return res.status(409).json({
-            message: "Your supervisor has already reviewed this week's journal, so it can no longer be changed.",
+            message: "Your supervisor has already reviewed this week's report, so it can no longer be changed.",
           });
         }
 
@@ -2685,12 +2713,13 @@ export function registerExtensionRoutes(
         // supervisor reviews the entry at the same moment.
         const result = await pool.query(
           `
-          INSERT INTO journals AS j (student_id, week_start, activities, learnings, challenges)
-          VALUES ($1, $2, $3, $4, $5)
+          INSERT INTO journals AS j (student_id, week_start, activities, learnings, challenges, solutions)
+          VALUES ($1, $2, $3, $4, $5, $6)
           ON CONFLICT (student_id, week_start) DO UPDATE
             SET activities = EXCLUDED.activities,
                 learnings = EXCLUDED.learnings,
                 challenges = EXCLUDED.challenges,
+                solutions = CASE WHEN $7::boolean THEN EXCLUDED.solutions ELSE j.solutions END,
                 status = 'Submitted',
                 review_notes = CASE WHEN j.status = 'Returned' THEN j.review_notes ELSE NULL END,
                 reviewed_at = NULL,
@@ -2700,11 +2729,19 @@ export function registerExtensionRoutes(
             WHERE j.status <> 'Reviewed'
           RETURNING ${JOURNAL_COLUMNS}
           `,
-          [auth.id, week, read.journal.activities, read.journal.learnings, read.journal.challenges]
+          [
+            auth.id,
+            week,
+            read.journal.activities,
+            read.journal.learnings,
+            read.journal.challenges,
+            read.journal.solutions,
+            read.journal.solutionsSent,
+          ]
         );
         if (result.rows.length === 0) {
           return res.status(409).json({
-            message: "Your supervisor has already reviewed this week's journal, so it can no longer be changed.",
+            message: "Your supervisor has already reviewed this week's report, so it can no longer be changed.",
           });
         }
         const journal = result.rows[0];
@@ -2721,20 +2758,20 @@ export function registerExtensionRoutes(
             await createNotification({
               supervisorId: owner.rows[0].supervisor_id,
               entity: { type: "journal", id: journal.id },
-              title: before ? "Weekly journal submitted again" : "Weekly journal submitted",
-              message: `${owner.rows[0].name} ${before ? "revised" : "wrote"} their journal for the week of ${week}.`,
+              title: before ? "Weekly report submitted again" : "Weekly report submitted",
+              message: `${owner.rows[0].name} ${before ? "revised" : "wrote"} their weekly report for the week of ${week}.`,
               type: "info",
             });
           });
         }
 
         return res.status(before ? 200 : 201).json({
-          message: before ? "Journal updated." : "Journal submitted.",
+          message: before ? "Weekly report updated." : "Weekly report submitted.",
           journal,
         });
       } catch (error) {
         console.error("SAVE JOURNAL ERROR:", error);
-        return res.status(500).json({ message: "Failed to save the journal." });
+        return res.status(500).json({ message: "Failed to save the weekly report." });
       }
     }
   );
@@ -2757,7 +2794,7 @@ export function registerExtensionRoutes(
       return res.json({ journals: result.rows });
     } catch (error) {
       console.error("GET SUPERVISOR JOURNALS ERROR:", error);
-      return res.status(500).json({ message: "Failed to load the journals." });
+      return res.status(500).json({ message: "Failed to load the weekly reports." });
     }
   });
 
@@ -2767,7 +2804,7 @@ export function registerExtensionRoutes(
       const status = req.body?.status;
       const notes = text(req.body?.notes);
       if (!/^\d{1,9}$/.test(String(req.params.id))) {
-        return res.status(404).json({ message: "Journal not found." });
+        return res.status(404).json({ message: "Weekly report not found." });
       }
       // "Submitted" withdraws a decision made by mistake.
       if (status !== "Reviewed" && status !== "Returned" && status !== "Submitted") {
@@ -2775,7 +2812,7 @@ export function registerExtensionRoutes(
       }
       if (status === "Returned" && !notes) {
         return res.status(400).json({
-          message: "Say what the intern should add or change before returning the journal.",
+          message: "Say what the intern should add or change before returning the report.",
         });
       }
       if (notes.length > 1000) {
@@ -2810,11 +2847,11 @@ export function registerExtensionRoutes(
           return res.status(409).json({
             message:
               status === "Submitted"
-                ? "This journal is already waiting for review."
-                : "This journal was already reviewed.",
+                ? "This report is already waiting for review."
+                : "This report was already reviewed.",
           });
         }
-        return res.status(404).json({ message: "Journal not found." });
+        return res.status(404).json({ message: "Weekly report not found." });
       }
 
       const journal = result.rows[0];
@@ -2825,24 +2862,24 @@ export function registerExtensionRoutes(
           link: "/journal",
           title:
             status === "Reviewed"
-              ? "Weekly journal reviewed"
+              ? "Weekly report reviewed"
               : status === "Returned"
-                ? "Weekly journal returned"
-                : "Weekly journal back under review",
+                ? "Weekly report returned"
+                : "Weekly report back under review",
           message:
             status === "Reviewed"
-              ? `Your supervisor reviewed your journal for the week of ${journal.week_start}.${notes ? ` Note: ${notes}` : ""}`
+              ? `Your supervisor reviewed your weekly report for the week of ${journal.week_start}.${notes ? ` Note: ${notes}` : ""}`
               : status === "Returned"
-                ? `Your supervisor returned your journal for the week of ${journal.week_start}. Note: ${notes}`
-                : `The decision on your journal for the week of ${journal.week_start} was withdrawn. It is waiting to be reviewed again.`,
+                ? `Your supervisor returned your weekly report for the week of ${journal.week_start}. Note: ${notes}`
+                : `The decision on your weekly report for the week of ${journal.week_start} was withdrawn. It is waiting to be reviewed again.`,
           type: "info",
         })
       );
 
-      return res.json({ message: "Journal reviewed.", journal });
+      return res.json({ message: "Weekly report reviewed.", journal });
     } catch (error) {
       console.error("REVIEW JOURNAL ERROR:", error);
-      return res.status(500).json({ message: "Failed to review the journal." });
+      return res.status(500).json({ message: "Failed to review the weekly report." });
     }
   });
 

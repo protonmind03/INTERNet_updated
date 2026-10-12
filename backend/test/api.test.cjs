@@ -3359,10 +3359,10 @@ test("a journal goes from the student to the supervisor and back, and closes onc
 
     // Each side was told, and the student's notification opens the journal.
     const notes = await jsonRequest(`/api/notifications/student/${id}`, { headers: authHeaders(studentToken) });
-    const told = notes.body.notifications.find((item) => item.title === "Weekly journal reviewed");
+    const told = notes.body.notifications.find((item) => item.title === "Weekly report reviewed");
     assert.equal(told?.link, "/journal");
     const supervisorNotes = await jsonRequest(`/api/notifications/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) });
-    const asked = supervisorNotes.body.notifications.find((item) => item.title === "Weekly journal submitted");
+    const asked = supervisorNotes.body.notifications.find((item) => item.title === "Weekly report submitted");
     assert.equal(asked?.link, `/supervisor/dashboard?focus=journal-${journal.id}`);
 
     // The decisions are in the audit log; the student's own writing is not.
@@ -3372,7 +3372,7 @@ test("a journal goes from the student to the supervisor and back, and closes onc
     assert.deepEqual([...actions].sort(), ["journal.return", "journal.review", "journal.undo"]);
   } finally {
     await clear();
-    await pool.query(`DELETE FROM notifications WHERE entity_type = 'journal' AND title LIKE 'Weekly journal%'`);
+    await pool.query(`DELETE FROM notifications WHERE entity_type = 'journal' AND (title LIKE 'Weekly journal%' OR title LIKE 'Weekly report%')`);
     await pool.end();
   }
 });
@@ -4071,7 +4071,7 @@ test("the summary email rules: the clock, the setting and the wording", () => {
   assert.deepEqual(supervisorDigestLines({ attendance: 0, tasks: 0, documents: 0, absences: 0, journals: 0 }), []);
   assert.deepEqual(
     supervisorDigestLines({ attendance: 1, tasks: 2, documents: 0, absences: 1, journals: 3 }),
-    ["1 attendance log", "2 task submissions", "1 absence", "3 weekly journals"]
+    ["1 attendance log", "2 task submissions", "1 absence", "3 weekly reports"]
   );
 });
 
@@ -4730,6 +4730,11 @@ test("a notification's link names the record when its page can show that record"
   assert.equal(link("supervisor", "task", "Task submitted for review", { type: "task", id: 7 }), "/supervisor/dashboard?focus=task-7");
   assert.equal(link("supervisor", "document", "Document submitted for review", { type: "document", id: 3 }), "/supervisor/dashboard?focus=document-3");
   assert.equal(link("supervisor", "info", "Weekly journal submitted", { type: "journal", id: 9 }), "/supervisor/dashboard?focus=journal-9");
+  // The same notifications under the name used since Round 2: "weekly report".
+  assert.equal(link("supervisor", "info", "Weekly report submitted", { type: "journal", id: 9 }), "/supervisor/dashboard?focus=journal-9");
+  assert.equal(link("supervisor", "info", "Weekly report submitted again"), "/supervisor/dashboard");
+  assert.equal(link("student", "info", "Weekly report returned"), "/journal");
+  assert.equal(link("student", "info", "Weekly journal returned"), "/journal");
   assert.equal(link("coordinator", "warning", "New complaint filed", { type: "complaint", id: 12 }), "/coordinator/complaints?focus=complaint-12");
   assert.equal(link("coordinator", "warning", "New concern filed", { type: "complaint", id: 12 }), "/coordinator/complaints?focus=complaint-12");
 
@@ -5848,6 +5853,66 @@ test("programs and blocks are made and changed, students are placed in them, and
     await pool.query(`DELETE FROM colleges WHERE id = ANY($1::int[])`, [[made.college, made.other].filter(Boolean)]);
     if (made.term) await pool.query(`DELETE FROM terms WHERE id = $1`, [made.term]);
     await pool.query(`DELETE FROM audit_log WHERE entity_id LIKE $1 OR details->>'name' LIKE $2`, [`P2-${stamp}-%`, `%${stamp}%`]);
+    await pool.end();
+  }
+});
+
+/*
+| Round 2, Phase 3: the weekly report, tasks worked on, and the time record's columns
+*/
+
+test("a weekly report may say what was tried about its problems, and a form that does not know the field leaves it alone", async (t) => {
+  const id = encodeURIComponent(student.student_id);
+  // Checked before anything is saved, like the other parts.
+  const monday = (await jsonRequest(`/api/journals/student/${id}`, { headers: authHeaders(studentToken) })).body.current_week_start;
+  const put = (body) => jsonRequest(`/api/journals/student/${id}/${monday}`, jsonBody(studentToken, "PUT", body));
+  const base = {
+    activities: "Sorted the incoming receipts and entered them in the ledger.",
+    learnings: "How the ledger is balanced at the end of each day.",
+  };
+  assert.equal((await put({ ...base, solutions: "x".repeat(3001) })).response.status, 400);
+  assert.equal((await put({ ...base, solutions: ["a list"] })).response.status, 400);
+  assert.equal((await put({ ...base, solutions: 12 })).response.status, 400);
+
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const stored = async () => (await pool.query(`SELECT challenges, solutions, status FROM journals WHERE student_id = $1 AND week_start = $2`, [student.student_id, monday])).rows[0];
+  try {
+    await pool.query(`DELETE FROM journals WHERE student_id = $1 AND week_start = $2`, [student.student_id, monday]);
+    // Optional: a report without it is a whole report.
+    const first = await put({ ...base, challenges: "The scanner jammed twice." });
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    assert.equal(first.body.journal.solutions, null);
+    assert.equal(first.body.message, "Weekly report submitted.");
+    // Given: trimmed and kept.
+    const second = await put({ ...base, challenges: "The scanner jammed twice.", solutions: "  Cleared the feeder and scanned in smaller batches.  " });
+    assert.equal(second.response.status, 200);
+    assert.equal(second.body.journal.solutions, "Cleared the feeder and scanned in smaller batches.");
+    // An older form sends the three parts it knows: the fourth is not wiped.
+    const older = await put({ ...base, challenges: "The scanner jammed three times." });
+    assert.equal(older.response.status, 200);
+    assert.deepEqual(await stored(), { challenges: "The scanner jammed three times.", solutions: "Cleared the feeder and scanned in smaller batches.", status: "Submitted" });
+    // Sent empty on purpose: cleared.
+    assert.equal((await put({ ...base, solutions: "" })).body.journal.solutions, null);
+    await put({ ...base, solutions: "Asked the clerk to show me the feeder." });
+
+    // The supervisor and the coordinator read the same four parts.
+    const listed = (await jsonRequest("/api/journals/supervisor", { headers: authHeaders(supervisor.token) })).body.journals.find((item) => item.week_start === monday && item.student_id === student.student_id);
+    assert.equal(listed.solutions, "Asked the clerk to show me the feeder.");
+    const record = await jsonRequest(`/api/coordinator/students/${id}/overview`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(record.body.journals.find((item) => item.week_start === monday).solutions, "Asked the clerk to show me the feeder.");
+    // The review flow is as it was.
+    const reviewed = await jsonRequest(`/api/journals/${listed.id}/review`, jsonBody(supervisor.token, "PATCH", { status: "Reviewed" }));
+    assert.equal(reviewed.response.status, 200);
+    assert.equal(reviewed.body.journal.solutions, "Asked the clerk to show me the feeder.");
+    assert.equal((await put({ ...base, solutions: "Too late." })).response.status, 409);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE entity_type = 'journal' AND (title LIKE 'Weekly journal%' OR title LIKE 'Weekly report%')`);
+    await pool.query(`DELETE FROM journals WHERE student_id = $1 AND week_start = $2`, [student.student_id, monday]);
     await pool.end();
   }
 });

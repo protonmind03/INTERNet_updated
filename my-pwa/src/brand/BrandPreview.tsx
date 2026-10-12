@@ -16,7 +16,7 @@ const STATUS: Record<Role, string> = {
   coordinator: "4 open concerns",
 };
 const NAV: Record<Role, string[]> = {
-  student: ["Today", "Attendance", "Tasks", "Documents", "Schedule", "Weekly journal"],
+  student: ["Today", "Attendance", "Tasks", "Documents", "Schedule", "Weekly report"],
   supervisor: ["Dashboard", "Attendance", "My Interns", "Tasks", "Documents", "Evaluation"],
   coordinator: ["Dashboard", "Students", "Supervisors", "Monitoring", "Requirements", "Analytics"],
 };

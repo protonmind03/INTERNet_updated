@@ -91,7 +91,7 @@ function titleOf(item: ReviewItem): string {
   if (item.kind === "attendance") return `Attendance · ${formatDayDate(item.entry.date)}`;
   if (item.kind === "task") return item.entry.title;
   if (item.kind === "absence") return `Absence · ${formatDayDate(item.entry.date)}`;
-  if (item.kind === "journal") return `Journal · week of ${formatDayDate(item.entry.week_start)}`;
+  if (item.kind === "journal") return `Weekly report · week of ${formatDayDate(item.entry.week_start)}`;
   return item.entry.doc_type;
 }
 
@@ -110,7 +110,7 @@ function summaryOf(item: ReviewItem): string {
   if (item.kind === "task") return "Task submitted";
   if (item.kind === "absence") return "Absence filed";
   if (item.kind === "journal") {
-    return item.entry.review_notes ? "Journal sent again" : "Journal written";
+    return item.entry.review_notes ? "Weekly report sent again" : "Weekly report written";
   }
   return "Document uploaded";
 }
@@ -405,7 +405,7 @@ export default function SupervisorDashboard() {
                 { value: "task", label: "Tasks", count: counts.task },
                 { value: "document", label: "Documents", count: counts.document },
                 { value: "absence", label: "Absences", count: counts.absence },
-                { value: "journal", label: "Journals", count: counts.journal },
+                { value: "journal", label: "Weekly reports", count: counts.journal },
                 // Shown only when there is one: most days there is none.
                 ...(counts.final > 0 || filter === "final"
                   ? [{ value: "final" as const, label: "Final evaluations", count: counts.final }]

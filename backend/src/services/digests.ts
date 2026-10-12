@@ -71,7 +71,7 @@ export function supervisorDigestLines(waiting: {
     waiting.tasks > 0 ? count(waiting.tasks, "task submission", "task submissions") : "",
     waiting.documents > 0 ? count(waiting.documents, "document", "documents") : "",
     waiting.absences > 0 ? count(waiting.absences, "absence", "absences") : "",
-    waiting.journals > 0 ? count(waiting.journals, "weekly journal", "weekly journals") : "",
+    waiting.journals > 0 ? count(waiting.journals, "weekly report", "weekly reports") : "",
   ].filter(Boolean);
 }
 

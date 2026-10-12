@@ -155,7 +155,7 @@ export function PrivacyCard({ studentId }: { studentId: string }) {
       )}
       <p className="mt-2 text-sm text-slate-600">
         You can download a copy of everything INTERNet holds that is yours: your account,
-        attendance, tasks, documents, journals and evaluations. Photos and uploaded files are
+        attendance, tasks, documents, weekly reports and evaluations. Photos and uploaded files are
         listed by name.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">

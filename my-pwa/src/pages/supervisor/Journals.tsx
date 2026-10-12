@@ -8,11 +8,13 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
+import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 import { errorText } from "../../lib/toast";
-import type { JournalEntry } from "./useSupervisorWork";
+import { useAccount } from "../../lib/session";
+import { useSupervisorWork, type JournalEntry } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
 
@@ -43,6 +45,9 @@ function weekEnd(weekStart: string): Date {
 
 export default function SupervisorJournals() {
   const [journals, setJournals] = useState<JournalEntry[]>([]);
+  // The interns' logs, for what each wrote at time-out during a report's week.
+  const supervisor = useAccount("supervisor");
+  const { attendance } = useSupervisorWork(supervisor?.supervisor_id, ["attendance"]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [scope, setScope] = useState<Scope>("all");
@@ -55,11 +60,11 @@ export default function SupervisorJournals() {
     try {
       const response = await fetch(`${API_URL}/api/journals/supervisor`, withSupervisorAuth());
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || "Could not load the journals.");
+      if (!response.ok) throw new Error(data.message || "Could not load the weekly reports.");
       setJournals(data.journals || []);
       setError("");
     } catch (loadError) {
-      setError(errorText(loadError, "Could not load the journals."));
+      setError(errorText(loadError, "Could not load the weekly reports."));
     } finally {
       setLoading(false);
     }
@@ -138,7 +143,7 @@ export default function SupervisorJournals() {
           ) : visible.length === 0 ? (
             <EmptyState
               icon="note"
-              title={journals.length === 0 ? "No journals yet" : "No journals of this kind"}
+              title={journals.length === 0 ? "No weekly reports yet" : "No weekly reports of this kind"}
               description={
                 journals.length === 0
                   ? "Your interns write one a week. Each appears here once it is sent."
@@ -163,9 +168,11 @@ export default function SupervisorJournals() {
                       tone={STATE[journal.status].tone}
                     />
                   </div>
-                  <Part label="What they did">{journal.activities}</Part>
-                  <Part label="What they learned">{journal.learnings}</Part>
-                  {journal.challenges && <Part label="Difficulties they met">{journal.challenges}</Part>}
+                  <ReportParts report={journal} />
+                  <DailyAccomplishments
+                    weekStart={journal.week_start}
+                    logs={attendance.filter((log) => log.student_id === journal.student_id)}
+                  />
                   {journal.review_notes && (
                     <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
                       <span className="font-semibold">
@@ -192,11 +199,3 @@ export default function SupervisorJournals() {
   );
 }
 
-function Part({ label, children }: { label: string; children: string }) {
-  return (
-    <div>
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-0.5 whitespace-pre-line break-words text-sm text-slate-700">{children}</p>
-    </div>
-  );
-}

@@ -19,6 +19,9 @@
 
 export type NotificationRole = "student" | "supervisor" | "coordinator";
 
+/** True for a title about a weekly report, which older notifications call the weekly journal. */
+const aboutReport = (title: string) => title.includes("weekly report") || title.includes("journal");
+
 /** True for a title about a concern, in today's wording or the older one. */
 const aboutConcern = (title: string) => title.includes("concern") || title.includes("complaint");
 
@@ -33,7 +36,7 @@ export const NOTIFICATION_PAGE: Record<NotificationRole, string> = {
 };
 
 function studentLink(type: string, title: string): string {
-  if (title.includes("journal")) return "/journal";
+  if (aboutReport(title)) return "/journal";
   if (title.includes("absence")) return "/daily-log";
   if (type === "attendance") return "/daily-log";
   if (type === "task" || type === "comment") return "/task";
@@ -57,7 +60,7 @@ function studentLink(type: string, title: string): string {
 function supervisorLink(type: string, title: string): string {
   // A journal waiting for a decision is in the queue; anything else about
   // journals is read on their own page.
-  if (title.includes("journal") && !title.includes("submitted")) return "/supervisor/journals";
+  if (aboutReport(title) && !title.includes("submitted")) return "/supervisor/journals";
   if (title.includes("deadline")) return "/supervisor/tasks";
   if (title.includes("intern")) return "/supervisor/interns";
   // New work to decide on opens the review queue, which is the dashboard.

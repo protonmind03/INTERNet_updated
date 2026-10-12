@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import DtrSheet from "../../components/DtrSheet";
+import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
@@ -290,7 +291,7 @@ export default function StudentRecord() {
                   { value: "tasks", label: "Tasks", count: data.tasks.length },
                   { value: "documents", label: "Documents", count: data.documents.length },
                   { value: "evaluations", label: "Evaluations", count: data.evaluations.length },
-                  { value: "journals", label: "Journals", count: (data.journals || []).length },
+                  { value: "journals", label: "Weekly reports", count: (data.journals || []).length },
                   { value: "schedule", label: "Schedule" },
                   { value: "record", label: "Time record" },
                 ]}
@@ -602,7 +603,7 @@ export default function StudentRecord() {
                 {(data.journals || []).length === 0 ? (
                   <EmptyState
                     icon="note"
-                    title="No journals yet"
+                    title="No weekly reports yet"
                     description="The student writes one a week, and their supervisor reviews it."
                   />
                 ) : (
@@ -630,11 +631,8 @@ export default function StudentRecord() {
                             }
                           />
                         </div>
-                        <JournalPart label="What they did">{item.activities}</JournalPart>
-                        <JournalPart label="What they learned">{item.learnings}</JournalPart>
-                        {item.challenges && (
-                          <JournalPart label="Difficulties they met">{item.challenges}</JournalPart>
-                        )}
+                        <ReportParts report={item} />
+                        <DailyAccomplishments weekStart={item.week_start} logs={data.attendance} />
                         {item.review_notes && (
                           <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
                             <span className="font-semibold">Supervisor:</span> {item.review_notes}
@@ -740,15 +738,6 @@ function DecideButtons({
         {approveLabel}
       </Button>
     </>
-  );
-}
-
-function JournalPart({ label, children }: { label: string; children: string }) {
-  return (
-    <div>
-      <p className="text-xs font-medium text-slate-500">{label}</p>
-      <p className="mt-0.5 whitespace-pre-line break-words text-sm text-slate-700">{children}</p>
-    </div>
   );
 }
 

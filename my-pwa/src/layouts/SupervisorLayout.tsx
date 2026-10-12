@@ -32,7 +32,7 @@ const NAV = [
   { label: "Attendance", path: "/supervisor/attendance" },
   { label: "Tasks", path: "/supervisor/tasks" },
   { label: "Documents", path: "/supervisor/documents" },
-  { label: "Journals", path: "/supervisor/journals" },
+  { label: "Weekly reports", path: "/supervisor/journals" },
   { label: "Evaluations", path: "/supervisor/evaluation" },
 ];
 

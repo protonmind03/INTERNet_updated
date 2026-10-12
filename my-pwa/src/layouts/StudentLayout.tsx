@@ -20,7 +20,7 @@ import TimeInProvider from "../pages/student/TimeInProvider";
 |
 | Students mostly use the system on a phone, to time in with a photo. So
 | on small screens the four things they do daily sit in a bottom tab bar,
-| with Schedule and Weekly journal one tap away under "More". On a desktop
+| with Schedule and Weekly report one tap away under "More". On a desktop
 | the same destinations are a sidebar.
 |
 | What is about the account rather than the day is in the header: the bell
@@ -43,7 +43,7 @@ const PRIMARY_NAV: NavItem[] = [
 
 const SECONDARY_NAV: NavItem[] = [
   { label: "Schedule", path: "/schedule", icon: "calendar" },
-  { label: "Weekly journal", path: "/journal", icon: "note" },
+  { label: "Weekly report", path: "/journal", icon: "note" },
 ];
 
 const ACCOUNT_NAV: NavItem = { label: "Profile", path: "/profile", icon: "user" };
