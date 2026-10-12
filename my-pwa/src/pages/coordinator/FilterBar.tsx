@@ -1,4 +1,5 @@
 import { useId } from "react";
+import SavedViews from "./SavedViews";
 import type { FilterKey, StudentFilterState } from "./useStudentFilters";
 
 /*
@@ -66,6 +67,8 @@ export default function FilterBar({
   hide?: FilterKey[];
   note?: string;
 }) {
+  // A page that hides a level cannot show a view honestly: the view might choose that level.
+  const views = hide.length === 0;
   const { filters, set, clear, active, choices, options } = state;
   const shows = (key: FilterKey, has: boolean) => !hide.includes(key) && (has || Boolean(filters[key]));
   // A block's term is said when it is not the term already chosen.
@@ -174,6 +177,7 @@ export default function FilterBar({
           )}
         </div>
       )}
+      {views && <SavedViews state={state} />}
     </section>
   );
 }

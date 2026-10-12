@@ -272,9 +272,16 @@ export function useStudentFilters({ remember: remembers = true }: { remember?: b
     return sent.toString();
   }, [filters]);
 
+  /** Puts a whole set of choices in the bar at once (a saved view). Keys not given are cleared. */
+  const apply = useCallback(
+    (next: Partial<StudentFilters>) => write(settle({ ...EMPTY, ...next }, options)),
+    [options, write]
+  );
+
   return {
     filters,
     set,
+    apply,
     clear,
     query,
     active: query !== "",
