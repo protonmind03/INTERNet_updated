@@ -831,6 +831,28 @@ Different from the description, or decided where it left room:
   tab on the student's Schedule page, from data already loaded and saved
   offline. Every Modal's backdrop is blurred.
 
+### Phase 4: the supervisor's day, scheduled and team tasks, the intern page, notes
+
+Two migrations (041, 042).
+
+- [ ] **4.1 Intern page** `/supervisor/interns/:studentId`: Overview,
+  Attendance (the month calendar), Tasks, Documents, Weekly reports,
+  Evaluate, Time record. Evaluations leaves the top bar;
+  `/supervisor/evaluation` redirects.
+- [ ] **4.2 Today strip on Review:** one chip per intern, and under it the
+  oldest item waiting, tasks due in 7 days, final evaluations due and the
+  latest unread announcement. `GET /api/supervisor/schedules`.
+- [ ] **4.3 Tasks released later:** `tasks.available_from`; hidden from the
+  intern until the day, then announced once.
+- [ ] **4.4 Teams:** `task_groups`, `task_group_members`,
+  `tasks.group_task_id`; one task row per member.
+- [ ] **4.5 Notes with the coordinator:** `student_notes`, a thread on the
+  intern page and the student record. The student never sees it.
+- [ ] **4.6 Nudges:** "Remind" on the coordinator's slow-supervisor rows,
+  once per supervisor per day.
+- [ ] **4.7 Site visits for supervisors:** the latest visit's date and
+  follow-up for their company, read only.
+
 ## Still open
 
 Not built, and noted where each was decided:
