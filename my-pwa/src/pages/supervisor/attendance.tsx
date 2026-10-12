@@ -253,7 +253,7 @@ export default function SupervisorAttendanceApproval() {
                         <StatusBadge status={entry.status} />
                       </div>
                       <p className="tabular mt-1 text-sm text-slate-500">
-                        {formatHours(entry.hours)} · Break {breakText(entry).toLowerCase()}
+                        {formatHours(entry.hours)} · Lunch {breakText(entry).toLowerCase()}
                       </p>
                       <LogMarks entry={entry} />
                     </button>
@@ -285,7 +285,7 @@ export default function SupervisorAttendanceApproval() {
                       <th scope="col" className="px-5 py-3 font-medium">Intern</th>
                       <th scope="col" className="px-3 py-3 font-medium">Date</th>
                       <th scope="col" className="px-3 py-3 font-medium">Time in</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Break</th>
+                      <th scope="col" className="px-3 py-3 font-medium">Lunch</th>
                       <th scope="col" className="px-3 py-3 font-medium">Time out</th>
                       <th scope="col" className="px-3 py-3 text-right font-medium">Hours</th>
                       <th scope="col" className="px-3 py-3 font-medium">Status</th>

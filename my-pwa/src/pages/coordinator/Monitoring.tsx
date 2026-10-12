@@ -650,7 +650,7 @@ function FlaggedLogDialog({
             <dd className="tabular text-slate-800">{formatTime(flag.time_in)}</dd>
           </div>
           <div>
-            <dt className="text-xs text-slate-500">Break</dt>
+            <dt className="text-xs text-slate-500">Lunch</dt>
             <dd className="tabular text-slate-800">
               {flag.break_time
                 ? `${formatTime(flag.break_time)} – ${

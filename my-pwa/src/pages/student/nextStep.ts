@@ -22,10 +22,10 @@ export function nextStep(stage: DayStage): NextStep | null {
     return { label: "Time in", name: "Time in", icon: "camera", run: (actions) => actions.openTimeIn() };
   }
   if (stage === "working") {
-    return { label: "Lunch", name: "Start your lunch break", icon: "coffee", run: (actions) => actions.openStep("break") };
+    return { label: "Out for lunch", name: "Out for lunch", icon: "coffee", run: (actions) => actions.openStep("break") };
   }
   if (stage === "on-break") {
-    return { label: "Back", name: "Back from lunch", icon: "arrow-right", run: (actions) => actions.openStep("back") };
+    return { label: "Back from lunch", name: "Back from lunch", icon: "arrow-right", run: (actions) => actions.openStep("back") };
   }
   if (stage === "back") {
     return { label: "Time out", name: "Time out", icon: "stop", run: (actions) => actions.openStep("out") };

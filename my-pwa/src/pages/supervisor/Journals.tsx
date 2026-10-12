@@ -97,7 +97,7 @@ export default function SupervisorJournals() {
 
   return (
     <SupervisorLayout
-      title="Journals"
+      title="Weekly reports"
       subtitle="What your interns wrote each week, including the ones you have reviewed."
     >
       <div className="space-y-5">
@@ -106,7 +106,7 @@ export default function SupervisorJournals() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             <FilterChips
-              label="Which journals"
+              label="Which weekly reports"
               value={scope}
               onChange={setScope}
               options={[

@@ -20,8 +20,8 @@ import { workedMinutes } from "./useAttendance";
 
 const STEPS = [
   { key: "time_in", label: "Time in", icon: "play" },
-  { key: "break_time", label: "Break", icon: "coffee" },
-  { key: "break_end_time", label: "Back", icon: "arrow-right" },
+  { key: "break_time", label: "Out for lunch", icon: "coffee" },
+  { key: "break_end_time", label: "Back from lunch", icon: "arrow-right" },
   { key: "time_out", label: "Time out", icon: "stop" },
 ] as const satisfies readonly { key: string; label: string; icon: IconName }[];
 
@@ -32,7 +32,7 @@ export default function TodayAttendance() {
   const headline = {
     "not-started": "You haven't timed in yet",
     working: "You're on the clock",
-    "on-break": "You're on break",
+    "on-break": "You're out for lunch",
     back: "You're on the clock",
     done: "You're done for today",
   }[stage];
@@ -135,7 +135,7 @@ export default function TodayAttendance() {
                   disabled={busy}
                   onClick={() => openStep("break")}
                 >
-                  Start break
+                  Out for lunch
                 </Button>
                 <OutlineButton disabled={busy} onClick={() => openStep("out")}>
                   Time out
@@ -151,7 +151,7 @@ export default function TodayAttendance() {
                   disabled={busy}
                   onClick={() => openStep("back")}
                 >
-                  Back to work
+                  Back from lunch
                 </Button>
                 <OutlineButton disabled={busy} onClick={() => openStep("out")}>
                   Time out

@@ -6013,3 +6013,62 @@ test("tasks worked on are chosen at time-out, must be the student's own, and are
     await pool.end();
   }
 });
+
+test("a day's times go in the time record's AM and PM columns, and none is made up", () => {
+  require("tsx/cjs");
+  // The function the printed sheet uses. It lives with the pages and imports
+  // nothing, so it can be checked here without a browser.
+  const { timeColumns, STEP_LABELS } = require("../../my-pwa/src/lib/timeColumns.ts");
+  // Times as the server sends them, read on a Philippine clock.
+  const at = (clock, day = "2026-10-12") => `${day}T${clock}:00+08:00`;
+  const columns = (times) => {
+    const result = timeColumns({ time_in: null, break_time: null, break_end_time: null, time_out: null, ...times }, "Asia/Manila");
+    const hhmm = (value) => (value ? new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Manila", hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(value)) : null);
+    return [hhmm(result.amIn), hhmm(result.amOut), hhmm(result.pmIn), hhmm(result.pmOut), result.noBreak];
+  };
+
+  // Lunch taken: the four times as recorded.
+  assert.deepEqual(columns({ time_in: at("08:00"), break_time: at("12:00"), break_end_time: at("13:00"), time_out: at("17:00") }), ["08:00", "12:00", "13:00", "17:00", false]);
+  // A break taken at 10:00 in the morning is printed at 10:00, not moved to noon.
+  assert.deepEqual(columns({ time_in: at("08:00"), break_time: at("10:00"), break_end_time: at("10:15"), time_out: at("17:00") }), ["08:00", "10:00", "10:15", "17:00", false]);
+  // Out for lunch and not back yet, and timed out without coming back: only what happened.
+  assert.deepEqual(columns({ time_in: at("08:00"), break_time: at("12:05") }), ["08:00", "12:05", null, null, false]);
+  assert.deepEqual(columns({ time_in: at("08:00"), break_time: at("12:05"), break_end_time: at("12:50") }), ["08:00", "12:05", "12:50", null, false]);
+
+  // No lunch, morning into afternoon: the two middle cells are one, "No break".
+  assert.deepEqual(columns({ time_in: at("08:00"), time_out: at("17:00") }), ["08:00", null, null, "17:00", true]);
+  assert.deepEqual(columns({ time_in: at("11:59"), time_out: at("13:00") }), ["11:59", null, null, "13:00", true]);
+
+  // One session only. Over by 12:59 PM: the AM columns.
+  assert.deepEqual(columns({ time_in: at("08:00"), time_out: at("12:00") }), ["08:00", "12:00", null, null, false]);
+  assert.deepEqual(columns({ time_in: at("08:00"), time_out: at("12:59") }), ["08:00", "12:59", null, null, false]);
+  // Starting at 12:00 noon or later: the PM columns.
+  assert.deepEqual(columns({ time_in: at("12:00"), time_out: at("17:00") }), [null, null, "12:00", "17:00", false]);
+  assert.deepEqual(columns({ time_in: at("13:30"), time_out: at("17:30") }), [null, null, "13:30", "17:30", false]);
+  // A short session wholly after noon is an afternoon's work, though it ends before 12:59.
+  assert.deepEqual(columns({ time_in: at("12:10"), time_out: at("12:50") }), [null, null, "12:10", "12:50", false]);
+  // One minute past: it ran into the afternoon.
+  assert.deepEqual(columns({ time_in: at("08:00"), time_out: at("13:00") }), ["08:00", null, null, "13:00", true]);
+
+  // Still open: the time in where it belongs, nothing else, and no "No break" yet.
+  assert.deepEqual(columns({ time_in: at("08:00") }), ["08:00", null, null, null, false]);
+  assert.deepEqual(columns({ time_in: at("14:00") }), [null, null, "14:00", null, false]);
+  // No log, or a time that cannot be read: empty.
+  assert.deepEqual(columns({}), [null, null, null, null, false]);
+  assert.deepEqual(columns({ time_in: "not a time" }), [null, null, null, null, false]);
+  // Closed after midnight: not a morning's work.
+  assert.deepEqual(columns({ time_in: at("08:00"), time_out: at("00:30", "2026-10-13") }), ["08:00", null, null, "00:30", true]);
+  assert.deepEqual(columns({ time_in: at("18:00"), time_out: at("01:00", "2026-10-13") }), [null, null, "18:00", "01:00", false]);
+
+  // A time is never invented: every time printed is one of the four recorded.
+  const recorded = { time_in: at("08:07"), break_time: null, break_end_time: null, time_out: at("16:52") };
+  const printed = timeColumns(recorded, "Asia/Manila");
+  for (const value of [printed.amIn, printed.amOut, printed.pmIn, printed.pmOut]) {
+    assert.ok(value === null || Object.values(recorded).includes(value));
+  }
+  // The same moment read on another clock goes where that clock puts it.
+  assert.equal(timeColumns({ ...recorded, time_in: "2026-10-12T05:00:00Z", time_out: "2026-10-12T09:00:00Z" }, "Asia/Manila").pmIn, "2026-10-12T05:00:00Z");
+  assert.equal(timeColumns({ ...recorded, time_in: "2026-10-12T05:00:00Z", time_out: "2026-10-12T09:00:00Z" }, "UTC").amIn, "2026-10-12T05:00:00Z");
+
+  assert.deepEqual(STEP_LABELS, { time_in: "Time in", break_time: "Out for lunch", break_end_time: "Back from lunch", time_out: "Time out" });
+});

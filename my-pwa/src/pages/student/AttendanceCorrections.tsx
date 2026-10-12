@@ -101,7 +101,7 @@ export function LateTimeOutDialog({
     if (chosen.getTime() <= earliest.getTime()) {
       return setError(
         log.break_time
-          ? `The time-out must be after your break (${formatTime(earliest)}).`
+          ? `The time-out must be after your lunch (${formatTime(earliest)}).`
           : `The time-out must be after your time-in (${formatTime(timeIn)}).`
       );
     }

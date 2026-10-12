@@ -138,9 +138,9 @@ function TimeInActions({ children }: { children: ReactNode }) {
         // No connection: kept on the phone with the time it was pressed.
         toast.info("Saved on this phone. It will be sent when you're back online.");
       } else if (action === "break") {
-        toast.success("Break started.");
+        toast.success("Out for lunch. Tap \"Back from lunch\" when you return.");
       } else if (action === "back") {
-        toast.success("Welcome back. Your break has ended.");
+        toast.success("Welcome back. Your lunch has ended.");
       } else {
         toast.celebrate("Time-out recorded. Your supervisor will verify today's log.");
       }
@@ -184,9 +184,9 @@ function TimeInActions({ children }: { children: ReactNode }) {
 
       <ConfirmDialog
         open={pending === "break"}
-        title="Start your break?"
-        message={`Your break will start at ${formatTime(now)}. It is not counted in your rendered hours.`}
-        confirmLabel="Start break"
+        title="Out for lunch?"
+        message={`You will be marked out for lunch at ${formatTime(now)}. Lunch is not counted in your rendered hours.`}
+        confirmLabel="Out for lunch"
         busy={busy}
         busyProcess="timeIn"
         onConfirm={confirm}
@@ -194,9 +194,9 @@ function TimeInActions({ children }: { children: ReactNode }) {
       />
       <ConfirmDialog
         open={pending === "back"}
-        title="Back to work?"
-        message={`Your break will end at ${formatTime(now)}.`}
-        confirmLabel="Back to work"
+        title="Back from lunch?"
+        message={`You will be marked back from lunch at ${formatTime(now)}.`}
+        confirmLabel="Back from lunch"
         busy={busy}
         busyProcess="timeIn"
         onConfirm={confirm}

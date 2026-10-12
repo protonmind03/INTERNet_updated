@@ -2785,7 +2785,7 @@ app.put(
       ) {
         return res.status(404).json({
           message:
-            "Attendance record not found or break was already recorded.",
+            "Attendance record not found, or you are already out for lunch.",
         });
       }
 
@@ -2793,7 +2793,7 @@ app.put(
 
       return res.json({
         message:
-          "Break recorded successfully.",
+          "Out for lunch recorded.",
         attendance:
           result.rows[0],
       });
@@ -2805,7 +2805,7 @@ app.put(
 
       return res.status(500).json({
         message:
-          "Failed to record break.",
+          "Failed to record that you went out for lunch.",
         error:
           error instanceof Error
             ? error.message
@@ -2871,7 +2871,7 @@ app.put(
       ) {
         return res.status(404).json({
           message:
-            "Attendance record not found or return from break was already recorded.",
+            "Attendance record not found, or you are already back from lunch.",
         });
       }
 
@@ -2879,7 +2879,7 @@ app.put(
 
       return res.status(200).json({
         message:
-          "Returned from break successfully.",
+          "Back from lunch recorded.",
         attendance:
           result.rows[0],
       });
@@ -2891,7 +2891,7 @@ app.put(
 
       return res.status(500).json({
         message:
-          "Failed to record return from break.",
+          "Failed to record that you are back from lunch.",
         error:
           error instanceof Error
             ? error.message
@@ -3267,7 +3267,7 @@ app.put(
       if (timeOut.getTime() <= new Date(lastRecorded).getTime()) {
         return res.status(400).json({
           message: log.break_time
-            ? "The time-out must be after your break."
+            ? "The time-out must be after your lunch."
             : "The time-out must be after your time-in.",
         });
       }
@@ -3985,17 +3985,17 @@ app.patch(
       }
       if ((breakStart === null) !== (breakEnd === null) && timeOut !== null) {
         return res.status(400).json({
-          message: "Give both the start and the end of the break, or leave both empty.",
+          message: "Give both \"Out for lunch\" and \"Back from lunch\", or leave both empty.",
         });
       }
       if (breakEnd !== null && breakStart === null) {
-        return res.status(400).json({ message: "A break that ends needs a start." });
+        return res.status(400).json({ message: "\"Back from lunch\" needs an \"Out for lunch\" before it." });
       }
       const order = [timeIn, breakStart, breakEnd, timeOut].filter((value): value is string => Boolean(value));
       for (let index = 1; index < order.length; index += 1) {
         if (order[index] <= order[index - 1]) {
           return res.status(400).json({
-            message: "The times must be in order: time in, break, back to work, time out.",
+            message: "The times must be in order: time in, out for lunch, back from lunch, time out.",
           });
         }
       }

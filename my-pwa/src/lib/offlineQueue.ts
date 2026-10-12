@@ -8,7 +8,7 @@ import { toast } from "./toast";
 | ATTENDANCE STEPS TAKEN OFFLINE
 |--------------------------------------------------------------------------
 |
-| Break, back-to-work and time-out still work with no connection: the step
+| Out for lunch, back from lunch and time-out still work with no connection: the step
 | is kept on the phone with the time the button was pressed, and sent when
 | the connection is back. The server checks the time (not in the future,
 | not too old, in order) and marks the log as recorded offline, so the
@@ -42,8 +42,8 @@ export type QueuedStep = {
 export const QUEUE_CHANGED = "internet-offline-queue";
 
 const STEP_NAMES: Record<StepPath, string> = {
-  break: "break",
-  "break-end": "return from break",
+  break: "\"Out for lunch\"",
+  "break-end": "\"Back from lunch\"",
   "time-out": "time-out",
 };
 

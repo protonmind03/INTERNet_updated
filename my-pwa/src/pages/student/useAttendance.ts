@@ -343,8 +343,8 @@ export function useAttendance(studentId: string | undefined) {
     stage: stageOf(todayLog),
     livenessChallenge,
     timeIn,
-    startBreak: () => step("break", "Could not record your break."),
-    endBreak: () => step("break-end", "Could not record your return from break."),
+    startBreak: () => step("break", "Could not record that you went out for lunch."),
+    endBreak: () => step("break-end", "Could not record that you are back from lunch."),
     /** Times out, with the student's note of what they did today. */
     /** `taskIds`: the tasks worked on today, if the student chose any. */
     timeOut: (accomplishments: string, taskIds: number[] = []) =>

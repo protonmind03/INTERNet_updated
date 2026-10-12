@@ -283,7 +283,7 @@ function DailyLogPage() {
                           </dd>
                         </div>
                         <div>
-                          <dt className="text-xs text-slate-500">Break</dt>
+                          <dt className="text-xs text-slate-500">Lunch</dt>
                           <dd className="tabular whitespace-nowrap text-slate-700">
                             {breakText(log)}
                           </dd>
@@ -308,7 +308,7 @@ function DailyLogPage() {
                     <tr className="table-head border-b border-slate-100 text-xs font-medium text-slate-500">
                       <th scope="col" className="px-5 py-3 font-medium">Date</th>
                       <th scope="col" className="px-3 py-3 font-medium">Time in</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Break</th>
+                      <th scope="col" className="px-3 py-3 font-medium">Lunch</th>
                       <th scope="col" className="px-3 py-3 font-medium">Time out</th>
                       <th scope="col" className="px-3 py-3 text-right font-medium">Hours</th>
                       <th scope="col" className="px-3 py-3 font-medium">Notes</th>

@@ -1,6 +1,7 @@
 import { Fragment, useMemo, useState } from "react";
 import { Button, Card } from "./ui";
 import { formatHours, formatLongDate, formatTime } from "../lib/format";
+import { timeColumns } from "../lib/timeColumns";
 import { errorText, toast } from "../lib/toast";
 
 export type DtrLog = {
@@ -43,6 +44,42 @@ export type DtrPerson = {
   supervisor?: string | null;
 };
 
+/**
+ * A day's four time cells. A day worked straight through has one cell
+ * across AM Out and PM In that says so, instead of two made-up times.
+ */
+function TimeCells({ log }: { log: DtrLog | undefined }) {
+  const cell = "tabular whitespace-nowrap px-2 py-1.5";
+  if (!log) {
+    return (
+      <>
+        <td className={cell} />
+        <td className={cell} />
+        <td className={cell} />
+        <td className={cell} />
+      </>
+    );
+  }
+  const columns = timeColumns(log);
+  const shown = (value: string | null) => (value ? formatTime(value) : "");
+  return (
+    <>
+      <td className={cell}>{shown(columns.amIn)}</td>
+      {columns.noBreak ? (
+        <td colSpan={2} className={`${cell} text-center text-slate-600`}>
+          No break
+        </td>
+      ) : (
+        <>
+          <td className={cell}>{shown(columns.amOut)}</td>
+          <td className={cell}>{shown(columns.pmIn)}</td>
+        </>
+      )}
+      <td className={cell}>{shown(columns.pmOut)}</td>
+    </>
+  );
+}
+
 /** "2026-10" for a date key or timestamp. */
 const monthOf = (date: string) => String(date).slice(0, 7);
 
@@ -55,8 +92,11 @@ function monthLabel(month: string): string {
 }
 
 /**
- * A Daily Time Record for one month: every day of the month as a row, the
- * logged times beside it, and signature lines. Built to be printed; the
+ * A Daily Time Record for one month: every day of the month as a row, its
+ * times in the four columns the Civil Service form uses (AM In, AM Out, PM
+ * In, PM Out), and signature lines. Which time goes in which column, and
+ * what is printed for a day with no lunch, is decided by lib/timeColumns.ts:
+ * a time that did not happen is never printed. Built to be printed; the
  * portal's own chrome is hidden in print, leaving just this sheet.
  */
 export default function DtrSheet({
@@ -240,9 +280,10 @@ export default function DtrSheet({
             <thead>
               <tr className="border-y border-slate-300 text-xs text-slate-600">
                 <th scope="col" className="py-2 pr-2 font-semibold">Day</th>
-                <th scope="col" className="px-2 py-2 font-semibold">Time in</th>
-                <th scope="col" className="px-2 py-2 font-semibold">Break</th>
-                <th scope="col" className="px-2 py-2 font-semibold">Time out</th>
+                <th scope="col" className="px-2 py-2 font-semibold">AM In</th>
+                <th scope="col" className="px-2 py-2 font-semibold">AM Out</th>
+                <th scope="col" className="px-2 py-2 font-semibold">PM In</th>
+                <th scope="col" className="px-2 py-2 font-semibold">PM Out</th>
                 <th scope="col" className="px-2 py-2 text-right font-semibold">Hours</th>
                 <th scope="col" className="py-2 pl-2 font-semibold">Status</th>
               </tr>
@@ -259,19 +300,7 @@ export default function DtrSheet({
                     {String(row.day).padStart(2, "0")}{" "}
                     <span className="text-slate-500">{row.weekday}</span>
                   </td>
-                  <td className="tabular whitespace-nowrap px-2 py-1.5">
-                    {row.log ? formatTime(row.log.time_in) : ""}
-                  </td>
-                  <td className="tabular whitespace-nowrap px-2 py-1.5">
-                    {row.log?.break_time
-                      ? `${formatTime(row.log.break_time)} – ${
-                          row.log.break_end_time ? formatTime(row.log.break_end_time) : ""
-                        }`
-                      : ""}
-                  </td>
-                  <td className="tabular whitespace-nowrap px-2 py-1.5">
-                    {row.log?.time_out ? formatTime(row.log.time_out) : ""}
-                  </td>
+                  <TimeCells log={row.log} />
                   <td className="tabular whitespace-nowrap px-2 py-1.5 text-right">
                     {row.log && row.log.hours !== null ? formatHours(row.log.hours) : ""}
                   </td>
@@ -294,7 +323,7 @@ export default function DtrSheet({
                 {row.log && hasNote(row.log) && (
                   <tr className="border-b border-slate-200">
                     <td />
-                    <td colSpan={5} className="px-2 pb-1.5 text-[11px] leading-snug text-slate-600">
+                    <td colSpan={6} className="px-2 pb-1.5 text-[11px] leading-snug text-slate-600">
                       {row.log.accomplishments}
                       {row.log.tasks && row.log.tasks.length > 0 && (
                         <span className="block">
@@ -310,7 +339,7 @@ export default function DtrSheet({
             </tbody>
             <tfoot>
               <tr className="font-semibold text-slate-900">
-                <td colSpan={4} className="py-2.5 pr-2 text-right">
+                <td colSpan={5} className="py-2.5 pr-2 text-right">
                   Verified hours this month
                 </td>
                 <td className="tabular px-2 py-2.5 text-right">{formatHours(verified)}</td>
