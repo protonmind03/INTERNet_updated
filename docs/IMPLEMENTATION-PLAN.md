@@ -766,6 +766,26 @@ Different from the description, or decided where it left room:
 - [x] **2.8 Analytics and exports** gain program and block columns, and
   tables by program and by block.
 
+### Phase 3: what students write and read about their days
+
+Two migrations (039, 040).
+
+- [ ] **3.1 Weekly report.** The weekly journal, extended, under a new
+  name for all three roles: What I did, What I learned, Problems
+  encountered, Solutions tried or identified (new, migration 039). Above
+  the form, that week's daily accomplishments. Review flow unchanged.
+- [ ] **3.2 Tasks worked on, at time-out** (migration 040,
+  attendance_tasks). An optional choice of open tasks on the time-out
+  confirmation, carried through the offline queue; shown under the note
+  in the supervisor's review and on the time record.
+- [ ] **3.3 AM / PM labels and the time record.** "Time in", "Out for
+  lunch", "Back from lunch", "Time out". The time record prints Day, AM
+  In, AM Out, PM In, PM Out, Hours, Status, and never a time that did not
+  happen.
+- [ ] **3.4 Calendar schedule.** Week and Month views and a "My progress"
+  tab on the student's Schedule page, from data already loaded and saved
+  offline. Every Modal's backdrop is blurred.
+
 ## Still open
 
 Not built, and noted where each was decided:
