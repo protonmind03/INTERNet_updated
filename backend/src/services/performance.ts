@@ -24,6 +24,7 @@
 import type { Pool } from "pg";
 import type { Projection } from "./insights";
 import { released } from "./taskRelease";
+import { appliesTo, oneOff } from "./deliverables";
 
 /** A time-in more than this many minutes after the shift starts is late. */
 export const LATE_AFTER_MINUTES = 15;
@@ -197,6 +198,7 @@ type Counts = {
   task_rating: number | null;
   reports: number;
   requirements_approved: number;
+  requirements_required: number;
   supervisor_rating: number | null;
   final_average: number | null;
   final_scale: number | null;
@@ -215,7 +217,7 @@ export async function performanceFigures(
 ): Promise<Map<string, PerformanceFigures>> {
   const ids = students.map((row) => row.student_id);
   if (ids.length === 0) return new Map();
-  const [counts, logs, shifts, required] = await Promise.all([
+  const [counts, logs, shifts] = await Promise.all([
     pool.query<Counts>(
       `SELECT s.student_id,
         (SELECT COUNT(*)::int FROM attendance a WHERE a.student_id = s.student_id AND a.status = 'Rejected') AS logs_rejected,
@@ -230,7 +232,9 @@ export async function performanceFigures(
         (SELECT ROUND(AVG(t.review_rating), 2)::float FROM tasks t
            WHERE t.student_id = s.student_id AND t.review_rating IS NOT NULL) AS task_rating,
         (SELECT COUNT(*)::int FROM journals j WHERE j.student_id = s.student_id) AS reports,
-        (SELECT COUNT(*)::int FROM ojt_requirements r WHERE r.is_active = TRUE AND EXISTS (
+        (SELECT COUNT(*)::int FROM ojt_requirements r
+           WHERE r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")}) AS requirements_required,
+        (SELECT COUNT(*)::int FROM ojt_requirements r WHERE r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")} AND EXISTS (
            SELECT 1 FROM documents d
            WHERE d.student_id = s.student_id AND d.doc_type = r.name AND d.status = 'Approved')) AS requirements_approved,
         (SELECT ROUND(AVG(e.rating), 2)::float FROM evaluations e
@@ -253,7 +257,6 @@ export async function performanceFigures(
        GROUP BY student_id, INITCAP(TRIM(day))`,
       [ids]
     ),
-    pool.query<{ required: number }>(`SELECT COUNT(*)::int AS required FROM ojt_requirements WHERE is_active = TRUE`),
   ]);
 
   const logsOf = new Map<string, { date: string; time_in: string | null }[]>();
@@ -285,7 +288,8 @@ export async function performanceFigures(
         average_rating: row.task_rating,
       },
       weekly_reports: { submitted: row.reports, weeks_worked: row.weeks_worked },
-      requirements: { approved: row.requirements_approved, required: required.rows[0].required },
+      // The documents asked of this student, not every requirement there is.
+      requirements: { approved: row.requirements_approved, required: row.requirements_required },
       supervisor_rating: row.supervisor_rating,
       final_evaluation:
         row.final_average === null ? null : { average: row.final_average, scale: row.final_scale || 5 },

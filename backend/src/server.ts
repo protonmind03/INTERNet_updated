@@ -35,6 +35,15 @@ import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
 import { registerProgrammeRoutes } from "./routes/programme";
 import { readSchedule } from "./services/schedules";
 import { readRange } from "./services/analyticsRange";
+import { registerDeliverableRoutes } from "./routes/deliverables";
+import {
+  appliesTo,
+  attachItem,
+  coordinatorReviews,
+  dueOn,
+  oneOff,
+  syncItemWithDocument,
+} from "./services/deliverables";
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
@@ -8510,10 +8519,17 @@ app.get(
 |
 */
 
-async function getActiveRequirementNames(): Promise<string[]> {
-  const result = await pool.query<{ name: string }>(
-    `SELECT name FROM ojt_requirements WHERE is_active = TRUE ORDER BY sort_order, name`
-  );
+/** The active requirements, or with a student's id, those asked of that student (services/deliverables.ts). */
+async function getActiveRequirementNames(studentId?: string): Promise<string[]> {
+  const result = studentId
+    ? await pool.query<{ name: string }>(
+        `SELECT r.name FROM ojt_requirements r JOIN students s ON s.student_id = $1
+         WHERE r.is_active = TRUE AND ${appliesTo("r", "s")} ORDER BY r.sort_order, r.name`,
+        [studentId]
+      )
+    : await pool.query<{ name: string }>(
+        `SELECT name FROM ojt_requirements WHERE is_active = TRUE ORDER BY sort_order, name`
+      );
   return result.rows.map((row) => row.name);
 }
 
@@ -8525,9 +8541,28 @@ app.get(
       const auth = (req as AuthedRequest).auth;
       const includeInactive =
         auth?.role === "coordinator" && req.query.all === "1";
+      if (auth?.role === "student") {
+        // A student is shown the documents asked of them. A weekly
+        // deliverable is not one document; its weeks are listed by
+        // GET /api/students/:studentId/deliverables.
+        const own = await pool.query(
+          `
+          SELECT r.id, r.name, r.description, r.is_active, r.sort_order, r.reviewer_role, r.due_rule,
+                 TO_CHAR(${dueOn("r", "t")}, 'YYYY-MM-DD') AS due_on
+          FROM students s
+          JOIN ojt_requirements r ON r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")}
+          LEFT JOIN terms t ON t.id = s.term_id
+          WHERE s.student_id = $1
+          ORDER BY r.sort_order, r.name
+          `,
+          [auth.id]
+        );
+        return res.json({ requirements: own.rows });
+      }
       const result = await pool.query(
         `
-        SELECT id, name, description, is_active, sort_order
+        SELECT id, name, description, is_active, sort_order,
+               TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, due_rule, reviewer_role, applies_to
         FROM ojt_requirements
         WHERE ($1::boolean OR is_active = TRUE)
         ORDER BY sort_order, name
@@ -8843,7 +8878,7 @@ app.post(
     const docType = String(req.body.doc_type || "").trim();
     let activeRequirements: string[];
     try {
-      activeRequirements = await getActiveRequirementNames();
+      activeRequirements = await getActiveRequirementNames(auth.id);
     } catch (error) {
       console.error("LOAD OJT REQUIREMENTS ERROR:", error);
       return res.status(500).json({ message: "Failed to load OJT requirements." });
@@ -8886,12 +8921,33 @@ app.post(
       );
       documentSaved = true;
 
-      await createNotification({
-        supervisorId: studentResult.rows[0].supervisor_id,
-        title: "Document submitted for review",
-        message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}) for review.`,
-        type: "document",
-      });
+      // Uploaded for one week of a weekly deliverable: that week now points at this file.
+      if (req.body.item_id !== undefined) {
+        await attachItem(pool, auth.id, req.body.item_id, docType, result.rows[0].id).catch((error) =>
+          console.error("ATTACH DELIVERABLE ITEM ERROR:", error)
+        );
+      }
+
+      // Whoever reviews this requirement is told: the supervisor, unless it says the coordinator.
+      const reviewer = await pool.query<{ reviewer_role: string }>(
+        `SELECT reviewer_role FROM ojt_requirements WHERE name = $1`,
+        [docType]
+      );
+      if (reviewer.rows[0]?.reviewer_role === "coordinator") {
+        await notifyCoordinators({
+          title: "Document submitted for review",
+          message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}), which the coordinator reviews.`,
+          type: "document",
+          link: "/coordinator/documents",
+        });
+      } else {
+        await createNotification({
+          supervisorId: studentResult.rows[0].supervisor_id,
+          title: "Document submitted for review",
+          message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}) for review.`,
+          type: "document",
+        });
+      }
 
       return res.status(201).json({
         message: "Document uploaded and submitted for review.",
@@ -8962,6 +9018,8 @@ app.get(
         INNER JOIN students s ON s.student_id = d.student_id
         WHERE s.supervisor_id = $1
           AND s.is_active = TRUE
+          -- A deliverable the coordinator reviews is not in the supervisor's queue.
+          AND NOT ${coordinatorReviews("d")}
         ORDER BY CASE WHEN d.status = 'Pending' THEN 0 ELSE 1 END,
                  d.uploaded_at DESC, d.id DESC
         LIMIT 1000
@@ -8994,7 +9052,8 @@ app.get(
           SELECT d.id, d.student_id, s.name AS student_name, s.program,
                  s.company, sup.name AS supervisor_name, d.doc_type,
                  d.original_filename, d.mime_type, d.size_bytes, d.status,
-                 d.review_notes, d.uploaded_at, d.reviewed_at
+                 d.review_notes, d.uploaded_at, d.reviewed_at,
+                 CASE WHEN ${coordinatorReviews("d")} THEN 'coordinator' ELSE 'supervisor' END AS reviewer_role
           FROM documents d
           LEFT JOIN students s ON s.student_id = d.student_id
           LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
@@ -9022,7 +9081,13 @@ app.get(
                    ARRAY_AGG(DISTINCT d.doc_type)
                      FILTER (WHERE d.status = 'Approved'),
                    '{}'
-                 ) AS approved_types
+                 ) AS approved_types,
+                 -- The documents asked of this student: not every requirement is everyone's.
+                 ARRAY(
+                   SELECT r.name FROM ojt_requirements r
+                   WHERE r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")}
+                   ORDER BY r.sort_order, r.name
+                 ) AS asked_types
           FROM students s
           LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
           LEFT JOIN programs prog ON prog.id = s.program_id
@@ -9032,16 +9097,16 @@ app.get(
           LEFT JOIN documents d
             ON d.student_id = s.student_id
            AND d.doc_type IN (
-             SELECT name FROM ojt_requirements WHERE is_active = TRUE
+             SELECT name FROM ojt_requirements r WHERE r.is_active = TRUE AND ${oneOff("r")}
            )
           WHERE s.is_active = TRUE${scope.sql}
-          GROUP BY s.student_id, s.name, s.program, s.company, sup.name
+          GROUP BY s.student_id, s.name, s.program, s.company, sup.name, s.program_id, s.block_id
           ORDER BY s.name
           `
         ),
         pool.query(
-          `SELECT name FROM ojt_requirements
-           WHERE is_active = TRUE ORDER BY sort_order, name`
+          `SELECT name FROM ojt_requirements r
+           WHERE r.is_active = TRUE AND ${oneOff("r")} ORDER BY sort_order, name`
         ),
       ]);
 
@@ -9061,10 +9126,12 @@ app.get(
           college: row.college,
           program_name: row.program_name,
           block: row.block,
-          approved: row.approved,
+          // Counted over what is asked of this student.
+          approved: (row.asked_types as string[]).filter((name) => row.approved_types.includes(name)).length,
           pending: row.pending,
           rejected: row.rejected,
-          missing: requirementNames.filter(
+          required: (row.asked_types as string[]).length,
+          missing: (row.asked_types as string[]).filter(
             (name) => !row.approved_types.includes(name)
           ),
         })),
@@ -9119,12 +9186,16 @@ app.patch(
           AND s.student_id = d.student_id
           AND d.status = 'Pending'
           AND (
-            ($5::text = 'supervisor' AND s.supervisor_id = $3)
+            ($5::text = 'supervisor' AND s.supervisor_id = $3 AND NOT ${coordinatorReviews("d")})
             OR (
               $5::text = 'coordinator'
-              AND NOT EXISTS (
-                SELECT 1 FROM supervisors sup
-                WHERE sup.supervisor_id = s.supervisor_id AND sup.is_active = TRUE
+              AND (
+                -- A deliverable the coordinator reviews, or a student with nobody else to review theirs.
+                ${coordinatorReviews("d")}
+                OR NOT EXISTS (
+                  SELECT 1 FROM supervisors sup
+                  WHERE sup.supervisor_id = s.supervisor_id AND sup.is_active = TRUE
+                )
               )
             )
           )
@@ -9141,8 +9212,9 @@ app.patch(
       );
 
       if (result.rows.length === 0) {
-        const current = await pool.query<{ status: string }>(
-          `SELECT d.status FROM documents d JOIN students s ON s.student_id = d.student_id
+        const current = await pool.query<{ status: string; coordinators: boolean }>(
+          `SELECT d.status, ${coordinatorReviews("d")} AS coordinators
+           FROM documents d JOIN students s ON s.student_id = d.student_id
            WHERE d.id = $1 AND ($3::text = 'coordinator' OR s.supervisor_id = $2)`,
           [documentId, auth.id, auth.role]
         );
@@ -9151,7 +9223,9 @@ app.patch(
             message:
               current.rows[0].status !== "Pending"
                 ? "This document is no longer waiting for review. It was already reviewed."
-                : "This student has an active supervisor, who reviews their documents.",
+                : current.rows[0].coordinators
+                  ? "The OJT coordinator reviews this deliverable."
+                  : "This student has an active supervisor, who reviews their documents.",
           });
         }
         return res.status(404).json({
@@ -9160,6 +9234,10 @@ app.patch(
       }
 
       const document = result.rows[0];
+      // One week of a weekly deliverable says what its file says.
+      await syncItemWithDocument(pool, document.id).catch((error) =>
+        console.error("SYNC DELIVERABLE ITEM ERROR:", error)
+      );
       await createNotification({
         studentId: document.student_id,
         entity: { type: "document", id: document?.id },
@@ -9372,6 +9450,7 @@ registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
 registerAcademicRoutes(app, { pool, requireCoordinator });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
+registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 
 registerExtensionRoutes(app, {
   pool,

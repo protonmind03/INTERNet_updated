@@ -269,7 +269,11 @@ export async function loadKpiInputs(
          AND a.verified_at >= $2::date`,
       [ids, historyFrom]
     ),
-    pool.query<{ name: string }>(`SELECT name FROM ojt_requirements WHERE is_active = TRUE ORDER BY name`),
+    pool.query<{ name: string }>(`SELECT name FROM ojt_requirements
+       WHERE is_active = TRUE AND due_rule IS DISTINCT FROM 'weekly'
+         AND COALESCE(jsonb_array_length(applies_to->'program_ids'), 0) = 0
+         AND COALESCE(jsonb_array_length(applies_to->'block_ids'), 0) = 0
+       ORDER BY name`),
     pool.query<{ student_id: string; doc_type: string; approved_on: string }>(
       `SELECT d.student_id, d.doc_type,
               TO_CHAR(MIN(COALESCE(d.reviewed_at, d.uploaded_at)), 'YYYY-MM-DD') AS approved_on

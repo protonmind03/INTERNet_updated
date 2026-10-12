@@ -6,6 +6,7 @@ import { categoriesFor } from "../services/notificationPreferences";
 import { loadCatalogue, resolvePlacement } from "../services/academics";
 import { manilaClock } from "../services/digests";
 import { readReleaseDay, released, scheduledLater } from "../services/taskRelease";
+import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverables";
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
 
@@ -677,6 +678,8 @@ export function registerExtensionRoutes(
         });
       }
       const document = result.rows[0];
+      // One week of a weekly deliverable goes back to waiting with its file.
+      await quietly("SYNC DELIVERABLE ITEM ERROR", () => syncItemWithDocument(pool, Number(document.id)));
       await quietly("DOCUMENT UNDO NOTIFICATION ERROR", () =>
         createNotification({
           studentId: String(document.student_id),
@@ -2961,9 +2964,10 @@ export function registerExtensionRoutes(
         (SELECT COUNT(*)::int FROM attendance a
           WHERE a.student_id = s.student_id
             AND (a.status = 'Pending' OR a.time_out IS NULL)) AS waiting_logs,
-        (SELECT COUNT(*)::int FROM ojt_requirements r WHERE r.is_active = TRUE) AS requirements,
         (SELECT COUNT(*)::int FROM ojt_requirements r
-          WHERE r.is_active = TRUE AND EXISTS (
+          WHERE r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")}) AS requirements,
+        (SELECT COUNT(*)::int FROM ojt_requirements r
+          WHERE r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")} AND EXISTS (
             SELECT 1 FROM documents d
             WHERE d.student_id = s.student_id AND d.doc_type = r.name AND d.status = 'Approved'
           )) AS approved,

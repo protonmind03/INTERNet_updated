@@ -2,6 +2,7 @@ import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
 import { releaseDueTasks, released } from "./taskRelease";
+import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -29,6 +30,15 @@ export function startDeadlineReminderScheduler(
         await releaseDueTasks(pool, createNotification);
       } catch (error) {
         console.error("TASK RELEASE ERROR:", error);
+      }
+      // Deliverables: this week's item of each weekly one, then a reminder
+      // for whatever is due today or tomorrow and not handed in. Both are
+      // safe to repeat every round.
+      try {
+        await createWeeklyItems(pool);
+        await sendDeliverableReminders(pool, createNotification);
+      } catch (error) {
+        console.error("DELIVERABLE LOOP ERROR:", error);
       }
       // A task the intern cannot see yet gets no deadline reminder.
       await pool.query(

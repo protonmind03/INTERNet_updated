@@ -281,6 +281,15 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.attendance, "id"),
     keep: ["student_id", "reason"],
   },
+  // A requirement's due date, reviewer and who it is asked of
+  {
+    method: "PUT",
+    path: "/api/coordinator/requirements/:id/deliverable",
+    action: "requirement.deliverable",
+    entityType: "requirement",
+    entityId: param("id"),
+    from: (source) => ({ name: nested(source.result.requirement, "name"), settings: source.result.summary }),
+  },
   // The programme's settings: targets, and a schedule for a whole block
   {
     method: "PUT",

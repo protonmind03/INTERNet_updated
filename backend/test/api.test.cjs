@@ -1723,7 +1723,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/programme.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/programme.ts", "routes/deliverables.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -7368,6 +7368,218 @@ test("the coordinator downloads the filtered documents as one ZIP, named for peo
   } finally {
     await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%zip test ${stamp}%`]);
     await pool.query(`DELETE FROM documents WHERE id = ANY($1::int[])`, [made]);
+    await pool.end();
+  }
+});
+
+test("a deliverable is due on a day, by a week of the term or every week; a weekly one never repeats the weekly report", () => {
+  require("tsx/cjs");
+  const { readDeliverable, dueText, duplicatesWeeklyReport, appliesTo, oneOff } = require("../src/services/deliverables.ts");
+  const everyone = { program_ids: [], block_ids: [] };
+  // Nothing sent: as every requirement was before.
+  assert.deepEqual(readDeliverable({}, "MOA"), { due_date: null, due_rule: null, reviewer_role: "supervisor", applies_to: everyone });
+  assert.deepEqual(readDeliverable({ due_date: "2026-11-14", reviewer_role: "coordinator", applies_to: { program_ids: [9, 3, 9], block_ids: [4] } }, "MOA"), {
+    due_date: "2026-11-14", due_rule: null, reviewer_role: "coordinator", applies_to: { program_ids: [3, 9], block_ids: [4] },
+  });
+  assert.equal(readDeliverable({ due_rule: "week:6" }, "Midterm narrative").due_rule, "week:6");
+  assert.equal(readDeliverable({ due_rule: "weekly" }, "Timesheet signed by the supervisor").due_rule, "weekly");
+  for (const bad of [
+    { due_date: "2026-02-30" },
+    { due_date: "soon" },
+    { due_rule: "week:0" },
+    { due_rule: "week:53" },
+    { due_rule: "monthly" },
+    { due_date: "2026-11-14", due_rule: "weekly" },
+    { reviewer_role: "student" },
+    { applies_to: { program_ids: ["9"] } },
+    { applies_to: { block_ids: [0] } },
+    { applies_to: [1, 2] },
+  ]) {
+    assert.ok("problem" in readDeliverable(bad, "MOA"), JSON.stringify(bad));
+  }
+  // THE WEEKLY REPORT IS NOT ASKED FOR TWICE.
+  for (const name of ["Weekly report", "weekly Journal", "Weekly Reports (signed)", "OJT journal"]) {
+    assert.ok(duplicatesWeeklyReport(name), name);
+    assert.match(readDeliverable({ due_rule: "weekly" }, name).problem, /already write a weekly report/);
+    // The same name due once is not a weekly duplicate.
+    assert.ok(!("problem" in readDeliverable({ due_date: "2026-11-14" }, name)), name);
+  }
+  assert.ok(!duplicatesWeeklyReport("Weekly timesheet"));
+  assert.deepEqual(
+    [{ due_date: "2026-11-14", due_rule: null }, { due_date: null, due_rule: "week:6" }, { due_date: null, due_rule: "weekly" }, { due_date: null, due_rule: null }].map(dueText),
+    ["Due 2026-11-14", "Due by the end of week 6 of the term", "Due every week", ""]
+  );
+  assert.match(appliesTo("r", "s"), /r\.applies_to->'program_ids'.*s\.program_id/s);
+  assert.equal(oneOff("r"), "r.due_rule IS DISTINCT FROM 'weekly'");
+});
+
+test("deliverable settings are the coordinator's, and a student's list of what is due is their own", async () => {
+  const supervisor = await supervisorSession();
+  const settings = "/api/coordinator/requirements/1/deliverable";
+  assert.equal((await jsonRequest(settings, jsonBody(studentToken, "PUT", {}))).response.status, 403);
+  assert.equal((await jsonRequest(settings, jsonBody(supervisor.token, "PUT", {}))).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/requirements/999999999/deliverable", jsonBody(coordinatorToken, "PUT", {}))).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/requirements/abc/deliverable", jsonBody(coordinatorToken, "PUT", {}))).response.status, 404);
+  const mine = `/api/students/${encodeURIComponent(student.student_id)}/deliverables`;
+  assert.equal((await jsonRequest(mine, { headers: authHeaders(coordinatorToken) })).response.status, 403);
+  assert.equal((await jsonRequest(mine, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/deliverables", { headers: authHeaders(studentToken) })).response.status, 403);
+  const own = await jsonRequest(mine, { headers: authHeaders(studentToken) });
+  assert.equal(own.response.status, 200);
+  assert.ok(Array.isArray(own.body.deliverables) && Array.isArray(own.body.weekly));
+  // The list everyone reads now says who reviews each requirement; a student's has their own due day.
+  const forCoordinator = (await jsonRequest("/api/ojt-requirements?all=1", { headers: authHeaders(coordinatorToken) })).body.requirements;
+  for (const row of forCoordinator) for (const key of ["due_date", "due_rule", "reviewer_role", "applies_to"]) assert.ok(key in row, key);
+  const forStudent = (await jsonRequest("/api/ojt-requirements", { headers: authHeaders(studentToken) })).body.requirements;
+  for (const row of forStudent) {
+    assert.ok("due_on" in row && row.is_active === true);
+    assert.notEqual(row.due_rule, "weekly", "a weekly deliverable is not one of the documents");
+  }
+});
+
+test("a deliverable applies to who it names, is reviewed by who it says, comes due once a week, and is reminded once", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { createWeeklyItems, sendDeliverableReminders } = require("../src/services/deliverables.ts");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = student.student_id;
+  const stamp = Date.now();
+  const names = { once: `P5 clearance ${stamp}`, elsewhere: `P5 other program ${stamp}`, weekly: `P5 timesheet ${stamp}`, theirs: `P5 coordinator form ${stamp}` };
+  const ids = {};
+  const before = (await pool.query(`SELECT term_id, program_id, block_id FROM students WHERE student_id = $1`, [sid])).rows[0];
+  let termId;
+  const as = (method, path, body) => jsonRequest(path, jsonBody(coordinatorToken, method, body));
+  const requirementsOf = async () => (await jsonRequest("/api/ojt-requirements", { headers: authHeaders(studentToken) })).body.requirements;
+  const due = async () => (await jsonRequest(`/api/students/${encodeURIComponent(sid)}/deliverables`, { headers: authHeaders(studentToken) })).body;
+  const checklist = async () => (await jsonRequest(`/api/students/${encodeURIComponent(sid)}/completion`, { headers: authHeaders(studentToken) })).body;
+  const upload = async (docType, extra = {}) => {
+    const form = new FormData();
+    form.append("doc_type", docType);
+    for (const [key, value] of Object.entries(extra)) form.append(key, String(value));
+    form.append("file", new Blob([sampleFiles.pdf], { type: "application/pdf" }), `${docType}.pdf`);
+    return jsonRequest("/api/documents", { method: "POST", headers: authHeaders(studentToken), body: form });
+  };
+  try {
+    // A term that started three Mondays ago, so there are weeks to be due.
+    termId = (await pool.query(`INSERT INTO terms (name, start_date, end_date) VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::date - 14, CURRENT_DATE + 60) RETURNING id`, [`P5 term ${stamp}`])).rows[0].id;
+    await pool.query(`UPDATE students SET term_id = $2 WHERE student_id = $1`, [sid, termId]);
+    const otherProgram = (await pool.query(`SELECT id FROM programs WHERE id IS DISTINCT FROM $1 ORDER BY id LIMIT 1`, [before.program_id])).rows[0].id;
+    for (const [key, name] of Object.entries(names)) {
+      const made = await as("POST", "/api/coordinator/requirements", { name, sort_order: 900 });
+      assert.equal(made.response.status, 201, JSON.stringify(made.body));
+      ids[key] = made.body.requirement.id;
+    }
+    const checklistBefore = await checklist();
+
+    // Unknown program: refused. Then each one's settings.
+    assert.equal((await as("PUT", `/api/coordinator/requirements/${ids.once}/deliverable`, { applies_to: { program_ids: [999999999] } })).response.status, 400);
+    const tomorrow = (await pool.query(`SELECT TO_CHAR(CURRENT_DATE + 1, 'YYYY-MM-DD') AS d`)).rows[0].d;
+    const set = async (key, body) => {
+      const saved = await as("PUT", `/api/coordinator/requirements/${ids[key]}/deliverable`, body);
+      assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+      return saved.body;
+    };
+    const once = await set("once", { due_date: tomorrow });
+    assert.deepEqual([once.requirement.due_date, once.requirement.reviewer_role, once.summary], [tomorrow, "supervisor", `Due ${tomorrow}; reviewed by the supervisor; for everyone`]);
+    await set("elsewhere", { due_rule: "week:2", applies_to: { program_ids: [otherProgram] } });
+    await set("weekly", { due_rule: "weekly" });
+    await set("theirs", { reviewer_role: "coordinator", due_rule: "week:1" });
+
+    // WHO IT APPLIES TO. The other program's deliverable is not this student's: not listed, not to be uploaded, not counted.
+    const listed = (await requirementsOf()).map((row) => row.name);
+    assert.ok(listed.includes(names.once) && listed.includes(names.theirs));
+    assert.ok(!listed.includes(names.elsewhere), "another program's deliverable is not asked of this student");
+    assert.ok(!listed.includes(names.weekly), "a weekly deliverable is not one document");
+    assert.equal((await upload(names.elsewhere)).response.status, 400);
+    assert.equal((await requirementsOf()).find((row) => row.name === names.once).due_on, tomorrow);
+    // Week 1 of a term that began 14 days before this week's Monday ended 8 days before it.
+    const weekOne = (await pool.query(`SELECT TO_CHAR(start_date + 6, 'YYYY-MM-DD') AS d FROM terms WHERE id = $1`, [termId])).rows[0].d;
+    assert.equal((await requirementsOf()).find((row) => row.name === names.theirs).due_on, weekOne);
+    // The completion checklist asks for the two that are documents and are this student's; not the weekly, not the other program's.
+    const checklistAfter = await checklist();
+    const requirementLine = (body) => JSON.stringify(body).match(/(\d+) of (\d+)/g);
+    assert.notDeepEqual(requirementLine(checklistAfter), null);
+    const coordinatorRow = (await jsonRequest(`/api/coordinator/documents?q=${encodeURIComponent(sid)}`, { headers: authHeaders(coordinatorToken) })).body.students.find((row) => row.student_id === sid);
+    assert.ok(coordinatorRow.missing.includes(names.once) && coordinatorRow.missing.includes(names.theirs));
+    assert.ok(!coordinatorRow.missing.includes(names.elsewhere) && !coordinatorRow.missing.includes(names.weekly));
+    assert.equal(coordinatorRow.required, coordinatorRow.missing.length + coordinatorRow.approved);
+    assert.ok(checklistBefore);
+
+    // EVERY WEEK. Three weeks so far, one item each, however often the loop runs.
+    await createWeeklyItems(pool);
+    await createWeeklyItems(pool);
+    const items = (await pool.query(`SELECT id, TO_CHAR(period_start, 'YYYY-MM-DD') AS period_start, TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, status FROM deliverable_items WHERE requirement_id = $1 AND student_id = $2 ORDER BY period_start`, [ids.weekly, sid])).rows;
+    assert.equal(items.length, 3, "one item for each of the three weeks, made once");
+    for (const item of items) {
+      assert.equal(new Date(`${item.period_start}T00:00:00Z`).getUTCDay(), 1, "a week starts on Monday");
+      assert.equal(new Date(`${item.due_date}T00:00:00Z`).getUTCDay(), 0, "and is due on its Sunday");
+    }
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM deliverable_items WHERE requirement_id = $1`, [ids.elsewhere])).rows[0].n, 0, "only weekly deliverables have items");
+    const mineDue = await due();
+    assert.equal(mineDue.weekly.filter((row) => row.name === names.weekly).length, 3);
+    assert.ok(mineDue.weekly.filter((row) => row.name === names.weekly).every((row) => row.status === "Not submitted"));
+    assert.deepEqual(mineDue.deliverables.filter((row) => Object.values(names).includes(row.name)).map((row) => [row.name, row.status]).sort(), [[names.once, "Not submitted"], [names.theirs, "Not submitted"]].sort());
+
+    // REMINDED ONCE: tomorrow's one-off, and this week's item if it is due today or tomorrow.
+    const sent = [];
+    const collect = async (note) => { sent.push(note); };
+    // The server's own loop may get there first; either way it is said once.
+    const reminded = async (name) =>
+      sent.filter((note) => note.studentId === sid && note.message.includes(name)).length +
+      (await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND title = 'Deliverable due' AND message LIKE $2`, [sid, `%${name}%`])).rows[0].n;
+    await sendDeliverableReminders(pool, collect);
+    assert.equal(await reminded(names.once), 1, "reminded the day before it is due");
+    assert.equal(await reminded(names.elsewhere), 0, "not about another program's deliverable");
+    assert.ok(sent.every((note) => note.title === "Deliverable due" && !note.message.includes(names.once) || note.message.includes(tomorrow)));
+    await sendDeliverableReminders(pool, collect);
+    await sendDeliverableReminders(pool, collect);
+    assert.equal(await reminded(names.once), 1, "not twice");
+
+    // A WEEK HANDED IN. The file is for that week; the supervisor reviews it; the week follows the file.
+    const handed = await upload(names.weekly, { item_id: items[0].id });
+    assert.equal(handed.response.status, 201, JSON.stringify(handed.body));
+    const weekly = async () => (await due()).weekly.find((row) => row.item_id === items[0].id);
+    assert.equal((await weekly()).status, "Submitted");
+    const queue = (await jsonRequest("/api/documents/supervisor", { headers: authHeaders(supervisor.token) })).body.documents;
+    assert.ok(queue.some((row) => row.id === handed.body.document.id), "in the supervisor's queue");
+    const approve = (token, id, body = { status: "Approved" }) => jsonRequest(`/api/documents/${id}/review`, jsonBody(token, "PATCH", body));
+    assert.equal((await approve(supervisor.token, handed.body.document.id)).response.status, 200);
+    assert.equal((await weekly()).status, "Approved");
+    // Somebody else's item, or an item of another requirement, is not taken over by an upload.
+    const stray = await upload(names.once, { item_id: items[1].id });
+    assert.equal(stray.response.status, 201);
+    assert.equal((await pool.query(`SELECT document_id FROM deliverable_items WHERE id = $1`, [items[1].id])).rows[0].document_id, null);
+
+    // REVIEWED BY THE COORDINATOR. Not in the supervisor's queue, not theirs to decide; the coordinator's to decide.
+    const form = await upload(names.theirs);
+    assert.equal(form.response.status, 201, JSON.stringify(form.body));
+    const queueAfter = (await jsonRequest("/api/documents/supervisor", { headers: authHeaders(supervisor.token) })).body.documents;
+    assert.ok(!queueAfter.some((row) => row.id === form.body.document.id), "not in the supervisor's queue");
+    const refused = await approve(supervisor.token, form.body.document.id);
+    assert.ok([404, 409].includes(refused.response.status), String(refused.response.status));
+    const told = await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE coordinator_id = $1 AND title = 'Document submitted for review' AND message LIKE $2`, [coordinator.coordinator_id, `%${names.theirs}%`]);
+    assert.equal(told.rows[0].n, 1, "the coordinator is told, not the supervisor");
+    const inList = (await jsonRequest(`/api/coordinator/documents?q=${encodeURIComponent(names.theirs)}`, { headers: authHeaders(coordinatorToken) })).body.documents.find((row) => row.id === form.body.document.id);
+    assert.equal(inList.reviewer_role, "coordinator");
+    assert.equal((await approve(coordinatorToken, form.body.document.id, { status: "Rejected" })).response.status, 400, "a rejection still needs a reason");
+    assert.equal((await approve(coordinatorToken, form.body.document.id)).response.status, 200);
+    // The supervisor's own kind is still not the coordinator's while the student has an active supervisor.
+    assert.equal((await approve(coordinatorToken, stray.body.document.id)).response.status, 409);
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const audit = await jsonRequest("/api/coordinator/audit?action=requirement.deliverable&limit=20", { headers: authHeaders(coordinatorToken) });
+    const logged = audit.body.entries.find((entry) => String(entry.entity_id) === String(ids.weekly));
+    assert.deepEqual([logged.details.name, logged.details.settings], [names.weekly, "Due every week; reviewed by the supervisor; for everyone"]);
+  } finally {
+    const all = Object.values(ids);
+    await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%${stamp}%`]);
+    await pool.query(`DELETE FROM deliverable_items WHERE requirement_id = ANY($1::int[])`, [all]);
+    await pool.query(`DELETE FROM deliverable_reminders WHERE requirement_id = ANY($1::int[])`, [all]);
+    await pool.query(`DELETE FROM documents WHERE doc_type LIKE $1`, [`%${stamp}%`]);
+    await pool.query(`DELETE FROM ojt_requirements WHERE id = ANY($1::int[])`, [all]);
+    await pool.query(`UPDATE students SET term_id = $2 WHERE student_id = $1`, [sid, before.term_id]);
+    if (termId) await pool.query(`DELETE FROM terms WHERE id = $1`, [termId]);
     await pool.end();
   }
 });
