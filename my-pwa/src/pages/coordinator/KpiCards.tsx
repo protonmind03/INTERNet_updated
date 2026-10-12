@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
 import { Skeleton } from "../../components/ui";
 import { coordinatorRequest } from "./request";
+import KpiTargetsDialog from "./KpiTargetsDialog";
 
 /*
 |--------------------------------------------------------------------------
@@ -28,6 +29,8 @@ export type Kpi = {
   definition: string;
   unit: "percent" | "days" | "count";
   target: number;
+  /** The target when nobody has changed it. Missing from an older server. */
+  default_target?: number;
   direction: "atLeast" | "atMost";
   link: string;
   value: number | null;
@@ -181,9 +184,19 @@ export function KpiCard({ kpi }: { kpi: Kpi }) {
 }
 
 /** The six cards, for all students or those the coordinator's filters leave ("term=3&program=7"). */
-export default function KpiCards({ query }: { query: string }) {
+export default function KpiCards({
+  query,
+  editable = false,
+}: {
+  query: string;
+  /** Offers "Targets": on the dashboard, not on Analytics, so there is one place to change them. */
+  editable?: boolean;
+}) {
   const [state, setState] = useState<{ query: string; kpis: Kpi[] } | null>(null);
   const [failed, setFailed] = useState(false);
+  const [settingTargets, setSettingTargets] = useState(false);
+  // Asked for again after the targets change.
+  const [version, setVersion] = useState(0);
 
   useEffect(() => {
     let current = true;
@@ -201,7 +214,7 @@ export default function KpiCards({ query }: { query: string }) {
     return () => {
       current = false;
     };
-  }, [query]);
+  }, [query, version]);
 
   const loading = !state || state.query !== query;
 
@@ -211,8 +224,37 @@ export default function KpiCards({ query }: { query: string }) {
         <h2 id="kpi-heading" className="text-sm font-semibold text-slate-900">
           Key figures
         </h2>
-        <p className="text-xs text-slate-600">Each against its target. A card is red only when the target is missed.</p>
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-600">
+          Each against its target. A card is red only when the target is missed.
+          {editable && !loading && state.kpis.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSettingTargets(true)}
+              className="inline-flex min-h-9 items-center gap-1.5 rounded-md px-2 text-sm font-semibold text-psu-700 hover:bg-slate-100 print:hidden"
+            >
+              <Icon name="edit" size={14} />
+              Targets
+            </button>
+          )}
+        </p>
       </div>
+      {settingTargets && state && (
+        <KpiTargetsDialog
+          rows={state.kpis.map((kpi) => ({
+            key: kpi.key,
+            label: kpi.label,
+            unit: kpi.unit,
+            direction: kpi.direction,
+            target: kpi.target,
+            default_target: kpi.default_target ?? kpi.target,
+          }))}
+          onClose={() => setSettingTargets(false)}
+          onSaved={() => {
+            setSettingTargets(false);
+            setVersion((value) => value + 1);
+          }}
+        />
+      )}
       {failed && loading ? (
         <p className="rounded-xl border border-slate-200 bg-white px-4 py-6 text-center text-sm text-slate-600">
           The key figures could not be worked out just now. The rest of the page is unaffected.

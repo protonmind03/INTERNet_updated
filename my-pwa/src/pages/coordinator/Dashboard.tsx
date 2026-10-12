@@ -249,7 +249,7 @@ export default function CoordinatorDashboard() {
         </Card>
 
         {/* IS IT GOING WELL */}
-        <KpiCards query={studentFilters.query} />
+        <KpiCards query={studentFilters.query} editable />
 
         {/* THE DETAIL */}
         <Card className="min-w-0">
