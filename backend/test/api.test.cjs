@@ -7506,7 +7506,11 @@ test("a deliverable applies to who it names, is reviewed by who it says, comes d
     assert.equal(coordinatorRow.required, coordinatorRow.missing.length + coordinatorRow.approved);
     assert.ok(checklistBefore);
 
-    // EVERY WEEK. Three weeks so far, one item each, however often the loop runs.
+    // EVERY WEEK, from the week the deliverable was saved: made today, only this week is asked for.
+    await createWeeklyItems(pool);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM deliverable_items WHERE requirement_id = $1 AND student_id = $2`, [ids.weekly, sid])).rows[0].n, 1, "no overdue weeks from before it existed");
+    // Saved three weeks ago (the term's first week): three weeks so far, one item each, however often the loop runs.
+    await pool.query(`UPDATE ojt_requirements SET updated_at = NOW() - INTERVAL '15 days' WHERE id = $1`, [ids.weekly]);
     await createWeeklyItems(pool);
     await createWeeklyItems(pool);
     const items = (await pool.query(`SELECT id, TO_CHAR(period_start, 'YYYY-MM-DD') AS period_start, TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, status FROM deliverable_items WHERE requirement_id = $1 AND student_id = $2 ORDER BY period_start`, [ids.weekly, sid])).rows;

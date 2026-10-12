@@ -120,10 +120,12 @@ export function dueText(settings: Pick<DeliverableSettings, "due_date" | "due_ru
 
 /**
  * Makes the week's item for every student a weekly deliverable is asked
- * of: one per week from the start of the student's term to this week (and
- * not past the term's end). A week is Monday to Sunday and is due on its
- * Sunday. Safe to run as often as wanted: a week is made once. Returns
- * how many items were made.
+ * of: one per week up to this week (and not past the term's end),
+ * starting from the student's term or, if that is later, from the week
+ * the deliverable was last saved. So a deliverable made weekly in week
+ * ten does not leave nine weeks overdue behind it. A week is Monday to
+ * Sunday and is due on its Sunday. Safe to run as often as wanted: a week
+ * is made once. Returns how many items were made.
  */
 export async function createWeeklyItems(pool: Pool): Promise<number> {
   const made = await pool.query(
@@ -133,7 +135,7 @@ export async function createWeeklyItems(pool: Pool): Promise<number> {
      JOIN students s ON s.is_active = TRUE AND ${appliesTo("r", "s")}
      JOIN terms t ON t.id = s.term_id AND t.is_closed = FALSE
      CROSS JOIN LATERAL generate_series(
-       DATE_TRUNC('week', t.start_date)::date,
+       GREATEST(DATE_TRUNC('week', t.start_date), DATE_TRUNC('week', r.updated_at))::date,
        LEAST(CURRENT_DATE, t.end_date),
        INTERVAL '7 days'
      ) AS week

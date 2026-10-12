@@ -44,6 +44,8 @@ type Requirement = {
 const reviewerOf = (role: string | undefined) => (role === "coordinator" ? "Your OJT coordinator" : "Your supervisor");
 
 const MAX_DOCUMENT_MB = 10;
+/** Weeks of weekly deliverables listed before "Show all". */
+const WEEKS_SHOWN = 6;
 
 /** What a requirement needs from the student right now. */
 type RequirementState = "missing" | "rejected" | "pending" | "approved";
@@ -68,6 +70,9 @@ export default function Documents() {
   const targetItem = useRef<WeeklyItem | null>(null);
   const account = useAccount("student");
   const due = useDeliverables(account?.student_id);
+  // The newest weeks first; older ones are behind "Show all".
+  const [allWeeks, setAllWeeks] = useState(false);
+  const weeksShown = allWeeks ? due.weekly : due.weekly.slice(0, WEEKS_SHOWN);
 
   const load = useCallback(async () => {
     try {
@@ -265,7 +270,7 @@ export default function Documents() {
               description="One upload for each week, due on its Sunday. These are separate from your weekly report."
             />
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
-              {due.weekly.map((item) => {
+              {weeksShown.map((item) => {
                 const late = item.status === "Not submitted" && item.due_date < localDateKey(new Date());
                 const canUpload = item.status === "Not submitted" || item.status === "Rejected";
                 const busy = uploadingType === `${item.name}#${item.item_id}`;
@@ -311,6 +316,15 @@ export default function Documents() {
                 );
               })}
             </ul>
+            {due.weekly.length > WEEKS_SHOWN && (
+              <button
+                type="button"
+                onClick={() => setAllWeeks((value) => !value)}
+                className="w-full border-t border-slate-100 px-4 py-3 text-left text-sm font-semibold text-psu-700 hover:bg-slate-50 sm:px-5"
+              >
+                {allWeeks ? "Show the latest weeks only" : `Show all ${due.weekly.length} weeks`}
+              </button>
+            )}
           </Card>
         )}
 
