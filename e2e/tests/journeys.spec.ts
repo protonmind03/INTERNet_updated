@@ -825,7 +825,13 @@ test.describe("the programme, for the coordinator", () => {
     await expect(page.getByRole("heading", { name: "Verified hours per day" })).toBeVisible();
 
     // The chart: + and - change the columns' width, the card keeps its size, the arrows still read values, and the table is kept.
+    // The chart is drawn only when the period has attendance. A database with none (a fresh one, as in CI)
+    // says so in its place, and then there are no columns to zoom.
     const chart = page.getByRole("img", { name: /^Verified hours per day/ });
+    const nothing = page.getByText(/^No attendance was logged in the last 90 days\.$/);
+    await expect(chart.or(nothing)).toBeVisible();
+    await expect(page.getByText("View as a table").first()).toBeVisible();
+    if (await nothing.isVisible()) return;
     const plot = chart.locator("> div").first();
     const size = await chart.boundingBox();
     const narrow = (await plot.boundingBox())!.width;

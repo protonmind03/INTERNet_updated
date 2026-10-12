@@ -5983,7 +5983,9 @@ test("tasks worked on are chosen at time-out, must be the student's own, and are
 
     // A time-out recorded offline carries its tasks, and a repeat of it answers the same.
     logId = await openLog();
-    const timeIn = new Date((await pool.query(`SELECT time_in FROM attendance WHERE id = $1`, [logId])).rows[0].time_in).getTime();
+    // The moment of the time-in, worked out by the database: the column holds Philippine wall time with no
+    // zone, which this process would otherwise read in its own zone (UTC on the CI runner, eight hours out).
+    const timeIn = Number((await pool.query(`SELECT EXTRACT(EPOCH FROM time_in AT TIME ZONE 'Asia/Manila') * 1000 AS at FROM attendance WHERE id = $1`, [logId])).rows[0].at);
     const offline = {
       accomplishments: note,
       task_ids: [ledger],
