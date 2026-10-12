@@ -377,7 +377,8 @@ test.describe("the coordinator's console", () => {
     // Signing in is not logged, so there may be nothing to export on an empty database.
     const exportButton = page.getByRole("button", { name: "Export CSV" });
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await expect(page.getByText(/^\d+ entr(y|ies)/)).toBeVisible();
+    // With few entries the count is said twice (above the list and under it): the first is enough.
+    await expect(page.getByText(/^\d+ entr(y|ies)/).first()).toBeVisible();
     if (await exportButton.isEnabled()) {
       const [download] = await Promise.all([page.waitForEvent("download"), exportButton.click()]);
       expect(download.suggestedFilename()).toMatch(/^internet-audit-log-\d{4}-\d{2}-\d{2}\.csv$/);
@@ -465,7 +466,8 @@ test.describe("programs, blocks and the filter bar", () => {
     await page.getByRole("link", { name: "Analytics", exact: true }).click();
     await expect(page).toHaveURL(/\/coordinator\/analytics\?.*block=\d+/);
     await expect(page.getByRole("heading", { name: "By program" })).toBeVisible();
-    await expect(page.getByRole("rowheader", { name: blockName })).toBeVisible();
+    // Exactly the block's own row in "By block": the Student performance table under it names the block too.
+    await expect(page.getByRole("rowheader", { name: blockName, exact: true })).toBeVisible();
     await page.getByRole("region", { name: "Which students" }).getByRole("button", { name: "Clear filters" }).click();
     await expect(page).toHaveURL(/\/coordinator\/analytics$/);
   });
