@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
@@ -23,7 +24,10 @@ import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import ReviewDetail from "./ReviewDetail";
 import InternGroupSelect from "./InternGroups";
+import { internPath } from "./internPath";
+import Teams from "./Teams";
 import { useInternGroups } from "./useInternGroups";
+import { useTeams, type Team } from "./useTeams";
 import {
   useSupervisorWork,
   type Intern,
@@ -31,6 +35,16 @@ import {
 } from "./useSupervisorWork";
 
 type Filter = "all" | "open" | "Submitted" | "Reviewed";
+type View = "tasks" | "teams";
+
+/** A line of the list: one intern's task, or a team task with a row per member behind it. */
+type Row = { kind: "one"; key: string; task: TaskEntry } | { kind: "team"; key: string; id: number; tasks: TaskEntry[] };
+
+/** What the dialog is open for. */
+type Form =
+  | { mode: "new"; team?: Team }
+  | { mode: "edit"; task: TaskEntry }
+  | { mode: "team-edit"; id: number; tasks: TaskEntry[] };
 
 const isOpen = (task: TaskEntry) => task.status === "Pending" || task.status === "In Progress";
 
@@ -50,15 +64,20 @@ export default function SupervisorTasks() {
   const work = useSupervisorWork(supervisor?.supervisor_id, ["interns", "tasks"]);
   const { tasks, interns, loading } = work;
 
+  const teams = useTeams();
+  // "?view=teams" opens the Teams tab; "?intern=" narrows the list to one intern.
+  const [params, setParams] = useSearchParams();
+  const view: View = params.get("view") === "teams" ? "teams" : "tasks";
+  const setView = (next: View) => setParams(next === "teams" ? { view: "teams" } : {}, { replace: true });
   const [filter, setFilter] = useState<Filter>("all");
-  const [internId, setInternId] = useState("");
+  const [internId, setInternId] = useState(() => params.get("intern") || "");
   // Interns of more than one program or block can be narrowed to one.
   const grouping = useInternGroups();
   const inGroup = grouping.has;
-  // "new" while assigning, a task while editing one, null when closed.
-  const [form, setForm] = useState<TaskEntry | "new" | null>(null);
+  const [form, setForm] = useState<Form | null>(null);
   const [reviewId, setReviewId] = useState<number | null>(null);
-  const [cancelling, setCancelling] = useState<TaskEntry | null>(null);
+  // One intern's task, or a whole team task.
+  const [cancelling, setCancelling] = useState<Row | null>(null);
   const [cancelBusy, setCancelBusy] = useState(false);
 
   const scoped = useMemo(
@@ -86,7 +105,27 @@ export default function SupervisorTasks() {
       ),
     [scoped, filter]
   );
-  const pager = usePagination(visible, 15);
+  // A team task is one line, where its first member's row would be.
+  const rows = useMemo<Row[]>(() => {
+    const list: Row[] = [];
+    const teamAt = new Map<number, Extract<Row, { kind: "team" }>>();
+    for (const task of visible) {
+      if (!task.group_task_id) {
+        list.push({ kind: "one", key: `task-${task.id}`, task });
+        continue;
+      }
+      const known = teamAt.get(task.group_task_id);
+      if (known) {
+        known.tasks.push(task);
+        continue;
+      }
+      const row = { kind: "team" as const, key: `team-${task.group_task_id}`, id: task.group_task_id, tasks: [task] };
+      teamAt.set(task.group_task_id, row);
+      list.push(row);
+    }
+    return list;
+  }, [visible]);
+  const pager = usePagination(rows, 15);
 
   const reviewing = tasks.find((task) => task.id === reviewId && task.status === "Submitted");
 
@@ -95,12 +134,21 @@ export default function SupervisorTasks() {
     setCancelBusy(true);
     try {
       const response = await fetch(
-        `${API_URL}/api/tasks/${cancelling.id}`,
+        cancelling.kind === "team"
+          ? `${API_URL}/api/tasks/team/${cancelling.id}`
+          : `${API_URL}/api/tasks/${cancelling.task.id}`,
         withSupervisorAuth({ method: "DELETE" })
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The task could not be cancelled.");
-      toast.success(`Task cancelled. ${cancelling.student_name} has been notified.`);
+      toast.success(
+        cancelling.kind === "team"
+          ? // The server says how many it cancelled and how many had already submitted.
+            String(data.message || "Task cancelled.")
+          : cancelling.task.scheduled
+            ? "Task cancelled. The intern had not been shown it."
+            : `Task cancelled. ${cancelling.task.student_name} has been notified.`
+      );
       setCancelling(null);
       notifyDataChanged();
       await work.reload();
@@ -116,7 +164,7 @@ export default function SupervisorTasks() {
       title="Tasks"
       subtitle="Assign work to your interns and follow it through to review."
       actions={
-        <Button icon="plus" onClick={() => setForm("new")} disabled={interns.length === 0}>
+        <Button icon="plus" onClick={() => setForm({ mode: "new" })} disabled={interns.length === 0}>
           Assign a task
         </Button>
       }
@@ -124,6 +172,26 @@ export default function SupervisorTasks() {
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
+        <FilterChips
+          label="Tasks or teams"
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "tasks", label: "Tasks" },
+            { value: "teams", label: "Teams", count: teams.list.length },
+          ]}
+        />
+
+        {view === "teams" && (
+          <Teams
+            teams={teams}
+            interns={interns}
+            onAssign={(team) => setForm({ mode: "new", team })}
+          />
+        )}
+
+        {view === "tasks" && (
+        <>
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
             <FilterChips
@@ -174,7 +242,7 @@ export default function SupervisorTasks() {
               }
               action={
                 tasks.length === 0 && interns.length > 0 ? (
-                  <Button icon="plus" onClick={() => setForm("new")}>
+                  <Button icon="plus" onClick={() => setForm({ mode: "new" })}>
                     Assign a task
                   </Button>
                 ) : undefined
@@ -183,27 +251,40 @@ export default function SupervisorTasks() {
           ) : (
             <>
               <ul className="divide-y divide-slate-100">
-                {pager.pageItems.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    onReview={() => setReviewId(task.id)}
-                    onEdit={() => setForm(task)}
-                    onCancel={() => setCancelling(task)}
-                  />
-                ))}
+                {pager.pageItems.map((row) =>
+                  row.kind === "team" ? (
+                    <TeamTaskRow
+                      key={row.key}
+                      tasks={row.tasks}
+                      onReview={setReviewId}
+                      onEdit={() => setForm({ mode: "team-edit", id: row.id, tasks: row.tasks })}
+                      onCancel={() => setCancelling(row)}
+                    />
+                  ) : (
+                    <TaskRow
+                      key={row.key}
+                      task={row.task}
+                      onReview={() => setReviewId(row.task.id)}
+                      onEdit={() => setForm({ mode: "edit", task: row.task })}
+                      onCancel={() => setCancelling(row)}
+                    />
+                  )
+                )}
               </ul>
               <Pagination state={pager} noun="task" />
             </>
           )}
         </Card>
+        </>
+        )}
       </div>
 
       {form && (
         <TaskDialog
-          key={form === "new" ? "new" : form.id}
-          editing={form === "new" ? null : form}
+          key={form.mode === "new" ? `new-${form.team?.id ?? ""}` : form.mode === "edit" ? form.task.id : `team-${form.id}`}
+          form={form}
           interns={interns}
+          teams={teams.list}
           defaultInternId={internId}
           onClose={() => setForm(null)}
           onSaved={() => {
@@ -218,9 +299,13 @@ export default function SupervisorTasks() {
         open={cancelling !== null}
         title="Cancel this task?"
         message={
-          cancelling
-            ? `"${cancelling.title}" will be removed, and ${cancelling.student_name} will be told they no longer need to submit it. This cannot be undone.`
-            : undefined
+          !cancelling
+            ? undefined
+            : cancelling.kind === "team"
+              ? teamCancelText(cancelling.tasks)
+              : cancelling.task.scheduled
+                ? `"${cancelling.task.title}" will be removed. ${cancelling.task.student_name} has not been shown it yet, so they will not be told. This cannot be undone.`
+                : `"${cancelling.task.title}" will be removed, and ${cancelling.task.student_name} will be told they no longer need to submit it. This cannot be undone.`
         }
         confirmLabel="Cancel task"
         cancelLabel="Keep task"
@@ -253,6 +338,130 @@ export default function SupervisorTasks() {
   );
 }
 
+/** What cancelling a team task will do, counted from the rows on the page. */
+function teamCancelText(tasks: TaskEntry[]): string {
+  const open = tasks.filter(isOpen).length;
+  const kept = tasks.length - open;
+  return (
+    `"${tasks[0].title}" will be removed for the ${open} ${open === 1 ? "member who has" : "members who have"} not submitted it.` +
+    (kept > 0 ? ` ${kept} ${kept === 1 ? "member has" : "members have"} already submitted, and theirs is kept.` : "") +
+    " This cannot be undone."
+  );
+}
+
+/** How a task stands, in the list's words. */
+function stateOf(task: TaskEntry): { label: string; tone: "bad" | "waiting" | "good" | "info" | "neutral"; late: boolean } {
+  const days = daysUntil(task.due_date);
+  const late = isOpen(task) && !task.scheduled && days !== null && days < 0;
+  if (task.scheduled) return { label: "Scheduled", tone: "neutral", late };
+  if (late) return { label: "Overdue", tone: "bad", late };
+  if (task.status === "Pending") return { label: "Not started", tone: "neutral", late };
+  if (task.status === "In Progress") return { label: "Sent back", tone: "info", late };
+  if (task.status === "Submitted") return { label: "To review", tone: "waiting", late };
+  return { label: "Reviewed", tone: "good", late };
+}
+
+/** One team task: a line for the whole team, opening to each member's own. */
+function TeamTaskRow({
+  tasks,
+  onReview,
+  onEdit,
+  onCancel,
+}: {
+  tasks: TaskEntry[];
+  onReview: (id: number) => void;
+  onEdit: () => void;
+  onCancel: () => void;
+}) {
+  const first = tasks[0];
+  const handedIn = tasks.filter((task) => task.status === "Submitted" || task.status === "Reviewed").length;
+  const anyOpen = tasks.some(isOpen);
+  const scheduled = tasks.every((task) => task.scheduled);
+  const waiting = tasks.filter((task) => task.status === "Submitted").length;
+  return (
+    <li className="px-4 py-4 sm:px-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            <p className="text-sm font-semibold text-slate-900">{first.title}</p>
+            <StatusBadge status="Team task" tone="info" />
+            {scheduled ? (
+              <StatusBadge status="Scheduled" tone="neutral" />
+            ) : (
+              <StatusBadge
+                status={`${handedIn} of ${tasks.length} submitted`}
+                tone={waiting > 0 ? "waiting" : handedIn === tasks.length ? "good" : "neutral"}
+              />
+            )}
+          </div>
+          <p className="mt-0.5 text-sm text-slate-600">
+            {first.team_name || "A team that has since been removed"}
+            <span className="text-slate-600">
+              {" "}
+              ·{" "}
+              {scheduled && first.release_day
+                ? `They will see it on ${formatDate(first.release_day)} · due ${formatDate(first.due_date)}`
+                : anyOpen
+                  ? dueLabel(first.due_date)
+                  : `Due ${formatDate(first.due_date)}`}
+            </span>
+            {first.priority && <span className="text-slate-600"> · {first.priority} priority</span>}
+          </p>
+          {first.description && <p className="mt-1 line-clamp-2 text-sm text-slate-600">{first.description}</p>}
+        </div>
+        {anyOpen && (
+          <div className="flex shrink-0 gap-1 sm:self-center">
+            <button
+              type="button"
+              onClick={onEdit}
+              className="inline-flex h-9 items-center gap-1.5 rounded-md px-2.5 text-sm font-medium text-psu-700 hover:bg-slate-100"
+            >
+              <Icon name="edit" size={15} />
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={onCancel}
+              className="inline-flex h-9 items-center rounded-md px-2.5 text-sm font-medium text-red-700 hover:bg-slate-100"
+            >
+              Cancel task
+            </button>
+          </div>
+        )}
+      </div>
+
+      <details className="mt-2" open={waiting > 0}>
+        <summary className="cursor-pointer text-sm font-semibold text-psu-700">
+          Each member ({tasks.length})
+        </summary>
+        <ul className="mt-2 divide-y divide-slate-100 rounded-lg border border-slate-200">
+          {tasks.map((task) => {
+            const state = stateOf(task);
+            return (
+              <li key={task.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                <Link
+                  to={internPath(task.student_id, "tasks")}
+                  className="min-w-0 truncate text-sm font-medium text-psu-700 hover:underline"
+                >
+                  {task.student_name}
+                </Link>
+                <span className="flex shrink-0 items-center gap-2">
+                  <StatusBadge status={state.label} tone={state.tone} />
+                  {task.status === "Submitted" && (
+                    <Button variant="secondary" onClick={() => onReview(task.id)}>
+                      Review
+                    </Button>
+                  )}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      </details>
+    </li>
+  );
+}
+
 function TaskRow({
   task,
   onReview,
@@ -265,43 +474,27 @@ function TaskRow({
   onCancel: () => void;
 }) {
   const open = isOpen(task);
-  const days = daysUntil(task.due_date);
-  const late = open && days !== null && days < 0;
-  const label = late
-    ? "Overdue"
-    : task.status === "Pending"
-      ? "Not started"
-      : task.status === "In Progress"
-        ? "Sent back"
-        : task.status === "Submitted"
-          ? "To review"
-          : "Reviewed";
+  const { label, tone, late } = stateOf(task);
 
   return (
     <li className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
           <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-          <StatusBadge
-            status={label}
-            tone={
-              late
-                ? "bad"
-                : task.status === "Submitted"
-                  ? "waiting"
-                  : task.status === "Reviewed"
-                    ? "good"
-                    : task.status === "In Progress"
-                      ? "info"
-                      : "neutral"
-            }
-          />
+          <StatusBadge status={label} tone={tone} />
         </div>
         <p className="mt-0.5 text-sm text-slate-600">
-          {task.student_name}
+          <Link to={internPath(task.student_id, "tasks")} className="font-medium text-psu-700 hover:underline">
+            {task.student_name}
+          </Link>
           <span className={late ? "font-semibold text-red-600" : "text-slate-500"}>
             {" "}
-            · {open ? dueLabel(task.due_date) : `Due ${formatDate(task.due_date)}`}
+            ·{" "}
+            {task.scheduled && task.release_day
+              ? `They will see it on ${formatDate(task.release_day)} · due ${formatDate(task.due_date)}`
+              : open
+                ? dueLabel(task.due_date)
+                : `Due ${formatDate(task.due_date)}`}
           </span>
           {task.priority && <span className="text-slate-500"> · {task.priority} priority</span>}
         </p>
@@ -372,19 +565,30 @@ function TaskRow({
 */
 
 function TaskDialog({
-  editing,
+  form,
   interns,
+  teams,
   defaultInternId,
   onClose,
   onSaved,
 }: {
-  editing: TaskEntry | null;
+  form: Form;
   interns: Intern[];
+  teams: Team[];
   defaultInternId: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const [studentId, setStudentId] = useState(editing?.student_id ?? "");
+  // One intern's task being changed, or a team task (its first row stands for all).
+  const teamEdit = form.mode === "team-edit" ? form : null;
+  const editing = form.mode === "edit" ? form.task : teamEdit ? teamEdit.tasks[0] : null;
+  // Who it is for: an intern's id, or "team:<id>".
+  const [studentId, setStudentId] = useState(
+    form.mode === "new" && form.team ? `team:${form.team.id}` : editing?.student_id ?? ""
+  );
+  // The day the intern first sees it. Only a task still waiting for its day can have it moved.
+  const canSchedule = !editing || Boolean(editing.scheduled);
+  const [releaseDay, setReleaseDay] = useState(editing?.scheduled ? editing.release_day || "" : "");
   const [title, setTitle] = useState(editing?.title ?? "");
   const [description, setDescription] = useState(editing?.description ?? "");
   const [priority, setPriority] = useState<"High" | "Medium" | "Low">(
@@ -410,8 +614,13 @@ function TaskDialog({
 
   // With one intern there is nothing to choose; otherwise start from the
   // intern the list is filtered to.
-  const chosen = studentId || defaultInternId || (interns.length === 1 ? interns[0].student_id : "");
+  const chosen =
+    studentId ||
+    defaultInternId ||
+    (interns.length === 1 && teams.length === 0 ? interns[0].student_id : "");
   const today = localDateKey(new Date());
+  const team = chosen.startsWith("team:") ? teams.find((item) => `team:${item.id}` === chosen) : undefined;
+  const forTeam = Boolean(team) || Boolean(teamEdit);
 
   const close = () => {
     if (!saving) onClose();
@@ -419,32 +628,68 @@ function TaskDialog({
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!chosen) return setError("Choose which intern the task is for.");
+    if (!chosen) return setError("Choose who the task is for.");
     if (!title.trim()) return setError("Give the task a title.");
     if (!dueDate) return setError("Set a due date.");
     if (dueDate < today) return setError("The due date cannot be in the past.");
-
-    const details = new FormData();
-    details.append("student_id", chosen);
-    details.append("title", title.trim());
-    details.append("description", description.trim());
-    details.append("priority", priority);
-    details.append("due_date", dueDate);
-    if (file) details.append("attachment", file);
-    else if (editing?.attachment_file && !keepExisting) details.append("remove_attachment", "true");
+    if (canSchedule && releaseDay) {
+      if (releaseDay < today) return setError("The release date cannot be in the past.");
+      if (dueDate < releaseDay) return setError("The due date must be on or after the release date.");
+    }
 
     setSaving(true);
     setError("");
     try {
-      const response = await fetch(
-        editing ? `${API_URL}/api/tasks/${editing.id}` : `${API_URL}/api/tasks`,
-        withSupervisorAuth({ method: editing ? "PUT" : "POST", body: details })
-      );
+      let response: Response;
+      if (forTeam) {
+        // A team task: one request, and the server makes or changes a row per member.
+        response = await fetch(
+          teamEdit ? `${API_URL}/api/tasks/team/${teamEdit.id}` : `${API_URL}/api/tasks/team`,
+          withSupervisorAuth({
+            method: teamEdit ? "PUT" : "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              group_id: team?.id,
+              title: title.trim(),
+              description: description.trim(),
+              priority,
+              due_date: dueDate,
+              ...(canSchedule ? { available_from: releaseDay } : {}),
+            }),
+          })
+        );
+      } else {
+        const details = new FormData();
+        details.append("student_id", chosen);
+        details.append("title", title.trim());
+        details.append("description", description.trim());
+        details.append("priority", priority);
+        details.append("due_date", dueDate);
+        if (canSchedule) details.append("available_from", releaseDay);
+        if (file) details.append("attachment", file);
+        else if (editing?.attachment_file && !keepExisting) details.append("remove_attachment", "true");
+        response = await fetch(
+          editing ? `${API_URL}/api/tasks/${editing.id}` : `${API_URL}/api/tasks`,
+          withSupervisorAuth({ method: editing ? "PUT" : "POST", body: details })
+        );
+      }
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The task could not be saved.");
       const name = interns.find((intern) => intern.student_id === chosen)?.name || "the intern";
+      const later = canSchedule && releaseDay > today;
       toast.success(
-        editing ? `Task updated. ${name} has been notified.` : `Task assigned to ${name}.`
+        forTeam
+          ? // The server says how many members, and how many it left alone.
+            String(data.message || "Task saved.")
+          : editing
+            ? editing.scheduled
+              ? later
+                ? `Task updated. ${name} will see it on ${formatDate(releaseDay)}.`
+                : `Task updated. ${name} will be told about it today.`
+              : `Task updated. ${name} has been notified.`
+            : later
+              ? `Task scheduled. ${name} will see it on ${formatDate(releaseDay)}.`
+              : `Task assigned to ${name}.`
       );
       onSaved();
     } catch (submitError) {
@@ -458,11 +703,15 @@ function TaskDialog({
     <Modal
       open
       onClose={close}
-      title={editing ? "Edit task" : "Assign a task"}
+      title={teamEdit ? "Edit team task" : editing ? "Edit task" : "Assign a task"}
       description={
-        editing
-          ? "The intern is told that the task changed."
-          : "The intern is notified as soon as you assign it."
+        teamEdit
+          ? "Changes apply to each member who has not submitted yet."
+          : editing
+            ? editing.scheduled
+              ? "The intern has not been shown this task yet."
+              : "The intern is told that the task changed."
+            : "The intern is told when the task is released: now, or on the day you choose."
       }
       locked={saving}
       footer={
@@ -479,22 +728,49 @@ function TaskDialog({
       <form id="task-form" onSubmit={submit} className="space-y-4" noValidate>
         <div>
           <label htmlFor="task-intern" className="mb-1.5 block text-sm font-medium text-slate-700">
-            Intern
+            Assign to
           </label>
-          <select
-            id="task-intern"
-            value={chosen}
-            disabled={Boolean(editing)}
-            onChange={(event) => setStudentId(event.target.value)}
-            className="field"
-          >
-            {interns.length !== 1 && <option value="">Choose an intern</option>}
-            {interns.map((intern) => (
-              <option key={intern.student_id} value={intern.student_id}>
-                {intern.name}
-              </option>
-            ))}
-          </select>
+          {teamEdit ? (
+            <p id="task-intern" className="text-sm text-slate-800">
+              {editing?.team_name || "A team"}: {teamEdit.tasks.filter(isOpen).length} of {teamEdit.tasks.length}{" "}
+              {teamEdit.tasks.length === 1 ? "member has" : "members have"} not submitted yet.
+            </p>
+          ) : (
+            <select
+              id="task-intern"
+              value={chosen}
+              disabled={Boolean(editing)}
+              onChange={(event) => setStudentId(event.target.value)}
+              className="field"
+            >
+              {!(interns.length === 1 && teams.length === 0) && <option value="">Choose an intern or a team</option>}
+              <optgroup label="Interns">
+                {interns.map((intern) => (
+                  <option key={intern.student_id} value={intern.student_id}>
+                    {intern.name}
+                  </option>
+                ))}
+              </optgroup>
+              {!editing && teams.length > 0 && (
+                <optgroup label="Teams">
+                  {teams.map((item) => {
+                    const members = item.members.filter((member) => member.is_active).length;
+                    return (
+                      <option key={item.id} value={`team:${item.id}`} disabled={members === 0}>
+                        {item.name} ({members} {members === 1 ? "member" : "members"})
+                      </option>
+                    );
+                  })}
+                </optgroup>
+              )}
+            </select>
+          )}
+          {team && (
+            <p className="mt-1.5 text-xs text-slate-600">
+              Each member gets their own copy and submits their own work:{" "}
+              {team.members.filter((member) => member.is_active).map((member) => member.name).join(", ")}.
+            </p>
+          )}
         </div>
 
         <div>
@@ -538,7 +814,7 @@ function TaskDialog({
             <input
               id="task-due"
               type="date"
-              min={today}
+              min={canSchedule && releaseDay > today ? releaseDay : today}
               value={dueDate}
               onChange={(event) => setDueDate(event.target.value)}
               className="field"
@@ -564,6 +840,33 @@ function TaskDialog({
           </div>
         </div>
 
+        {canSchedule && (
+          <div>
+            <label htmlFor="task-release" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Release on <span className="font-normal text-slate-600">(optional)</span>
+            </label>
+            <input
+              id="task-release"
+              type="date"
+              min={today}
+              value={releaseDay}
+              onChange={(event) => setReleaseDay(event.target.value)}
+              aria-describedby="task-release-hint"
+              className="field"
+            />
+            <p id="task-release-hint" className="mt-1.5 text-xs text-slate-600">
+              {editing?.scheduled
+                ? "The day the intern first sees the task. Clear it to release the task today."
+                : "Leave empty to release it now. With a later day, the intern does not see the task, and is not told about it, until then."}
+            </p>
+          </div>
+        )}
+
+        {forTeam ? (
+          <p className="text-xs text-slate-600">
+            A team task carries no attachment. Put what the team needs in the instructions.
+          </p>
+        ) : (
         <div>
           <p className="mb-1.5 text-sm font-medium text-slate-700">
             Attachment <span className="font-normal text-slate-500">(optional)</span>
@@ -634,6 +937,7 @@ function TaskDialog({
             A template, brief or sample the intern needs for the task.
           </p>
         </div>
+        )}
 
         {error && (
           <p

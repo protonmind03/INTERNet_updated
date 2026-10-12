@@ -6410,6 +6410,20 @@ test("a team task is one task for each member; a change or a cancel leaves alone
     assert.ok(!(await mine()).some((task) => task.title === `${title} later`));
     assert.equal((await rows()).filter((task) => task.title === `${title} later` && task.scheduled).length, 2);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE message LIKE $1`, [`%${title} later%`])).rows[0].n, 0);
+    // Changed while it waits: a form without the day leaves it; the due date cannot come before it; sent empty, it is out today and announced by the loop.
+    const laterPath = `/api/tasks/team/${later.body.group_task_id}`;
+    const keptDay = await as("PUT", laterPath, { title: `${title} later`, priority: "Low", due_date: due.due });
+    assert.deepEqual([keptDay.response.status, keptDay.body.updated], [200, 2], JSON.stringify(keptDay.body));
+    assert.equal((await rows()).filter((task) => task.title === `${title} later` && task.release_day === due.tomorrow).length, 2);
+    assert.equal((await as("PUT", laterPath, { title: `${title} later`, due_date: (await pool.query(`SELECT TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD') AS d`)).rows[0].d })).response.status, 400);
+    assert.ok(!(await mine()).some((task) => task.title === `${title} later`), "still hidden");
+    const second = await as("POST", "/api/tasks/team", { group_id: teamId, title: `${title} out today`, due_date: due.due, available_from: due.tomorrow });
+    const outNow = await as("PUT", `/api/tasks/team/${second.body.group_task_id}`, { title: `${title} out today`, due_date: due.due, available_from: "" });
+    assert.equal(outNow.response.status, 200, JSON.stringify(outNow.body));
+    assert.ok((await mine()).some((task) => task.title === `${title} out today`), "released today");
+    const waitingToTell = await pool.query(`SELECT COUNT(*)::int AS n FROM tasks WHERE group_task_id = $1 AND available_from = CURRENT_DATE`, [second.body.group_task_id]);
+    assert.equal(waitingToTell.rows[0].n, 2, "kept as a day, so the release loop announces it");
+    await as("DELETE", `/api/tasks/team/${second.body.group_task_id}`);
     const dropped = await as("DELETE", `/api/tasks/team/${later.body.group_task_id}`);
     assert.deepEqual([dropped.body.cancelled, dropped.body.skipped], [2, 0]);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE title = 'Task cancelled' AND message LIKE $1`, [`%${title} later%`])).rows[0].n, 0);
@@ -6423,7 +6437,7 @@ test("a team task is one task for each member; a change or a cancel leaves alone
     const removed = await as("DELETE", `${teams}/${teamId}`);
     assert.equal(removed.response.status, 200, JSON.stringify(removed.body));
     const kept = await rows();
-    assert.ok(kept.length >= 2 && kept.every((task) => task.team_name === null), "the tasks stay, without the team's name");
+    assert.ok(kept.length >= 2 && kept.every((task) => task.team_name === null), "the tasks stay, without the team name");
     assert.equal((await as("DELETE", `${teams}/${teamId}`)).response.status, 404);
   } finally {
     await pool.query(`DELETE FROM notifications WHERE message LIKE $1`, [`%${title}%`]);

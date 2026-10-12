@@ -404,24 +404,33 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
       if (groupTaskId === null) return res.status(404).json({ message: "Team task not found." });
       const fields = readTask(req.body);
       if ("problem" in fields) return res.status(400).json({ message: fields.problem });
-      const rows = await pool.query<{ open: number; total: number }>(
-        `SELECT COUNT(*) FILTER (WHERE t.status IN ('Pending', 'In Progress'))::int AS open, COUNT(*)::int AS total
+      const rows = await pool.query<{ open: number; total: number; waits_until: string | null }>(
+        `SELECT COUNT(*) FILTER (WHERE t.status IN ('Pending', 'In Progress'))::int AS open, COUNT(*)::int AS total,
+                TO_CHAR(MAX(t.available_from) FILTER (WHERE t.status IN ('Pending', 'In Progress') AND ${scheduledLater("t.")}), 'YYYY-MM-DD') AS waits_until
          FROM tasks t JOIN students s ON s.student_id = t.student_id
          WHERE t.group_task_id = $1 AND TRIM(s.supervisor_id::text) = TRIM($2::text)`,
         [groupTaskId, auth.id]
       );
       if (rows.rows[0].total === 0) return res.status(404).json({ message: "Team task not found." });
-      // The release day can only be set while nobody has been shown the task.
+      // A form that does not send the release day leaves it, and the due date cannot come before it.
+      const moving = req.body?.available_from !== undefined;
+      if (!moving && rows.rows[0].waits_until && fields.dueDate < rows.rows[0].waits_until) {
+        return res.status(400).json({ message: "The due date must be on or after the release date." });
+      }
+      // The release day can only be moved while nobody has been shown the
+      // task. Sent empty or as today, it is out today, and the release loop
+      // tells each member.
       const changed = await pool.query(
         `UPDATE tasks t
          SET title = $3, description = $4, priority = $5, due_date = $6::date,
-             available_from = CASE WHEN t.released_notified_at IS NULL AND ${scheduledLater("t.")} THEN $7::date ELSE t.available_from END
+             available_from = CASE WHEN $8::boolean AND t.released_notified_at IS NULL AND ${scheduledLater("t.")}
+               THEN COALESCE($7::date, CURRENT_DATE) ELSE t.available_from END
          FROM students s
          WHERE t.group_task_id = $1 AND s.student_id = t.student_id
            AND TRIM(s.supervisor_id::text) = TRIM($2::text)
            AND t.status IN ('Pending', 'In Progress')
          RETURNING t.id`,
-        [groupTaskId, auth.id, fields.title, fields.description, fields.priority, fields.dueDate, fields.releaseDay]
+        [groupTaskId, auth.id, fields.title, fields.description, fields.priority, fields.dueDate, fields.releaseDay, moving]
       );
       const updated = changed.rowCount ?? 0;
       const skipped = rows.rows[0].total - updated;

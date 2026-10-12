@@ -42,6 +42,9 @@ type Task = {
   /** A file the supervisor attached when assigning the task. */
   attachment_file?: string | null;
   attachment_name?: string | null;
+  /** Set when the task was given to a team: each member has their own copy. */
+  group_task_id?: number | null;
+  team_name?: string | null;
 };
 
 type Filter = "todo" | "submitted" | "reviewed" | "all";
@@ -260,6 +263,11 @@ function TaskCard({
         </Meta>
         {task.assigned_by && <Meta icon="user">{task.assigned_by}</Meta>}
         {task.priority && <Meta icon="flag">{task.priority} priority</Meta>}
+        {task.group_task_id && (
+          <Meta icon="users">
+            Team task{task.team_name ? `: ${task.team_name}` : ""}. You submit your own work.
+          </Meta>
+        )}
       </div>
 
       {task.attachment_file && (
@@ -355,7 +363,7 @@ function Meta({
   icon,
   children,
 }: {
-  icon: "calendar" | "user" | "flag";
+  icon: "calendar" | "user" | "users" | "flag";
   children: React.ReactNode;
 }) {
   return (
