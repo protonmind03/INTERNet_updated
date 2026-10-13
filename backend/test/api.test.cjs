@@ -7161,6 +7161,21 @@ test("one schedule is set for a block: a preview first, then those with a differ
     assert.equal(mine.length, 2);
     assert.ok(mine.some((entry) => entry.details.existing === "skip" && entry.details.applied === 1 && entry.details.skipped === 1));
     assert.ok(mine.every((entry) => entry.entity_type === "block" && entry.details.schedule === "Monday 08:00-17:00; Wednesday 08:00-12:30"));
+
+    // TWO COORDINATORS AT ONCE: each student ends with one of the two schedules whole, never a mix of both.
+    const tuesday = [{ day: "Tuesday", start_time: "08:00", end_time: "12:00" }];
+    const weekend = [{ day: "Thursday", start_time: "13:00", end_time: "17:00" }, { day: "Saturday", start_time: "08:00", end_time: "12:00" }];
+    for (let round = 0; round < 3; round += 1) {
+      const both = await Promise.all([
+        as("PUT", `/api/coordinator/blocks/${blockId}/schedule`, { schedule: tuesday, existing: "overwrite" }),
+        as("PUT", `/api/coordinator/blocks/${blockId}/schedule`, { schedule: weekend, existing: "overwrite" }),
+      ]);
+      assert.deepEqual(both.map((answer) => answer.response.status), [200, 200]);
+      for (const id of [ids.none, ids.same, ids.different]) {
+        const now = (await active(id)).map((row) => row.day).sort().join(",");
+        assert.ok(now === "Tuesday" || now === "Saturday,Thursday", `${id} has a mixed schedule: ${now}`);
+      }
+    }
   } finally {
     const all = Object.values(ids);
     await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::text[])`, [all]);

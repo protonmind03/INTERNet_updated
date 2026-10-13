@@ -364,17 +364,26 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
 
   type Standing = { student_id: string; name: string; state: "none" | "same" | "different"; current: string };
 
-  async function blockSchedules(blockId: number, wanted: ScheduleDay[]) {
-    const block = await pool.query<{ name: string }>(
+  // `db` is the pool for a look, or the transaction's own connection when
+  // the answer decides what is written. With `lock`, the block's students
+  // are held until that transaction ends, so two coordinators setting the
+  // same block at once take turns instead of both writing.
+  async function blockSchedules(
+    blockId: number,
+    wanted: ScheduleDay[],
+    db: Pick<Pool, "query"> = pool,
+    lock = false
+  ) {
+    const block = await db.query<{ name: string }>(
       `SELECT ${BLOCK_NAME_SQL} AS name FROM blocks b JOIN programs p ON p.id = b.program_id WHERE b.id = $1`,
       [blockId]
     );
     if (block.rows.length === 0) return null;
-    const students = await pool.query<{ student_id: string; name: string }>(
-      `SELECT student_id, name FROM students WHERE block_id = $1 AND is_active = TRUE ORDER BY name`,
+    const students = await db.query<{ student_id: string; name: string }>(
+      `SELECT student_id, name FROM students WHERE block_id = $1 AND is_active = TRUE ORDER BY name${lock ? " FOR UPDATE" : ""}`,
       [blockId]
     );
-    const rows = await pool.query<{ student_id: string; day: string; start: string; end: string }>(
+    const rows = await db.query<{ student_id: string; day: string; start: string; end: string }>(
       `SELECT student_id, INITCAP(TRIM(day)) AS day, TO_CHAR(start_time, 'HH24:MI') AS start, TO_CHAR(end_time, 'HH24:MI') AS "end"
        FROM ojt_schedule WHERE is_active = TRUE AND student_id = ANY($1::text[])`,
       [students.rows.map((row) => row.student_id)]
@@ -420,14 +429,18 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
     }
     const client = await pool.connect();
     try {
-      const found = await blockSchedules(Number(req.params.id), read.days);
-      if (!found) return res.status(404).json({ message: "Block not found." });
-      if (found.students.length === 0) {
-        return res.status(409).json({ message: `${found.block} has no active students to set a schedule for.` });
+      // Who is in the block, and what each has now, is read inside the
+      // transaction that writes, on the same connection.
+      await client.query("BEGIN");
+      const found = await blockSchedules(Number(req.params.id), read.days, client, true);
+      if (!found || found.students.length === 0) {
+        await client.query("ROLLBACK");
+        return found
+          ? res.status(409).json({ message: `${found.block} has no active students to set a schedule for.` })
+          : res.status(404).json({ message: "Block not found." });
       }
       const targets = found.students.filter((row) => row.state === "none" || (row.state === "different" && existing === "overwrite"));
       const ids = targets.map((row) => row.student_id);
-      await client.query("BEGIN");
       if (ids.length > 0) {
         await client.query(`UPDATE ojt_schedule SET is_active = FALSE WHERE is_active = TRUE AND student_id = ANY($1::text[])`, [ids]);
         for (const day of read.days) {
