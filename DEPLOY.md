@@ -556,6 +556,11 @@ a local database only, not on the host.
 
 ## Before a Round 2 release goes live
 
+As of 13 October 2026 the release also carries migration 046
+(`removed_records`, a new table and nothing else), so the backup taken
+before going live must be taken after this note was written. No new
+variable and no platform setting is needed for it.
+
 Round 2 (migrations 036 to 045) reaches the test site first and the live
 site second. In order:
 

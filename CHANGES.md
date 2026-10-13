@@ -1711,3 +1711,59 @@ clean.
 on the host's volume. A weekly item made by the server on a Monday rather
 than by calling the loop in a test. The PDF of the performance table
 printed.
+
+## 32. System audit: the fixes that needed no decision (13 October 2026)
+
+The audit is `docs/SYSTEM-AUDIT-2026-10-13.md`. These are its findings
+that could be fixed without a choice from the owner.
+
+- **Attendance steps recorded offline are no longer lost (H1, H2).** A
+  step waiting on the phone was erased whenever the session ended by
+  itself. Now only a sign-out the student chooses erases it, and the
+  sign-out question says how many steps would go ("Sign out and erase").
+  A step kept for a signed-out account is shown to nobody, is sent when
+  the same account signs in again on that phone, and is dropped after 72
+  hours.
+- **Task and evaluation changes are in the audit log (H4).** Assigning,
+  changing and cancelling a task (one intern's or a team's), and writing,
+  changing and removing an evaluation of a student, each write a line.
+  Descriptions, comments and files are not kept in it.
+- **A removed record is kept (H3, migration 046).** Cancelling a task,
+  removing an evaluation, withdrawing an absence notice, an announcement
+  or a time record certification, and removing a holiday or a site visit
+  used to delete the row for good. The same statement now copies the
+  whole row into `removed_records`, with who removed it. No screen reads
+  that table.
+- **Setting a block's schedule is safe for two coordinators at once
+  (M1).** Who is in the block is read inside the transaction that writes.
+- **"Download my data" is complete (M5).** It now holds the tasks worked
+  on each day, weekly requirement items and notification choices. Notes
+  staff write about a student stay out, on purpose. Site visits are about
+  a company, not a student, so the audit was wrong to list them.
+- **Wording (L4).** The generic "Something went wrong" fallback is gone,
+  and the install text says "lunch", not "break".
+
+**Checked:** on a new database with the clock on UTC: 168 API tests, all
+passing, none skipped (166 before); 32 end-to-end tests with the browser
+CI uses, 30 passing and 2 skipping themselves because the API tests had
+already timed the demo student in on that database. Frontend build and
+lint clean. The two-coordinators test was run against the old route
+first and failed there.
+
+**Not checked:** on a real phone. The accessibility check was not re-run.
+A backend type check with strict settings reports three errors in
+`server.ts` (lines 1239, 9451, 9460) that were there before this work.
+
+**Left for later, no decision needed:** deleting old photos on a
+schedule (M6), the phone's clock offset shown to the reviewer (M7),
+stripping location data from photos uploaded as documents (M8), a limit
+on uploads per account (M4), tests for the routes that have none (M10),
+one way of comparing IDs (M2).
+
+**Decisions (owner, 13 October 2026): all seven as recommended.** D1 a
+provisional offline time-in the supervisor confirms, at most 12 hours
+old. D2 pictures on the time-out note, the weekly report and concerns,
+three each; supervisors do not see pictures on coordinator-only
+documents. D3 sounds off, vibration on. D4 push, then email, then file
+storage, then error monitoring. D5 Docker for development only. D6
+English only. D7 "requirement" on every screen.

@@ -744,3 +744,28 @@ ones wherever the paper gives them:
   decided, the paper should use "requirement" and describe due dates,
   weekly requirements and the coordinator as reviewer as properties of a
   requirement.
+
+## After the system audit (13 October 2026)
+
+- **Offline use, more exactly.** Lunch and time-out steps recorded
+  without a connection wait on the phone and are sent later. They survive
+  a session that ends by itself and are sent at the next sign-in of the
+  same account, for up to 72 hours; the server still refuses any step
+  older than 12 hours. A sign-out the student chooses erases them, after
+  saying how many. Time-in still needs a connection.
+- **Deleting records.** The paper should not say records are never
+  deleted. Seven kinds of record can be removed by the person
+  responsible for them; each removal keeps a full copy in
+  `removed_records` with who removed it and when, and (except a
+  student's own withdrawn absence notice) writes an audit line.
+- **ERD.** One new table, `removed_records` (migration 046): the table
+  and id of the removed row, the student it concerned if any, the row
+  itself, and who removed it. It has no foreign keys.
+- **Audit log coverage** now includes task assignment, change and
+  cancellation and evaluations of a student. Team membership (a
+  supervisor's own grouping) is not logged.
+- **Sign-in token.** It is kept in the browser's local storage. What
+  protects it is the content security policy (enforced, scripts from the
+  site only), a 12-hour life, and that sign-out and a password change
+  end it on the server.
+- **Word to use:** "requirement" (decided 13 October 2026).
