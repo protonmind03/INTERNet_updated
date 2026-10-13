@@ -289,13 +289,13 @@ async function sendWebPush(
     type?: string;
     link?: string | null;
   }
-): Promise<void> {
+): Promise<{ sent: number; failed: number }> {
   const result = await pool.query<{ id: number; subscription: webpush.PushSubscription }>(
     `SELECT id, subscription FROM web_push_subscriptions WHERE role = $1 AND account_id = $2`,
     [recipient.role, recipient.id]
   );
-  await Promise.all(
-    result.rows.map(async (row) => {
+  const outcomes = await Promise.all(
+    result.rows.map(async (row): Promise<boolean> => {
       try {
         await webpush.sendNotification(
           row.subscription,
@@ -312,6 +312,7 @@ async function sendWebPush(
           }),
           { TTL: 86400 }
         );
+        return true;
       } catch (error) {
         const statusCode =
           typeof error === "object" && error !== null && "statusCode" in error
@@ -325,9 +326,12 @@ async function sendWebPush(
         } else {
           console.error("WEB PUSH DELIVERY ERROR:", error);
         }
+        return false;
       }
     })
   );
+  const sent = outcomes.filter(Boolean).length;
+  return { sent, failed: outcomes.length - sent };
 }
 
 pool.on("error", (error) => {
@@ -1512,6 +1516,57 @@ app.post(
     } catch (error) {
       console.error("SAVE WEB PUSH SUBSCRIPTION ERROR:", error);
       return response.status(500).json({ message: "Could not enable browser notifications." });
+    }
+  }
+);
+
+// One notification to the signed-in account's own devices, so a person
+// (or whoever set the keys up) can see that push really arrives. Nothing is
+// written to the notification list.
+const testPushAllowed = createRateLimiter(3, 60_000);
+app.post(
+  "/api/push/test",
+  requireRole(["coordinator", "student", "supervisor"]),
+  async (request, response) => {
+    const auth = (request as AuthedRequest).auth!;
+    if (!isWebPushConfigured()) {
+      return response.status(503).json({
+        message: "Browser push notifications are not configured.",
+      });
+    }
+    if (!testPushAllowed(`${auth.role}|${auth.id}`)) {
+      return response.status(429).json({ message: "Wait a minute before sending another test." });
+    }
+    try {
+      const { sent, failed } = await sendWebPush(auth, {
+        id: 0,
+        title: "INTERNet test notification",
+        message: "Notifications reach this device.",
+        link: pushTargets[auth.role].fallback,
+      });
+      if (sent + failed === 0) {
+        return response.status(409).json({
+          message: "No device has notifications turned on for this account. Turn them on here first.",
+        });
+      }
+      if (sent === 0) {
+        return response.status(502).json({
+          message: "The test could not be delivered. Turn notifications off and on again on this device.",
+          sent,
+          failed,
+        });
+      }
+      return response.json({
+        message:
+          sent === 1
+            ? "A test notification was sent to 1 device."
+            : `A test notification was sent to ${sent} devices.`,
+        sent,
+        failed,
+      });
+    } catch (error) {
+      console.error("TEST WEB PUSH ERROR:", error);
+      return response.status(500).json({ message: "The test notification could not be sent." });
     }
   }
 );

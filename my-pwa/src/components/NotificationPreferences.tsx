@@ -1,6 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, SkeletonRows } from "./ui";
 import { API_URL, withRoleAuth } from "../lib/api";
+import {
+  PUSH_CHANGED,
+  deviceSubscription,
+  disablePush,
+  enablePush,
+  pushSupported,
+  sendTestPush,
+  serverPushKey,
+} from "../lib/pushDevice";
 import { errorText, toast } from "../lib/toast";
 
 type Role = "student" | "supervisor" | "coordinator";
@@ -82,6 +91,7 @@ export default function NotificationPreferences({ role }: { role: Role }) {
         Every notification is kept in the app. Choose which ones are also sent to your devices
         {anyEmail ? " or by email" : ""}.
       </p>
+      <ThisDevice role={role} />
       {categories === null ? (
         <div className="mt-3">
           <SkeletonRows rows={3} />
@@ -119,6 +129,91 @@ export default function NotificationPreferences({ role }: { role: Role }) {
         </ul>
       )}
     </Card>
+  );
+}
+
+/**
+ * Whether this phone or computer gets notifications, with the way to turn
+ * that on or off and to send one as a test. Shown only where the browser
+ * can receive them and the server can send them.
+ */
+function ThisDevice({ role }: { role: Role }) {
+  const [on, setOn] = useState<boolean | null>(null);
+  const [busy, setBusy] = useState("");
+
+  useEffect(() => {
+    if (!pushSupported()) return;
+    let active = true;
+    const read = async () => {
+      const [key, subscription] = await Promise.all([
+        serverPushKey(),
+        deviceSubscription().catch(() => null),
+      ]);
+      if (active) setOn(key === null ? null : Boolean(subscription));
+    };
+    void read();
+    window.addEventListener(PUSH_CHANGED, read);
+    return () => {
+      active = false;
+      window.removeEventListener(PUSH_CHANGED, read);
+    };
+  }, []);
+
+  if (on === null) return null;
+
+  const run = async (name: string, action: () => Promise<string>) => {
+    setBusy(name);
+    try {
+      toast.success(await action());
+    } catch (actionError) {
+      toast.error(errorText(actionError, "That could not be done. Please try again."));
+    } finally {
+      setBusy("");
+    }
+  };
+  const button =
+    "rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60";
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-slate-50 px-3 py-3">
+      <div className="min-w-0 flex-1 basis-48">
+        <p className="text-sm font-medium text-slate-900">This device</p>
+        <p className="text-sm text-slate-600">
+          {on
+            ? "Notifications are sent to this device, also when INTERNet is closed."
+            : "Notifications are not sent to this device."}
+        </p>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {on && (
+          <button
+            type="button"
+            disabled={busy !== ""}
+            onClick={() => void run("test", () => sendTestPush(role))}
+            className={button}
+          >
+            {busy === "test" ? "Sending" : "Send a test"}
+          </button>
+        )}
+        <button
+          type="button"
+          disabled={busy !== ""}
+          onClick={() =>
+            void run("switch", async () => {
+              if (on) {
+                await disablePush(role);
+                return "Notifications are off for this device.";
+              }
+              await enablePush(role);
+              return "Notifications are on for this device.";
+            })
+          }
+          className={button}
+        >
+          {busy === "switch" ? "Saving" : on ? "Turn off on this device" : "Turn on for this device"}
+        </button>
+      </div>
+    </div>
   );
 }
 

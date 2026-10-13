@@ -1,6 +1,15 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
-import { API_URL, withRoleAuth } from "../lib/api";
+import {
+  PUSH_CHANGED,
+  type PushRole,
+  deviceSubscription,
+  disablePush,
+  enablePush,
+  pushSupported,
+  refreshPush,
+  serverPushKey,
+} from "../lib/pushDevice";
 import { BrandLoader } from "../brand";
 import { useReportedHeight } from "../lib/layers";
 import { toast } from "../lib/toast";
@@ -44,16 +53,6 @@ function currentRole(path: string): { role: Role; token: string } | null {
 
 const DISMISSED_KEY = "push_prompt_dismissed";
 
-function decodeVapidKey(value: string): ArrayBuffer {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  const raw = atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="));
-  const bytes = new Uint8Array(new ArrayBuffer(raw.length));
-  for (let index = 0; index < raw.length; index += 1) {
-    bytes[index] = raw.charCodeAt(index);
-  }
-  return bytes.buffer;
-}
-
 export default function PushNotificationSettings() {
   const location = useLocation();
   const [identity, setIdentity] = useState<ReturnType<typeof currentRole>>(null);
@@ -73,13 +72,9 @@ export default function PushNotificationSettings() {
 
   useEffect(() => {
     let active = true;
-    fetch(`${API_URL}/api/push/vapid-public-key`)
-      .then((response) => {
-        if (active) setAvailable(response.ok);
-      })
-      .catch(() => {
-        if (active) setAvailable(false);
-      });
+    void serverPushKey().then((key) => {
+      if (active) setAvailable(key !== null);
+    });
     return () => {
       active = false;
     };
@@ -105,121 +100,52 @@ export default function PushNotificationSettings() {
     };
   }, [location.pathname]);
 
+  const role = identity?.role;
   useEffect(() => {
     let active = true;
-    if (!identity || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-      return;
-    }
-    navigator.serviceWorker.ready
-      .then((registration) => registration.pushManager.getSubscription())
-      .then((subscription) => {
-        if (active) setEnabled(Boolean(subscription));
+    if (!role || !pushSupported()) return;
+    // A subscription made with a key the server has replaced is made again here.
+    refreshPush(role)
+      .then((on) => {
+        if (active) setEnabled(on);
       })
       .catch((subscriptionError: unknown) => {
         console.error("CHECK PUSH SUBSCRIPTION ERROR:", subscriptionError);
         if (active) setError("Could not check this device's notification settings.");
       });
+    // Turned on or off from Profile while this card is on screen.
+    const follow = () => {
+      void deviceSubscription()
+        .then((subscription) => {
+          if (active) setEnabled(Boolean(subscription));
+        })
+        .catch(() => {});
+    };
+    window.addEventListener(PUSH_CHANGED, follow);
     return () => {
       active = false;
+      window.removeEventListener(PUSH_CHANGED, follow);
     };
-  }, [identity]);
+  }, [role]);
 
-  const enable = async () => {
-    if (!identity) return;
+  const act = async (action: (role: PushRole) => Promise<void>, done: string, failed: string) => {
+    if (!role) return;
     setBusy(true);
     setError("");
     try {
-      const permission =
-        Notification.permission === "default"
-          ? await Notification.requestPermission()
-          : Notification.permission;
-      if (permission !== "granted") {
-        throw new Error(
-          permission === "denied"
-            ? "Browser notifications are blocked. Allow them in this site's browser settings, then try again."
-            : "Browser notification permission was not granted."
-        );
-      }
-
-      const keyResponse = await fetch(`${API_URL}/api/push/vapid-public-key`);
-      const keyData = await keyResponse.json();
-      if (!keyResponse.ok) {
-        throw new Error(keyData.message || "Browser push notifications are unavailable.");
-      }
-
-      const registration = await navigator.serviceWorker.ready;
-      const subscription =
-        (await registration.pushManager.getSubscription()) ||
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: decodeVapidKey(keyData.publicKey),
-        }));
-      const response = await fetch(
-        `${API_URL}/api/push/subscriptions`,
-        withRoleAuth(identity.role, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ subscription: subscription.toJSON() }),
-        })
-      );
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || "Could not enable browser notifications.");
-      }
-      setEnabled(true);
-      toast.success("Notifications are on for this device.");
-    } catch (enableError) {
-      console.error("ENABLE PUSH NOTIFICATIONS ERROR:", enableError);
-      setError(
-        enableError instanceof Error
-          ? enableError.message
-          : "Could not enable browser notifications."
-      );
+      await action(role);
+      toast.success(done);
+    } catch (actionError) {
+      console.error("PUSH NOTIFICATION SETTING ERROR:", actionError);
+      setError(actionError instanceof Error && actionError.message ? actionError.message : failed);
     } finally {
       setBusy(false);
     }
   };
-
-  const disable = async () => {
-    if (!identity) return;
-    setBusy(true);
-    setError("");
-    try {
-      const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
-      if (!subscription) {
-        setEnabled(false);
-        return;
-      }
-      const response = await fetch(
-        `${API_URL}/api/push/subscriptions`,
-        withRoleAuth(identity.role, {
-          method: "DELETE",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ endpoint: subscription.endpoint }),
-        })
-      );
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || "Could not disable browser notifications.");
-      }
-      const unsubscribed = await subscription.unsubscribe();
-      if (!unsubscribed) {
-        throw new Error("The browser could not remove this device's subscription.");
-      }
-      setEnabled(false);
-      toast.success("Notifications are off for this device.");
-    } catch (disableError) {
-      console.error("DISABLE PUSH NOTIFICATIONS ERROR:", disableError);
-      setError(
-        disableError instanceof Error
-          ? disableError.message
-          : "Could not disable browser notifications."
-      );
-    } finally {
-      setBusy(false);
-    }
-  };
+  const enable = () =>
+    act(enablePush, "Notifications are on for this device.", "Notifications could not be turned on.");
+  const disable = () =>
+    act(disablePush, "Notifications are off for this device.", "Notifications could not be turned off.");
 
   // iPhone and iPad only allow notifications for an app on the Home Screen.
   // In the browser there is nothing to turn on, so say what to do instead.
@@ -259,9 +185,7 @@ export default function PushNotificationSettings() {
     dismissed ||
     !available ||
     (enabled && !error) ||
-    !("serviceWorker" in navigator) ||
-    !("PushManager" in window) ||
-    !("Notification" in window)
+    !pushSupported()
   ) {
     return null;
   }

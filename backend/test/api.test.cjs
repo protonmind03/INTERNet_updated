@@ -7742,3 +7742,13 @@ test("a record a person removes is copied whole, with who removed it, by the sta
     await pool.end();
   }
 });
+
+test("a test notification is for a signed-in account, and says so when push is not set up", async () => {
+  assert.equal((await jsonRequest("/api/push/test", { method: "POST" })).response.status, 401);
+  // This API runs without the push keys, as the tests above also expect.
+  for (const token of [studentToken, coordinatorToken, (await supervisorSession()).token]) {
+    const answer = await jsonRequest("/api/push/test", { method: "POST", headers: authHeaders(token) });
+    assert.equal(answer.response.status, 503);
+    assert.equal(answer.body.message, "Browser push notifications are not configured.");
+  }
+});
