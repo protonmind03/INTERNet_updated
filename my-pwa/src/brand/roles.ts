@@ -297,7 +297,7 @@ export function successFor(role: BrandRole, process: LoadProcess): string {
 }
 
 /** Turns any thrown value into one plain sentence for the user. */
-export function errorText(err: unknown, fallback = "Something went wrong. Please try again."): string {
+export function errorText(err: unknown, fallback = "That did not work. Please try again."): string {
   if (typeof err === "string" && err.trim()) return err;
   if (err instanceof Error && err.message && !/^(TypeError|Failed to fetch|NetworkError)/i.test(err.message)) return err.message;
   if (err instanceof TypeError) return "Can’t reach the server. Check your connection and try again.";
