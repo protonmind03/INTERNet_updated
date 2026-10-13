@@ -16,7 +16,8 @@ import {
   readPrivateFile,
   savePrivateFile,
 } from "./services/privateFileStore";
-import { isEmailConfigured, sendEmail } from "./services/mailer";
+import { isEmailConfigured, sendEmail, useEmailBudget } from "./services/mailer";
+import { claimEmail, returnEmail } from "./services/emailBudget";
 import {
   publishNotification,
   closeNotificationStreams,
@@ -334,6 +335,12 @@ async function sendWebPush(
   return { sent, failed: outcomes.length - sent };
 }
 
+// Emails are counted against the day's allowance, when one is set.
+useEmailBudget({
+  claim: (kind) => claimEmail(pool, kind),
+  giveBack: () => returnEmail(pool),
+});
+
 pool.on("error", (error) => {
   console.error(
     "Unexpected PostgreSQL pool error:",
@@ -598,6 +605,7 @@ app.post("/api/auth/password-reset/request", async (req, res) => {
   // made a known address answer slower than (and, on a mail failure,
   // differently from) an unknown one, which told a caller which emails exist.
   void sendEmail({
+    kind: "account",
     to: found.rows[0].email,
     subject: "Reset your INTERNet account password",
     text: `Hello ${found.rows[0].name},\n\nUse this link within 30 minutes to set a new password:\n${resetUrl.href}\n\nIf you did not request this, ignore this message.`,
@@ -9501,7 +9509,13 @@ app.get(
 |
 */
 
-registerConsoleRoutes(app, { pool, requireCoordinator, flaggedLogCondition });
+registerConsoleRoutes(app, {
+  pool,
+  requireCoordinator,
+  flaggedLogCondition,
+  pushConfigured: isWebPushConfigured,
+  createRateLimiter,
+});
 registerAcademicRoutes(app, { pool, requireCoordinator });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });

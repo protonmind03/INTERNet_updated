@@ -16,6 +16,7 @@
 
 import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
+import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
 
 type Mailer = (email: { to: string; subject: string; text: string }) => Promise<void>;
@@ -96,6 +97,12 @@ export async function sendOnce(
     await send();
     return true;
   } catch (error) {
+    // The day's allowance is used: the mark stays, so this summary is not
+    // tried again every few minutes for the rest of the day.
+    if (error instanceof EmailLimitError) {
+      console.error(`A summary email (${kind}) was not sent: ${error.message}`);
+      return false;
+    }
     console.error(`SUMMARY EMAIL ERROR (${kind}):`, error);
     await pool.query(`DELETE FROM digest_log WHERE id = $1`, [claimed.rows[0].id]).catch(() => undefined);
     return false;

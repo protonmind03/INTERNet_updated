@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { EmailLimitError, type EmailKind } from "./emailBudget";
 
 /*
 |--------------------------------------------------------------------------
@@ -20,6 +21,10 @@ import nodemailer from "nodemailer";
 | that provider's request. Nothing here logs the API key or who an email
 | was sent to.
 |
+| When a day's allowance is set (services/emailBudget.ts), sendEmail asks
+| for a place in it first. An email refused there is not sent and raises
+| EmailLimitError; one counted and then not sent is given back.
+|
 */
 
 export type Email = {
@@ -27,7 +32,24 @@ export type Email = {
   subject: string;
   text: string;
   html?: string;
+  /**
+   * "account" when someone is waiting for it (a password reset). Left out,
+   * it is a reminder or a summary, which gives way when the day's
+   * allowance runs low.
+   */
+  kind?: EmailKind;
 };
+
+type Budget = {
+  claim: (kind: EmailKind) => Promise<boolean>;
+  giveBack: () => Promise<void>;
+};
+let budget: Budget | null = null;
+
+/** Called once at start-up with the functions that count emails against the day. */
+export function useEmailBudget(next: Budget | null): void {
+  budget = next;
+}
 
 type ProviderRequest = { url: string; headers: Record<string, string>; body: unknown };
 
@@ -175,9 +197,18 @@ async function sendThroughSmtp(email: Email): Promise<void> {
 
 export async function sendEmail(options: Email): Promise<void> {
   const route = emailRoute();
-  if (route === "api") return sendThroughApi(options);
-  if (route === "smtp") return sendThroughSmtp(options);
-  throw new Error(
-    "Email is not configured. Set EMAIL_PROVIDER, EMAIL_API_KEY and SMTP_FROM, or the five SMTP_* settings."
-  );
+  if (!route) {
+    throw new Error(
+      "Email is not configured. Set EMAIL_PROVIDER, EMAIL_API_KEY and SMTP_FROM, or the five SMTP_* settings."
+    );
+  }
+  const kind = options.kind ?? "routine";
+  if (budget && !(await budget.claim(kind))) throw new EmailLimitError(kind);
+  try {
+    if (route === "api") await sendThroughApi(options);
+    else await sendThroughSmtp(options);
+  } catch (error) {
+    await budget?.giveBack().catch(() => undefined);
+    throw error;
+  }
 }

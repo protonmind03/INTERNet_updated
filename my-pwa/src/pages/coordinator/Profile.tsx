@@ -8,6 +8,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { updateStoredAccount, useAccount, type CoordinatorAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import SystemStatus from "./SystemStatus";
 
 export default function CoordinatorProfilePage() {
   const account = useAccount("coordinator");
@@ -146,6 +147,8 @@ export default function CoordinatorProfilePage() {
         {coordinatorId && <PasswordForm role="coordinator" accountId={coordinatorId} />}
 
         <NotificationPreferences role="coordinator" />
+
+        <SystemStatus />
 
         <InstallApp />
       </div>

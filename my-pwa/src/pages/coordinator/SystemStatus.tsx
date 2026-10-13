@@ -1,0 +1,188 @@
+import { useEffect, useState } from "react";
+import { Card, SkeletonRows } from "../../components/ui";
+import { errorText, toast } from "../../lib/toast";
+import { coordinatorRequest } from "./request";
+
+type Status = {
+  email: {
+    on: boolean;
+    through: "provider" | "smtp" | null;
+    reset_links: boolean;
+    daily_limit: number | null;
+    kept_for_password_resets: number | null;
+    sent_today: number | null;
+  };
+  push: { on: boolean };
+  files: { kept_in: string };
+  privacy: {
+    consent_asked: boolean;
+    notice_is_placeholder: boolean;
+    photo_retention_days: number | null;
+  };
+};
+
+/**
+ * Which parts of the system that depend on the host's settings are on:
+ * email, push, where files are kept, the privacy switches. It says what
+ * each means for the people using the system, and lets the coordinator
+ * send themselves a test email. It never shows a setting's value.
+ */
+export default function SystemStatus() {
+  const [status, setStatus] = useState<Status | null>(null);
+  const [failed, setFailed] = useState(false);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    coordinatorRequest<Status>("/api/coordinator/system-status", { signal: controller.signal })
+      .then(setStatus)
+      .catch(() => {
+        // A server from before this page answers "not found": show nothing.
+        if (!controller.signal.aborted) setFailed(true);
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (failed) return null;
+
+  const sendTest = async () => {
+    setSending(true);
+    try {
+      const data = await coordinatorRequest<{ message: string }>("/api/coordinator/email-test", {
+        method: "POST",
+      });
+      toast.success(data.message);
+    } catch (sendError) {
+      toast.error(errorText(sendError, "The test email could not be sent."));
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <Card className="p-4 sm:p-5">
+      <h2 className="text-sm font-semibold text-slate-900">What is switched on</h2>
+      <p className="mt-1 text-sm text-slate-600">
+        These depend on settings of the server, which whoever looks after the hosting changes.
+        The steps are in the deployment notes.
+      </p>
+      {status === null ? (
+        <div className="mt-3">
+          <SkeletonRows rows={4} />
+        </div>
+      ) : (
+        <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
+          <Line
+            name="Email"
+            on={status.email.on}
+            about={emailText(status.email)}
+            action={
+              status.email.on ? (
+                <button
+                  type="button"
+                  disabled={sending}
+                  onClick={() => void sendTest()}
+                  className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {sending ? "Sending" : "Send me a test email"}
+                </button>
+              ) : null
+            }
+          />
+          <Line
+            name="Notifications to phones"
+            on={status.push.on}
+            about={
+              status.push.on
+                ? "People can turn them on for a device from their Profile, and send themselves a test there."
+                : "Nobody can turn them on yet. Notifications still appear in the app."
+            }
+          />
+          <Line
+            name="Uploaded files"
+            on={status.files.kept_in === "object storage"}
+            state={status.files.kept_in === "object storage" ? "Object storage" : "Server disk"}
+            about={
+              status.files.kept_in === "object storage"
+                ? "Photos and documents are kept in object storage."
+                : "Photos and documents are kept on the server's own disk. They need their own backup."
+            }
+          />
+          <Line
+            name="Privacy notice"
+            on={status.privacy.consent_asked}
+            state={status.privacy.consent_asked ? "Asked" : "Not asked"}
+            about={
+              (status.privacy.consent_asked
+                ? "A student agrees to the notice before their first time-in."
+                : "Students are not asked to agree before their first time-in.") +
+              (status.privacy.notice_is_placeholder
+                ? " The notice is still the sample wording, not the university's."
+                : "")
+            }
+          />
+          <Line
+            name="Old time-in photos"
+            on={status.privacy.photo_retention_days !== null}
+            state={status.privacy.photo_retention_days !== null ? "Removed" : "Kept"}
+            about={
+              status.privacy.photo_retention_days !== null
+                ? `Removed after ${status.privacy.photo_retention_days} days, when the clean-up is run.`
+                : "Kept with no limit."
+            }
+          />
+        </ul>
+      )}
+    </Card>
+  );
+}
+
+function emailText(email: Status["email"]): string {
+  if (!email.on) {
+    return "No email is sent. \"Forgot password\" does not work; reset a password from the person's row instead.";
+  }
+  const parts = [
+    email.reset_links
+      ? "Password reset, deadline reminders and summaries are sent."
+      : "Reminders and summaries are sent, but password reset is not: the site's address is not set on the server.",
+  ];
+  if (email.daily_limit !== null && email.sent_today !== null) {
+    parts.push(
+      `${email.sent_today} of ${email.daily_limit} sent today; the last ${email.kept_for_password_resets} are kept for password resets.`
+    );
+  }
+  return parts.join(" ");
+}
+
+function Line({
+  name,
+  on,
+  state,
+  about,
+  action,
+}: {
+  name: string;
+  on: boolean;
+  state?: string;
+  about: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <li className="flex flex-wrap items-center gap-x-4 gap-y-2 py-3">
+      <div className="min-w-0 flex-1 basis-56">
+        <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
+          {name}
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              on ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"
+            }`}
+          >
+            {state ?? (on ? "On" : "Off")}
+          </span>
+        </p>
+        <p className="mt-0.5 text-sm text-slate-600">{about}</p>
+      </div>
+      {action && <div className="shrink-0">{action}</div>}
+    </li>
+  );
+}

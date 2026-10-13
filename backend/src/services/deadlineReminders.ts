@@ -1,5 +1,6 @@
 import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
+import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
 import { releaseDueTasks, released } from "./taskRelease";
 import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
@@ -16,6 +17,7 @@ const MAX_EMAIL_ATTEMPTS = 5;
 
 let running = false;
 let warnedAboutSmtp = false;
+let warnedAboutLimit = false;
 
 export function startDeadlineReminderScheduler(
   pool: Pool,
@@ -165,6 +167,21 @@ export function startDeadlineReminderScheduler(
                 [reminder.id]
               );
             } catch (error) {
+              if (error instanceof EmailLimitError) {
+                // The day's allowance is used. A deadline email a day late
+                // would be wrong, and the student has the in-app reminder,
+                // so this one is not tried again.
+                if (!warnedAboutLimit) {
+                  warnedAboutLimit = true;
+                  console.error("Task deadline emails have stopped for today: " + error.message);
+                }
+                await client.query(
+                  `UPDATE task_deadline_reminders SET email_attempts = $2 WHERE id = $1`,
+                  [reminder.id, MAX_EMAIL_ATTEMPTS]
+                );
+                await client.query("COMMIT");
+                continue;
+              }
               console.error("SEND TASK DEADLINE EMAIL ERROR:", error);
               // Try again later (5, 10, 20, 40 minutes), then give up. The
               // row drops out of the queue meanwhile, so the reminders

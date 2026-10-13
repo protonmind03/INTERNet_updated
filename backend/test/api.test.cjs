@@ -7752,3 +7752,96 @@ test("a test notification is for a signed-in account, and says so when push is n
     assert.equal(answer.body.message, "Browser push notifications are not configured.");
   }
 });
+
+test("the day's email allowance: off unless set, a share kept for password resets, and counted one at a time", async (t) => {
+  require("tsx/cjs");
+  const { emailDailyLimit, accountReserve, allowanceFor, claimEmail, returnEmail, emailsSentToday, EmailLimitError } = require("../src/services/emailBudget.ts");
+  for (const off of [undefined, "", "abc", "5", "-100", "10.5", "1e3"]) assert.equal(emailDailyLimit({ EMAIL_DAILY_LIMIT: off }), null, String(off));
+  assert.equal(emailDailyLimit({ EMAIL_DAILY_LIMIT: " 100 " }), 100);
+  assert.deepEqual([accountReserve(100), accountReserve(10), accountReserve(3000)], [20, 5, 600]);
+  assert.deepEqual([allowanceFor("routine", 100), allowanceFor("account", 100)], [80, 100]);
+  assert.match(new EmailLimitError("routine").message, /reminder and summary/);
+
+  // No limit: nothing is asked of the database at all.
+  const untouched = { query: () => { throw new Error("must not be called"); } };
+  assert.equal(await claimEmail(untouched, "routine", {}), true);
+  await returnEmail(untouched, {});
+
+  // The mailer asks before it sends, and does not send what is refused.
+  const { sendEmail, useEmailBudget } = require("../src/services/mailer.ts");
+  const kept = { ...process.env };
+  const asked = [];
+  let returned = 0;
+  try {
+    // An SMTP server that is not there: a send that gets as far as trying fails at once.
+    Object.assign(process.env, { SMTP_HOST: "127.0.0.1", SMTP_PORT: "1", SMTP_USER: "u", SMTP_PASSWORD: "p", SMTP_FROM: "test@internet.test" });
+    delete process.env.EMAIL_PROVIDER;
+    const email = { to: "someone@internet.test", subject: "s", text: "t" };
+    useEmailBudget({ claim: async (kind) => { asked.push(kind); return false; }, giveBack: async () => { returned += 1; } });
+    await assert.rejects(sendEmail(email), (error) => error instanceof EmailLimitError);
+    await assert.rejects(sendEmail({ ...email, kind: "account" }), (error) => error instanceof EmailLimitError);
+    assert.deepEqual(asked, ["routine", "account"], "an email with no kind is a routine one");
+    assert.equal(returned, 0, "a refused email was never counted, so nothing is given back");
+    useEmailBudget({ claim: async () => true, giveBack: async () => { returned += 1; } });
+    await assert.rejects(sendEmail(email), (error) => !(error instanceof EmailLimitError));
+    assert.equal(returned, 1, "an email counted and then not sent is given back");
+  } finally {
+    useEmailBudget(null);
+    for (const key of ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASSWORD", "SMTP_FROM", "EMAIL_PROVIDER"]) {
+      if (kept[key] === undefined) delete process.env[key]; else process.env[key] = kept[key];
+    }
+  }
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const today = `(NOW() AT TIME ZONE 'UTC')::date`;
+  const before = (await pool.query(`SELECT sent FROM email_daily_counts WHERE day = ${today}`)).rows[0]?.sent ?? null;
+  try {
+    await pool.query(`DELETE FROM email_daily_counts WHERE day = ${today}`);
+    const env = { EMAIL_DAILY_LIMIT: "10" };
+    // Ten a day, five kept back: five routine emails, then only account ones, then none.
+    const routine = [];
+    for (let index = 0; index < 7; index += 1) routine.push(await claimEmail(pool, "routine", env));
+    assert.deepEqual(routine, [true, true, true, true, true, false, false]);
+    assert.equal(await emailsSentToday(pool), 5);
+    const account = [];
+    for (let index = 0; index < 6; index += 1) account.push(await claimEmail(pool, "account", env));
+    assert.deepEqual(account, [true, true, true, true, true, false]);
+    assert.equal(await emailsSentToday(pool), 10);
+    await returnEmail(pool, env);
+    assert.equal(await emailsSentToday(pool), 9);
+    // Twenty at once for the one place left: exactly one gets it.
+    const rush = await Promise.all(Array.from({ length: 20 }, () => claimEmail(pool, "account", env)));
+    assert.equal(rush.filter(Boolean).length, 1);
+    assert.equal(await emailsSentToday(pool), 10);
+  } finally {
+    await pool.query(`DELETE FROM email_daily_counts WHERE day = ${today}`);
+    if (before !== null) await pool.query(`INSERT INTO email_daily_counts (day, sent) VALUES (${today}, $1)`, [before]);
+    await pool.end();
+  }
+});
+
+test("what is switched on is for coordinators, and says on or off without any setting's value", async () => {
+  const path = "/api/coordinator/system-status";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders((await supervisorSession()).token) })).response.status, 403);
+  const status = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(status.response.status, 200);
+  // This API runs with neither email nor push set up.
+  assert.deepEqual(status.body.email, { on: false, through: null, reset_links: false, daily_limit: null, kept_for_password_resets: null, sent_today: null });
+  assert.deepEqual(status.body.push, { on: false });
+  assert.ok(["object storage", "the server's own disk"].includes(status.body.files.kept_in));
+  assert.equal(typeof status.body.privacy.consent_asked, "boolean");
+  assert.equal(typeof status.body.privacy.notice_is_placeholder, "boolean");
+  // Nothing that looks like a setting's value: no address, no key, no connection string.
+  const raw = JSON.stringify(status.body);
+  assert.equal(/@|:\/\/|secret|key|password/i.test(raw.replace(/kept_for_password_resets/g, "")), false, raw);
+
+  // A test email: coordinators only, and a plain answer when email is not set up.
+  assert.equal((await jsonRequest("/api/coordinator/email-test", { method: "POST" })).response.status, 401);
+  assert.equal((await jsonRequest("/api/coordinator/email-test", { method: "POST", headers: authHeaders(studentToken) })).response.status, 403);
+  const test = await jsonRequest("/api/coordinator/email-test", { method: "POST", headers: authHeaders(coordinatorToken) });
+  assert.equal(test.response.status, 503);
+  assert.match(test.body.message, /not set up/);
+});
