@@ -604,3 +604,58 @@ pass.
 - On a phone, tap Time in: the camera opens, the prompts appear, and the
   photo is taken by itself. (The camera needs https, which both hosts
   provide. The Vercel build copies the face-tracking files itself.)
+
+## Turning push notifications on
+
+Push is built and stays off until the backend has three variables. It
+costs nothing and needs no account anywhere: the browser makers' own
+services deliver the notifications. Do the test site first, then the live
+site, each with **its own** key pair.
+
+1. On your own computer, in the `backend` folder, run:
+
+   ```
+   npx web-push generate-vapid-keys
+   ```
+
+   It prints a public key and a private key. Do not paste either into a
+   chat, a commit or a screenshot. The private key is a secret.
+2. Railway → the **staging** backend service → Variables → add:
+   - `WEB_PUSH_VAPID_PUBLIC_KEY`: the public key
+   - `WEB_PUSH_VAPID_PRIVATE_KEY`: the private key
+   - `WEB_PUSH_SUBJECT`: `mailto:` followed by an address you read, for
+     example `mailto:` and the coordinator office's address. The push
+     services use it only to reach whoever runs the server.
+
+   All three, or none: with one or two the backend refuses to start and
+   says which are missing. Railway redeploys by itself.
+3. Check it: open
+   `https://internetupdated-staging.up.railway.app/api/push/vapid-public-key`
+   in a browser. Before, it answers "not configured". After, it shows the
+   public key (which is safe to see).
+4. On a phone, open the test site, sign in, go to **Profile →
+   Notifications → This device → Turn on for this device**, allow the
+   browser's question, then press **Send a test**. A notification titled
+   "INTERNet test notification" should arrive within a few seconds, also
+   with the app closed. On an iPhone this only works in the app opened
+   from the Home Screen.
+5. Repeat steps 1 to 4 for the **production** backend with a new key
+   pair, when you are ready.
+
+**Replacing the keys later** is safe: each device makes a new
+subscription by itself the next time the app is opened on it. Until then
+that device gets nothing, so do it at a quiet hour.
+
+**Turning push off again:** delete the three variables. The app stops
+offering it and the in-app notification list is unaffected.
+
+**What a notification shows.** The same title and sentence as the in-app
+notification, on the phone's lock screen. It can name a task or a
+student. Someone who does not want that turns it off per kind of
+notification, or for the device, in Profile.
+
+**Checked on 13 October 2026**, on this computer with throwaway keys and
+desktop Chrome: turning on, a test, a real "New task assigned"
+notification opening `/task`, turning off, and a device recovering after
+the keys were replaced. **Not checked:** any phone, Safari, Firefox, or
+delivery with the app fully closed.

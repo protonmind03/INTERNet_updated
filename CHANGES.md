@@ -1767,3 +1767,36 @@ three each; supervisors do not see pictures on coordinator-only
 documents. D3 sounds off, vibration on. D4 push, then email, then file
 storage, then error monitoring. D5 Docker for development only. D6
 English only. D7 "requirement" on every screen.
+
+## 33. Push notifications, ready to switch on (13 October 2026)
+
+First of the workstreams after the audit (decision D4: push first).
+
+Push was already built: subscriptions, sending, the service worker that
+shows a notification and opens the right page. What was missing was
+everything around it.
+
+- **Profile → Notifications has a "This device" line.** It says whether
+  this phone or computer gets notifications, turns that on or off, and
+  sends a test. Before, the only control was a prompt that disappeared
+  for good once answered, so push could never be turned off again.
+- **`POST /api/push/test`** sends one notification to the signed-in
+  account's own devices and says how many it reached. At most three a
+  minute. Nothing is written to the notification list.
+- **A replaced server key no longer strands devices.** A device whose
+  subscription was made with an older key makes a new one by itself when
+  the app opens, and the server forgets the old one.
+- **`DEPLOY.md` has the steps to turn push on**, test site first.
+
+**Checked:** with throwaway keys in desktop Chrome, through the real
+Google push service: on, test, a real task notification, off, and
+recovery after a key change. 169 API tests (one new), 30 end-to-end
+tests passing and 2 skipping themselves as before, build and lint clean,
+the accessibility check on the three Profile pages at both widths clean.
+
+**Not checked:** any phone or other browser; delivery with the app fully
+closed; how the new line looks (the automated screenshot did not capture
+it, so it has only been read as text and by the accessibility check).
+
+**Platform step, yours:** three variables on Railway, described in
+`DEPLOY.md` under "Turning push notifications on". No migration.

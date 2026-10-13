@@ -403,6 +403,16 @@ One new package in the backend, `fflate` (for the ZIP). It is in
 | After the push | Railway staging, Metrics | Watch memory while a large ZIP downloads. | The ZIP is sent as it is built and holds one file at a time, but the cap (500 files or 500 MB) was not tried at its full size. |
 | After either | The site, as coordinator | Requirements > a requirement > Due date and reviewer > Every week. The next Monday, a student of the term should have that week on their Documents page. | The weekly item is made by the server's minute loop. It was tested by calling the loop, not by waiting for a Monday. |
 
+## Push notifications (ready 2026-10-13, waiting for you)
+
+No migration. Nothing changes until the variables are set.
+
+| When | Where | Step | Why |
+|---|---|---|---|
+| When you want push on the test site | Your computer, then Railway → staging backend → Variables | Follow `DEPLOY.md`, "Turning push notifications on": generate a key pair, set `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_SUBJECT`. Never paste the keys into chat. | Push is off until all three are set. |
+| After that | A phone on the test site | Profile → Notifications → This device → Turn on, then Send a test. | The only proof that delivery works on a real phone. |
+| Later | Railway → production backend → Variables | The same, with a different key pair. | Each backend has its own keys. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
