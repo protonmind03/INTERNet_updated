@@ -942,8 +942,13 @@ test.describe("the programme, for the coordinator", () => {
 
     // The same on a block's menu on Programs.
     await page.goto("/coordinator/programs");
-    await page.getByRole("button", { name: /^Actions for BSIT 4/ }).first().click();
-    await expect(page.getByRole("menuitem", { name: "Set schedule" })).toBeVisible();
+    // A row menu closes when the page scrolls, and this page is still filling in as it opens: a menu
+    // opened too early is closed again by the lists arriving under it. Opened again, it stays.
+    const menuItem = page.getByRole("menuitem", { name: "Set schedule" });
+    await expect(async () => {
+      if (!(await menuItem.isVisible())) await page.getByRole("button", { name: /^Actions for BSIT 4/ }).first().click();
+      await expect(menuItem).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
     await page.keyboard.press("Escape");
 
     await page.goto("/coordinator/requirements");
