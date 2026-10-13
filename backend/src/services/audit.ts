@@ -125,6 +125,16 @@ export const AUDIT_RULES: Rule[] = [
   },
   {
     method: "GET",
+    path: "/api/attachments/:id/file",
+    action: "picture.view",
+    entityType: "student",
+    entityId: (source) => source.noted?.student_id,
+    roles: ["coordinator"],
+    quietMinutes: READ_QUIET_MINUTES,
+    from: (source) => ({ on: source.noted?.owner_type, entry: source.noted?.owner_id, picture: source.params.id }),
+  },
+  {
+    method: "GET",
     path: "/api/documents/:documentId/file",
     action: "document.view",
     entityType: "document",

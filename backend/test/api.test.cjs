@@ -1724,7 +1724,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/programme.ts", "routes/deliverables.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -8141,6 +8141,155 @@ test("a time-in recorded with no connection: checked like the other offline step
     await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Offline Timein%'`, [sid]);
     await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM audit_log WHERE entity_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("pictures on an entry: added by whoever wrote it, seen by whoever may see it, at most three, checked by their bytes, and never deleted", async (t) => {
+  require("tsx/cjs");
+  const { pictureKind, isAuthor, maySee } = require("../src/routes/attachments.ts");
+  // WHAT COUNTS AS A PICTURE is decided by its first bytes, not its name.
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("a small jpeg body")]);
+  const png = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from("png body")]);
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([1, 0, 0, 0]), Buffer.from("WEBPVP8 ")]);
+  assert.deepEqual([pictureKind(jpeg).mime, pictureKind(png).mime, pictureKind(webp).mime], ["image/jpeg", "image/png", "image/webp"]);
+  assert.equal(pictureKind(Buffer.from("%PDF-1.4")), null);
+  assert.equal(pictureKind(Buffer.from("<svg onload=alert(1)>")), null);
+  // WHO: a concern is never shown to the student's supervisor, who may be its subject.
+  const entry = { studentId: "S1", filedBySupervisor: null, supervisorOfStudent: "SUP1", open: true };
+  const student1 = { role: "student", id: "S1" }, theirSupervisor = { role: "supervisor", id: "SUP1" }, coordinatorAuth = { role: "coordinator", id: "C1" };
+  assert.deepEqual(["attendance", "journal", "complaint"].map((type) => maySee(type, entry, theirSupervisor)), [true, true, false]);
+  assert.deepEqual(["attendance", "journal", "complaint"].map((type) => maySee(type, entry, student1)), [true, true, true]);
+  assert.equal(maySee("complaint", entry, coordinatorAuth), true);
+  assert.equal(maySee("attendance", entry, { role: "student", id: "S2" }), false);
+  assert.equal(isAuthor("attendance", entry, theirSupervisor), false, "a supervisor adds nothing to an intern's log");
+  const filed = { studentId: "S1", filedBySupervisor: "SUP1", supervisorOfStudent: "SUP1", open: true };
+  assert.equal(isAuthor("complaint", filed, theirSupervisor), true);
+  assert.equal(isAuthor("complaint", filed, student1), false, "a concern a supervisor filed about a student is not the student's");
+
+  assert.equal((await jsonRequest("/api/attachments?owner_type=attendance&owner_id=1")).response.status, 401);
+  assert.equal((await jsonRequest("/api/attachments/1/file")).response.status, 401);
+  assert.equal((await jsonRequest("/api/attachments?owner_type=tasks&owner_id=1", { headers: authHeaders(studentToken) })).response.status, 400);
+  assert.equal((await jsonRequest("/api/attachments/999999999/file", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `PIC-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@pictures.test`;
+  const send = async (token, fields, bytes, name = "photo.jpg", type = "image/jpeg") => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+    if (bytes) form.append("file", new Blob([bytes], { type }), name);
+    const response = await fetch(new URL("/api/attachments", apiBaseUrl), { method: "POST", headers: authHeaders(token), body: form });
+    return { status: response.status, body: await response.json().catch(() => ({})) };
+  };
+  const list = async (token, type, id) => (await jsonRequest(`/api/attachments?owner_type=${type}&owner_id=${id}`, { headers: authHeaders(token) })).body;
+  try {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Picture Student', TRUE, $4)`,
+      [sid, email, await bcrypt.hash("PictureTest123!", 4), supervisor.supervisor.supervisor_id]
+    );
+    const mine = await login("student", email, "PictureTest123!");
+    const logId = (await pool.query(`INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 3, NOW() - INTERVAL '3 days', NOW() - INTERVAL '3 days' + INTERVAL '8 hours', 8, 'Pending') RETURNING id`, [sid])).rows[0].id;
+    const journalId = (await pool.query(`INSERT INTO journals (student_id, week_start, activities, learnings) VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::date - 7, 'Filed records for the week.', 'How the filing system works.') RETURNING id`, [sid])).rows[0].id;
+    const concernId = (await pool.query(`INSERT INTO complaints (student_id, report_type, category, description) VALUES ($1, 'supervisor', 'Conduct', 'A concern for the picture test.') RETURNING id`, [sid])).rows[0].id;
+    const log = { owner_type: "attendance", owner_id: logId };
+
+    // REFUSED: no picture, not a picture, too large, someone else's entry, an entry that does not exist.
+    assert.equal((await send(mine.token, log, null)).status, 400);
+    const pdf = await send(mine.token, log, Buffer.from("%PDF-1.4\n%%EOF"), "really-a.jpg");
+    assert.equal(pdf.status, 400);
+    assert.match(pdf.body.message, /not a JPG, PNG or WebP/);
+    assert.equal((await send(mine.token, log, Buffer.concat([jpeg, Buffer.alloc(4 * 1024 * 1024 + 10)]))).status, 413);
+    assert.equal((await send(studentToken, log, jpeg)).status, 404, "another student's log");
+    assert.equal((await send(supervisor.token, log, jpeg)).status, 404, "the supervisor adds nothing to the intern's log");
+    assert.equal((await send(mine.token, { owner_type: "attendance", owner_id: 999999999 }, jpeg)).status, 404);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attachments WHERE student_id = $1`, [sid])).rows[0].n, 0);
+
+    // ADDED: three, each stored with what the server worked out from the bytes; the fourth is refused.
+    const first = await send(mine.token, { ...log, caption: "  The shelves after sorting.  ", width: 1600, height: 1200 }, jpeg);
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    assert.deepEqual(
+      [first.body.attachment.mime_type, first.body.attachment.size_bytes, first.body.attachment.caption, first.body.attachment.width, first.body.attachment.position],
+      ["image/jpeg", jpeg.length, "The shelves after sorting.", 1600, 0]
+    );
+    // A PNG sent under a JPEG's name and type is stored as what it is.
+    const second = await send(mine.token, log, png, "photo.jpg", "image/jpeg");
+    assert.equal(second.body.attachment.mime_type, "image/png");
+    const third = await send(mine.token, log, webp, "photo.webp", "image/webp");
+    assert.equal(third.status, 201);
+    const fourth = await send(mine.token, log, jpeg);
+    assert.equal(fourth.status, 409);
+    assert.match(fourth.body.message, /at most 3 pictures/);
+    const stored = (await pool.query(`SELECT sha256, file_path, uploaded_by_role, uploaded_by_id FROM attachments WHERE id = $1`, [first.body.attachment.id])).rows[0];
+    assert.equal(stored.sha256, require("node:crypto").createHash("sha256").update(jpeg).digest("hex"));
+    assert.match(stored.file_path, /^\/uploads\/\d+-[a-f0-9]{12}\.jpg$/, "kept under a name of the store's own making");
+    assert.deepEqual([stored.uploaded_by_role, stored.uploaded_by_id], ["student", sid]);
+
+    // SEEN by the student, their supervisor and a coordinator; by no other student. Only the writer may add.
+    const own = await list(mine.token, "attendance", logId);
+    assert.deepEqual([own.attachments.length, own.can_add, own.max], [3, true, 3]);
+    assert.equal("file_path" in own.attachments[0], false, "where the file is kept is not told");
+    const forSupervisor = await list(supervisor.token, "attendance", logId);
+    assert.deepEqual([forSupervisor.attachments.length, forSupervisor.can_add], [3, false]);
+    assert.equal((await list(coordinatorToken, "attendance", logId)).attachments.length, 3);
+    assert.deepEqual((await list(studentToken, "attendance", logId)).attachments, []);
+    const fileOf = (token, id) => fetch(new URL(`/api/attachments/${id}/file`, apiBaseUrl), { headers: authHeaders(token) });
+    const opened = await fileOf(supervisor.token, first.body.attachment.id);
+    assert.deepEqual([opened.status, opened.headers.get("content-type"), opened.headers.get("x-content-type-options")], [200, "image/jpeg", "nosniff"]);
+    assert.ok(Buffer.from(await opened.arrayBuffer()).equals(jpeg));
+    assert.equal((await fileOf(studentToken, first.body.attachment.id)).status, 404);
+
+    // A CONCERN's pictures: the student who filed it and coordinators. Not the student's supervisor.
+    const onConcern = await send(mine.token, { owner_type: "complaint", owner_id: concernId }, jpeg);
+    assert.equal(onConcern.status, 201, JSON.stringify(onConcern.body));
+    assert.deepEqual((await list(supervisor.token, "complaint", concernId)).attachments, []);
+    assert.equal((await fileOf(supervisor.token, onConcern.body.attachment.id)).status, 404);
+    assert.equal((await fileOf(coordinatorToken, onConcern.body.attachment.id)).status, 200);
+    // A weekly report takes them too.
+    assert.equal((await send(mine.token, { owner_type: "journal", owner_id: journalId }, png, "p.png", "image/png")).status, 201);
+    assert.equal((await list(supervisor.token, "journal", journalId)).attachments.length, 1);
+
+    // A coordinator opening one is logged, against the student.
+    let viewed = null;
+    for (let attempt = 0; attempt < 20 && !viewed; attempt += 1) {
+      const audit = await jsonRequest("/api/coordinator/audit?action=picture.view&limit=5", { headers: authHeaders(coordinatorToken) });
+      viewed = audit.body.entries.find((row) => row.entity_id === sid) ?? null;
+      if (!viewed) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(viewed, "the coordinator's view is in the audit log");
+    assert.equal(viewed.details.on, "complaint");
+
+    // REMOVED: off the entry, by the writer only; the row stays.
+    assert.equal((await jsonRequest(`/api/attachments/${second.body.attachment.id}`, { method: "DELETE", headers: authHeaders(supervisor.token) })).response.status, 404);
+    assert.equal((await jsonRequest(`/api/attachments/${second.body.attachment.id}`, { method: "DELETE", headers: authHeaders(mine.token) })).response.status, 200);
+    assert.equal((await list(mine.token, "attendance", logId)).attachments.length, 2);
+    assert.equal((await fileOf(mine.token, second.body.attachment.id)).status, 404, "a removed picture is no longer served");
+    assert.equal((await pool.query(`SELECT removed_at IS NOT NULL AS removed FROM attachments WHERE id = $1`, [second.body.attachment.id])).rows[0].removed, true);
+    // The place it left can be used again.
+    assert.equal((await send(mine.token, log, jpeg)).status, 201);
+
+    // ONCE THE ENTRY IS DECIDED nothing is added or taken away, and what is there is still seen.
+    await pool.query(`UPDATE attendance SET status = 'Verified' WHERE id = $1`, [logId]);
+    assert.equal((await send(mine.token, log, jpeg)).status, 409);
+    assert.equal((await jsonRequest(`/api/attachments/${first.body.attachment.id}`, { method: "DELETE", headers: authHeaders(mine.token) })).response.status, 409);
+    const after = await list(mine.token, "attendance", logId);
+    assert.deepEqual([after.attachments.length, after.can_add], [3, false]);
+
+    // The student's data download lists their pictures, removed ones too, and never where they are kept.
+    const download = await jsonRequest(`/api/students/${sid}/data-export`, { headers: authHeaders(mine.token) });
+    assert.equal(download.body.pictures.length, 6);
+    assert.equal(JSON.stringify(download.body.pictures).includes("/uploads/"), false);
+  } finally {
+    await pool.query(`DELETE FROM attachments WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM audit_log WHERE entity_id = $1`, [sid]);
+    await pool.query(`DELETE FROM complaints WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM journals WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.end();
   }

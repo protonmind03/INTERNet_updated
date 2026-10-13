@@ -3232,7 +3232,7 @@ export function registerExtensionRoutes(
       }
       const mine = (sql: string) => pool.query(sql, [auth.id]).then((result) => result.rows);
       const [profile, attendance, absences, tasks, documents, journals, finalEvaluation, certifications, evaluations, complaints,
-        complaintMessages, schedule, notifications, tasksWorkedOn, weeklyItems, notificationChoices] = await Promise.all([
+        complaintMessages, schedule, notifications, tasksWorkedOn, weeklyItems, notificationChoices, pictures] = await Promise.all([
         mine(`SELECT * FROM students WHERE student_id = $1`),
         mine(`SELECT * FROM attendance WHERE student_id = $1 ORDER BY date, id`),
         mine(`SELECT * FROM absences WHERE student_id = $1 ORDER BY date, id`),
@@ -3265,6 +3265,9 @@ export function registerExtensionRoutes(
               WHERE i.student_id = $1 ORDER BY i.period_start, i.id`),
         mine(`SELECT category, push, email, updated_at FROM notification_preferences
               WHERE role = 'student' AND account_id = $1 ORDER BY category`),
+        // Pictures the student attached to their own entries, listed, not included.
+        mine(`SELECT id, owner_type, owner_id, mime_type, size_bytes, width, height, caption, created_at, removed_at
+              FROM attachments WHERE student_id = $1 AND uploaded_by_role = 'student' ORDER BY created_at, id`),
       ]);
       if (profile.length === 0) return res.status(404).json({ message: "Student not found." });
 
@@ -3297,6 +3300,7 @@ export function registerExtensionRoutes(
         tasks_worked_on: tasksWorkedOn,
         weekly_requirement_items: weeklyItems,
         notification_choices: notificationChoices,
+        pictures,
       });
     } catch (error) {
       console.error("DATA EXPORT ERROR:", error);

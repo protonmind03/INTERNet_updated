@@ -49,6 +49,7 @@ import {
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { registerOfflineTimeInRoutes } from "./routes/offlineTimeIn";
+import { registerAttachmentRoutes } from "./routes/attachments";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
   bindFilters,
@@ -9548,6 +9549,7 @@ app.get(
 */
 
 registerOfflineTimeInRoutes(app, { pool, requireRole, createNotification });
+registerAttachmentRoutes(app, { pool, requireRole });
 registerConsoleRoutes(app, {
   pool,
   requireCoordinator,
