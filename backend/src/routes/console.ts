@@ -6,7 +6,7 @@ import { readStudentFilters } from "../services/studentScope";
 import { emailRoute, sendEmail } from "../services/mailer";
 import { EmailLimitError, accountReserve, emailDailyLimit, emailsSentToday } from "../services/emailBudget";
 import { PRIVACY_NOTICE, consentRequired, photoRetentionDays } from "../services/privacy";
-import { isAzureBlobStorageConfigured } from "../services/privateFileStore";
+import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
 
 /*
 |--------------------------------------------------------------------------
@@ -59,7 +59,7 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
           sent_today: limit === null ? null : await emailsSentToday(pool),
         },
         push: { on: deps.pushConfigured() },
-        files: { kept_in: isAzureBlobStorageConfigured() ? "object storage" : "the server's own disk" },
+        files: { kept_in: fileStoreKind() === "disk" ? "the server's own disk" : "object storage" },
         privacy: {
           consent_asked: consentRequired(),
           notice_is_placeholder: PRIVACY_NOTICE.placeholder,
@@ -69,6 +69,27 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
     } catch (error) {
       console.error("SYSTEM STATUS ERROR:", error);
       return res.status(500).json({ message: "Failed to read what is switched on." });
+    }
+  });
+
+  // Writes a small file where uploads are kept, reads it back and removes
+  // it: the proof that the storage settings work, without uploading a real file.
+  const storageCheckAllowed = deps.createRateLimiter(3, 60_000);
+  app.post("/api/coordinator/storage-test", requireCoordinator, async (req, res) => {
+    const auth = (req as express.Request & { auth?: { id: string } }).auth!;
+    if (!storageCheckAllowed(auth.id)) {
+      return res.status(429).json({ message: "Wait a minute before checking again." });
+    }
+    const where = fileStoreKind() === "disk" ? "the server's own disk" : "object storage";
+    try {
+      await checkFileStore();
+      return res.json({ message: `A test file was written to ${where}, read back and removed. Uploads work.`, kept_in: where });
+    } catch (error) {
+      // The store's reason, in the server log only: it can name the bucket.
+      console.error("STORAGE CHECK ERROR:", error);
+      return res.status(502).json({
+        message: `A test file could not be kept in ${where}. The reason is in the server's log, on the line starting STORAGE CHECK ERROR.`,
+      });
     }
   });
 

@@ -31,6 +31,7 @@ export default function SystemStatus() {
   const [status, setStatus] = useState<Status | null>(null);
   const [failed, setFailed] = useState(false);
   const [sending, setSending] = useState(false);
+  const [checking, setChecking] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -56,6 +57,20 @@ export default function SystemStatus() {
       toast.error(errorText(sendError, "The test email could not be sent."));
     } finally {
       setSending(false);
+    }
+  };
+
+  const checkStorage = async () => {
+    setChecking(true);
+    try {
+      const data = await coordinatorRequest<{ message: string }>("/api/coordinator/storage-test", {
+        method: "POST",
+      });
+      toast.success(data.message);
+    } catch (checkError) {
+      toast.error(errorText(checkError, "The file storage could not be checked."));
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -106,6 +121,16 @@ export default function SystemStatus() {
               status.files.kept_in === "object storage"
                 ? "Photos and documents are kept in object storage."
                 : "Photos and documents are kept on the server's own disk. They need their own backup."
+            }
+            action={
+              <button
+                type="button"
+                disabled={checking}
+                onClick={() => void checkStorage()}
+                className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              >
+                {checking ? "Checking" : "Check file storage"}
+              </button>
             }
           />
           <Line

@@ -7845,3 +7845,116 @@ test("what is switched on is for coordinators, and says on or off without any se
   assert.equal(test.response.status, 503);
   assert.match(test.body.message, /not set up/);
 });
+
+test("uploaded files go to a bucket when one is set, and a file from before the switch is still found on the disk", async () => {
+  const http = require("node:http");
+  const os = require("node:os");
+  const fsp = require("node:fs/promises");
+  const nodePath = require("node:path");
+  // The store reads its folder when it is first loaded, so the folder is named before that.
+  const folder = await fsp.mkdtemp(nodePath.join(os.tmpdir(), "internet-store-"));
+  const keptEnv = process.env.PRIVATE_UPLOAD_DIR;
+  process.env.PRIVATE_UPLOAD_DIR = folder;
+  require("tsx/cjs");
+  const store = require("../src/services/privateFileStore.ts");
+  if (keptEnv === undefined) delete process.env.PRIVATE_UPLOAD_DIR; else process.env.PRIVATE_UPLOAD_DIR = keptEnv;
+
+  // All four settings or none; one of two kinds of remote store, never both.
+  assert.equal(store.bucketSettings({}), null);
+  assert.throws(() => store.bucketSettings({ R2_BUCKET: "b" }), /Missing: R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY/);
+  const four = { R2_ACCOUNT_ID: "acct", R2_ACCESS_KEY_ID: "id", R2_SECRET_ACCESS_KEY: "s", R2_BUCKET: " files " };
+  assert.deepEqual(store.bucketSettings(four), { endpoint: "https://acct.r2.cloudflarestorage.com", accessKeyId: "id", secretAccessKey: "s", bucket: "files" });
+  assert.equal(store.bucketSettings({ ...four, R2_ENDPOINT: "http://127.0.0.1:9" }).endpoint, "http://127.0.0.1:9");
+
+  // A stand-in for the bucket: it keeps what it is sent and notes how it was asked.
+  const objects = new Map();
+  const seen = [];
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      seen.push({ method: req.method, url: req.url, authorization: req.headers.authorization || "", checksum: Object.keys(req.headers).filter((name) => name.startsWith("x-amz-checksum") || name === "x-amz-sdk-checksum-algorithm") });
+      const key = decodeURIComponent(req.url.split("?")[0]);
+      if (req.method === "PUT") {
+        objects.set(key, { body: Buffer.concat(chunks), type: req.headers["content-type"] });
+        res.writeHead(200, { ETag: '"x"' }).end();
+      } else if (req.method === "GET" && objects.has(key)) {
+        const found = objects.get(key);
+        res.writeHead(200, { "Content-Type": found.type, "Content-Length": found.body.length }).end(found.body);
+      } else if (req.method === "GET") {
+        res.writeHead(404, { "Content-Type": "application/xml" }).end('<?xml version="1.0"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>');
+      } else if (req.method === "DELETE") {
+        objects.delete(key);
+        res.writeHead(204).end();
+      } else {
+        res.writeHead(405).end();
+      }
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const endpoint = `http://127.0.0.1:${server.address().port}`;
+  const bucket = store.bucketStore({ endpoint, accessKeyId: "test-key-id", secretAccessKey: "test-secret", bucket: "files" });
+  const previous = store.useRemoteStore(bucket);
+  const file = (name, text) => ({ buffer: Buffer.from(text), mimetype: "image/png", originalname: name });
+  try {
+    assert.equal(store.fileStoreKind(), "bucket");
+    // A NEW FILE goes to the bucket and nowhere else.
+    const name = await store.savePrivateFile(file("photo.png", "new photo"));
+    assert.ok(objects.has(`/files/${name}`), "the object is in the bucket, under the bucket's name in the path");
+    assert.equal(objects.get(`/files/${name}`).type, "image/png");
+    assert.deepEqual(await fsp.readdir(folder), [], "nothing is written to the disk");
+    const back = await store.readPrivateFile(name);
+    assert.equal(back.buffer.toString(), "new photo");
+    assert.equal(back.contentType, "image/png");
+    // Every request is signed with the key's id, and carries no checksum the store did not ask for.
+    assert.ok(seen.every((request) => request.authorization.startsWith("AWS4-HMAC-SHA256 Credential=test-key-id/")));
+    assert.equal(seen.every((request) => !request.authorization.includes("test-secret")), true);
+    assert.deepEqual(seen.flatMap((request) => request.checksum), []);
+
+    // A FILE FROM BEFORE THE SWITCH is on the disk only: it is still found.
+    const old = "1700000000000-aaaaaaaaaaaa.pdf";
+    await fsp.writeFile(nodePath.join(folder, old), "old document");
+    const older = await store.readPrivateFile(old);
+    assert.equal(older.buffer.toString(), "old document");
+    assert.equal(older.contentType, "application/pdf");
+
+    // A file that is nowhere says so, the way the routes expect.
+    await assert.rejects(store.readPrivateFile("1700000000001-bbbbbbbbbbbb.png"), (error) => error.statusCode === 404);
+    // A name that is not one the store made is refused before anything is asked.
+    const asked = seen.length;
+    await assert.rejects(store.readPrivateFile("../secrets.png"), /Invalid private file name/);
+    assert.equal(seen.length, asked);
+
+    // REMOVING takes it from both places.
+    await store.deletePrivateFile(name);
+    await store.deletePrivateFile(old);
+    assert.equal(objects.size, 0);
+    assert.deepEqual(await fsp.readdir(folder), []);
+
+    // THE CHECK writes, reads back and removes, leaving nothing behind.
+    await store.checkFileStore();
+    assert.equal(objects.size, 0);
+
+    // A store that refuses: the check fails with the store's reason, and says nothing was kept.
+    await new Promise((resolve) => server.close(resolve));
+    await assert.rejects(store.checkFileStore());
+  } finally {
+    store.useRemoteStore(previous);
+    if (server.listening) await new Promise((resolve) => server.close(resolve));
+    await fsp.rm(folder, { recursive: true, force: true });
+  }
+
+  // ON THE DISK (no remote store), the same check works there.
+  assert.equal(store.fileStoreKind(), "disk");
+});
+
+test("the file storage check is for coordinators and names where files are kept", async () => {
+  const path = "/api/coordinator/storage-test";
+  assert.equal((await jsonRequest(path, { method: "POST" })).response.status, 401);
+  assert.equal((await jsonRequest(path, { method: "POST", headers: authHeaders(studentToken) })).response.status, 403);
+  const checked = await jsonRequest(path, { method: "POST", headers: authHeaders(coordinatorToken) });
+  assert.equal(checked.response.status, 200, JSON.stringify(checked.body));
+  // This API keeps files on the disk.
+  assert.equal(checked.body.kept_in, "the server's own disk");
+  assert.match(checked.body.message, /written to the server's own disk, read back and removed/);
+});
