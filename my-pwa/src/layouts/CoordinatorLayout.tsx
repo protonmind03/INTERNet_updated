@@ -75,12 +75,18 @@ export default function CoordinatorLayout({
   title,
   subtitle,
   actions,
+  hideHeading = false,
   children,
 }: {
   title: string;
   subtitle?: string;
   /** Buttons shown beside the page title. */
   actions?: ReactNode;
+  /**
+   * True for a page that draws its own heading (the student record's folder).
+   * The title still names the browser tab; it is just not printed twice.
+   */
+  hideHeading?: boolean;
   children: ReactNode;
 }) {
   const navigate = useNavigate();
@@ -257,6 +263,7 @@ export default function CoordinatorLayout({
 
         <main className="app-canvas flex-1 overflow-y-auto print:overflow-visible">
           <div className="mx-auto w-full max-w-7xl animate-page-in px-4 pb-12 pt-6 md:px-8 md:pt-8 print:max-w-none print:p-0">
+            {!hideHeading && (
             <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
               <div className="min-w-0">
                 {area && (
@@ -271,6 +278,7 @@ export default function CoordinatorLayout({
                 <div className="flex flex-wrap gap-2 print:hidden">{actions}</div>
               )}
             </div>
+            )}
             {children}
           </div>
         </main>

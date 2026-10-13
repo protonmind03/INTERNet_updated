@@ -106,7 +106,7 @@ export default function NotificationBell({
 
   return (
     <div className="relative" ref={containerRef}>
-      <Tooltip label="Notifications" side="bottom">
+      <Tooltip label="Notifications" side="left">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}

@@ -1,244 +1,180 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
-import DtrSheet from "../../components/DtrSheet";
-import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
-import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
-import Pagination from "../../components/Pagination";
-import StudentNotes from "../../components/StudentNotes";
-import {
-  Button,
-  Card,
-  CardHeader,
-  EmptyState,
-  ErrorNotice,
-  FilterChips,
-  FormError,
-  Modal,
-  ProgressBar,
-  Stars,
-  StatusBadge,
-} from "../../components/ui";
+import { Button, ErrorNotice, FormError, Modal, StatusBadge } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatFileSize } from "../../lib/files";
-import {
-  dueLabel,
-  formatDate,
-  formatDayDate,
-  formatHours,
-  formatTime,
-} from "../../lib/format";
+import { formatDate, getInitials, localDateKey } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
 import { useDtrCertifications } from "../../lib/useDtrCertifications";
 import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
 import { useHolidays } from "../../lib/useHolidays";
-import { usePagination } from "../../lib/usePagination";
-import { coordinatorRequest, downloadSubmittedDocument } from "./request";
-import ScheduleEditor from "./ScheduleEditor";
-import { PerformanceSummary } from "./StudentPerformance";
+import { useOnline } from "../../lib/useOnline";
+import { fetchStudentPerformance, type PerformanceRules, type PerformanceStudent } from "./performance";
+import { coordinatorRequest } from "./request";
+import {
+  GROUPS,
+  TABS,
+  buildWeeks,
+  groupOf,
+  initialOverviewState,
+  isOverdueTask,
+  recordContext,
+  type AttentionAction,
+  type LogFilter,
+  type Overview,
+  type OverviewState,
+  type Pending,
+  type Tab,
+  type TaskFilter,
+} from "./studentRecord/model";
+import RecordOverview from "./studentRecord/RecordOverview";
+import {
+  AttendanceSection,
+  DocumentsSection,
+  EvaluationsSection,
+  JournalsSection,
+  NotesSection,
+  ScheduleSection,
+  TasksSection,
+  TimeRecordSection,
+} from "./studentRecord/RecordSections";
 
 /*
 |--------------------------------------------------------------------------
 | ONE STUDENT'S RECORD
 |--------------------------------------------------------------------------
 |
-| Everything the programme holds about a single student, in one place:
-| attendance, tasks, documents, evaluations, absences, schedule, and a
-| printable time record. Reviewing stays with the supervisor; the
-| coordinator can decide documents and absences here only when the student
-| has no active supervisor to do it.
+| Everything the programme holds about a single student, in one place,
+| drawn as a folder: the student's name on its label tab, five groups of
+| sections on its rim, and the open section inside. The Overview reads in
+| order of urgency: a summary, what is waiting on someone, the placement
+| week by week (or a month at a time) with each day opening to its shift,
+| and the rest of the detail folded away.
+|
+| Reviewing stays with the supervisor; the coordinator can decide
+| documents and absences here only when the student has no active
+| supervisor to do it. "?tab=" in the address opens a section (the
+| Requirements page links to ?tab=schedule).
 |
 */
 
-type Student = {
-  student_id: string;
-  name: string;
-  email: string;
-  program: string | null;
-  company: string | null;
-  required_hours: number;
-  is_active: boolean;
-  completed_at: string | null;
-  /** When the student asked for a completion review, if they have. */
-  completion_requested_at?: string | null;
-  supervisor_name: string | null;
-  supervisor_active: boolean;
-  hours_rendered: number;
-  /** Entered by the student on their own profile. */
-  phone?: string | null;
-  emergency_contact_name?: string | null;
-  emergency_contact_phone?: string | null;
-};
-
-type Log = {
-  id: number;
-  date: string;
-  time_in: string | null;
-  break_time: string | null;
-  break_end_time: string | null;
-  time_out: string | null;
-  hours: number | string | null;
-  note: string | null;
-  status: string;
-  review_notes: string | null;
-};
-
-type Task = {
-  id: number;
-  title: string;
-  priority: string | null;
-  status: string;
-  due_date: string | null;
-  assigned_by: string | null;
-  review_notes: string | null;
-  review_rating: number | null;
-};
-
-type Doc = {
-  id: number;
-  doc_type: string;
-  original_filename: string;
-  size_bytes: number | string;
-  status: "Pending" | "Approved" | "Rejected";
-  review_notes: string | null;
-  uploaded_at: string;
-};
-
-type Evaluation = {
-  id: number;
-  evaluator_type: "student" | "supervisor" | "teacher";
-  evaluator_name: string | null;
-  category: string;
-  rating: number;
-  comments: string | null;
-  created_at: string;
-};
-
-type Absence = {
-  id: number;
-  date: string;
-  reason: string;
-  status: "Pending" | "Excused" | "Unexcused";
-  review_notes: string | null;
-};
-
-type ScheduleDay = {
-  id: number;
-  day: string;
-  start_time: string;
-  end_time: string;
-  focus: string | null;
-  hours: number | string | null;
-};
-
-type Journal = {
-  id: number;
-  week_start: string;
-  activities: string;
-  learnings: string;
-  challenges: string | null;
-  status: "Submitted" | "Reviewed" | "Returned";
-  review_notes: string | null;
-  submitted_at: string;
-};
-
-type Overview = {
-  student: Student;
-  attendance: Log[];
-  tasks: Task[];
-  documents: Doc[];
-  evaluations: Evaluation[];
-  absences: Absence[];
-  schedule: ScheduleDay[];
-  /** Missing when the answer comes from a server older than the journal. */
-  journals?: Journal[];
-};
-
-type Tab =
-  | "overview"
-  | "attendance"
-  | "tasks"
-  | "documents"
-  | "evaluations"
-  | "journals"
-  | "schedule"
-  | "record"
-  | "notes";
-
-const TABS: readonly Tab[] = ["overview", "attendance", "tasks", "documents", "evaluations", "journals", "schedule", "record", "notes"];
-
-/** A decision the coordinator is making in place of a missing supervisor. */
-type Pending =
-  | { kind: "document"; id: number; label: string }
-  | { kind: "absence"; id: number; label: string };
-
 export default function StudentRecord() {
   const { studentId = "" } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const asked = searchParams.get("tab") as Tab | null;
+  const tab: Tab = asked && TABS.includes(asked) ? asked : "overview";
+
   const [data, setData] = useState<Overview | null>(null);
+  const [performance, setPerformance] = useState<{ student: PerformanceStudent | null; rules: PerformanceRules } | null>(null);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  // "?tab=schedule" in the address opens on that section (the Requirements page links here).
-  const [searchParams] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => {
-    const asked = searchParams.get("tab") as Tab | null;
-    return asked && TABS.includes(asked) ? asked : "overview";
-  });
+  const [loadedAt, setLoadedAt] = useState(() => new Date());
+  const [rejecting, setRejecting] = useState<Pending | null>(null);
+
+  // Where the coordinator is in each part of the page, kept while they move between sections.
+  const [overview, setOverview] = useState<OverviewState>(initialOverviewState);
+  const [lastSection, setLastSection] = useState<Partial<Record<string, Tab>>>({});
+  const [logFilter, setLogFilter] = useState<LogFilter>("all");
+  const [taskFilter, setTaskFilter] = useState<TaskFilter>("all");
+  const [openReports, setOpenReports] = useState<string[] | null>(null);
+
+  const online = useOnline();
   const holidays = useHolidays("coordinator");
   const { certifications } = useDtrCertifications("coordinator", studentId || undefined);
   const final = useFinalEvaluation("coordinator", studentId || undefined);
-  const [rejecting, setRejecting] = useState<Pending | null>(null);
+  const folderRef = useRef<HTMLElement | null>(null);
+  const rimRef = useRef<HTMLDivElement | null>(null);
+  const navRef = useRef<HTMLDivElement | null>(null);
 
-  const load = useCallback(async () => {
-    try {
-      const overview = await coordinatorRequest<Overview>(
-        `/api/coordinator/students/${encodeURIComponent(studentId)}/overview`
-      );
-      setData(overview);
-      setError("");
-    } catch (loadError) {
-      setError(errorText(loadError, "Could not load this student's record."));
-    } finally {
-      setLoading(false);
-    }
-  }, [studentId]);
+  const load = useCallback(
+    async (quiet = false) => {
+      if (quiet) setRefreshing(true);
+      try {
+        const path = `/api/coordinator/students/${encodeURIComponent(studentId)}`;
+        const [record, figures] = await Promise.all([
+          coordinatorRequest<Overview>(`${path}/overview`),
+          // Extra to the record: if the figures cannot be loaded the record stands without them.
+          fetchStudentPerformance(studentId).catch(() => null),
+        ]);
+        const now = new Date();
+        setData(record);
+        if (figures) setPerformance({ student: figures.student, rules: figures });
+        setLoadedAt(now);
+        setError("");
+        // The first time the record opens, today's day is the one shown open.
+        setOverview((current) => (current.day === null && current.week === null ? { ...current, day: localDateKey(now) } : current));
+      } catch (loadError) {
+        setError(errorText(loadError, "Could not load this student's record."));
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [studentId, setOverview]
+  );
 
   useEffect(() => {
-    void Promise.resolve().then(load);
+    void Promise.resolve().then(() => load());
+  }, [load]);
+
+  // A decision or a new log from someone else arrives as a live notification; the record follows it.
+  useEffect(() => {
+    const refresh = () => void load(true);
+    window.addEventListener("internet-notification", refresh);
+    return () => window.removeEventListener("internet-notification", refresh);
   }, [load]);
 
   const student = data?.student;
-  // Reviewing is the supervisor's job; the coordinator steps in only when
-  // there is nobody active to do it.
   const canDecide = Boolean(student && !student.supervisor_active);
+  const perf = performance?.student ?? null;
+  const today = localDateKey(loadedAt);
+  const lateAfter = performance?.rules.thresholds?.late_after_minutes ?? 15;
+  const ctx = useMemo(() => (data ? recordContext(data, holidays, lateAfter, today) : null), [data, holidays, lateAfter, today]);
+  const weeks = useMemo(() => (data && ctx ? buildWeeks(ctx, data, perf?.projected_finish ?? null) : []), [data, ctx, perf]);
+
+  const goTo = useCallback(
+    (next: Tab, scroll = true) => {
+      setLastSection((current) => ({ ...current, [groupOf(next).id]: next }));
+      setSearchParams((params) => {
+        const copy = new URLSearchParams(params);
+        if (next === "overview") copy.delete("tab");
+        else copy.set("tab", next);
+        return copy;
+      }, { replace: true });
+      if (scroll) {
+        const folder = folderRef.current;
+        if (folder && folder.getBoundingClientRect().top < 0) folder.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    },
+    [setSearchParams]
+  );
+
+  const openAction = (action: Extract<AttentionAction, { kind: "open" }>) => {
+    if (action.logFilter) setLogFilter(action.logFilter);
+    if (action.taskFilter) setTaskFilter(action.taskFilter);
+    if (action.report) setOpenReports([action.report]);
+    if (action.section === "absences") setOverview((current) => ({ ...current, open: { ...current.open, absences: true } }));
+    goTo(action.tab, !action.section);
+    if (action.section === "absences") window.setTimeout(() => document.getElementById("record-absences")?.scrollIntoView({ block: "center", behavior: "smooth" }), 60);
+    if (action.report) window.setTimeout(() => document.getElementById(`report-${action.report}`)?.scrollIntoView({ block: "start", behavior: "smooth" }), 60);
+  };
 
   const decide = async (item: Pending, approve: boolean, note = "") => {
-    await coordinatorRequest(
-      item.kind === "document"
-        ? `/api/documents/${item.id}/review`
-        : `/api/absences/${item.id}/review`,
-      {
-        method: "PATCH",
-        body:
-          item.kind === "document"
-            ? { status: approve ? "Approved" : "Rejected", review_notes: note }
-            : { status: approve ? "Excused" : "Unexcused", notes: note },
-      }
-    );
-    toast.success(
-      `${item.label} ${
+    await coordinatorRequest(item.kind === "document" ? `/api/documents/${item.id}/review` : `/api/absences/${item.id}/review`, {
+      method: "PATCH",
+      body:
         item.kind === "document"
-          ? approve
-            ? "approved"
-            : "rejected"
-          : approve
-            ? "excused"
-            : "marked unexcused"
-      }. ${student?.name || "The student"} has been notified.`
+          ? { status: approve ? "Approved" : "Rejected", review_notes: note }
+          : { status: approve ? "Excused" : "Unexcused", notes: note },
+    });
+    toast.success(
+      `${item.label} ${item.kind === "document" ? (approve ? "approved" : "rejected") : approve ? "excused" : "marked unexcused"}. ${student?.name || "The student"} has been notified.`
     );
     notifyDataChanged();
-    await load();
+    await load(true);
   };
 
   const approve = (item: Pending) =>
@@ -246,64 +182,177 @@ export default function StudentRecord() {
       toast.error(errorText(decisionError, "That could not be saved."));
     });
 
-  const completion =
-    student && student.required_hours > 0
-      ? Math.min(100, Math.round((student.hours_rendered / student.required_hours) * 100))
-      : 0;
+  // The folder's rim: when the five groups do not fit beside the name, the icons beside them go,
+  // then the groups take a row of their own. Phones lay the rim out by CSS alone.
+  useEffect(() => {
+    const rim = rimRef.current;
+    const nav = navRef.current;
+    if (!rim || !nav) return;
+    const fit = () => {
+      rim.dataset.fit = "full";
+      if (window.matchMedia("(max-width: 767px)").matches) return;
+      if (nav.scrollWidth > nav.clientWidth + 1) rim.dataset.fit = "tight";
+      if (nav.scrollWidth > nav.clientWidth + 1) rim.dataset.fit = "stacked";
+    };
+    fit();
+    const observer = new ResizeObserver(fit);
+    observer.observe(rim);
+    return () => observer.disconnect();
+  }, [data]);
 
   const back = (
-    <Link
-      to="/coordinator/students"
-      className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-    >
-      <Icon name="chevron-right" size={15} className="rotate-180" />
-      All students
+    <Link to="/coordinator/students" aria-label="All students" title="All students" className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-full border border-slate-200 bg-white text-slate-700 shadow-card hover:border-psu-200 hover:text-psu-700">
+      <Icon name="chevron-left" />
     </Link>
   );
 
-  return (
-    <CoordinatorLayout
-      title={student?.name || "Student record"}
-      subtitle={
-        student
-          ? [student.student_id, student.program, student.company].filter(Boolean).join(" · ")
-          : undefined
-      }
-      actions={back}
-    >
-      <div className="space-y-5">
-        {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+  if (loading || !data || !student || !ctx) {
+    return (
+      <CoordinatorLayout title={student?.name || "Student record"} actions={<Link to="/coordinator/students" className="text-sm font-semibold text-psu-700">All students</Link>}>
+        {error ? <ErrorNotice message={error} onRetry={() => void load()} /> : <BrandLoader variant="page" role="coordinator" process="students" message="Loading this student’s record…" />}
+      </CoordinatorLayout>
+    );
+  }
 
-        {loading ? (
-          <BrandLoader
-            variant="page"
-            role="coordinator"
-            process="students"
-            message="Loading this student’s record…"
-          />
-        ) : !data || !student ? null : (
-          <>
-            <div className="print:hidden">
-              <FilterChips
-                label="Section"
-                value={tab}
-                onChange={setTab}
-                options={[
-                  { value: "overview", label: "Overview" },
-                  { value: "attendance", label: "Attendance", count: data.attendance.length },
-                  { value: "tasks", label: "Tasks", count: data.tasks.length },
-                  { value: "documents", label: "Documents", count: data.documents.length },
-                  { value: "evaluations", label: "Evaluations", count: data.evaluations.length },
-                  { value: "journals", label: "Weekly reports", count: (data.journals || []).length },
-                  { value: "schedule", label: "Schedule" },
-                  { value: "record", label: "Time record" },
-                  { value: "notes", label: "Notes" },
-                ]}
-              />
+  const journals = data.journals || [];
+  const meta: Partial<Record<Tab, { count?: number; attention?: boolean }>> = {
+    attendance: { count: data.attendance.length, attention: data.attendance.some((log) => log.status === "Pending") },
+    schedule: { attention: data.schedule.length === 0 },
+    tasks: { count: data.tasks.length, attention: data.tasks.some((task) => task.status === "Submitted" || isOverdueTask(task, today)) },
+    journals: { count: journals.length, attention: journals.some((item) => item.status !== "Reviewed") },
+    evaluations: { count: data.evaluations.length },
+    documents: { count: data.documents.length, attention: data.documents.some((doc) => doc.status === "Pending") },
+  };
+  const group = groupOf(tab);
+  const subtitle = [student.student_id, student.program, student.company].filter(Boolean).join(" · ");
+
+  const arrows = (event: KeyboardEvent<HTMLElement>, list: Tab[], current: Tab, idPrefix: string) => {
+    if (!["ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index = list.indexOf(current);
+    const next = event.key === "Home" ? 0 : event.key === "End" ? list.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + list.length) % list.length;
+    goTo(list[next], false);
+    window.setTimeout(() => document.getElementById(`${idPrefix}${idPrefix === "group-" ? groupOf(list[next]).id : list[next]}`)?.focus(), 0);
+  };
+  const groupTargets = GROUPS.map((item) => lastSection[item.id] ?? item.tabs[0].tab);
+
+  return (
+    <CoordinatorLayout title={student.name} subtitle={subtitle} hideHeading>
+      <section ref={folderRef} aria-labelledby="record-name" className="scroll-mt-2 rounded-[30px] bg-psu-100 px-2 pb-2 shadow-raised ring-1 ring-inset ring-psu-600/10 md:px-2.5 md:pb-2.5 print:bg-transparent print:p-0 print:shadow-none print:ring-0">
+        {/* The rim: the label tab with the student's name, and the five groups. */}
+        <div ref={rimRef} data-fit="full" className="group/rim max-md:contents md:sticky md:top-0 md:z-20 md:flex md:items-end md:rounded-t-[30px] md:bg-psu-100 md:pt-2.5 data-[fit=stacked]:flex-wrap print:hidden">
+          <div className="relative z-[1] mt-2 flex min-w-0 items-center gap-3 rounded-t-[18px] bg-slate-50 p-2.5 md:mt-0 md:max-w-[46%] md:flex-[0_1_auto] md:rounded-tr-none md:rounded-tl-[22px] md:pb-2 md:pl-2.5 md:pr-1.5 md:pt-2.5 group-data-[fit=tight]/rim:md:max-w-[40%] group-data-[fit=stacked]/rim:md:max-w-none group-data-[fit=stacked]/rim:md:basis-full group-data-[fit=stacked]/rim:md:rounded-t-[22px]">
+            {back}
+            <span aria-hidden="true" className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-linear-to-b from-gold-300 to-gold-400 text-[15px] font-bold text-psu-950">
+              {getInitials(student.name)}
+            </span>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                <h1 id="record-name" className="text-lg font-bold leading-tight tracking-tight text-slate-900 md:truncate md:text-[21px]">{student.name}</h1>
+                <span className="flex flex-wrap gap-1.5 group-data-[fit=tight]/rim:md:hidden">
+                  <StatusBadge status={student.is_active ? "Active" : "Deactivated"} tone={student.is_active ? "good" : "neutral"} />
+                  {student.completed_at && <StatusBadge status={`Hours completed ${formatDate(student.completed_at)}`} tone="good" />}
+                  {student.completion_requested_at && <StatusBadge status={`Asked for completion review ${formatDate(student.completion_requested_at)}`} tone="info" />}
+                </span>
+              </div>
+              <p className="truncate text-[12.5px] text-slate-600">{subtitle}</p>
             </div>
+            <svg aria-hidden="true" viewBox="0 0 67 100" preserveAspectRatio="none" className="absolute -right-[66px] top-0 hidden h-full w-[67px] md:block group-data-[fit=stacked]/rim:hidden">
+              <path d="M0 0 C 32 0, 34 100, 67 100 L 0 100 Z" className="fill-slate-50" />
+            </svg>
+          </div>
+
+          <div
+            ref={navRef}
+            role="tablist"
+            aria-label="Sections of the record"
+            onKeyDown={(event) => arrows(event, groupTargets, groupTargets[GROUPS.indexOf(group)], "group-")}
+            className="sticky top-0 z-20 flex gap-0 border-b border-slate-200 bg-slate-50 p-1.5 shadow-[0_8px_12px_-12px_rgb(15_30_110/0.35)] md:static md:min-w-0 md:flex-1 md:items-center md:gap-1 md:overflow-x-auto md:border-0 md:bg-transparent md:py-1 md:pb-3 md:pl-[76px] md:pr-2 md:shadow-none group-data-[fit=stacked]/rim:md:order-first group-data-[fit=stacked]/rim:md:basis-full group-data-[fit=stacked]/rim:md:pl-1 [scrollbar-width:none]"
+          >
+            {GROUPS.map((item, index) => {
+              const on = item === group;
+              const attention = item.tabs.some((section) => meta[section.tab]?.attention);
+              const count = item.tabs.length === 1 ? meta[item.tabs[0].tab]?.count : undefined;
+              return (
+                <button
+                  key={item.id}
+                  id={`group-${item.id}`}
+                  type="button"
+                  role="tab"
+                  aria-selected={on}
+                  aria-controls="record-panel"
+                  tabIndex={on ? 0 : -1}
+                  title={item.tabs.length > 1 ? `${item.label}: ${item.tabs.map((section) => section.label).join(", ")}` : item.label}
+                  onClick={() => goTo(groupTargets[index], false)}
+                  className={`relative flex h-14 min-w-0 flex-1 flex-col items-center justify-center gap-[3px] rounded-xl px-0 text-[11px] font-medium tracking-tight transition-colors md:h-10 md:flex-none md:flex-row md:gap-[7px] md:rounded-full md:pl-[11px] md:pr-[13px] md:text-[13.5px] md:tracking-normal pointer-coarse:md:h-11 ${
+                    on ? "bg-white font-semibold text-psu-900 shadow-raised" : "text-slate-600 hover:bg-white/60 hover:text-slate-900"
+                  }`}
+                >
+                  <Icon name={item.icon} size={15} className={`${on ? "text-psu-700" : "text-slate-500"} group-data-[fit=tight]/rim:md:hidden`} />
+                  <span className="max-w-full truncate">{item.label}</span>
+                  {count !== undefined && (
+                    <span className={`tabular absolute left-[calc(50%+6px)] top-[3px] inline-grid h-[17px] min-w-[17px] place-items-center rounded-full px-1 text-[10px] font-bold md:static md:h-5 md:min-w-5 md:px-1.5 md:text-[11px] ${on ? "bg-psu-700 text-white" : "bg-psu-950/10 text-slate-600"}`}>
+                      {count}
+                    </span>
+                  )}
+                  {attention && (
+                    <>
+                      <span aria-hidden="true" className="absolute left-[calc(50%-16px)] top-1.5 h-2 w-2 rounded-full bg-amber-500 ring-2 ring-psu-100 md:left-auto md:right-1.5" />
+                      <span className="sr-only">, needs attention</span>
+                    </>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div id="record-panel" role="tabpanel" aria-labelledby={`group-${group.id}`} className="min-w-0 rounded-b-[18px] bg-slate-50 p-3 sm:p-4 md:rounded-[0_22px_22px_22px] md:p-6 print:bg-white print:p-0">
+          <div key={tab} className="animate-page-in">
+            {group.tabs.length > 1 && (
+              <div
+                role="tablist"
+                aria-label={`${group.label} sections`}
+                onKeyDown={(event) => arrows(event, group.tabs.map((section) => section.tab), tab, "section-")}
+                className="-mt-1 mb-5 flex w-full max-w-full gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-card md:w-fit print:hidden [scrollbar-width:none]"
+              >
+                {group.tabs.map((section) => {
+                  const on = section.tab === tab;
+                  const info = meta[section.tab];
+                  return (
+                    <button
+                      key={section.tab}
+                      id={`section-${section.tab}`}
+                      type="button"
+                      role="tab"
+                      aria-selected={on}
+                      tabIndex={on ? 0 : -1}
+                      onClick={() => goTo(section.tab, false)}
+                      className={`relative inline-flex h-[38px] flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] px-2.5 text-[13px] font-medium md:flex-none md:px-3.5 md:text-[13.5px] pointer-coarse:h-11 ${
+                        on ? "bg-psu-50 font-semibold text-psu-900 ring-1 ring-inset ring-psu-600/15" : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                      }`}
+                    >
+                      <Icon name={section.icon} size={15} className={`hidden md:block ${on ? "text-psu-700" : "text-slate-400"}`} />
+                      {section.label}
+                      {info?.count !== undefined && (
+                        <span className={`tabular inline-grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold ${on ? "bg-psu-700 text-white" : "bg-slate-100 text-slate-600"}`}>{info.count}</span>
+                      )}
+                      {info?.attention && (
+                        <>
+                          <span aria-hidden="true" className="absolute right-1 top-1 h-[7px] w-[7px] rounded-full bg-amber-500" />
+                          <span className="sr-only">, needs attention</span>
+                        </>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {error && <div className="mb-4"><ErrorNotice message={error} onRetry={() => void load(true)} /></div>}
 
             {canDecide && tab !== "record" && (
-              <p className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900">
+              <p className="mb-4 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-sm text-amber-900 print:hidden">
                 <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
                 <span>
                   {student.supervisor_name
@@ -315,405 +364,55 @@ export default function StudentRecord() {
             )}
 
             {tab === "overview" && (
-              <div className="grid items-start gap-5 lg:grid-cols-5">
-                <div className="empty:hidden lg:col-span-5">
-                  <PerformanceSummary key={student.student_id} studentId={student.student_id} />
-                </div>
-                <Card className="p-4 sm:p-5 lg:col-span-3">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge
-                      status={student.is_active ? "Active" : "Deactivated"}
-                      tone={student.is_active ? "good" : "neutral"}
-                    />
-                    {student.completed_at && (
-                      <StatusBadge
-                        status={`Hours completed ${formatDate(student.completed_at)}`}
-                        tone="good"
-                      />
-                    )}
-                    {student.completion_requested_at && (
-                      <StatusBadge
-                        status={`Asked for completion review ${formatDate(student.completion_requested_at)}`}
-                        tone="info"
-                      />
-                    )}
-                  </div>
-                  <div className="mt-4 flex items-baseline justify-between gap-3 text-sm">
-                    <span className="font-medium text-slate-700">Verified hours</span>
-                    <span className="tabular text-slate-900">
-                      {formatHours(student.hours_rendered)} of{" "}
-                      {formatHours(student.required_hours)} ({completion}%)
-                    </span>
-                  </div>
-                  <ProgressBar value={completion} className="mt-2" />
-                  <dl className="mt-5 grid gap-x-6 gap-y-3 text-sm sm:grid-cols-2">
-                    <Fact label="Email" value={student.email} />
-                    <Fact label="Mobile" value={student.phone || "Not given"} />
-                    <Fact
-                      label="Emergency contact"
-                      value={
-                        student.emergency_contact_phone
-                          ? `${student.emergency_contact_name || "Contact"}, ${student.emergency_contact_phone}`
-                          : "Not given"
-                      }
-                    />
-                    <Fact
-                      label="Supervisor"
-                      value={
-                        student.supervisor_name
-                          ? `${student.supervisor_name}${student.supervisor_active ? "" : " (deactivated)"}`
-                          : "Unassigned"
-                      }
-                    />
-                    <Fact label="Program" value={student.program || "—"} />
-                    <Fact label="Company" value={student.company || "—"} />
-                  </dl>
-                </Card>
-
-                <Card className="lg:col-span-2">
-                  <CardHeader
-                    title="Weekly schedule"
-                    action={
-                      <Link
-                        to={`/coordinator/requirements?student=${encodeURIComponent(student.student_id)}`}
-                        className="text-sm font-semibold text-psu-700 hover:underline"
-                      >
-                        Edit
-                      </Link>
-                    }
-                  />
-                  <div className="mt-3">
-                    {data.schedule.length === 0 ? (
-                      <EmptyState icon="calendar" title="No schedule set" />
-                    ) : (
-                      <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                        {data.schedule.map((day) => (
-                          <li
-                            key={day.id}
-                            className="flex items-baseline justify-between gap-3 px-4 py-2.5 text-sm sm:px-5"
-                          >
-                            <span className="font-medium text-slate-900">{day.day}</span>
-                            <span className="tabular text-slate-600">
-                              {day.start_time} – {day.end_time}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </Card>
-
-                <Card className="lg:col-span-5">
-                  <CardHeader
-                    title="Absences"
-                    description={
-                      data.absences.length === 0 ? undefined : `${data.absences.length} filed`
-                    }
-                  />
-                  <div className="mt-3">
-                    {data.absences.length === 0 ? (
-                      <EmptyState icon="calendar" title="No absences filed" />
-                    ) : (
-                      <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                        {data.absences.map((item) => {
-                          const pending: Pending = {
-                            kind: "absence",
-                            id: item.id,
-                            label: `Absence on ${formatDayDate(item.date)}`,
-                          };
-                          return (
-                            <li
-                              key={item.id}
-                              className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-5"
-                            >
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-slate-900">
-                                  {formatDayDate(item.date)}
-                                </p>
-                                <p className="text-sm text-slate-600">{item.reason}</p>
-                                {item.review_notes && (
-                                  <p className="text-sm text-slate-500">Note: {item.review_notes}</p>
-                                )}
-                              </div>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <StatusBadge
-                                  status={item.status === "Pending" ? "Awaiting review" : item.status}
-                                  tone={
-                                    item.status === "Excused"
-                                      ? "good"
-                                      : item.status === "Unexcused"
-                                        ? "bad"
-                                        : "waiting"
-                                  }
-                                />
-                                {canDecide && item.status === "Pending" && (
-                                  <DecideButtons
-                                    approveLabel="Excuse"
-                                    rejectLabel="Unexcused"
-                                    onApprove={() => approve(pending)}
-                                    onReject={() => setRejecting(pending)}
-                                  />
-                                )}
-                              </div>
-                            </li>
-                          );
-                        })}
-                      </ul>
-                    )}
-                  </div>
-                </Card>
-              </div>
-            )}
-
-            {tab === "attendance" && <AttendanceTab logs={data.attendance} />}
-
-            {tab === "tasks" && (
-              <Card>
-                {data.tasks.length === 0 ? (
-                  <EmptyState icon="tasks" title="No tasks assigned" />
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {data.tasks.map((task) => (
-                      <li key={task.id} className="px-4 py-3.5 sm:px-5">
-                        <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                          <p className="text-sm font-semibold text-slate-900">{task.title}</p>
-                          <StatusBadge status={task.status === "Pending" ? "To do" : task.status} />
-                        </div>
-                        <p className="mt-0.5 text-sm text-slate-600">
-                          {task.status === "Pending" || task.status === "In Progress"
-                            ? dueLabel(task.due_date)
-                            : `Due ${formatDate(task.due_date)}`}
-                          {task.assigned_by && ` · assigned by ${task.assigned_by}`}
-                          {task.priority && ` · ${task.priority} priority`}
-                        </p>
-                        {task.review_notes && (
-                          <p className="mt-1.5 flex flex-wrap items-center gap-2 text-sm text-slate-600">
-                            {typeof task.review_rating === "number" && task.review_rating > 0 && (
-                              <Stars value={task.review_rating} />
-                            )}
-                            <span>
-                              <span className="font-medium text-slate-700">Supervisor:</span>{" "}
-                              {task.review_notes}
-                            </span>
-                          </p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            )}
-
-            {tab === "documents" && (
-              <Card>
-                {data.documents.length === 0 ? (
-                  <EmptyState icon="document" title="No documents submitted" />
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {data.documents.map((item) => {
-                      const pending: Pending = { kind: "document", id: item.id, label: item.doc_type };
-                      return (
-                        <li
-                          key={item.id}
-                          className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5"
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-slate-900">{item.doc_type}</p>
-                            <p className="truncate text-xs text-slate-500">
-                              {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
-                              {formatDate(item.uploaded_at)}
-                            </p>
-                            {item.review_notes && (
-                              <p className="mt-1 text-sm text-slate-600">Note: {item.review_notes}</p>
-                            )}
-                          </div>
-                          <div className="flex shrink-0 flex-wrap items-center gap-2">
-                            <StatusBadge
-                              status={item.status === "Pending" ? "Awaiting review" : item.status}
-                              tone={item.status === "Pending" ? "waiting" : undefined}
-                            />
-                            <button
-                              type="button"
-                              onClick={() =>
-                                downloadSubmittedDocument(item.id, item.original_filename).catch(
-                                  (downloadError: unknown) =>
-                                    toast.error(
-                                      errorText(downloadError, "The document could not be downloaded.")
-                                    )
-                                )
-                              }
-                              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
-                            >
-                              <Icon name="download" size={15} />
-                              Download
-                            </button>
-                            {canDecide && item.status === "Pending" && (
-                              <DecideButtons
-                                approveLabel="Approve"
-                                rejectLabel="Reject"
-                                onApprove={() => approve(pending)}
-                                onReject={() => setRejecting(pending)}
-                              />
-                            )}
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </Card>
-            )}
-
-            {tab === "evaluations" && final.evaluation && (
-              <Card>
-                <CardHeader title="Final evaluation" />
-                <div className="border-t border-slate-100 px-4 py-4 sm:px-5">
-                  <FinalEvaluationView evaluation={final.evaluation} />
-                </div>
-              </Card>
-            )}
-
-            {tab === "evaluations" && (
-              <Card>
-                {data.evaluations.length === 0 ? (
-                  <EmptyState icon="star" title="No evaluations yet" />
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {data.evaluations.map((item) => (
-                      <li key={item.id} className="px-4 py-3.5 sm:px-5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-slate-900">{item.category}</p>
-                          <Stars value={item.rating} />
-                        </div>
-                        <p className="mt-0.5 text-xs text-slate-500">
-                          {item.evaluator_type === "student"
-                            ? "The student, about their company"
-                            : item.evaluator_type === "teacher"
-                              ? `${item.evaluator_name || "OJT coordinator"} (coordinator)`
-                              : `${item.evaluator_name || "Supervisor"} (supervisor)`}{" "}
-                          · {formatDate(item.created_at)}
-                        </p>
-                        {item.comments && (
-                          <p className="mt-1.5 whitespace-pre-line text-sm text-slate-600">
-                            {item.comments}
-                          </p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            )}
-
-            {tab === "journals" && (
-              <Card>
-                {(data.journals || []).length === 0 ? (
-                  <EmptyState
-                    icon="note"
-                    title="No weekly reports yet"
-                    description="The student writes one a week, and their supervisor reviews it."
-                  />
-                ) : (
-                  <ul className="divide-y divide-slate-100">
-                    {(data.journals || []).map((item) => (
-                      <li key={item.id} className="space-y-2.5 px-4 py-4 sm:px-5">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <p className="text-sm font-semibold text-slate-900">
-                            Week of {formatDate(item.week_start)}
-                          </p>
-                          <StatusBadge
-                            status={
-                              item.status === "Submitted"
-                                ? "Waiting for the supervisor"
-                                : item.status === "Returned"
-                                  ? "Returned to the student"
-                                  : "Reviewed"
-                            }
-                            tone={
-                              item.status === "Reviewed"
-                                ? "good"
-                                : item.status === "Returned"
-                                  ? "bad"
-                                  : "waiting"
-                            }
-                          />
-                        </div>
-                        <ReportParts report={item} />
-                        <DailyAccomplishments weekStart={item.week_start} logs={data.attendance} />
-                        {item.review_notes && (
-                          <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
-                            <span className="font-semibold">Supervisor:</span> {item.review_notes}
-                          </p>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </Card>
-            )}
-
-            {tab === "notes" && (
-              <Card className="p-4 sm:p-5">
-                <h2 className="text-sm font-semibold text-slate-900">Notes with the supervisor</h2>
-                <div className="mt-2">
-                  {student.supervisor_name ? (
-                    <StudentNotes
-                      key={student.student_id}
-                      studentId={student.student_id}
-                      studentName={student.name}
-                      role="coordinator"
-                    />
-                  ) : (
-                    <p className="text-sm text-slate-600">
-                      This student has no supervisor yet, so there is nobody to write to. Assign one first.
-                    </p>
-                  )}
-                </div>
-              </Card>
-            )}
-
-            {tab === "schedule" && (
-              <Card>
-                <CardHeader
-                  title="Weekly schedule"
-                  description="The days and hours this student reports for OJT. They see it on their Schedule page, and their projected finish is worked out from it."
-                />
-                <div className="mt-3 border-t border-slate-100 px-4 py-4 sm:px-5">
-                  <ScheduleEditor
-                    key={student.student_id}
-                    studentId={student.student_id}
-                    studentName={student.name}
-                    requiredHours={student.required_hours}
-                    onSaved={() => void load()}
-                  />
-                </div>
-              </Card>
-            )}
-
-            {tab === "record" && (
-              <DtrSheet
-                loading={false}
-                person={{
-                  name: student.name,
-                  studentId: student.student_id,
-                  program: student.program,
-                  company: student.company,
-                  supervisor: student.supervisor_name,
-                }}
-                logs={data.attendance}
-                absences={data.absences}
-                holidays={holidays}
-                certifications={certifications}
+              <RecordOverview
+                data={data}
+                ctx={ctx}
+                weeks={weeks}
+                perf={perf}
+                rules={performance?.rules ?? null}
+                canDecide={canDecide}
+                online={online}
+                loadedAt={loadedAt}
+                refreshing={refreshing}
+                onRefresh={() => void load(true)}
+                onOpen={openAction}
+                onApprove={approve}
+                onReject={setRejecting}
+                state={overview}
+                setState={(patch) => setOverview((current) => ({ ...current, ...patch }))}
               />
             )}
-          </>
-        )}
-      </div>
+            {tab === "attendance" && <AttendanceSection data={data} ctx={ctx} weeks={weeks} perf={perf} filter={logFilter} onFilter={setLogFilter} />}
+            {tab === "schedule" && <ScheduleSection data={data} onSaved={() => void load(true)} />}
+            {tab === "record" && <TimeRecordSection data={data} holidays={holidays} certifications={certifications} />}
+            {tab === "tasks" && <TasksSection data={data} ctx={ctx} perf={perf} filter={taskFilter} onFilter={setTaskFilter} />}
+            {tab === "journals" && (
+              <JournalsSection
+                data={data}
+                weeks={weeks}
+                perf={perf}
+                // Reports that wait on someone, and the latest, start open.
+                open={
+                  openReports ??
+                  journals
+                    .filter((item, _index, list) => item.status !== "Reviewed" || list.every((other) => other.week_start <= item.week_start))
+                    .map((item) => String(item.week_start).slice(0, 10))
+                }
+                onOpenChange={setOpenReports}
+              />
+            )}
+            {tab === "evaluations" && <EvaluationsSection data={data} perf={perf} final={final.evaluation} />}
+            {tab === "documents" && <DocumentsSection data={data} perf={perf} canDecide={canDecide} online={online} onApprove={approve} onReject={setRejecting} />}
+            {tab === "notes" && <NotesSection data={data} />}
+          </div>
+        </div>
+      </section>
 
       {rejecting && (
         <ReasonDialog
           key={`${rejecting.kind}-${rejecting.id}`}
           item={rejecting}
+          online={online}
           onClose={() => setRejecting(null)}
           onSubmit={async (note) => {
             await decide(rejecting, false, note);
@@ -725,113 +424,15 @@ export default function StudentRecord() {
   );
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="truncate text-slate-900">{value}</dd>
-    </div>
-  );
-}
-
-function DecideButtons({
-  approveLabel,
-  rejectLabel,
-  onApprove,
-  onReject,
-}: {
-  approveLabel: string;
-  rejectLabel: string;
-  onApprove: () => Promise<void>;
-  onReject: () => void;
-}) {
-  // Busy while the approval is saved, so a second click cannot send it twice.
-  const [busy, setBusy] = useState(false);
-  const approve = () => {
-    setBusy(true);
-    void onApprove().finally(() => setBusy(false));
-  };
-  return (
-    <>
-      <Button
-        variant="secondary"
-        onClick={onReject}
-        disabled={busy}
-        className="h-8 px-2.5 text-red-700"
-      >
-        {rejectLabel}
-      </Button>
-      <Button onClick={approve} busy={busy} busyProcess="verify" className="h-8 px-2.5">
-        {approveLabel}
-      </Button>
-    </>
-  );
-}
-
-function AttendanceTab({ logs }: { logs: Log[] }) {
-  const pager = usePagination(logs, 20);
-  if (logs.length === 0) {
-    return (
-      <Card>
-        <EmptyState icon="clock" title="No attendance logged" />
-      </Card>
-    );
-  }
-  return (
-    <Card>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left text-sm">
-          <thead>
-            <tr className="table-head border-b border-slate-100 text-xs text-slate-500">
-              <th scope="col" className="px-5 py-3 font-medium">Date</th>
-              <th scope="col" className="px-3 py-3 font-medium">Time in</th>
-              <th scope="col" className="px-3 py-3 font-medium">Time out</th>
-              <th scope="col" className="px-3 py-3 text-right font-medium">Hours</th>
-              <th scope="col" className="px-3 py-3 font-medium">Notes</th>
-              <th scope="col" className="px-5 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {pager.pageItems.map((log) => (
-              <tr key={log.id}>
-                <td className="whitespace-nowrap px-5 py-3 font-medium text-slate-900">
-                  {formatDayDate(log.date)}
-                </td>
-                <td className="tabular whitespace-nowrap px-3 py-3 text-slate-700">
-                  {formatTime(log.time_in)}
-                </td>
-                <td className="tabular whitespace-nowrap px-3 py-3 text-slate-700">
-                  {log.time_out ? formatTime(log.time_out) : "Not recorded"}
-                </td>
-                <td className="tabular whitespace-nowrap px-3 py-3 text-right text-slate-900">
-                  {log.time_out ? formatHours(log.hours) : "—"}
-                </td>
-                <td className="min-w-48 px-3 py-3 text-slate-600">
-                  {log.note || ""}
-                  {log.review_notes && (
-                    <span className="block text-slate-500">Reviewer: {log.review_notes}</span>
-                  )}
-                </td>
-                <td className="px-5 py-3">
-                  <StatusBadge status={log.status} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <Pagination state={pager} noun="log" />
-    </Card>
-  );
-}
-
 /** Asks for the reason the student will be shown when something is refused. */
 function ReasonDialog({
   item,
+  online,
   onClose,
   onSubmit,
 }: {
   item: Pending;
+  online: boolean;
   onClose: () => void;
   onSubmit: (note: string) => Promise<void>;
 }) {
@@ -841,6 +442,7 @@ function ReasonDialog({
 
   const submit = async () => {
     if (!note.trim()) return setError("Write a reason. The student will see it.");
+    if (!online) return setError("You're offline. This can't be saved until your connection is back.");
     setBusy(true);
     setError("");
     try {
@@ -880,6 +482,7 @@ function ReasonDialog({
           autoFocus
           value={note}
           onChange={(event) => setNote(event.target.value)}
+          placeholder="The student will see this."
           className="field resize-none"
         />
         <FormError message={error} />

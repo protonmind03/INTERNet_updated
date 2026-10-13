@@ -219,6 +219,37 @@ const PATHS = {
       <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
     </>
   ),
+  "chevron-left": <path d="m15 6-6 6 6 6" />,
+  phone: (
+    <path d="M6.5 3h3l1.5 4.5-2 1.2a11 11 0 0 0 6.3 6.3l1.2-2 4.5 1.5v3a2 2 0 0 1-2 2A17.5 17.5 0 0 1 4.5 5a2 2 0 0 1 2-2Z" />
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15V6a2 2 0 0 1 2-2h8" />
+    </>
+  ),
+  ban: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m5.7 5.7 12.6 12.6" />
+    </>
+  ),
+  sliders: (
+    <>
+      <path d="M6 4v6M6 14v6M12 4v2M12 10v10M18 4v10M18 18v2" />
+      <circle cx="6" cy="12" r="2" />
+      <circle cx="12" cy="8" r="2" />
+      <circle cx="18" cy="16" r="2" />
+    </>
+  ),
+  cap: (
+    <>
+      <path d="m2 9 10-5 10 5-10 5Z" />
+      <path d="M6 11v5c3 2 9 2 12 0v-5" />
+    </>
+  ),
+  heart: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;
