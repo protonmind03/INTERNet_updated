@@ -785,3 +785,9 @@ ones wherever the paper gives them:
 - **A status page for the coordinator** ("What is switched on") reports
   which optional parts are configured. It is the honest answer to "is
   this feature live" and the paper can cite it.
+
+- **File storage (14 October 2026).** The paper may say uploaded files
+  are kept privately on the server's disk, in Azure Blob Storage or in an
+  S3-compatible bucket (Cloudflare R2), chosen by configuration, and are
+  only ever served through routes that check the reader. It should not
+  say which is in use unless the coordinator's status card says so.

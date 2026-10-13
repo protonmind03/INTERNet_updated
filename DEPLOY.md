@@ -86,8 +86,12 @@ Optional, each can be added later:
 - Browser push notifications: `WEB_PUSH_VAPID_PUBLIC_KEY`,
   `WEB_PUSH_VAPID_PRIVATE_KEY`, `WEB_PUSH_SUBJECT`. Generate the key pair
   with `npx web-push generate-vapid-keys`. Set all three or none.
-- Azure Blob Storage instead of the volume:
-  `AZURE_STORAGE_CONNECTION_STRING`, `AZURE_STORAGE_CONTAINER`.
+- Object storage instead of the volume, one of:
+  - a bucket on Cloudflare R2: `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+    `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (see "Keeping uploaded files in
+    a bucket" below);
+  - Azure Blob Storage: `AZURE_STORAGE_CONNECTION_STRING`,
+    `AZURE_STORAGE_CONTAINER`.
 
 ### Email
 
@@ -678,3 +682,77 @@ desktop Chrome: turning on, a test, a real "New task assigned"
 notification opening `/task`, turning off, and a device recovering after
 the keys were replaced. **Not checked:** any phone, Safari, Firefox, or
 delivery with the app fully closed.
+
+## Keeping uploaded files in a bucket
+
+Time-in photos, documents and task files are on the backend's own disk
+(a Railway volume). A volume has no backup of its own. A bucket on
+Cloudflare R2 keeps them somewhere durable instead.
+
+**Before you start, two things to know.**
+- R2's free allowance is 10 GB of storage a month, 1 million writes and
+  10 million reads, with no charge for downloads (read from
+  developers.cloudflare.com/r2/pricing on 14 October 2026). A year of
+  photos for a few hundred students fits well inside it.
+- Cloudflare may ask for a payment card to turn R2 on, even for the free
+  allowance. I could not confirm this from their pages; you will see it
+  when you try. If you would rather not give one, stay on the volume and
+  keep using `npm run uploads:backup`.
+
+**Steps, test site first.**
+
+1. In the Cloudflare dashboard: R2 → Create bucket. Name it, for
+   example, `internet-files-staging`. Leave it private (the default).
+   Do not turn on public access or a public address: files are only ever
+   read through the backend, which checks who is asking.
+2. R2 → Manage API tokens → Create API token. Permission: **Object Read
+   & Write**, limited to that one bucket. It shows an Access Key ID and a
+   Secret Access Key once. Do not paste either into a chat, a commit or a
+   screenshot.
+3. Railway → the **staging** backend → Variables → add all four:
+   `R2_ACCOUNT_ID` (your Cloudflare account id, shown on the R2 page),
+   `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (the
+   bucket's name). With only some of them set the backend refuses to
+   start and its log names the missing ones. Do not also set the Azure
+   variables: with both, it refuses to start.
+4. When Railway has redeployed, sign in to the test site as a
+   coordinator → Profile → **What is switched on** → Uploaded files
+   should say "Object storage". Press **Check file storage**. It writes a
+   small file to the bucket, reads it back and removes it, and says so.
+   If it fails, the backend's log has a line starting
+   `STORAGE CHECK ERROR` with Cloudflare's reason.
+5. Upload a real document as a student and open it again.
+
+**Files uploaded before the switch** stay on the volume and still open:
+the backend looks in the bucket first and on the disk second. To move
+them into the bucket as well, on the server:
+
+```
+railway ssh
+npm run uploads:copy-to-bucket
+```
+
+That only counts. To copy:
+
+```
+npm run uploads:copy-to-bucket -- --confirm
+```
+
+It skips what is already in the bucket, reads each copy back before
+counting it, never deletes anything from the volume, and can be run
+again. Keep the volume until you have seen it report nothing left to
+copy.
+
+**Going back** is deleting the four variables. New files then go to the
+volume again; files that went to the bucket meanwhile would no longer be
+found, so copy them back out first or do not go back.
+
+**Production** is the same with its own bucket and its own token. Take
+an uploads backup first (`npm run uploads:backup`).
+
+**Checked on 14 October 2026**, on this computer, against a stand-in
+bucket that speaks the same protocol: a new upload goes to the bucket
+and not the disk, opens again, an older file on the disk still opens,
+the check button, and the copy script (count, copy, run again).
+**Not checked:** Cloudflare R2 itself. No account was used. The first
+real proof is step 4 above.

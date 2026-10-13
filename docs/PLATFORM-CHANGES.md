@@ -423,6 +423,17 @@ Migration 047 (one new table). Nothing changes until the variables are set.
 | After that | The test site, signed in as a coordinator | Profile → What is switched on → Send me a test email. | Proof that delivery works, without reading logs. |
 | If you have no domain | Nowhere | Leave email off. | Password resets are done by a coordinator from the person's row; reminders stay in the app. |
 
+## Uploaded files in a bucket (ready 2026-10-14, waiting for you)
+
+No migration. One new library on the backend (`@aws-sdk/client-s3`).
+Nothing changes until the variables are set.
+
+| When | Where | Step | Why |
+|---|---|---|---|
+| When you want uploads off the volume | Cloudflare, then Railway → staging backend → Variables | `DEPLOY.md`, "Keeping uploaded files in a bucket": a private bucket, a token limited to it, then `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`. Never paste the keys into chat. | The volume has no backup of its own. |
+| After that | The test site, as a coordinator | Profile → What is switched on → Check file storage. | The first proof against the real service; it was only tested against a stand-in. |
+| Optional, later | `railway ssh` on the backend | `npm run uploads:copy-to-bucket`, then with `-- --confirm`. | Moves the files uploaded before the switch. They open either way. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
@@ -437,6 +448,7 @@ All optional; unset means today's behaviour.
 | `COORDINATOR_DIGEST_DAY`, `COORDINATOR_DIGEST_TIME` | Railway | 5 | `MON`, `07:30` |
 | `EMAIL_PROVIDER`, `EMAIL_API_KEY` | Railway | Round 2, 0 | email through SMTP if the five `SMTP_*` are set, otherwise no email |
 | `EMAIL_DAILY_LIMIT` | Railway | Audit follow-up, email | no limit; nothing is counted |
+| `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET` (and `R2_ENDPOINT`, not needed for R2) | Railway | Audit follow-up, storage | files stay on the volume, or in Azure if that is set |
 
 No new `VITE_*` variables are planned. If one is added, changing it on
 Vercel needs a redeploy, because it is read when the site is built.

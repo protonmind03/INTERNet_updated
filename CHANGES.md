@@ -1836,3 +1836,43 @@ were read from the provider's pricing page on 14 October 2026.
 
 **Platform step, yours, and only with a domain of your own:**
 `DEPLOY.md` > Email. With no domain, leave email off.
+
+## 35. Uploaded files can be kept in a bucket (14 October 2026)
+
+Third workstream after the audit. Uploaded files could be kept on the
+server's disk or in Azure Blob Storage. A third choice is added: a bucket
+on an S3-compatible object store, written for Cloudflare R2.
+
+- **The file store (`services/privateFileStore.ts`)** now has one shape
+  for any store outside the server, with a bucket and Azure behind it.
+  Four variables switch the bucket on; a half-set bucket, or a bucket and
+  Azure together, stops the server at start-up with a plain reason.
+- **Switching is safe for a running system.** A file is looked for in the
+  bucket first and on the disk second, so files uploaded before the
+  switch still open.
+- **`npm run uploads:copy-to-bucket`** moves those older files across:
+  it only counts unless `--confirm` is added, reads each copy back, and
+  never deletes from the disk.
+- **"Check file storage"** on the coordinator's "What is switched on"
+  card writes a small file where uploads are kept, reads it back and
+  removes it (`POST /api/coordinator/storage-test`).
+- One new library on the backend: `@aws-sdk/client-s3` 3.1151.0.
+
+**Checked:** 173 API tests on a UTC clock with writes, 172 passing and 1
+skipping itself (the demo student already had a log that day). Two are
+new: the bucket driver against a stand-in bucket in the test itself
+(requests signed, nothing written to the disk, an older file still found
+on the disk, a missing file reported the way the routes expect), and the
+check route. On this computer with the real server and a stand-in
+bucket: a document uploaded through the API landed in the bucket and
+opened again byte for byte; the copy script counted, copied and found
+nothing left. 30 end-to-end tests passing, 2 skipping themselves as
+before. Build, lint and the accessibility check on the card: clean.
+
+**Not checked:** Cloudflare R2 itself. No account was used, so the
+signing and the address format are proven only against a stand-in and
+Cloudflare's own documented settings. Whether Cloudflare asks for a
+payment card for the free allowance.
+
+**Not built:** a scheduled copy of the DATABASE to a bucket. The
+database backup is still the manual one in `DEPLOY.md`.
