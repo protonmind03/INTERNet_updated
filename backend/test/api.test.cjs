@@ -7559,11 +7559,11 @@ test("a deliverable applies to who it names, is reviewed by who it says, comes d
     // The server's own loop may get there first; either way it is said once.
     const reminded = async (name) =>
       sent.filter((note) => note.studentId === sid && note.message.includes(name)).length +
-      (await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND title = 'Deliverable due' AND message LIKE $2`, [sid, `%${name}%`])).rows[0].n;
+      (await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND title = 'Requirement due' AND message LIKE $2`, [sid, `%${name}%`])).rows[0].n;
     await sendDeliverableReminders(pool, collect);
     assert.equal(await reminded(names.once), 1, "reminded the day before it is due");
     assert.equal(await reminded(names.elsewhere), 0, "not about another program's deliverable");
-    assert.ok(sent.every((note) => note.title === "Deliverable due" && !note.message.includes(names.once) || note.message.includes(tomorrow)));
+    assert.ok(sent.every((note) => note.title === "Requirement due" && !note.message.includes(names.once) || note.message.includes(tomorrow)));
     await sendDeliverableReminders(pool, collect);
     await sendDeliverableReminders(pool, collect);
     assert.equal(await reminded(names.once), 1, "not twice");

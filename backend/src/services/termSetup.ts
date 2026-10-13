@@ -89,7 +89,7 @@ export function setupLines(termId: number, counts: {
     },
     {
       key: "requirements",
-      label: "Requirements and deliverables set",
+      label: "Requirements set",
       done: counts.requirements > 0,
       detail:
         counts.requirements === 0

@@ -351,7 +351,7 @@ export default function MonthCalendar({
         </li>
         <li className="flex items-center gap-1.5">
           <span className="h-2 w-2 rounded-full bg-psu-600" aria-hidden="true" />
-          Task or deliverable due
+          Task or requirement due
         </li>
         <li>
           <span className="font-semibold text-emerald-800">8 h</span> verified hours ·{" "}

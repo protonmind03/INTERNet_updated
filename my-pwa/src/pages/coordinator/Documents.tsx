@@ -211,7 +211,7 @@ export default function CoordinatorDocuments() {
   return (
     <CoordinatorLayout
       title="Documents"
-      subtitle="Which OJT requirements each student has completed, and every file submitted. Supervisors do the reviewing, except for deliverables set to be reviewed by you."
+      subtitle="Which OJT requirements each student has completed, and every file submitted. Supervisors do the reviewing, except for requirements set to be reviewed by you."
     >
       <div className="space-y-6">
         <FilterBar state={studentFilters} />

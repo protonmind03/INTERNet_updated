@@ -81,7 +81,7 @@ export function readDeliverable(body: unknown, name: string): { problem: string 
   if (dueRule !== null) {
     const week = typeof dueRule === "string" ? /^week:(\d{1,2})$/.exec(dueRule) : null;
     if (dueRule !== "weekly" && !(week && Number(week[1]) >= 1 && Number(week[1]) <= 52)) {
-      return { problem: "A deliverable is due on a date, by the end of a week from 1 to 52, or every week." };
+      return { problem: "A requirement is due on a date, by the end of a week from 1 to 52, or every week." };
     }
   }
   if (dueDate !== null && dueRule !== null) {
@@ -90,12 +90,12 @@ export function readDeliverable(body: unknown, name: string): { problem: string 
   if (dueRule === "weekly" && duplicatesWeeklyReport(name)) {
     return {
       problem:
-        "Students already write a weekly report, which their supervisor reviews. A weekly deliverable for the same thing would ask for it twice.",
+        "Students already write a weekly report, which their supervisor reviews. A weekly requirement for the same thing would ask for it twice.",
     };
   }
   const reviewer = input.reviewer_role === undefined ? "supervisor" : input.reviewer_role;
   if (reviewer !== "supervisor" && reviewer !== "coordinator") {
-    return { problem: "A deliverable is reviewed by the supervisor or by the coordinator." };
+    return { problem: "A requirement is reviewed by the supervisor or by the coordinator." };
   }
   const applies = (input.applies_to ?? {}) as Record<string, unknown>;
   if (typeof applies !== "object" || Array.isArray(applies)) return { problem: "That list of programs and blocks is not readable." };
@@ -186,7 +186,7 @@ export async function sendDeliverableReminders(pool: Pool, notify: Notify): Prom
     try {
       await notify({
         studentId: String(row.student_id),
-        title: "Deliverable due",
+        title: "Requirement due",
         message: `"${row.name}" is due on ${row.due}. Upload it from your Documents page.`,
         type: "document",
       });

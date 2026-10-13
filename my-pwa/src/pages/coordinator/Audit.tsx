@@ -184,6 +184,7 @@ const ACTIONS: Record<string, string> = {
   "announcement.send": "Sent an announcement",
   "announcement.withdraw": "Withdrew an announcement",
   "requirement.create": "Added a requirement",
+  "requirement.deliverable": "Set a requirement's due date or reviewer",
   "requirement.edit": "Changed a requirement",
   "schedule.change": "Changed a student's schedule",
   "college.create": "Added a college",

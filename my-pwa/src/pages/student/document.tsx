@@ -266,7 +266,7 @@ export default function Documents() {
         {due.weekly.length > 0 && (
           <Card>
             <CardHeader
-              title="Weekly deliverables"
+              title="Weekly requirements"
               description="One upload for each week, due on its Sunday. These are separate from your weekly report."
             />
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">

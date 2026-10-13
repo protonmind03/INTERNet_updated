@@ -61,7 +61,7 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
       );
       const everyone = settings.applies_to.program_ids.length + settings.applies_to.block_ids.length === 0;
       return res.json({
-        message: "Deliverable settings saved.",
+        message: "Due date and reviewer saved.",
         requirement: saved.rows[0],
         // In words, for the audit log.
         summary: [
@@ -74,7 +74,7 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
       });
     } catch (error) {
       console.error("SAVE DELIVERABLE ERROR:", error);
-      return res.status(500).json({ message: "Failed to save the deliverable settings." });
+      return res.status(500).json({ message: "Failed to save the due date and reviewer." });
     }
   });
 
@@ -83,7 +83,7 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
     try {
       const auth = (req as Authed).auth!;
       if (auth.id !== req.params.studentId) {
-        return res.status(403).json({ message: "You can only view your own deliverables." });
+        return res.status(403).json({ message: "You can only view your own requirements." });
       }
       const [once, weekly] = await Promise.all([
         pool.query(
@@ -119,7 +119,7 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
       return res.json({ deliverables: once.rows, weekly: weekly.rows });
     } catch (error) {
       console.error("GET DELIVERABLES ERROR:", error);
-      return res.status(500).json({ message: "Failed to load your deliverables." });
+      return res.status(500).json({ message: "Failed to load your requirements." });
     }
   });
 }

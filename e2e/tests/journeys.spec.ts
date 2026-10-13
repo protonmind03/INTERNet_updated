@@ -974,7 +974,7 @@ test.describe("the programme, for the coordinator", () => {
       await dialog.getByLabel("The day it is due").fill("2031-03-14");
       await dialog.getByRole("radio", { name: /^The OJT coordinator/ }).check();
       await dialog.getByRole("button", { name: "Save", exact: true }).click();
-      await expect(page.getByText("Deliverable settings saved.")).toBeVisible();
+      await expect(page.getByText("Due date and reviewer saved.")).toBeVisible();
       await expect(page.getByRole("listitem").filter({ hasText: name })).toContainText("Due Mar 14, 2031 · Reviewed by the coordinator");
 
       const studentPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();

@@ -9311,7 +9311,7 @@ app.patch(
               current.rows[0].status !== "Pending"
                 ? "This document is no longer waiting for review. It was already reviewed."
                 : current.rows[0].coordinators
-                  ? "The OJT coordinator reviews this deliverable."
+                  ? "The OJT coordinator reviews this requirement."
                   : "This student has an active supervisor, who reviews their documents.",
           });
         }

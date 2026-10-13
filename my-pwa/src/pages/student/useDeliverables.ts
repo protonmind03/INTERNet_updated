@@ -73,13 +73,13 @@ export function deliverablesForCalendar(deliverables: OnceDeliverable[], weekly:
   return [
     ...deliverables.map((item) => ({
       id: -item.requirement_id,
-      title: `Deliverable: ${item.name}`,
+      title: `Requirement: ${item.name}`,
       status: item.status,
       due_date: item.due_date,
     })),
     ...weekly.map((item) => ({
       id: -1_000_000 - item.item_id,
-      title: `Deliverable: ${item.name}`,
+      title: `Requirement: ${item.name}`,
       status: item.status,
       due_date: item.due_date,
     })),
