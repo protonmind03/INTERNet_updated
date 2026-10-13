@@ -21,6 +21,25 @@ type Status = {
   };
 };
 
+type Problem = {
+  id: number;
+  source: "server" | "browser";
+  label: string;
+  detail: string;
+  route: string;
+  times: number;
+  first_seen: string;
+  last_seen: string;
+};
+
+const when = new Intl.DateTimeFormat("en-PH", {
+  timeZone: "Asia/Manila",
+  month: "short",
+  day: "numeric",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
 /**
  * Which parts of the system that depend on the host's settings are on:
  * email, push, where files are kept, the privacy switches. It says what
@@ -32,6 +51,17 @@ export default function SystemStatus() {
   const [failed, setFailed] = useState(false);
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
+  const [problems, setProblems] = useState<Problem[] | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    coordinatorRequest<{ problems: Problem[] }>("/api/coordinator/problems", { signal: controller.signal })
+      .then((data) => setProblems(data.problems))
+      .catch(() => {
+        /* A server from before this list: the section is left out. */
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -157,6 +187,40 @@ export default function SystemStatus() {
             }
           />
         </ul>
+      )}
+      {problems !== null && (
+        <section aria-labelledby="problems-heading" className="mt-4 border-t border-slate-100 pt-4">
+          <h3 id="problems-heading" className="text-sm font-semibold text-slate-900">
+            Problems the system noticed in the last 7 days
+          </h3>
+          {problems.length === 0 ? (
+            <p className="mt-1 text-sm text-slate-600">None.</p>
+          ) : (
+            <>
+              <p className="mt-1 text-sm text-slate-600">
+                Each line is one kind of fault. Tell whoever looks after the system what it says and
+                how often. It does not say who was using the system.
+              </p>
+              <ul className="mt-2 divide-y divide-slate-100">
+                {problems.map((problem) => (
+                  <li key={problem.id} className="py-2.5">
+                    <p className="break-words text-sm font-medium text-slate-900">{problem.label}</p>
+                    <p className="mt-0.5 text-sm text-slate-600">
+                      {problem.source === "browser"
+                        ? `In a browser${problem.route ? `, on ${problem.route}` : ""}`
+                        : "On the server"}
+                      {problem.detail ? ` (${problem.detail})` : ""}
+                      {" · "}
+                      {problem.times === 1 ? "once" : `${problem.times} times`}
+                      {" · last "}
+                      {when.format(new Date(problem.last_seen))}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
       )}
     </Card>
   );

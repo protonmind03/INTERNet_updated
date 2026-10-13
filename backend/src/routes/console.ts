@@ -7,6 +7,7 @@ import { emailRoute, sendEmail } from "../services/mailer";
 import { EmailLimitError, accountReserve, emailDailyLimit, emailsSentToday } from "../services/emailBudget";
 import { PRIVACY_NOTICE, consentRequired, photoRetentionDays } from "../services/privacy";
 import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
+import { recentProblems } from "../services/problems";
 
 /*
 |--------------------------------------------------------------------------
@@ -69,6 +70,18 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
     } catch (error) {
       console.error("SYSTEM STATUS ERROR:", error);
       return res.status(500).json({ message: "Failed to read what is switched on." });
+    }
+  });
+
+  // The faults the system noticed in itself over the last week: what kind,
+  // how often, when. No message text and nothing about who (services/problems.ts).
+  app.get("/api/coordinator/problems", requireCoordinator, async (_req, res) => {
+    try {
+      const problems = await recentProblems(pool, 7, 20);
+      return res.json({ days: 7, problems });
+    } catch (error) {
+      console.error("LIST PROBLEMS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the problems the system has noticed." });
     }
   });
 

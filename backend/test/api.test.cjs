@@ -1711,6 +1711,7 @@ const nodePath = require("node:path");
 // The only routes that may answer without a token.
 const PUBLIC_ROUTES = new Set([
   "GET /api/health",
+  "GET /api/health/ready",
   "GET /api/test-db",
   "POST /api/login/student",
   "POST /api/login/supervisor",
@@ -7957,4 +7958,91 @@ test("the file storage check is for coordinators and names where files are kept"
   // This API keeps files on the disk.
   assert.equal(checked.body.kept_in, "the server's own disk");
   assert.match(checked.body.message, /written to the server's own disk, read back and removed/);
+});
+
+test("a fault is kept as its label and kind, never its message, once however often it repeats", async (t) => {
+  require("tsx/cjs");
+  const { problemFromLog, problemFromBrowser, fingerprintOf, createProblemKeeper, watchServerErrors } = require("../src/services/problems.ts");
+
+  // WHAT IS KEPT of a log line: the label and the kind of error.
+  const duplicate = Object.assign(new Error('duplicate key value violates unique constraint (email)=(someone@example.test)'), { code: "23505" });
+  assert.deepEqual(problemFromLog(["ASSIGN TASK ERROR:", duplicate]), { source: "server", label: "ASSIGN TASK ERROR", detail: "Error 23505", route: "" });
+  assert.equal(JSON.stringify(problemFromLog(["ASSIGN TASK ERROR:", duplicate])).includes("someone@"), false, "the message is not kept");
+  assert.equal(problemFromLog(["SUMMARY EMAIL ERROR (supervisor_daily):", new TypeError("x")]).label, "SUMMARY EMAIL ERROR (supervisor_daily)");
+  assert.equal(problemFromLog(["SUMMARY EMAIL ERROR (supervisor_daily):", new TypeError("x")]).detail, "TypeError");
+  assert.equal(problemFromLog(["Unexpected PostgreSQL pool error:", Object.assign(new Error("x"), { code: "ECONNREFUSED" })]).detail, "Error ECONNREFUSED");
+  // Not fault lines: a notice with no "error" in its label, a browser report (kept by its own route), a non-string.
+  assert.equal(problemFromLog(["Task deadline emails have stopped for today: the allowance is used."]), null);
+  assert.equal(problemFromLog(["CLIENT ERROR:", "{}"]), null);
+  assert.equal(problemFromLog([new Error("bare")]), null);
+  // Text after the first colon never becomes part of the label.
+  assert.equal(problemFromLog(["LOGIN ERROR: for someone@example.test"]).label, "LOGIN ERROR");
+  // An error code that is not a plain code is dropped.
+  assert.equal(problemFromLog(["SAVE ERROR:", { name: "Error", code: "has spaces and someone@example.test" }]).detail, "Error");
+
+  const crash = problemFromBrowser({ message: "Cannot read properties of undefined (reading 'name')", route: "/task", version: "abc1234", stack: "ignored" });
+  assert.deepEqual(crash, { source: "browser", label: "Cannot read properties of undefined (reading 'name')", detail: "abc1234", route: "/task" });
+  assert.notEqual(fingerprintOf(crash), fingerprintOf({ ...crash, route: "/schedule" }), "the same crash on another page is another kind");
+
+  // HOW OFTEN it is written: at once the first time, then at most once a minute, with the count caught up.
+  const writes = [];
+  let clock = 1_000_000;
+  const keeper = createProblemKeeper({ query: async (sql, values) => { if (/^INSERT/.test(sql.trim())) writes.push(values[5]); return { rows: [] }; } }, { now: () => clock });
+  const fault = problemFromLog(["ASSIGN TASK ERROR:", duplicate]);
+  await keeper.keep(fault);
+  for (let index = 0; index < 50; index += 1) await keeper.keep(fault);
+  assert.deepEqual(writes, [1], "fifty more in the same minute are held back");
+  clock += 61_000;
+  await keeper.keep(fault);
+  assert.deepEqual(writes, [1, 51], "the next write carries the ones held back");
+  // A flood of different faults: only so many kinds are taken in a minute.
+  clock += 61_000;
+  for (let index = 0; index < 100; index += 1) await keeper.keep({ source: "server", label: `FLOOD ${index} ERROR`, detail: "", route: "" });
+  assert.equal(writes.length, 2 + 40);
+
+  // A database that cannot be written to never throws into the caller, and the count is not lost.
+  const failing = [];
+  let down = true;
+  const shaky = createProblemKeeper({ query: async (sql, values) => { if (down) throw new Error("down"); failing.push(values[5]); return { rows: [] }; } }, { now: () => clock });
+  await shaky.keep(fault);
+  down = false;
+  clock += 61_000;
+  await shaky.keep(fault);
+  assert.deepEqual(failing, [2]);
+
+  // WATCHING THE LOG: the line is still printed, and handed over only when it is a fault line.
+  const printed = [];
+  const handed = [];
+  const real = console.error;
+  console.error = (...args) => printed.push(args[0]);
+  const stop = watchServerErrors((problem) => handed.push(problem.label));
+  try {
+    console.error("SAVE HOLIDAY ERROR:", new Error("x"));
+    console.error("Just a sentence.");
+  } finally {
+    stop();
+    console.error = real;
+  }
+  assert.deepEqual(printed, ["SAVE HOLIDAY ERROR:", "Just a sentence."]);
+  assert.deepEqual(handed, ["SAVE HOLIDAY ERROR"]);
+
+  // THROUGH THE API: a browser's crash report shows up for a coordinator, and for nobody else.
+  assert.equal((await jsonRequest("/api/coordinator/problems")).response.status, 401);
+  assert.equal((await jsonRequest("/api/coordinator/problems", { headers: authHeaders(studentToken) })).response.status, 403);
+  const ready = await jsonRequest("/api/health/ready");
+  assert.deepEqual([ready.response.status, ready.body], [200, { status: "ok" }]);
+  // The crash-report test above sent "Test crash report" from /test; the route allows only a few a
+  // minute, so that report is the one looked for here rather than sending another.
+  let mine = null;
+  for (let attempt = 0; attempt < 20 && !mine; attempt += 1) {
+    const list = await jsonRequest("/api/coordinator/problems", { headers: authHeaders(coordinatorToken) });
+    assert.equal(list.response.status, 200);
+    assert.equal(list.body.days, 7);
+    mine = list.body.problems.find((row) => row.label === "Test crash report") ?? null;
+    if (!mine) await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  assert.ok(mine, "the crash is in the coordinator's list");
+  assert.deepEqual([mine.source, mine.route, mine.detail], ["browser", "/test", "test"]);
+  assert.ok(mine.times >= 1);
+  assert.deepEqual(Object.keys(mine).sort(), ["detail", "first_seen", "id", "label", "last_seen", "route", "source", "times"], "no stack and nothing about who");
 });

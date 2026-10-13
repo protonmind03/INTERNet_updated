@@ -18,6 +18,7 @@ import {
 } from "./services/privateFileStore";
 import { isEmailConfigured, sendEmail, useEmailBudget } from "./services/mailer";
 import { claimEmail, returnEmail } from "./services/emailBudget";
+import { createProblemKeeper, problemFromBrowser, watchServerErrors } from "./services/problems";
 import {
   publishNotification,
   closeNotificationStreams,
@@ -137,6 +138,7 @@ app.post("/api/client-errors", (req, res) => {
       return res.status(400).json({ message: "A report needs a message." });
     }
     console.error("CLIENT ERROR:", JSON.stringify(record));
+    void problemKeeper.keep(problemFromBrowser(record));
     return res.status(204).end();
   });
 });
@@ -148,10 +150,26 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
+// The same question asked properly: can the server reach its database?
+// "ok" or not, and nothing else, so it is safe for anyone to ask. A host's
+// health check pointed here takes a server that has lost its database out
+// of service instead of leaving it up and failing every request.
+app.get("/api/health/ready", async (_req, res) => {
+  try {
+    await Promise.race([
+      pool.query("SELECT 1"),
+      new Promise((_resolve, reject) => setTimeout(() => reject(new Error("timeout")), 3000)),
+    ]);
+    return res.json({ status: "ok" });
+  } catch {
+    return res.status(503).json({ status: "unavailable" });
+  }
+});
+
 // API answers carry personal records, so neither the browser nor anything
 // between it and this server may keep a copy. The two public, non-personal
 // routes are left alone, and the event stream sets its own header.
-const CACHEABLE_PATHS = new Set(["/api/health", "/api/push/vapid-public-key"]);
+const CACHEABLE_PATHS = new Set(["/api/health", "/api/health/ready", "/api/push/vapid-public-key"]);
 app.use("/api", (req, res, next) => {
   if (!CACHEABLE_PATHS.has(req.originalUrl.split("?")[0])) {
     res.setHeader("Cache-Control", "private, no-store");
@@ -334,6 +352,12 @@ async function sendWebPush(
   const sent = outcomes.filter(Boolean).length;
   return { sent, failed: outcomes.length - sent };
 }
+
+// Each kind of fault the server logs is also counted in the database, so a
+// coordinator can see it (services/problems.ts). The log itself is unchanged.
+const plainErrorLog = console.error.bind(console);
+const problemKeeper = createProblemKeeper(pool, { log: plainErrorLog });
+watchServerErrors(problemKeeper.keep);
 
 // Emails are counted against the day's allowance, when one is set.
 useEmailBudget({
