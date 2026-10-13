@@ -769,3 +769,19 @@ ones wherever the paper gives them:
   site only), a 12-hour life, and that sign-out and a password change
   end it on the server.
 - **Word to use:** "requirement" (decided 13 October 2026).
+
+## After the email and push workstreams (14 October 2026)
+
+- **Email is optional and may be off.** The paper should say that
+  password recovery by email, deadline emails and summary emails work
+  only when the host is given an email provider and a verified sending
+  domain, and that without them a coordinator resets passwords and all
+  reminders are delivered inside the app.
+- **Push notifications** are delivered by the browser makers' push
+  services using the Web Push standard with VAPID keys. They were seen
+  working in desktop Chrome; phones are not yet tested.
+- **ERD.** One more table, `email_daily_counts` (migration 047): a day
+  and how many emails were sent on it. No personal data, no foreign keys.
+- **A status page for the coordinator** ("What is switched on") reports
+  which optional parts are configured. It is the honest answer to "is
+  this feature live" and the paper can cite it.

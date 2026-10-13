@@ -1800,3 +1800,39 @@ it, so it has only been read as text and by the accessibility check).
 
 **Platform step, yours:** three variables on Railway, described in
 `DEPLOY.md` under "Turning push notifications on". No migration.
+
+## 34. Email, ready to switch on, with a daily allowance (14 October 2026)
+
+Second workstream after the audit. Email was already built (through a
+provider's HTTPS API, or SMTP). Three things were missing around it.
+
+- **A day's allowance (migration 047, `EMAIL_DAILY_LIMIT`).** A free plan
+  sends 100 emails a day and refuses the rest. The server now counts each
+  email first. Reminders and summaries stop at four fifths of the day's
+  number; the rest is kept for password resets. A reminder email that
+  misses out is not sent late (the student already has it in the app), and
+  a summary is skipped for that day. Unset, nothing is counted and email
+  behaves as before.
+- **"What is switched on", on the coordinator's Profile.** Whether email
+  and phone notifications are on, where uploaded files are kept, whether
+  students are asked to agree to the privacy notice (and whether that
+  notice is still the sample), and whether old photos are removed. It
+  shows no setting's value. From `GET /api/coordinator/system-status`.
+- **"Send me a test email"** on that card, to the coordinator's own
+  address (`POST /api/coordinator/email-test`, three in ten minutes).
+
+**Checked:** 171 API tests on a UTC clock with writes, all passing (two
+new: the allowance counted one at a time under twenty requests at once,
+and the status route). With email pointed at a mail server that refuses,
+on this computer: the status says on, a test and a reset each fail
+plainly, and neither stays counted. 30 end-to-end tests passing, 2
+skipping themselves as before. Build and lint clean. The accessibility
+check on the coordinator's Profile at both widths: clean, after it caught
+a wrongly built list in the first version of the card.
+
+**Not checked:** a real email arriving. That needs a provider account
+and a verified domain, which are the owner's. The free plan's numbers
+were read from the provider's pricing page on 14 October 2026.
+
+**Platform step, yours, and only with a domain of your own:**
+`DEPLOY.md` > Email. With no domain, leave email off.

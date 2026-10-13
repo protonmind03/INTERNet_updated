@@ -413,6 +413,16 @@ No migration. Nothing changes until the variables are set.
 | After that | A phone on the test site | Profile → Notifications → This device → Turn on, then Send a test. | The only proof that delivery works on a real phone. |
 | Later | Railway → production backend → Variables | The same, with a different key pair. | Each backend has its own keys. |
 
+## Email (ready 2026-10-14, waiting for you and for a domain)
+
+Migration 047 (one new table). Nothing changes until the variables are set.
+
+| When | Where | Step | Why |
+|---|---|---|---|
+| Only if you have a domain whose DNS you can edit | Resend, your DNS host, then Railway → staging backend → Variables | `DEPLOY.md` > Email, steps 1 to 8: verify the domain, then set `EMAIL_PROVIDER`, `EMAIL_API_KEY`, `SMTP_FROM` and `EMAIL_DAILY_LIMIT` (`100` on the free plan). Never paste the key into chat. | Without a verified domain a provider delivers only to the address you signed up with. |
+| After that | The test site, signed in as a coordinator | Profile → What is switched on → Send me a test email. | Proof that delivery works, without reading logs. |
+| If you have no domain | Nowhere | Leave email off. | Password resets are done by a coordinator from the person's row; reminders stay in the app. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.
@@ -426,6 +436,7 @@ All optional; unset means today's behaviour.
 | `PHOTO_RETENTION_DAYS` | Railway | 4 | purge off |
 | `COORDINATOR_DIGEST_DAY`, `COORDINATOR_DIGEST_TIME` | Railway | 5 | `MON`, `07:30` |
 | `EMAIL_PROVIDER`, `EMAIL_API_KEY` | Railway | Round 2, 0 | email through SMTP if the five `SMTP_*` are set, otherwise no email |
+| `EMAIL_DAILY_LIMIT` | Railway | Audit follow-up, email | no limit; nothing is counted |
 
 No new `VITE_*` variables are planned. If one is added, changing it on
 Vercel needs a redeploy, because it is read when the site is built.

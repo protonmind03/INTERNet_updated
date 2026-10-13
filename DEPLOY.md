@@ -125,6 +125,24 @@ What it needs, in this order:
    If nothing arrives, the backend's Deploy Logs have a line starting
    `SEND PASSWORD RESET EMAIL ERROR` with the provider's reason. The log
    never contains the key or the address it was sent to.
+7. **The daily number.** Also set `EMAIL_DAILY_LIMIT` to what your plan
+   allows in a day. On Resend's free plan that is `100` (3,000 a month,
+   100 a day, up to 3 domains; read from resend.com/pricing on 14 October
+   2026, so check it again when you sign up). With it set, the server
+   counts each email, stops reminders and summaries at four fifths of the
+   number, and keeps the rest for password resets. Without it, a busy
+   morning of deadline reminders can use the whole day and a student's
+   reset email is then refused by the provider.
+8. **See that it is on, without reading logs.** Sign in as a coordinator
+   and open Profile. "What is switched on" says whether email is on, how
+   many were sent today, and has **Send me a test email**, which sends
+   one to your own account's address.
+
+**Without a domain of your own** email cannot reach students, on any
+provider. That is not a fault to fix here: leave email off. Nothing else
+depends on it. A coordinator resets a student's or supervisor's password
+from that person's row, and every reminder still appears in the app (and
+on phones, once push is on).
 
 If both this and the five `SMTP_*` are set, the provider's API is used.
 
@@ -556,9 +574,10 @@ a local database only, not on the host.
 
 ## Before a Round 2 release goes live
 
-As of 13 October 2026 the release also carries migration 046
-(`removed_records`, a new table and nothing else), so the backup taken
-before going live must be taken after this note was written. No new
+As of 14 October 2026 the release also carries migrations 046
+(`removed_records`) and 047 (`email_daily_counts`), each a new table and
+nothing else, so the backup taken before going live must be taken after
+this note was written. No new
 variable and no platform setting is needed for it.
 
 Round 2 (migrations 036 to 045) reaches the test site first and the live
