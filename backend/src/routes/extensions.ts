@@ -1469,6 +1469,7 @@ export function registerExtensionRoutes(
             `SELECT id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
                     time_out, hours, note, status, review_notes, correction_note,
                     accomplishments, recorded_offline,
+                    (offline_time_in_request IS NOT NULL) AS offline_time_in,
                     (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
                FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
               WHERE wx.attendance_id = attendance.id) AS tasks

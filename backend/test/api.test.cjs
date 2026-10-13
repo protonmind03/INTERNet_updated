@@ -1724,7 +1724,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/programme.ts", "routes/deliverables.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/programme.ts", "routes/deliverables.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -8045,4 +8045,103 @@ test("a fault is kept as its label and kind, never its message, once however oft
   assert.deepEqual([mine.source, mine.route, mine.detail], ["browser", "/test", "test"]);
   assert.ok(mine.times >= 1);
   assert.deepEqual(Object.keys(mine).sort(), ["detail", "first_seen", "id", "label", "last_seen", "route", "source", "times"], "no stack and nothing about who");
+});
+
+test("a time-in recorded with no connection: checked like the other offline steps, one per day, sent twice counts once, and verified only knowingly", async (t) => {
+  const path = "/api/attendance/offline-time-in";
+  const stamp = (minutesAgo, id = `offline-in-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`) => ({
+    occurred_at: new Date(Date.now() - minutesAgo * 60_000).toISOString(),
+    client_request_id: id,
+  });
+  // Students only, and only with both the time and the request id.
+  assert.equal((await jsonRequest(path, { method: "POST" })).response.status, 401);
+  assert.equal((await jsonRequest(path, jsonBody(coordinatorToken, "POST", stamp(5)))).response.status, 403);
+  assert.equal((await jsonRequest(path, jsonBody((await supervisorSession()).token, "POST", stamp(5)))).response.status, 403);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "POST", {}))).response.status, 400);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "POST", { occurred_at: new Date().toISOString() }))).response.status, 400);
+  // The phone's time is not believed blindly: not ahead of the server, not older than the limit.
+  const ahead = await jsonRequest(path, jsonBody(studentToken, "POST", stamp(-30)));
+  assert.equal(ahead.response.status, 400);
+  assert.match(ahead.body.message, /in the future/);
+  const old = await jsonRequest(path, jsonBody(studentToken, "POST", stamp(13 * 60)));
+  assert.equal(old.response.status, 409);
+  assert.match(old.body.message, /This time-in was recorded more than 12 hours ago/);
+
+  if (needsWrites(t)) return;
+  // A student of the demo supervisor with no log on any day, made for this test.
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `OFF-IN-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@offline.test`;
+  try {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Offline Timein', TRUE, $4)`,
+      [sid, email, await bcrypt.hash("OfflineTest123!", 4), supervisor.supervisor.supervisor_id]
+    );
+    const mine = await login("student", email, "OfflineTest123!");
+    const send = (body) => jsonRequest(path, jsonBody(mine.token, "POST", body));
+
+    // RECORDED: the phone's time, the day it falls on in the Philippines, no photo, no camera check, waiting for review.
+    const first = stamp(90);
+    const made = await send({ ...first, note: "  Signal was down at the site.  " });
+    assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    const log = made.body.attendance;
+    assert.deepEqual(
+      [log.status, log.image_url, log.capture_method, log.recorded_offline, log.offline_time_in, log.note, log.time_out],
+      ["Pending", null, null, true, true, "Signal was down at the site.", null]
+    );
+    const stored = (await pool.query(
+      `SELECT EXTRACT(EPOCH FROM time_in AT TIME ZONE 'Asia/Manila') * 1000 AS at,
+              TO_CHAR(date, 'YYYY-MM-DD') AS day,
+              TO_CHAR(($2::timestamptz AT TIME ZONE 'Asia/Manila')::date, 'YYYY-MM-DD') AS expected
+       FROM attendance WHERE id = $1`,
+      [log.id, first.occurred_at]
+    )).rows[0];
+    assert.ok(Math.abs(Number(stored.at) - new Date(first.occurred_at).getTime()) < 1000, "the time kept is the moment the phone recorded");
+    assert.equal(stored.day, stored.expected, "the log belongs to the Philippine day of that moment");
+    assert.equal(log.date, stored.day);
+
+    // SENT AGAIN (the answer never reached the phone): the same log, not a second one.
+    const again = await send(first);
+    assert.deepEqual([again.response.status, again.body.attendance.id, again.body.replayed], [200, log.id, true]);
+    // ANOTHER time-in for the same day: refused, with the day's log so the phone can attach its later steps to it.
+    const second = await send(stamp(30));
+    assert.deepEqual([second.response.status, second.body.code, second.body.attendance.id], [409, "DAY_HAS_LOG", log.id]);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attendance WHERE student_id = $1`, [sid])).rows[0].n, 1);
+    // Two at once for a day with no log yet would be the same race; the day's unique index decides it.
+
+    // THE STUDENT sees it marked, and so does the supervisor, who is told there is no photo.
+    const own = await jsonRequest(`/api/attendance/${sid}`, { headers: authHeaders(mine.token) });
+    assert.equal(own.body.attendance.find((row) => row.id === log.id).offline_time_in, true);
+    const told = await pool.query(
+      `SELECT message FROM notifications WHERE supervisor_id = $1 AND title = 'Time-in recorded without a connection' AND message LIKE $2`,
+      [supervisor.supervisor.supervisor_id, "Offline Timein%"]
+    );
+    assert.equal(told.rows.length, 1, "told once, not again for the resend or the refused second time-in");
+    assert.match(told.rows[0].message, /There is no photo and no camera check/);
+
+    // THE LATER STEPS of the day attach to it, offline or not, and must come after the time-in.
+    const before = await jsonRequest(`/api/attendance/${log.id}/time-out`, jsonBody(mine.token, "PUT", { ...stamp(120), accomplishments: "Filed the day's records." }));
+    assert.equal(before.response.status, 409, "a time-out before the time-in is refused");
+    const out = await jsonRequest(`/api/attendance/${log.id}/time-out`, jsonBody(mine.token, "PUT", { ...stamp(1), accomplishments: "Filed the day's records." }));
+    assert.equal(out.response.status, 200, JSON.stringify(out.body));
+
+    // VERIFYING: not in a batch and not without saying so; then it counts.
+    const blind = await jsonRequest(`/api/attendance/${log.id}/status`, jsonBody(supervisor.token, "PATCH", { status: "Verified", expected_status: "Pending" }));
+    assert.deepEqual([blind.response.status, blind.body.code], [409, "CONFIRM_OFFLINE_TIME_IN"]);
+    assert.equal((await pool.query(`SELECT status FROM attendance WHERE id = $1`, [log.id])).rows[0].status, "Pending");
+    const knowing = await jsonRequest(`/api/attendance/${log.id}/status`, jsonBody(supervisor.token, "PATCH", { status: "Verified", expected_status: "Pending", confirm_offline_time_in: true }));
+    assert.equal(knowing.response.status, 200, JSON.stringify(knowing.body));
+    assert.equal((await pool.query(`SELECT status FROM attendance WHERE id = $1`, [log.id])).rows[0].status, "Verified");
+    // Rejecting never needed the confirmation: saying no to a log with no photo is always allowed.
+    const no = await jsonRequest(`/api/attendance/${log.id}/status`, jsonBody(supervisor.token, "PATCH", { status: "Rejected", reason: "Was not on site.", expected_status: "Verified" }));
+    assert.equal(no.response.status, 200, JSON.stringify(no.body));
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Offline Timein%'`, [sid]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM audit_log WHERE entity_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
 });
