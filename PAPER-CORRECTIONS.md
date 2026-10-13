@@ -819,3 +819,22 @@ ones wherever the paper gives them:
   recorded offline.
 - **Limit to state.** The system cannot tell a phone that truly had no
   signal from one whose connection was switched off on purpose.
+
+## After pictures on entries (14 October 2026)
+
+- **New capability to describe.** Up to three pictures may be attached
+  to a time-out note, a weekly report and a concern, by whoever wrote it.
+- **A privacy claim the paper may make, because it is tested:** a
+  picture is re-encoded on the device before upload, which removes
+  embedded metadata including location. It may NOT claim this of files
+  uploaded as documents or as a concern's evidence file, which are stored
+  as sent.
+- **Access rule worth stating.** A concern's pictures are visible to the
+  person who filed it and to coordinators only, never to the student's
+  supervisor.
+- **ERD.** One new table, `attachments` (migration 050): what kind of
+  entry and which, the student it belongs to (empty for a concern filed
+  by a supervisor), who uploaded it, the stored file, its type, size,
+  dimensions and SHA-256, a caption, its position, and when it was taken
+  off the entry if it was. Foreign key to `students`, not validated.
+- **Retention.** Pictures on entries have no retention period yet.

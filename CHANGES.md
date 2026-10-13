@@ -1997,3 +1997,70 @@ reopened while offline with a time-in waiting.
 camera can switch the connection off. Nothing technical stops that. What
 stops it counting is the supervisor's confirmation, and what makes a
 pattern visible is the mark on every such log.
+
+## 39. Pictures on a time-out note, a weekly report and a concern (14 October 2026)
+
+Decision D2: up to three pictures on those three kinds of entry;
+supervisors do not see pictures on what only the coordinator reviews.
+
+**Adding.** A "Pictures" part in the time-out dialog, the weekly report
+form and both concern forms (student's and supervisor's). The phone
+offers the camera or the gallery. Each picture is shown small with its
+size, can be given a caption, moved earlier or later and removed before
+anything is sent, and shows a bar as it is sent. Pictures go after the
+entry itself is saved; if one fails, the entry stands and a message says
+how many were attached.
+
+**What happens to a picture before it leaves the phone.** It is drawn
+at no more than 1600 pixels on its long side and saved again as a JPEG.
+That removes everything the camera wrote into the file beside the image,
+the place it was taken among it. A journey proves this: a photo carrying
+a location block goes in, and the stored file has none. A file the
+browser cannot open (an iPhone HEIC in most browsers) is refused with a
+sentence saying what to do; it is never sent as it is.
+
+**Seeing.** Small squares under the entry open one at a time, with
+Previous and Next, the arrow keys, or a swipe; the caption is the
+picture's description for a screen reader. Shown to the student on their
+Attendance and Weekly report pages, to the supervisor where they review a
+log or a weekly report and on the Weekly reports page, to the coordinator
+on the student's record, and to all three in a concern's conversation.
+On a connection the browser reports as metered, a picture waits to be
+tapped and shows its size.
+
+**Rules on the server (migration 050, `routes/attachments.ts`).** Only
+whoever wrote the entry adds or removes, and only while the entry can
+still change. Whoever may see the entry sees its pictures; a concern's
+are never shown to the student's supervisor, who may be its subject. A
+file is accepted by its first bytes (JPEG, PNG, WebP), at most 4 MB,
+three to an entry counted in the same statement that adds one. It is kept
+in the private file store under a name the store makes, and served only
+by a route that checks the reader. Removing marks the row; nothing is
+deleted. A coordinator opening one is in the audit log. The student's
+data download lists them. Lists of logs and weekly reports now say how
+many pictures each has, so a page asks for pictures only where there are
+some.
+
+**Checked, the way CI runs it:** a new database with all 50 migrations
+and the clock on UTC: 176 API tests, all passing, none skipped (one
+new). A new database again: 36 end-to-end tests with CI's browser, all
+passing, none skipped (three new: a picture on a weekly report through
+to the supervisor, on a time-out note, and on a concern the supervisor
+must not see). Build and lint clean. The accessibility check on the
+picker with a picture chosen and on the open viewer, at both widths:
+clean.
+
+**Asked for in the brief and not built, said plainly:**
+- Small copies for the squares. The squares load the picture itself
+  (already made small by the app).
+- Keeping a chosen picture on the phone for later when there is no
+  connection. Pictures need a connection: nothing with a photo in it is
+  ever kept on the phone, and the forms say so.
+- Converting HEIC. It is refused with instructions instead.
+- Pictures in the coordinator's ZIP of documents.
+- Time-out pictures on the coordinator's student record and on the
+  supervisor's intern page. The server allows both to see them; those two
+  screens do not show them yet. They are shown where a log is reviewed.
+
+**Not checked:** a real phone, its camera and gallery, a real HEIC
+file, a swipe on a touch screen. Steps are in `DEPLOY.md`.

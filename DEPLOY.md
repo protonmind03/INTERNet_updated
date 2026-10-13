@@ -580,8 +580,9 @@ a local database only, not on the host.
 
 As of 14 October 2026 the release also carries migrations 046
 (`removed_records`), 047 (`email_daily_counts`), 048
-(`problem_reports`) and 049 (one new column on `attendance`, empty for
-every existing log). The first three are each a new table and nothing else, so the backup taken before going live must be taken after
+(`problem_reports`), 049 (one new column on `attendance`, empty for
+every existing log) and 050 (`attachments`). All but 049 are each a new
+table and nothing else, so the backup taken before going live must be taken after
 this note was written. No new
 variable and no platform setting is needed for it.
 
@@ -817,3 +818,32 @@ student who has no log today, before it goes live.
 nothing by itself. The system's only safeguard is that it cannot count
 until the supervisor says the intern was there. If a student's time-ins
 are often offline, that is something to ask about.
+
+## Pictures on entries: what to check and what to decide
+
+**On a phone, on the test site** (none of this has run on a real one):
+
+1. Time out with a picture taken by the camera and one chosen from the
+   gallery. Both should appear small in the dialog, with a size well
+   under the original's. Give one a caption, move it, remove the other.
+2. An iPhone photo in HEIC: on Safari it should be accepted (Safari can
+   open it). On Chrome for Android a HEIC file should be refused with a
+   sentence saying how to send it another way.
+3. Write a weekly report with three pictures; a fourth cannot be added.
+4. File a concern with a picture. Sign in as that student's supervisor:
+   the picture must not be visible anywhere.
+5. Open a picture and swipe between pictures.
+6. With mobile data on, on Android Chrome: pictures should show their
+   size and wait to be tapped. (Only browsers that report the kind of
+   connection do this; iPhones do not, and load pictures straight away.)
+
+**Storage.** A picture is at most 4 MB and usually 100 to 400 kB after
+the app has made it smaller. Three per entry, on every time-out and
+weekly report, adds up over a term: this is the best reason yet to move
+uploads to a bucket (see "Keeping uploaded files in a bucket").
+
+**A decision owed: how long pictures are kept.** `PHOTO_RETENTION_DAYS`
+and `npm run photos:purge` cover time-in photos only. Pictures attached
+to entries are kept with no limit, like documents. If they should also
+expire, say after how long and whether a concern's pictures are an
+exception, and the purge can be extended.
