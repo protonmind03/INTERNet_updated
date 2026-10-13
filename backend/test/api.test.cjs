@@ -3596,6 +3596,16 @@ test("the data download holds the student's records and never a password", async
   for (const key of ["account", "attendance", "absences", "tasks", "documents", "journals", "evaluations", "complaints", "complaint_messages", "schedule", "notifications"]) {
     assert.ok(key in data, key);
   }
+  // The newer records: tasks worked on each day, weekly items, and the student's notification choices.
+  for (const key of ["tasks_worked_on", "weekly_requirement_items", "notification_choices"]) {
+    assert.ok(Array.isArray(data[key]), key);
+  }
+  const logIds = new Set(data.attendance.map((row) => row.id));
+  for (const row of data.tasks_worked_on) assert.ok(logIds.has(row.attendance_id), "a task worked on belongs to one of the student's own logs");
+  for (const row of data.weekly_requirement_items) assert.equal(row.student_id, student.student_id);
+  // Notes written about the student by staff are not the student's to download.
+  assert.equal("student_notes" in data, false);
+  assert.equal(raw.includes('"reminded_at":'), false, "reminder bookkeeping is not part of the record");
   assert.equal(data.account.student_id, student.student_id);
   assert.equal(data.account.email, student.email);
   for (const secret of ["password", "auth_version", "must_change_password"]) {

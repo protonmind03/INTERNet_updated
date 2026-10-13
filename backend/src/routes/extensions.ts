@@ -3205,7 +3205,7 @@ export function registerExtensionRoutes(
       }
       const mine = (sql: string) => pool.query(sql, [auth.id]).then((result) => result.rows);
       const [profile, attendance, absences, tasks, documents, journals, finalEvaluation, certifications, evaluations, complaints,
-        complaintMessages, schedule, notifications] = await Promise.all([
+        complaintMessages, schedule, notifications, tasksWorkedOn, weeklyItems, notificationChoices] = await Promise.all([
         mine(`SELECT * FROM students WHERE student_id = $1`),
         mine(`SELECT * FROM attendance WHERE student_id = $1 ORDER BY date, id`),
         mine(`SELECT * FROM absences WHERE student_id = $1 ORDER BY date, id`),
@@ -3225,6 +3225,19 @@ export function registerExtensionRoutes(
               WHERE c.student_id = $1 ORDER BY m.created_at, m.id`),
         mine(`SELECT * FROM ojt_schedule WHERE student_id = $1 AND is_active = TRUE ORDER BY id`),
         mine(`SELECT * FROM notifications WHERE student_id = $1 ORDER BY created_at, id`),
+        // The tasks the student said they worked on, day by day.
+        mine(`SELECT a.date, at.attendance_id, at.task_id, t.title AS task, at.created_at
+              FROM attendance_tasks at
+              JOIN attendance a ON a.id = at.attendance_id
+              LEFT JOIN tasks t ON t.id = at.task_id
+              WHERE a.student_id = $1 ORDER BY a.date, at.task_id`),
+        // Each week's item of a requirement that is handed in weekly.
+        mine(`SELECT i.id, r.name AS requirement, i.student_id, i.period_start, i.due_date, i.document_id, i.status, i.created_at
+              FROM deliverable_items i
+              LEFT JOIN ojt_requirements r ON r.id = i.requirement_id
+              WHERE i.student_id = $1 ORDER BY i.period_start, i.id`),
+        mine(`SELECT category, push, email, updated_at FROM notification_preferences
+              WHERE role = 'student' AND account_id = $1 ORDER BY category`),
       ]);
       if (profile.length === 0) return res.status(404).json({ message: "Student not found." });
 
@@ -3254,6 +3267,9 @@ export function registerExtensionRoutes(
         complaint_messages: complaintMessages,
         schedule,
         notifications,
+        tasks_worked_on: tasksWorkedOn,
+        weekly_requirement_items: weeklyItems,
+        notification_choices: notificationChoices,
       });
     } catch (error) {
       console.error("DATA EXPORT ERROR:", error);
