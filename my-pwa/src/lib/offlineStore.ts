@@ -15,9 +15,16 @@ import { useSyncExternalStore } from "react";
 |   queue    actions taken offline, waiting to be sent
 |
 | Every row belongs to one account ("role|id"). Signing out, an ended
-| session and a forced password change erase that account's rows, so a
-| shared phone does not show one person's records to the next. No photo or
-| file is ever kept, and the service worker stores no API answer at all.
+| session and a forced password change erase that account's saved records
+| and drafts, so a shared phone does not show one person's records to the
+| next. No photo or file is ever kept, and the service worker stores no API
+| answer at all.
+|
+| Queued actions are the exception. Only a sign-out the person chose erases
+| them. When a session simply ends (it expired, or the password must be
+| changed) they stay, are shown to nobody, and are sent when the same
+| account signs in again on this device. One that has waited longer than
+| QUEUE_KEEP_HOURS is erased: the server would refuse it by then.
 |
 | If the browser has no IndexedDB (some private modes), every function here
 | quietly does nothing and the app behaves as it did before.
@@ -107,15 +114,30 @@ async function remove(store: string, owner: string, name: string): Promise<void>
 |--------------------------------------------------------------------------
 */
 
-/** Erases everything kept for one account: saved records, drafts and queued actions. */
-export async function purgeOfflineData(role: OfflineRole, accountId: string): Promise<void> {
+/**
+ * How long a queued action is kept for an account that is not signed in.
+ * The server accepts an offline action at most 72 hours old
+ * (OFFLINE_ACTION_MAX_AGE_HOURS), so nothing older can still be sent.
+ */
+export const QUEUE_KEEP_HOURS = 72;
+
+/**
+ * Erases what is kept for one account: saved records and drafts, and the
+ * queued actions too unless `keepQueue` is set.
+ */
+export async function purgeOfflineData(
+  role: OfflineRole,
+  accountId: string,
+  keepQueue = false
+): Promise<void> {
   const owner = `${role}|${accountId}`;
   clearSavedNotice();
   try {
     const db = await open();
     if (!db) return;
-    const transaction = db.transaction([RECORDS, DRAFTS, QUEUE], "readwrite");
-    for (const name of [RECORDS, DRAFTS, QUEUE]) {
+    const stores = keepQueue ? [RECORDS, DRAFTS] : [RECORDS, DRAFTS, QUEUE];
+    const transaction = db.transaction(stores, "readwrite");
+    for (const name of stores) {
       const index = transaction.objectStore(name).index("owner");
       const keys = await done(index.getAllKeys(IDBKeyRange.only(owner)));
       for (const key of keys) transaction.objectStore(name).delete(key);
@@ -134,6 +156,7 @@ export async function purgeOfflineData(role: OfflineRole, accountId: string): Pr
  * Erases whatever belongs to an account that is not signed in on this device
  * any more. Run when the app starts: it catches anything an interrupted
  * sign-out left behind (a closed tab, a crash, a redirect that came first).
+ * Queued actions of such an account are kept while they could still be sent.
  */
 export async function purgeOrphanedOfflineData(): Promise<void> {
   try {
@@ -147,9 +170,18 @@ export async function purgeOrphanedOfflineData(): Promise<void> {
     const transaction = db.transaction([RECORDS, DRAFTS, QUEUE], "readwrite");
     for (const name of [RECORDS, DRAFTS, QUEUE]) {
       const store = transaction.objectStore(name);
-      const rows = (await done(store.getAll())) as Array<{ key?: string; id?: number; owner: string }>;
+      const rows = (await done(store.getAll())) as Array<{
+        key?: string;
+        id?: number;
+        owner: string;
+        savedAt?: string;
+      }>;
+      const oldest = Date.now() - QUEUE_KEEP_HOURS * 60 * 60 * 1000;
       for (const row of rows) {
-        if (!signedIn.has(row.owner)) store.delete((row.key ?? row.id) as IDBValidKey);
+        if (signedIn.has(row.owner)) continue;
+        const savedAt = Date.parse(row.savedAt ?? "");
+        if (name === QUEUE && Number.isFinite(savedAt) && savedAt >= oldest) continue;
+        store.delete((row.key ?? row.id) as IDBValidKey);
       }
     }
   } catch (error) {

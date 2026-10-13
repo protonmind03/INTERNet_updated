@@ -162,7 +162,7 @@ async function send(): Promise<"done" | "waiting"> {
       stillWaiting = true;
       break;
     }
-    // Signed out: the steps wait for the next sign-in on this phone.
+    // The session has ended: the steps wait for the next sign-in on this phone.
     if (response.status === 401 || response.status === 403) break;
 
     await dequeue(row.id).catch(() => {});
@@ -207,5 +207,7 @@ export function watchOfflineQueue(): void {
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") attempt();
   });
+  // Signed in again: send what waited while the session was over.
+  window.addEventListener("internet-auth-changed", attempt);
   attempt();
 }

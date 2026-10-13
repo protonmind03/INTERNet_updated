@@ -47,9 +47,10 @@ export function installSessionGuard(): void {
       const body = await response.clone().json().catch(() => null);
       if (body?.code === "SESSION_INVALID") {
         // Wait (briefly) for the offline data to be erased: the reload below
-        // would otherwise cut the erase short.
+        // would otherwise cut the erase short. Steps recorded offline and
+        // not sent yet are kept for the next sign-in.
         await Promise.race([
-          clearSession(role),
+          clearSession(role, { keepWaiting: true }),
           new Promise((resolve) => window.setTimeout(resolve, 1500)),
         ]);
         sessionStorage.setItem(

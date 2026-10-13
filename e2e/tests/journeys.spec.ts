@@ -989,3 +989,82 @@ test.describe("the programme, for the coordinator", () => {
     }
   });
 });
+
+test.describe("attendance steps recorded offline and not sent yet", () => {
+  // Puts one step in the phone's queue the way the app keeps it. The log it
+  // names does not exist, so when it is sent the server refuses it for good
+  // and the app says so: that message is the proof that it was sent.
+  const queueStep = (page: import("@playwright/test").Page) =>
+    page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const opening = indexedDB.open("internet-offline");
+          opening.onerror = () => reject(opening.error);
+          opening.onsuccess = () => {
+            const owner = `student|${localStorage.getItem("student_id")}`;
+            const adding = opening.result
+              .transaction("queue", "readwrite")
+              .objectStore("queue")
+              .add({
+                owner,
+                savedAt: new Date().toISOString(),
+                data: { logId: 987654321, path: "break", occurredAt: new Date().toISOString(), requestId: crypto.randomUUID() },
+              });
+            adding.onsuccess = () => resolve();
+            adding.onerror = () => reject(adding.error);
+          };
+        })
+    );
+  const waiting = (page: import("@playwright/test").Page) =>
+    page.evaluate(
+      () =>
+        new Promise<number>((resolve, reject) => {
+          const opening = indexedDB.open("internet-offline");
+          opening.onerror = () => reject(opening.error);
+          opening.onsuccess = () => {
+            const counting = opening.result.transaction("queue").objectStore("queue").count();
+            counting.onsuccess = () => resolve(counting.result);
+            counting.onerror = () => reject(counting.error);
+          };
+        })
+    );
+
+  test("a session that ends by itself keeps them, and they are sent at the next sign-in", async ({ page }) => {
+    await signIn(page, "student");
+    await queueStep(page);
+    // The session ends without the student choosing it: the token is refused from now on.
+    const token = await page.evaluate(() => localStorage.getItem("student_token"));
+    const ended = await api(String(token), "POST", "/api/logout", {});
+    expect(ended.status).toBe(200);
+    // The app sends the student to the sign-in page as soon as a request is
+    // refused, which can cut this reload short.
+    await page.reload({ waitUntil: "commit" }).catch(() => undefined);
+    await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+    await expect(page.locator("#inb-login-id")).toBeVisible();
+    expect(await waiting(page)).toBe(1);
+
+    await signIn(page, "student");
+    await expect(page.getByText(/recorded offline was not added/)).toBeVisible({ timeout: 20_000 });
+    await expect.poll(() => waiting(page)).toBe(0);
+  });
+
+  test("signing out says how many would be erased, and erases them only then", async ({ page }) => {
+    await signIn(page, "student");
+    await queueStep(page);
+    const askToSignOut = async () => {
+      await page.getByRole("button", { name: /Account menu/ }).click();
+      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+    };
+    await askToSignOut();
+    const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
+    await expect(dialog).toContainText("1 attendance step you recorded offline has not been sent yet");
+    // Staying keeps it.
+    await dialog.getByRole("button", { name: "Stay signed in" }).click();
+    expect(await waiting(page)).toBe(1);
+
+    await askToSignOut();
+    await dialog.getByRole("button", { name: "Sign out and erase" }).click();
+    await expect(page).toHaveURL(/\/$/);
+    await expect.poll(() => waiting(page)).toBe(0);
+  });
+});

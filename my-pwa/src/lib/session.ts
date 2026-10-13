@@ -64,12 +64,20 @@ export function readAccount<R extends SessionRole>(role: R): AccountFor<R> | nul
  * what was kept for offline use has been erased; wait for it before leaving
  * the page with a full reload, or the erase can be cut short.
  */
-export function clearSession(role: SessionRole): Promise<void> {
+export function clearSession(
+  role: SessionRole,
+  options: { keepWaiting?: boolean } = {}
+): Promise<void> {
   // Whatever was kept on this device for offline use goes with the session:
-  // saved records, drafts and queued actions. Every way of leaving an account
-  // (Sign out, an ended session, the forced password change) comes through here.
+  // saved records and drafts. Every way of leaving an account (Sign out, an
+  // ended session, the forced password change) comes through here.
+  // Actions still waiting to be sent go too, unless `keepWaiting` is set:
+  // a session that ended by itself must not cost someone a time-out they
+  // recorded offline. Those wait for the same account to sign in again.
   const accountId = localStorage.getItem(`${role}_id`);
-  const erased = accountId ? purgeOfflineData(role, accountId) : Promise.resolve();
+  const erased = accountId
+    ? purgeOfflineData(role, accountId, options.keepWaiting === true)
+    : Promise.resolve();
 
   localStorage.removeItem(role);
   localStorage.removeItem(`${role}_id`);
@@ -87,9 +95,12 @@ export function clearSession(role: SessionRole): Promise<void> {
  * sending this device the account's push notifications. That part is best
  * effort, so signing out still works with no connection.
  */
-export function signOut(role: SessionRole): Promise<void> {
+export function signOut(
+  role: SessionRole,
+  options: { keepWaiting?: boolean } = {}
+): Promise<void> {
   const token = localStorage.getItem(`${role}_token`);
-  const erased = clearSession(role);
+  const erased = clearSession(role, options);
   if (!token) return erased;
 
   void (async () => {

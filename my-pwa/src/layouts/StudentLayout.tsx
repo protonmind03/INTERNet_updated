@@ -7,6 +7,7 @@ import SavedDataNotice from "../components/SavedDataNotice";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts, type NavCounts } from "../lib/navCounts";
+import { waitingSteps } from "../lib/offlineQueue";
 import { useReportedHeight } from "../lib/layers";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useMediaQuery } from "../lib/useMediaQuery";
@@ -84,6 +85,19 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
   const tabBar = useReportedHeight<HTMLElement>("--inb-bottom-bar");
   const [menuOpen, setMenuOpen] = useState(false);
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  // Steps recorded offline and not sent yet. Signing out erases them, so
+  // the question says how many there are.
+  const [unsent, setUnsent] = useState(0);
+  useEffect(() => {
+    if (!confirmSignOut) return;
+    let current = true;
+    void waitingSteps().then((steps) => {
+      if (current) setUnsent(steps.length);
+    });
+    return () => {
+      current = false;
+    };
+  }, [confirmSignOut]);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -380,8 +394,12 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
       <ConfirmDialog
         open={confirmSignOut}
         title="Sign out?"
-        message="You will need your password to sign in again."
-        confirmLabel="Sign out"
+        message={
+          unsent > 0
+            ? `${unsent === 1 ? "1 attendance step you recorded offline has" : `${unsent} attendance steps you recorded offline have`} not been sent yet. Signing out now erases ${unsent === 1 ? "it" : "them"}. To keep ${unsent === 1 ? "it" : "them"}, stay signed in until this phone is connected and ${unsent === 1 ? "it has" : "they have"} been sent.`
+            : "You will need your password to sign in again."
+        }
+        confirmLabel={unsent > 0 ? "Sign out and erase" : "Sign out"}
         cancelLabel="Stay signed in"
         tone="danger"
         onConfirm={signOut}

@@ -147,7 +147,9 @@ export default function ChangePassword() {
         <button
           type="button"
           onClick={() => {
-            endSession(role);
+            // Nothing can be sent until the password is changed, so what is
+            // waiting is kept for the next sign-in.
+            endSession(role, { keepWaiting: true });
             navigate("/", { replace: true });
           }}
           className="block w-full text-center text-sm font-semibold text-slate-600 hover:underline"
