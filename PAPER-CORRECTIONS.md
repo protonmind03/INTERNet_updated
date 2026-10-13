@@ -797,3 +797,8 @@ ones wherever the paper gives them:
   `problem_reports` (migration 048, no personal data, no foreign keys),
   and shows them to coordinators. No third-party monitoring service is
   used. The paper should not claim alerting: nobody is notified.
+- **The word is settled (14 October 2026): "requirement".** The earlier
+  note "One word still to settle" is closed. The paper should say
+  requirement throughout, and may mention that a requirement can have a
+  due date, can recur weekly and can be reviewed by the coordinator.
+  "Deliverable" survives only in table and route names.

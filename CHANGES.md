@@ -1915,3 +1915,25 @@ small write a minute per kind of fault at most).
 **Not done:** telling anyone when a fault happens. Someone has to look.
 A fault that stops the server altogether is not recorded, because the
 server is what records.
+
+## 37. One word: requirement (14 October 2026)
+
+Decision D7. A due date, a weekly schedule and the coordinator as
+reviewer are properties of a requirement, and that is now the only word
+on screen. Changed: the student's "Weekly requirements" list and
+calendar entries ("Requirement: ..."), the calendar's legend, the
+coordinator's Documents subtitle, the term setup line ("Requirements
+set"), the reminder's title ("Requirement due"), the save message of the
+due-date dialog ("Due date and reviewer saved."), four server messages
+and the audit page's name for that action.
+
+Nothing is renamed underneath: the table is still `deliverable_items`,
+the routes still end in `/deliverable` and `/deliverables`, and the code
+still says deliverable. A reminder sent before this change keeps the
+title "Deliverable due" in the notification list.
+
+**Checked:** 174 API tests (173 passing, 1 skipping itself on the
+long-lived database), 30 end-to-end tests passing and 2 skipping
+themselves the same way; two tests and one journey were changed to
+expect the new words. Build and lint clean. A search of both source
+trees finds no "deliverable" left in anything a person reads.
