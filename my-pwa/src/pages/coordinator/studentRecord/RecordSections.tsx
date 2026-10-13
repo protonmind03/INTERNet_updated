@@ -4,6 +4,7 @@ import FinalEvaluationView from "../../../components/FinalEvaluationView";
 import Icon from "../../../components/Icon";
 import Pagination from "../../../components/Pagination";
 import StudentNotes from "../../../components/StudentNotes";
+import EntryPictures from "../../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../../components/WeeklyReport";
 import { Card, EmptyState, Stars, StatusBadge } from "../../../components/ui";
 import { formatFileSize } from "../../../lib/files";
@@ -537,6 +538,7 @@ export function JournalsSection({
                   <div className="grid gap-x-6 gap-y-2.5 md:grid-cols-2">
                     <ReportParts report={item} />
                   </div>
+                  <EntryPictures role="coordinator" owner="journal" ownerId={item.id} count={item.pictures} className="" />
                   <DailyAccomplishments weekStart={week} logs={data.attendance} />
                   {item.review_notes && (
                     <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">

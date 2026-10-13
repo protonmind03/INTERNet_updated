@@ -11,9 +11,12 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
+import EntryPictures from "../../components/EntryPictures";
+import PicturePicker from "../../components/PicturePicker";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
+import { MAX_PICTURES, uploadPictures, type PictureDraft } from "../../lib/attachments";
 import { formatDate, formatDateTime } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
@@ -40,6 +43,8 @@ import { useTimeIn } from "./timeInContext";
 type Journal = {
   id: number;
   week_start: string;
+  /** How many pictures are attached. Missing from an older server. */
+  pictures?: number;
   activities: string;
   learnings: string;
   challenges: string | null;
@@ -249,6 +254,7 @@ function Entry({
       )}
 
       <ReportParts report={journal} />
+      <EntryPictures role="student" owner="journal" ownerId={journal.id} count={journal.pictures} />
 
       {journal.status !== "Reviewed" && (
         <Button variant="secondary" size="sm" icon="edit" onClick={onEdit}>
@@ -283,6 +289,11 @@ function JournalDialog({
   const { attendance } = useTimeIn();
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  // Pictures chosen here are sent once the report itself is saved. How many
+  // more fit depends on how many the report already has.
+  const [pictures, setPictures] = useState<PictureDraft[]>([]);
+  const [pictureProgress, setPictureProgress] = useState<Record<string, number>>({});
+  const [already, setAlready] = useState(0);
 
   // A new entry is kept as it is typed; an edit starts from what was sent.
   const draft = journal ? null : week;
@@ -316,6 +327,19 @@ function JournalDialog({
       clearLearnings();
       clearChallenges();
       clearSolutions();
+      const savedId = Number(data.journal?.id ?? journal?.id);
+      if (pictures.length > 0 && Number.isInteger(savedId) && savedId > 0) {
+        const { sent, failure } = await uploadPictures("student", "journal", savedId, pictures, (key, percent) =>
+          setPictureProgress((current) => ({ ...current, [key]: percent }))
+        );
+        for (const draft of pictures) URL.revokeObjectURL(draft.preview);
+        if (failure) {
+          // The report is saved; say so, and what happened to the pictures.
+          toast.error(`Weekly report saved. ${sent} of ${pictures.length} pictures were attached: ${failure}`);
+          onSaved();
+          return;
+        }
+      }
       toast.success(
         journal?.status === "Returned"
           ? "Weekly report sent to your supervisor again."
@@ -409,6 +433,22 @@ function JournalDialog({
           setSolutions,
           false
         )}
+        {journal && (
+          <EntryPictures
+            role="student"
+            owner="journal"
+            ownerId={journal.id}
+            onCount={(count) => setAlready(count)}
+            className=""
+          />
+        )}
+        <PicturePicker
+          drafts={pictures}
+          onChange={setPictures}
+          max={MAX_PICTURES - already}
+          disabled={saving}
+          progress={pictureProgress}
+        />
         <FormError message={error} />
       </form>
     </Modal>

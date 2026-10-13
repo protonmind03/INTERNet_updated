@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import EntryPictures from "./EntryPictures";
 import { Button, Skeleton } from "./ui";
 import { API_URL, withRoleAuth } from "../lib/api";
 import { formatDateTime } from "../lib/format";
@@ -91,6 +92,7 @@ export default function ComplaintThread({
 
   return (
     <div>
+      <EntryPictures role={role} owner="complaint" ownerId={complaintId} className="mb-3" />
       <p className="mb-2 text-sm font-medium text-slate-700">Conversation</p>
 
       {loading ? (

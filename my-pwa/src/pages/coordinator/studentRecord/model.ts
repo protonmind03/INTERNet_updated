@@ -49,6 +49,8 @@ export type Log = {
   review_notes: string | null;
   /** What the student wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** How many pictures are attached. Missing from an older server. */
+  pictures?: number;
   /** The tasks the student said they worked on that day. */
   tasks?: { id: number; title: string }[];
   /** Set when a supervisor corrected the log's times. */
@@ -107,6 +109,8 @@ export type ScheduleDay = {
 export type Journal = {
   id: number;
   week_start: string;
+  /** How many pictures are attached. Missing from an older server. */
+  pictures?: number;
   activities: string;
   learnings: string;
   challenges: string | null;

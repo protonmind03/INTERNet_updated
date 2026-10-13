@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import PicturePicker from "../../components/PicturePicker";
 import { ConfirmDialog } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
+import { uploadPictures, type PictureDraft } from "../../lib/attachments";
 import { formatDuration, formatTime } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
@@ -10,7 +12,7 @@ import { useOnline } from "../../lib/useOnline";
 import { PrivacyNoticeDialog } from "./Privacy";
 import TimeInDialog from "./TimeInDialog";
 import { TimeInContext, useOptionalTimeIn, type TimeInStep, type TimeInValue } from "./timeInContext";
-import { useAttendance, workedMinutes } from "./useAttendance";
+import { isLocalLog, useAttendance, workedMinutes } from "./useAttendance";
 import { usePrivacy } from "./usePrivacy";
 
 /*
@@ -77,6 +79,11 @@ function TimeInActions({ children }: { children: ReactNode }) {
   // The tasks the student may say they worked on today: the ones still
   // open. Read from the same saved copy the Tasks page keeps, so the list
   // is there with no connection too. Choosing any is optional.
+  // Pictures to go with the note. They are sent after the time-out itself,
+  // and only with a connection: a photo is never kept on the phone.
+  const [outPictures, setOutPictures] = useState<PictureDraft[]>([]);
+  const [pictureProgress, setPictureProgress] = useState<Record<string, number>>({});
+  const [sendingPictures, setSendingPictures] = useState(false);
   const [openTasks, setOpenTasks] = useState<OpenTask[]>([]);
   const [workedOn, setWorkedOn] = useState<Set<number>>(new Set());
   const studentId = student?.student_id;
@@ -120,6 +127,8 @@ function TimeInActions({ children }: { children: ReactNode }) {
       return;
     }
     setAccomplishmentError("");
+    // The log the pictures belong to: today's, once the server has it.
+    const logForPictures = todayLog && !isLocalLog(todayLog) ? todayLog.id : null;
     try {
       const outcome =
         action === "break"
@@ -136,9 +145,31 @@ function TimeInActions({ children }: { children: ReactNode }) {
         setAccomplishment("");
         setWorkedOn(new Set());
       }
-      if (outcome === "queued") {
+      // The time-out is recorded; now the pictures chosen for it, if it reached the server.
+      let pictureNote = "";
+      if (action === "out" && outPictures.length > 0) {
+        if (outcome === "sent" && logForPictures) {
+          setSendingPictures(true);
+          const { sent, failure } = await uploadPictures(
+            "student",
+            "attendance",
+            logForPictures,
+            outPictures,
+            (key, percent) => setPictureProgress((current) => ({ ...current, [key]: percent }))
+          ).finally(() => setSendingPictures(false));
+          if (failure) pictureNote = ` ${sent} of ${outPictures.length} pictures were attached: ${failure}`;
+        } else {
+          pictureNote = " The pictures were not kept: they need a connection.";
+        }
+        for (const draft of outPictures) URL.revokeObjectURL(draft.preview);
+        setOutPictures([]);
+        setPictureProgress({});
+      }
+      if (pictureNote && outcome === "sent") {
+        toast.error(`Time-out recorded.${pictureNote}`);
+      } else if (outcome === "queued") {
         // No connection: kept on the phone with the time it was pressed.
-        toast.info("Saved on this phone. It will be sent when you're back online.");
+        toast.info(`Saved on this phone. It will be sent when you're back online.${pictureNote}`);
       } else if (action === "break") {
         toast.success("Out for lunch. Tap \"Back from lunch\" when you return.");
       } else if (action === "back") {
@@ -215,7 +246,7 @@ function TimeInActions({ children }: { children: ReactNode }) {
         confirmLabel="Time out"
         cancelLabel="Keep working"
         tone="danger"
-        busy={busy}
+        busy={busy || sendingPictures}
         busyProcess="timeIn"
         onConfirm={confirm}
         onCancel={() => setPending(null)}
@@ -275,6 +306,19 @@ function TimeInActions({ children }: { children: ReactNode }) {
             </ul>
           </fieldset>
         )}
+        <div className="mt-4">
+          <PicturePicker
+            drafts={outPictures}
+            onChange={setOutPictures}
+            disabled={busy || sendingPictures}
+            progress={pictureProgress}
+            unavailable={
+              !online || (todayLog?.waiting?.length ?? 0) > 0
+                ? "Pictures need a connection, so none can be added to this time-out."
+                : undefined
+            }
+          />
+        </div>
       </ConfirmDialog>
     </TimeInContext.Provider>
   );

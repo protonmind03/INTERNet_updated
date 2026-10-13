@@ -46,6 +46,8 @@ export type AttendanceLog = {
   offline_time_in?: boolean;
   /** What the student wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** How many pictures are attached. Missing from an older server. */
+  pictures?: number;
   /** The tasks the student said they worked on that day. Missing from an older server. */
   tasks?: { id: number; title: string }[];
   /** Set when the supervisor corrected the times on this log, with their reason. */

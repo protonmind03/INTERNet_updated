@@ -1126,3 +1126,200 @@ test.describe("time-in with no connection", () => {
     await supervisorPage.context().close();
   });
 });
+
+test.describe("pictures on an entry", () => {
+  test("a student attaches a picture to a weekly report: it is made smaller, loses what the camera wrote into it, and the supervisor can open it", async ({ page, browser }) => {
+    const login = await fetch(`${API}/api/login/student`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: SECOND_STUDENT.email, password: SECOND_STUDENT.password }),
+    });
+    const account = await login.json();
+    const student = { token: String(account.token), id: String(account.student.student_id) };
+    const journalsNow = async () =>
+      (await api<{ current_week_start: string; journals: { id: number; week_start: string; status: string; pictures?: number }[] }>(
+        student.token, "GET", `/api/journals/student/${encodeURIComponent(student.id)}`
+      )).body;
+    const before = await journalsNow();
+    const existing = before.journals.find((item) => item.week_start === before.current_week_start);
+    test.skip(existing?.status === "Reviewed", "The second demo student's report for this week is already reviewed and closed.");
+
+    await signIn(page, "student", SECOND_STUDENT);
+    await page.goto("/journal");
+    // A real JPEG, larger than the app keeps, with the kind of block a camera writes into a photo
+    // (where it was taken) put in after the first two bytes.
+    const drawn = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 2400;
+      canvas.height = 1800;
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = "#1a237e";
+      context.fillRect(0, 0, 2400, 1800);
+      context.fillStyle = "#ffc107";
+      context.fillRect(300, 300, 900, 600);
+      return canvas.toDataURL("image/jpeg", 0.9).split(",")[1];
+    });
+    const jpeg = Buffer.from(drawn, "base64");
+    const written = Buffer.from("Exif\0\0GPSLatitude=16.0212;GPSLongitude=120.2311;SECRET-PLACE", "latin1");
+    const block = Buffer.concat([Buffer.from([0xff, 0xe1, (written.length + 2) >> 8, (written.length + 2) & 0xff]), written]);
+    const photo = Buffer.concat([jpeg.subarray(0, 2), block, jpeg.subarray(2)]);
+    expect(photo.includes("SECRET-PLACE")).toBe(true);
+
+    await page.getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing }).first().click();
+    const dialog = page.getByRole("dialog");
+    await dialog.locator("#journal-activities").fill(`Photographed the filing shelf after sorting it (${Date.now()}).`);
+    await dialog.locator("#journal-learnings").fill("How the shelf is ordered, and where a misplaced folder usually ends up.");
+    await dialog.locator('input[type="file"]').setInputFiles({ name: "IMG_0001.jpg", mimeType: "image/jpeg", buffer: photo });
+    await dialog.getByLabel("Caption for picture 1").fill("The filing shelf");
+    await expect(dialog.getByRole("button", { name: "Remove picture 1" })).toBeVisible();
+    await page.locator('button[form="journal-form"]').click();
+    await expect(page.getByText("Waiting for your supervisor").first()).toBeVisible();
+
+    // What the server now holds: one picture, a JPEG no wider than 1600, with the camera's block gone.
+    const after = await journalsNow();
+    const journal = after.journals.find((item) => item.week_start === after.current_week_start)!;
+    expect(journal.pictures).toBeGreaterThanOrEqual(1);
+    const listed = await api<{ attachments: { id: number; caption: string | null; width: number; height: number; mime_type: string }[] }>(
+      student.token, "GET", `/api/attachments?owner_type=journal&owner_id=${journal.id}`
+    );
+    const picture = listed.body.attachments.at(-1)!;
+    expect([picture.caption, picture.mime_type, picture.width, picture.height]).toEqual(["The filing shelf", "image/jpeg", 1600, 1200]);
+    const file = await fetch(`${API}/api/attachments/${picture.id}/file`, { headers: { Authorization: `Bearer ${student.token}` } });
+    const kept = Buffer.from(await file.arrayBuffer());
+    expect(kept.subarray(0, 3)).toEqual(Buffer.from([0xff, 0xd8, 0xff]));
+    expect(kept.includes("SECRET-PLACE")).toBe(false);
+    expect(kept.includes("GPSLatitude")).toBe(false);
+    expect(kept.includes("Exif")).toBe(false);
+    expect(kept.length).toBeLessThan(photo.length);
+
+    // The student sees it on the report and can open it.
+    await page.getByRole("button", { name: "Open The filing shelf" }).first().click();
+    const viewer = page.getByRole("dialog", { name: /^Picture \d of \d$/ });
+    await expect(viewer.getByRole("img", { name: "The filing shelf" })).toBeVisible();
+    await page.keyboard.press("Escape");
+
+    // The supervisor sees it with the report.
+    const supervisor = await apiSession("supervisor");
+    const theirs = await api<{ attachments: { id: number }[]; can_add: boolean }>(
+      supervisor.token, "GET", `/api/attachments?owner_type=journal&owner_id=${journal.id}`
+    );
+    expect(theirs.body.attachments.map((item) => item.id)).toContain(picture.id);
+    expect(theirs.body.can_add).toBe(false);
+    const supervisorPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+    await signIn(supervisorPage, "supervisor");
+    await supervisorPage.goto("/supervisor/journals");
+    await expect(supervisorPage.getByRole("button", { name: "Open The filing shelf" }).first()).toBeVisible();
+    await supervisorPage.context().close();
+
+    // Closed, so the other weekly-report journey finds only its own report waiting on a later run.
+    const closed = await api(supervisor.token, "PATCH", `/api/journals/${journal.id}/review`, { status: "Reviewed" });
+    expect(closed.status).toBe(200);
+    // And a reviewed report takes no more pictures.
+    const late = new FormData();
+    late.append("owner_type", "journal");
+    late.append("owner_id", String(journal.id));
+    late.append("file", new Blob([kept], { type: "image/jpeg" }), "late.jpg");
+    const refused = await fetch(`${API}/api/attachments`, { method: "POST", headers: { Authorization: `Bearer ${student.token}` }, body: late });
+    expect(refused.status).toBe(409);
+  });
+});
+
+test.describe("pictures on a time-out note and on a concern", () => {
+  // A small real picture, drawn in the page.
+  const drawPicture = async (page: import("@playwright/test").Page) =>
+    Buffer.from(
+      await page.evaluate(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 800;
+        canvas.height = 600;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#0d47a1";
+        context.fillRect(0, 0, 800, 600);
+        return canvas.toDataURL("image/png").split(",")[1];
+      }),
+      "base64"
+    );
+  const secondStudent = async () => {
+    const response = await fetch(`${API}/api/login/student`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: SECOND_STUDENT.email, password: SECOND_STUDENT.password }),
+    });
+    const data = await response.json();
+    return { token: String(data.token), id: String(data.student.student_id) };
+  };
+
+  test("a student adds a picture when timing out, and the supervisor sees it on the log", async ({ page }) => {
+    const student = await secondStudent();
+    type Log = { id: number; date: string; time_out: string | null; pictures?: number };
+    const todays = async () =>
+      (await api<{ attendance: Log[] }>(student.token, "GET", `/api/attendance/${student.id}`)).body.attendance.find((log) => log.date === today());
+    let log = await todays();
+    test.skip(Boolean(log?.time_out), "The second demo student has already timed out today.");
+    if (!log) {
+      // No log yet today: start one the way a phone with no connection would have.
+      const started = await api(student.token, "POST", "/api/attendance/offline-time-in", {
+        occurred_at: new Date(Date.now() - 60_000).toISOString(),
+        client_request_id: `journey-${Date.now()}`,
+      });
+      expect(started.status).toBe(201);
+      log = await todays();
+    }
+
+    await signIn(page, "student", SECOND_STUDENT);
+    const picture = await drawPicture(page);
+    // The Attendance page offers Time out at any point in the day; the floating button offers only the next step.
+    await page.goto("/daily-log");
+    await page.getByRole("button", { name: /^Time out/ }).locator("visible=true").first().click();
+    const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
+    await dialog.locator("#accomplishment").fill("Sorted the supply cabinet and labelled each shelf.");
+    await dialog.locator('input[type="file"]').setInputFiles({ name: "cabinet.png", mimeType: "image/png", buffer: picture });
+    await dialog.getByLabel("Caption for picture 1").fill("The cabinet, labelled");
+    await dialog.getByRole("button", { name: "Time out", exact: true }).click();
+    await expect(page.getByText(/Time-out recorded/)).toBeVisible({ timeout: 20_000 });
+
+    await expect.poll(async () => (await todays())?.pictures, { timeout: 15_000 }).toBe(1);
+    const supervisor = await apiSession("supervisor");
+    const seen = await api<{ attachments: { caption: string | null; mime_type: string }[] }>(
+      supervisor.token, "GET", `/api/attachments?owner_type=attendance&owner_id=${log!.id}`
+    );
+    // Sent as a PNG, kept as the JPEG the app made of it.
+    expect(seen.body.attachments.map((item) => [item.caption, item.mime_type])).toEqual([["The cabinet, labelled", "image/jpeg"]]);
+    // The student sees it on the day's log.
+    await page.goto("/daily-log");
+    await expect(page.getByRole("button", { name: "Open The cabinet, labelled" }).locator("visible=true").first()).toBeVisible();
+  });
+
+  test("a student adds a picture to a concern: the coordinator sees it, the student's supervisor does not", async ({ page, browser }) => {
+    const student = await secondStudent();
+    await signIn(page, "student", SECOND_STUDENT);
+    await page.goto("/student/resolution");
+    const picture = await drawPicture(page);
+    const words = `The storeroom door does not lock (${Date.now()}).`;
+    await page.locator("textarea").first().fill(words);
+    // The form has two file choosers: one for a document as evidence, one for pictures.
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles({ name: "door.png", mimeType: "image/png", buffer: picture });
+    await page.getByLabel("Caption for picture 1").fill("The door");
+    await page.getByRole("button", { name: /^(Send|Submit)/ }).first().click();
+    await expect(page.getByText(/Concern sent/)).toBeVisible({ timeout: 20_000 });
+
+    const mine = await api<{ complaints?: { id: number; description: string }[]; reports?: { id: number; description: string }[] }>(
+      student.token, "GET", `/api/complaints/student/${student.id}`
+    );
+    const concern = (mine.body.complaints ?? mine.body.reports ?? (mine.body as unknown as { id: number; description: string }[])).find((item) => item.description === words)!;
+    expect(concern).toBeTruthy();
+    const path = `/api/attachments?owner_type=complaint&owner_id=${concern.id}`;
+    const coordinator = await apiSession("coordinator");
+    const supervisor = await apiSession("supervisor");
+    expect((await api<{ attachments: unknown[] }>(coordinator.token, "GET", path)).body.attachments).toHaveLength(1);
+    expect((await api<{ attachments: unknown[] }>(supervisor.token, "GET", path)).body.attachments).toHaveLength(0);
+
+    // The coordinator opens the concern and the picture is there.
+    const coordinatorPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+    await signIn(coordinatorPage, "coordinator");
+    await coordinatorPage.goto("/coordinator/complaints");
+    await coordinatorPage.getByText(words).first().click();
+    await expect(coordinatorPage.getByRole("button", { name: "Open The door" }).first()).toBeVisible();
+    await coordinatorPage.context().close();
+  });
+});

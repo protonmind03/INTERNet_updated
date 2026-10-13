@@ -5,6 +5,7 @@ import Icon from "../../components/Icon";
 import MonthCalendar from "../../components/MonthCalendar";
 import ProjectionLine from "../../components/ProjectionLine";
 import StudentNotes from "../../components/StudentNotes";
+import EntryPictures from "../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import {
   Button,
@@ -719,6 +720,7 @@ function Reports({ intern, work, onReview }: Reviewable) {
                 </summary>
                 <div className="mt-3 space-y-3">
                   <ReportParts report={report} />
+                  <EntryPictures role="supervisor" owner="journal" ownerId={report.id} className="" />
                   <DailyAccomplishments weekStart={report.week_start} logs={logs} />
                   {report.review_notes && (
                     <p className="break-words text-sm text-slate-700">

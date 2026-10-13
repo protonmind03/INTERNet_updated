@@ -79,7 +79,8 @@ const JOURNAL_MAX = 3000;
 const JOURNAL_COLUMNS = `
   j.id, j.student_id, TO_CHAR(j.week_start, 'YYYY-MM-DD') AS week_start,
   j.activities, j.learnings, j.challenges, j.solutions, j.status, j.review_notes,
-  j.submitted_at, j.updated_at, j.reviewed_at
+  j.submitted_at, j.updated_at, j.reviewed_at,
+  (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'journal' AND px.owner_id = j.id AND px.removed_at IS NULL) AS pictures
 `;
 
 /** Today's date in the Philippines, the zone every OJT date is kept in. */
@@ -1470,6 +1471,7 @@ export function registerExtensionRoutes(
                     time_out, hours, note, status, review_notes, correction_note,
                     accomplishments, recorded_offline,
                     (offline_time_in_request IS NOT NULL) AS offline_time_in,
+                    (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'attendance' AND px.owner_id = attendance.id AND px.removed_at IS NULL) AS pictures,
                     (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
                FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
               WHERE wx.attendance_id = attendance.id) AS tasks

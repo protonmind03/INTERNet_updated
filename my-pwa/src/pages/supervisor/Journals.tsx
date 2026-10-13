@@ -8,6 +8,7 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
+import EntryPictures from "../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
@@ -169,6 +170,7 @@ export default function SupervisorJournals() {
                     />
                   </div>
                   <ReportParts report={journal} />
+                  <EntryPictures role="supervisor" owner="journal" ownerId={journal.id} count={journal.pictures} className="" />
                   <DailyAccomplishments
                     weekStart={journal.week_start}
                     logs={attendance.filter((log) => log.student_id === journal.student_id)}

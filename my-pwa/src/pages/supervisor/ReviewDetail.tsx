@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import Icon from "../../components/Icon";
+import EntryPictures from "../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import { Button, FormError, FormField, Modal, StarInput, StatusBadge } from "../../components/ui";
 import { downloadProtectedUpload } from "../../lib/api";
@@ -155,6 +156,7 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
       {entry.accomplishments && (
         <Quote label="What the intern accomplished">{entry.accomplishments}</Quote>
       )}
+      <EntryPictures role="supervisor" owner="attendance" ownerId={entry.id} count={entry.pictures} className="" />
       {entry.tasks && entry.tasks.length > 0 && (
         <div>
           <p className="text-xs font-medium text-slate-600">Tasks they said they worked on</p>
@@ -638,6 +640,7 @@ function JournalDetail({ entry, work, onDecided, shortcuts }: DetailProps<Journa
       )}
       <div className="space-y-3">
         <ReportParts report={entry} />
+        <EntryPictures role="supervisor" owner="journal" ownerId={entry.id} count={entry.pictures} className="" />
       </div>
       <DailyAccomplishments
         weekStart={entry.week_start}

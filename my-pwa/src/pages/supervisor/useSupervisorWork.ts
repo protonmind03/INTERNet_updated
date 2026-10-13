@@ -68,6 +68,8 @@ export type AttendanceEntry = {
   offline_time_in?: boolean;
   /** What the intern wrote at time-out about the day's work. */
   accomplishments?: string | null;
+  /** How many pictures are attached. Missing from an older server. */
+  pictures?: number;
   /** The tasks the intern said they worked on that day. */
   tasks?: { id: number; title: string }[];
   /** Set when the supervisor corrected the times on this log, with the reason. */
@@ -153,6 +155,8 @@ export type JournalEntry = {
   student_name: string;
   /** The Monday the week starts on. */
   week_start: string;
+  /** How many pictures are attached. Missing from an older server. */
+  pictures?: number;
   activities: string;
   learnings: string;
   challenges: string | null;

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import DateRangeFilter from "../../components/DateRangeFilter";
+import EntryPictures from "../../components/EntryPictures";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
@@ -296,6 +297,9 @@ function DailyLogPage() {
                       )}
                     </div>
                     <LogNotes log={log} />
+                    {log.id > 0 && (
+                      <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} />
+                    )}
                     <FixButton fix={fixFor(log)} />
                   </li>
                 ))}
@@ -338,6 +342,9 @@ function DailyLogPage() {
                         </td>
                         <td className="max-w-xs px-3 py-3.5">
                           <LogNotes log={log} inline />
+                          {log.id > 0 && (
+                            <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} className="mt-2" />
+                          )}
                           <FixButton fix={fixFor(log)} />
                         </td>
                         <td className="px-3 py-3.5">

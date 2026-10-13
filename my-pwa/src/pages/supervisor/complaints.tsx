@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ComplaintThread from "../../components/ComplaintThread";
 import Icon from "../../components/Icon";
+import PicturePicker from "../../components/PicturePicker";
 import {
   Button,
   Card,
@@ -12,6 +13,7 @@ import {
 } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { API_URL, downloadProtectedUpload, withSupervisorAuth } from "../../lib/api";
+import { uploadPictures, type PictureDraft } from "../../lib/attachments";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { formatDateTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
@@ -193,6 +195,9 @@ function FileDialog({
     setDescription
   );
   const [evidence, setEvidence] = useState<File | null>(null);
+  // Pictures chosen for the concern. They are sent once the concern itself is.
+  const [pictures, setPictures] = useState<PictureDraft[]>([]);
+  const [pictureProgress, setPictureProgress] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const evidenceInput = useRef<HTMLInputElement | null>(null);
@@ -248,7 +253,20 @@ function FileDialog({
       );
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The concern could not be sent.");
-      toast.success("Concern sent to the OJT coordinator.");
+      // The concern is sent; now the pictures chosen for it.
+      const concernId = Number(data.complaint?.id);
+      let pictureNote = "";
+      if (pictures.length > 0 && Number.isInteger(concernId) && concernId > 0) {
+        const { sent, failure } = await uploadPictures("supervisor", "complaint", concernId, pictures, (key, percent) =>
+          setPictureProgress((current) => ({ ...current, [key]: percent }))
+        );
+        if (failure) pictureNote = ` ${sent} of ${pictures.length} pictures were attached: ${failure}`;
+        for (const draft of pictures) URL.revokeObjectURL(draft.preview);
+        setPictures([]);
+        setPictureProgress({});
+      }
+      if (pictureNote) toast.error(`Concern sent.${pictureNote}`);
+      else toast.success("Concern sent to the OJT coordinator.");
       discardDescription();
       reset();
       onFiled();
@@ -382,6 +400,13 @@ function FileDialog({
             </button>
           )}
         </div>
+
+        <PicturePicker
+          drafts={pictures}
+          onChange={setPictures}
+          disabled={saving}
+          progress={pictureProgress}
+        />
 
         {error && (
           <p

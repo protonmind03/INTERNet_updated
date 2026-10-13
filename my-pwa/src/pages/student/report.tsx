@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ComplaintThread from "../../components/ComplaintThread";
 import Icon from "../../components/Icon";
+import PicturePicker from "../../components/PicturePicker";
 import {
   Button,
   Card,
@@ -11,6 +12,7 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
+import { uploadPictures, type PictureDraft } from "../../lib/attachments";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { formatDateTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
@@ -67,6 +69,9 @@ export default function ConcernsPanel() {
   const [description, setDescription] = useState("");
   const discardDescription = useDraft("student", "report-description", description, setDescription);
   const [evidence, setEvidence] = useState<File | null>(null);
+  // Pictures chosen for the concern. They are sent once the concern itself is.
+  const [pictures, setPictures] = useState<PictureDraft[]>([]);
+  const [pictureProgress, setPictureProgress] = useState<Record<string, number>>({});
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const evidenceInput = useRef<HTMLInputElement | null>(null);
@@ -203,7 +208,20 @@ export default function ConcernsPanel() {
       if (!response.ok) {
         throw new Error(data.message || "Your concern could not be sent.");
       }
-      toast.success("Concern sent. Your OJT coordinator will review it.");
+      // The concern is sent; now the pictures chosen for it.
+      const concernId = Number(data.complaint?.id);
+      let pictureNote = "";
+      if (pictures.length > 0 && Number.isInteger(concernId) && concernId > 0) {
+        const { sent, failure } = await uploadPictures("student", "complaint", concernId, pictures, (key, percent) =>
+          setPictureProgress((current) => ({ ...current, [key]: percent }))
+        );
+        if (failure) pictureNote = ` ${sent} of ${pictures.length} pictures were attached: ${failure}`;
+        for (const draft of pictures) URL.revokeObjectURL(draft.preview);
+        setPictures([]);
+        setPictureProgress({});
+      }
+      if (pictureNote) toast.error(`Concern sent.${pictureNote}`);
+      else toast.success("Concern sent. Your OJT coordinator will review it.");
       discardDescription();
       setDescription("");
       setEvidence(null);
@@ -349,6 +367,13 @@ export default function ConcernsPanel() {
                 </button>
               )}
             </div>
+
+            <PicturePicker
+              drafts={pictures}
+              onChange={setPictures}
+              disabled={submitting}
+              progress={pictureProgress}
+            />
 
             {error && (
               <p
