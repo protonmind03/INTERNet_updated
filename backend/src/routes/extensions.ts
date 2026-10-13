@@ -582,7 +582,10 @@ export function registerExtensionRoutes(
         });
       });
 
-      return res.json({ message: "Task cancelled." });
+      return res.json({
+        message: "Task cancelled.",
+        task: { id: task.id, student_id: task.student_id, title: task.title },
+      });
     } catch (error) {
       console.error("CANCEL TASK ERROR:", error);
       return res.status(500).json({ message: "Failed to cancel the task." });
@@ -763,7 +766,7 @@ export function registerExtensionRoutes(
           UPDATE evaluations
           SET rating = $1, comments = $2, category = COALESCE(NULLIF($3, ''), category)
           WHERE id = $4 AND evaluator_id = $5 AND evaluator_type = $6
-          RETURNING id, student_id, category
+          RETURNING id, student_id, category, rating
           `,
           [rating, comments || null, category, req.params.id, auth.id, evaluatorTypeOf(auth.role)]
         );
@@ -778,7 +781,7 @@ export function registerExtensionRoutes(
             type: "evaluation",
           })
         );
-        return res.json({ message: "Evaluation updated." });
+        return res.json({ message: "Evaluation updated.", evaluation: result.rows[0] });
       } catch (error) {
         console.error("UPDATE EVALUATION ERROR:", error);
         return res.status(500).json({ message: "Failed to update the evaluation." });
@@ -798,13 +801,13 @@ export function registerExtensionRoutes(
         const result = await pool.query(
           `DELETE FROM evaluations
            WHERE id = $1 AND evaluator_id = $2 AND evaluator_type = $3
-           RETURNING id`,
+           RETURNING id, student_id, category, rating`,
           [req.params.id, auth.id, evaluatorTypeOf(auth.role)]
         );
         if (result.rows.length === 0) {
           return res.status(404).json({ message: "You can only remove an evaluation you wrote." });
         }
-        return res.json({ message: "Evaluation removed." });
+        return res.json({ message: "Evaluation removed.", evaluation: result.rows[0] });
       } catch (error) {
         console.error("DELETE EVALUATION ERROR:", error);
         return res.status(500).json({ message: "Failed to remove the evaluation." });

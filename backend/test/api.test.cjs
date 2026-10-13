@@ -7589,3 +7589,65 @@ test("a deliverable applies to who it names, is reviewed by who it says, comes d
     await pool.end();
   }
 });
+
+test("giving, changing and cancelling a task, and writing an evaluation, each leave an audit line", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const studentId = student.student_id;
+  const send = async (method, path, payload) => {
+    const { response, body } = await jsonRequest(path, payload === undefined ? { method, headers: authHeaders(supervisor.token) } : jsonBody(supervisor.token, method, payload));
+    return { status: response.status, body };
+  };
+  const lines = async (action) => {
+    const found = await jsonRequest(`/api/coordinator/audit?action=${action}&limit=5`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(found.response.status, 200);
+    return found.body.entries;
+  };
+  // The row is written after the answer has gone out.
+  const lineFor = async (action, match) => {
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const line = (await lines(action)).find(match);
+      if (line) return line;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    return null;
+  };
+  const title = `Audit check ${Date.now()}`;
+  const due = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+
+  const made = await send("POST", "/api/tasks", { student_id: studentId, title, description: "not kept", priority: "Low", due_date: due });
+  assert.equal(made.status, 201);
+  const taskId = made.body.task.id;
+  const assigned = await lineFor("task.assign", (line) => String(line.entity_id) === String(taskId));
+  assert.ok(assigned, "assigning a task is logged");
+  assert.equal(assigned.details.title, title);
+  assert.equal(assigned.details.description, undefined, "the description is not kept");
+
+  const edited = await send("PUT", `/api/tasks/${taskId}`, { title: `${title} b`, description: "", priority: "Low", due_date: due });
+  assert.equal(edited.status, 200);
+  assert.ok(await lineFor("task.edit", (line) => String(line.entity_id) === String(taskId)), "changing a task is logged");
+
+  const cancelled = await send("DELETE", `/api/tasks/${taskId}`);
+  assert.equal(cancelled.status, 200);
+  assert.equal(cancelled.body.task.title, `${title} b`);
+  const gone = await lineFor("task.cancel", (line) => String(line.entity_id) === String(taskId));
+  assert.ok(gone, "cancelling a task is logged");
+  assert.equal(String(gone.details.student_id), String(studentId));
+
+  const category = `Audit ${Date.now()}`.slice(0, 40);
+  const written = await send("POST", "/api/evaluations", { student_id: studentId, category, rating: 4, comments: "not kept" });
+  assert.equal(written.status, 201);
+  const evaluationId = written.body.evaluation.id;
+  const created = await lineFor("evaluation.create", (line) => line.details.category === category);
+  assert.ok(created, "writing an evaluation is logged");
+  assert.equal(created.details.comments, undefined, "the comments are not kept");
+  const changed = await send("PUT", `/api/evaluations/${evaluationId}`, { rating: 3, comments: "", category });
+  assert.equal(changed.status, 200);
+  assert.ok(await lineFor("evaluation.edit", (line) => line.details.category === category && Number(line.details.rating) === 3), "changing an evaluation is logged");
+  const removed = await send("DELETE", `/api/evaluations/${evaluationId}`);
+  assert.equal(removed.status, 200);
+  assert.ok(await lineFor("evaluation.remove", (line) => line.details.category === category), "removing an evaluation is logged");
+});

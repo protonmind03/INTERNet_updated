@@ -485,6 +485,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
         message:
           `Task cancelled for ${count(cancelled, "member", "members")}.` +
           (skipped > 0 ? ` ${count(skipped, "member has", "members have")} already submitted, so theirs was kept.` : ""),
+        title: gone.rows[0]?.title ?? null,
         cancelled,
         skipped,
       });
