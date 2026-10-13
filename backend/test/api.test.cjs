@@ -7676,3 +7676,69 @@ test("giving, changing and cancelling a task, and writing an evaluation, each le
   assert.equal(removed.status, 200);
   assert.ok(await lineFor("evaluation.remove", (line) => line.details.category === category), "removing an evaluation is logged");
 });
+
+test("a record a person removes is copied whole, with who removed it, by the statement that deletes it", async (t) => {
+  require("tsx/cjs");
+  const { deleteKeeping } = require("../src/services/removedRecords.ts");
+  // Only the tables it knows, and never a name or a placeholder from outside.
+  assert.throws(() => deleteKeeping({ table: "students", alias: "s", where: "WHERE s.id = $1", select: "s.id", actor: ["$2", "$3"] }), /does not know/);
+  assert.throws(() => deleteKeeping({ table: "tasks", alias: "t; DROP", where: "WHERE t.id = $1", select: "t.id", actor: ["$2", "$3"] }), /alias/);
+  assert.throws(() => deleteKeeping({ table: "tasks", alias: "t", where: "WHERE t.id = $1", select: "t.id", actor: ["'x'", "$3"] }), /placeholders/);
+
+  if (needsWrites(t)) return;
+  const supervisor = await supervisorSession();
+  const pool = localTestPool();
+  const send = async (token, method, path, payload) => {
+    const { response, body } = await jsonRequest(path, payload === undefined ? { method, headers: authHeaders(token) } : jsonBody(token, method, payload));
+    return { status: response.status, body };
+  };
+  const kept = async (table, id) =>
+    (await pool.query(`SELECT * FROM removed_records WHERE table_name = $1 AND record_id = $2`, [table, String(id)])).rows;
+  try {
+    // A CANCELLED TASK: the whole row is kept, description and all.
+    const title = `Removal check ${Date.now()}`;
+    const due = new Date(Date.now() + 5 * 86_400_000).toISOString().slice(0, 10);
+    const made = await send(supervisor.token, "POST", "/api/tasks", { student_id: student.student_id, title, description: "Kept when cancelled", priority: "Low", due_date: due });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const taskId = made.body.task.id;
+    assert.deepEqual(await kept("tasks", taskId), [], "nothing is kept while the task exists");
+    assert.equal((await send(supervisor.token, "DELETE", `/api/tasks/${taskId}`)).status, 200);
+    const task = await kept("tasks", taskId);
+    assert.equal(task.length, 1);
+    assert.equal(task[0].student_id, student.student_id);
+    assert.equal(task[0].data.title, title);
+    assert.equal(task[0].data.description, "Kept when cancelled");
+    assert.deepEqual([task[0].removed_by_role, task[0].removed_by_id], ["supervisor", supervisor.supervisor.supervisor_id]);
+    assert.equal((await pool.query(`SELECT 1 FROM tasks WHERE id = $1`, [taskId])).rows.length, 0);
+
+    // A REFUSED REMOVAL keeps nothing: another account cannot cancel it, so no copy is written.
+    const second = await send(supervisor.token, "POST", "/api/tasks", { student_id: student.student_id, title: `${title} b`, priority: "Low", due_date: due });
+    const secondId = second.body.task.id;
+    assert.equal((await send(studentToken, "DELETE", `/api/tasks/${secondId}`)).status, 403);
+    assert.deepEqual(await kept("tasks", secondId), []);
+    assert.equal((await send(supervisor.token, "DELETE", `/api/tasks/${secondId}`)).status, 200);
+
+    // A REMOVED EVALUATION keeps its comments.
+    const written = await send(supervisor.token, "POST", "/api/evaluations", { student_id: student.student_id, category: `Removal ${Date.now()}`.slice(0, 40), rating: 5, comments: "Kept when removed" });
+    assert.equal(written.status, 201, JSON.stringify(written.body));
+    const evaluationId = written.body.evaluation.id;
+    assert.equal((await send(supervisor.token, "DELETE", `/api/evaluations/${evaluationId}`)).status, 200);
+    const evaluation = await kept("evaluations", evaluationId);
+    assert.equal(evaluation.length, 1);
+    assert.equal(evaluation[0].data.comments, "Kept when removed");
+    assert.equal(evaluation[0].student_id, student.student_id);
+
+    // A HOLIDAY has no student; it is kept all the same, under the coordinator who removed it.
+    const holiday = await send(coordinatorToken, "POST", "/api/coordinator/holidays", { date: "2031-12-08", name: `Removal check ${Date.now()}` });
+    assert.equal(holiday.status, 201, JSON.stringify(holiday.body));
+    const holidayId = holiday.body.holiday.id;
+    assert.equal((await send(coordinatorToken, "DELETE", `/api/coordinator/holidays/${holidayId}`)).status, 200);
+    const day = await kept("holidays", holidayId);
+    assert.equal(day.length, 1);
+    assert.equal(day[0].student_id, null);
+    assert.deepEqual([day[0].removed_by_role, day[0].removed_by_id], ["coordinator", coordinator.coordinator_id]);
+  } finally {
+    await pool.query(`DELETE FROM removed_records WHERE data->>'title' LIKE 'Removal check %' OR data->>'name' LIKE 'Removal check %' OR data->>'category' LIKE 'Removal %'`);
+    await pool.end();
+  }
+});

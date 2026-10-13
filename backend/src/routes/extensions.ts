@@ -6,6 +6,7 @@ import { categoriesFor } from "../services/notificationPreferences";
 import { loadCatalogue, resolvePlacement } from "../services/academics";
 import { manilaClock } from "../services/digests";
 import { readReleaseDay, released, scheduledLater } from "../services/taskRelease";
+import { deleteKeeping } from "../services/removedRecords";
 import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverables";
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
@@ -255,10 +256,14 @@ export function registerExtensionRoutes(
       }
       const auth = (req as AuthedRequest).auth!;
       const result = await pool.query(
-        `DELETE FROM absences
-         WHERE id = $1 AND student_id = $2 AND status = 'Pending'
-         RETURNING id, TO_CHAR(date, 'YYYY-MM-DD') AS date`,
-        [req.params.id, auth.id]
+        deleteKeeping({
+          table: "absences",
+          alias: "a",
+          where: `WHERE a.id = $1 AND a.student_id = $2 AND a.status = 'Pending'`,
+          select: `a.id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date`,
+          actor: ["$3", "$4"],
+        }),
+        [req.params.id, auth.id, auth.role, auth.id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({
@@ -550,16 +555,19 @@ export function registerExtensionRoutes(
         return res.status(404).json({ message: "Task not found." });
       }
       const result = await pool.query(
-        `
-        DELETE FROM tasks t
-        USING students s
-        WHERE t.id = $1
-          AND s.student_id = t.student_id
-          AND s.supervisor_id = $2
-          AND t.status IN ('Pending', 'In Progress')
-        RETURNING t.id, t.student_id, t.title, t.attachment_file, ${scheduledLater("t.")} AS scheduled
-        `,
-        [req.params.id, auth.id]
+        deleteKeeping({
+          table: "tasks",
+          alias: "t",
+          where: `
+            USING students s
+            WHERE t.id = $1
+              AND s.student_id = t.student_id
+              AND s.supervisor_id = $2
+              AND t.status IN ('Pending', 'In Progress')`,
+          select: `t.id, t.student_id, t.title, t.attachment_file, ${scheduledLater("t.")} AS scheduled`,
+          actor: ["$3", "$4"],
+        }),
+        [req.params.id, auth.id, auth.role, auth.id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({
@@ -799,10 +807,14 @@ export function registerExtensionRoutes(
           return res.status(404).json({ message: "Evaluation not found." });
         }
         const result = await pool.query(
-          `DELETE FROM evaluations
-           WHERE id = $1 AND evaluator_id = $2 AND evaluator_type = $3
-           RETURNING id, student_id, category, rating`,
-          [req.params.id, auth.id, evaluatorTypeOf(auth.role)]
+          deleteKeeping({
+            table: "evaluations",
+            alias: "e",
+            where: `WHERE e.id = $1 AND e.evaluator_id = $2 AND e.evaluator_type = $3`,
+            select: `e.id, e.student_id, e.category, e.rating`,
+            actor: ["$4", "$5"],
+          }),
+          [req.params.id, auth.id, evaluatorTypeOf(auth.role), auth.role, auth.id]
         );
         if (result.rows.length === 0) {
           return res.status(404).json({ message: "You can only remove an evaluation you wrote." });
@@ -1277,9 +1289,16 @@ export function registerExtensionRoutes(
       if (!/^\d+$/.test(String(req.params.id))) {
         return res.status(404).json({ message: "Announcement not found." });
       }
+      const auth = (req as AuthedRequest).auth!;
       const removed = await pool.query<{ title: string; message: string }>(
-        `DELETE FROM announcements WHERE id = $1 RETURNING title, message`,
-        [req.params.id]
+        deleteKeeping({
+          table: "announcements",
+          alias: "a",
+          where: `WHERE a.id = $1`,
+          select: `a.title, a.message`,
+          actor: ["$2", "$3"],
+        }),
+        [req.params.id, auth.role, auth.id]
       );
       if (removed.rows.length === 0) {
         return res.status(404).json({ message: "Announcement not found." });
@@ -2606,9 +2625,16 @@ export function registerExtensionRoutes(
       if (!/^\d{1,9}$/.test(String(req.params.id))) {
         return res.status(404).json({ message: "Holiday not found." });
       }
+      const auth = (req as AuthedRequest).auth!;
       const result = await pool.query(
-        `DELETE FROM holidays h WHERE h.id = $1 RETURNING ${HOLIDAY_COLUMNS}`,
-        [Number(req.params.id)]
+        deleteKeeping({
+          table: "holidays",
+          alias: "h",
+          where: `WHERE h.id = $1`,
+          select: HOLIDAY_COLUMNS,
+          actor: ["$2", "$3"],
+        }),
+        [Number(req.params.id), auth.role, auth.id]
       );
       if (result.rows.length === 0) return res.status(404).json({ message: "Holiday not found." });
       return res.json({ message: "Holiday removed.", holiday: result.rows[0] });
@@ -3404,11 +3430,16 @@ export function registerExtensionRoutes(
         return res.status(404).json({ message: "Certification not found." });
       }
       const result = await pool.query(
-        `DELETE FROM dtr_certifications c
-         USING students s
-         WHERE c.id = $1 AND s.student_id = c.student_id AND s.supervisor_id = $2
-         RETURNING ${DTR_COLUMNS}`,
-        [Number(req.params.id), auth.id]
+        deleteKeeping({
+          table: "dtr_certifications",
+          alias: "c",
+          where: `
+            USING students s
+            WHERE c.id = $1 AND s.student_id = c.student_id AND s.supervisor_id = $2`,
+          select: DTR_COLUMNS,
+          actor: ["$3", "$4"],
+        }),
+        [Number(req.params.id), auth.id, auth.role, auth.id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ message: "Certification not found." });
@@ -3997,10 +4028,16 @@ export function registerExtensionRoutes(
       if (!/^\d{1,9}$/.test(String(req.params.id))) {
         return res.status(404).json({ message: "Visit not found." });
       }
+      const auth = (req as AuthedRequest).auth!;
       const result = await pool.query<{ company_id: number; visit_date: string }>(
-        `DELETE FROM site_visits WHERE id = $1
-         RETURNING company_id, TO_CHAR(visit_date, 'YYYY-MM-DD') AS visit_date`,
-        [Number(req.params.id)]
+        deleteKeeping({
+          table: "site_visits",
+          alias: "v",
+          where: `WHERE v.id = $1`,
+          select: `v.company_id, TO_CHAR(v.visit_date, 'YYYY-MM-DD') AS visit_date`,
+          actor: ["$2", "$3"],
+        }),
+        [Number(req.params.id), auth.role, auth.id]
       );
       if (result.rows.length === 0) return res.status(404).json({ message: "Visit not found." });
       return res.json({ message: "Visit removed.", visit: result.rows[0] });

@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { manilaClock } from "../services/digests";
 import { SLOW_REVIEW_DAYS } from "../services/insights";
 import { readReleaseDay, scheduledLater } from "../services/taskRelease";
+import { deleteKeeping } from "../services/removedRecords";
 
 /*
 |--------------------------------------------------------------------------
@@ -459,14 +460,23 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
         [groupTaskId, auth.id]
       );
       if (total.rows[0].total === 0) return res.status(404).json({ message: "Team task not found." });
-      const gone = await pool.query<{ student_id: string; title: string; told: boolean }>(
-        `DELETE FROM tasks t
-         USING students s
-         WHERE t.group_task_id = $1 AND s.student_id = t.student_id
-           AND TRIM(s.supervisor_id::text) = TRIM($2::text)
-           AND t.status IN ('Pending', 'In Progress')
-         RETURNING t.student_id, t.title, NOT ${scheduledLater("t.")} AS told`,
-        [groupTaskId, auth.id]
+      const gone = await pool.query<{ id: number; student_id: string; title: string; told: boolean; attachment_file: string | null }>(
+        deleteKeeping({
+          table: "tasks",
+          alias: "t",
+          where: `
+            USING students s
+            WHERE t.group_task_id = $1 AND s.student_id = t.student_id
+              AND TRIM(s.supervisor_id::text) = TRIM($2::text)
+              AND t.status IN ('Pending', 'In Progress')`,
+          select: `t.id, t.student_id, t.title, t.attachment_file, NOT ${scheduledLater("t.")} AS told`,
+          actor: ["$3", "$4"],
+        }),
+        [groupTaskId, auth.id, auth.role, auth.id]
+      );
+      // What went with the tasks goes too, as it does when one task is cancelled.
+      await quietly("TEAM TASK CANCEL CLEAN-UP ERROR", () =>
+        pool.query(`DELETE FROM task_deadline_reminders WHERE task_id = ANY($1::int[])`, [gone.rows.map((row) => row.id)])
       );
       // Only those who had been shown the task are told it is gone.
       for (const row of gone.rows.filter((item) => item.told)) {
