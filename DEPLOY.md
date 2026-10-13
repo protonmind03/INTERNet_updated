@@ -579,8 +579,9 @@ a local database only, not on the host.
 ## Before a Round 2 release goes live
 
 As of 14 October 2026 the release also carries migrations 046
-(`removed_records`), 047 (`email_daily_counts`) and 048
-(`problem_reports`), each a new table and nothing else, so the backup taken before going live must be taken after
+(`removed_records`), 047 (`email_daily_counts`), 048
+(`problem_reports`) and 049 (one new column on `attendance`, empty for
+every existing log). The first three are each a new table and nothing else, so the backup taken before going live must be taken after
 this note was written. No new
 variable and no platform setting is needed for it.
 
@@ -783,3 +784,36 @@ privacy notice. The cost is that nobody is told by email or phone when a
 fault happens: someone has to look at the card. If the list should ever
 go to an outside service instead, that is a separate decision, because
 crash reports would then leave the system.
+
+## Phone checks for the offline time-in
+
+None of this has run on a real phone. Do it on the test site, with a
+student who has no log today, before it goes live.
+
+1. Sign in as the student with a connection, and wait for the Today page.
+2. Turn on airplane mode. Tap **Time in**. The dialog should say there is
+   no connection and offer **Time in without a photo**. The camera must
+   not open.
+3. Confirm. A message says the time-in was saved on this phone. The
+   button now offers **Out for lunch**; no second Time in is offered.
+4. Tap **Out for lunch** and confirm. It is saved on the phone too.
+5. Close the app completely, wait a minute, open it again, still in
+   airplane mode. The day should still show the time-in and lunch, marked
+   as waiting.
+6. Turn airplane mode off. Within about a minute a message says the
+   steps were sent. On the Attendance page the log says "Time-in recorded
+   with no connection, so there is no photo. Your supervisor has to
+   confirm it."
+7. As the supervisor: the log is in the review queue marked "Offline
+   time-in, no photo", a notification says so, it is NOT among the logs
+   offered by "Verify all", and opening it shows a warning in place of a
+   photo and the button "They were at work: verify" (after the student
+   has timed out).
+8. Set the phone's clock an hour ahead, repeat step 2 and 3, reconnect:
+   the time-in should be refused with "That time is in the future", and
+   the student told.
+
+**What a supervisor should be told.** A time-in with no photo proves
+nothing by itself. The system's only safeguard is that it cannot count
+until the supervisor says the intern was there. If a student's time-ins
+are often offline, that is something to ask about.

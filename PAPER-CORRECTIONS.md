@@ -802,3 +802,20 @@ ones wherever the paper gives them:
   requirement throughout, and may mention that a requirement can have a
   due date, can recur weekly and can be reviewed by the coordinator.
   "Deliverable" survives only in table and route names.
+
+## After the offline time-in (14 October 2026)
+
+- **Time-in no longer always needs a connection.** The earlier
+  correction "Time-in still needs a connection" is replaced. With no
+  connection a student can record a time-in without a photo. The paper
+  must say plainly that such a time-in has no camera check and no photo,
+  is marked as such, and counts only after the supervisor confirms it
+  for that one log.
+- **Liveness claim, narrowed.** "Every time-in is verified by a camera
+  liveness check" is no longer true. True: every time-in made with a
+  connection is; one made without is verified by a person instead.
+- **ERD.** `attendance` gains `offline_time_in_request` (migration
+  049): empty for a normal time-in, the phone's request id for one
+  recorded offline.
+- **Limit to state.** The system cannot tell a phone that truly had no
+  signal from one whose connection was switched off on purpose.

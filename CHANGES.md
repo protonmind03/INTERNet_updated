@@ -1937,3 +1937,63 @@ long-lived database), 30 end-to-end tests passing and 2 skipping
 themselves the same way; two tests and one journey were changed to
 expect the new words. Build and lint clean. A search of both source
 trees finds no "deliverable" left in anything a person reads.
+
+## 38. Time-in with no connection (14 October 2026)
+
+Decision D1: a provisional time-in recorded offline, confirmed by the
+supervisor, at most 12 hours old. **Built without a photo.** The question
+"should an offline time-in keep a photo on the phone" was put to the
+owner and not answered; the recommended default was built, awaiting
+confirmation. With a photo the supervisor would have something to look
+at, at the cost of a face photo sitting on the phone until it
+reconnects, which nothing else in the app does.
+
+**For the student.** With no connection, Time in no longer refuses. The
+dialog says the camera check cannot run and offers "Time in without a
+photo", saying what that means: the time is the phone's, it is sent
+later, and the supervisor has to confirm it. The day then carries on from
+what the phone holds: lunch and time-out can be recorded too, and a
+second time-in cannot. When the connection is back everything is sent in
+order, by itself. The privacy notice is not shown first in this case,
+since no photo is taken and agreeing needs the server.
+
+**For the supervisor.** A notification says a time-in was recorded with
+no connection, no photo and no camera check. The log is marked "Offline
+time-in, no photo" in the list and has a warning where the photo would
+be. It is left out of "Verify all", and the server refuses to verify it
+unless the request says the reviewer knows (`confirm_offline_time_in`),
+so it can only be verified one log at a time. The coordinator's flagged
+log panel says the same and asks the same.
+
+**On the server (migration 049, `routes/offlineTimeIn.ts`).**
+`POST /api/attendance/offline-time-in` takes the time and a request id.
+The time is checked as the other offline steps are: not ahead of the
+server, not older than the limit. The log belongs to the Philippine day
+the time falls on. Sent twice, it is recorded once. If the day already
+has a log (the supervisor recorded the time-in in person meanwhile),
+nothing is added and the phone attaches its waiting lunch and time-out
+to that log instead.
+
+**Also changed:** the offline banner said "Changes can't be saved until
+your connection is back", which was not true of attendance steps. It now
+says "Most changes".
+
+**Checked, the way CI runs it:** a new database with all 49 migrations
+and the clock on UTC: 175 API tests, all passing, none skipped (one
+new). A new database again: 33 end-to-end tests with CI's browser, all
+passing, none skipped (one new: offline time-in through to the
+supervisor's list). In a real browser with the network switched off: a
+time-in and a lunch recorded offline, both sent on reconnect, the lunch
+attached to the log the server made. Build and lint clean. The
+accessibility check on the offline dialog and on the Attendance page
+with an unsent time-in, at both widths: clean.
+
+**Not checked:** on a real phone (steps are in `DEPLOY.md`). The
+supervisor's "They were at work: verify" button pressed in a browser:
+the rule behind it is tested through the API only. The phone closed and
+reopened while offline with a time-in waiting.
+
+**A weakness to be honest about.** A student who wants to avoid the
+camera can switch the connection off. Nothing technical stops that. What
+stops it counting is the supervisor's confirmation, and what makes a
+pattern visible is the mark on every such log.
