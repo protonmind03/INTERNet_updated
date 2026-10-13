@@ -434,6 +434,15 @@ Nothing changes until the variables are set.
 | After that | The test site, as a coordinator | Profile → What is switched on → Check file storage. | The first proof against the real service; it was only tested against a stand-in. |
 | Optional, later | `railway ssh` on the backend | `npm run uploads:copy-to-bucket`, then with `-- --confirm`. | Moves the files uploaded before the switch. They open either way. |
 
+## Fault list and readiness check (ready 2026-10-14)
+
+Migration 048 (one new table). No variable. Works as soon as it is deployed.
+
+| When | Where | Step | Why |
+|---|---|---|---|
+| Optional, after the release is on the test site | Railway → staging backend → Settings → Healthcheck Path | Set it to `/api/health/ready`. | A deploy that cannot reach its database is then not put into service. Leave it as it is if a healthcheck path is already set and working. |
+| Now and then | The site, as a coordinator | Profile → What is switched on → Problems the system noticed. | Nobody is told when a fault happens; someone has to look. |
+
 ## Variables introduced by this plan
 
 All optional; unset means today's behaviour.

@@ -791,3 +791,9 @@ ones wherever the paper gives them:
   S3-compatible bucket (Cloudflare R2), chosen by configuration, and are
   only ever served through routes that check the reader. It should not
   say which is in use unless the coordinator's status card says so.
+
+- **Monitoring (14 October 2026).** The system records its own faults
+  (a label, the kind of error, a count, first and last time) in a table,
+  `problem_reports` (migration 048, no personal data, no foreign keys),
+  and shows them to coordinators. No third-party monitoring service is
+  used. The paper should not claim alerting: nobody is notified.

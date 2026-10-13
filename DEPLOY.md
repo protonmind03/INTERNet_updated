@@ -579,8 +579,8 @@ a local database only, not on the host.
 ## Before a Round 2 release goes live
 
 As of 14 October 2026 the release also carries migrations 046
-(`removed_records`) and 047 (`email_daily_counts`), each a new table and
-nothing else, so the backup taken before going live must be taken after
+(`removed_records`), 047 (`email_daily_counts`) and 048
+(`problem_reports`), each a new table and nothing else, so the backup taken before going live must be taken after
 this note was written. No new
 variable and no platform setting is needed for it.
 
@@ -756,3 +756,30 @@ and not the disk, opens again, an older file on the disk still opens,
 the check button, and the copy script (count, copy, run again).
 **Not checked:** Cloudflare R2 itself. No account was used. The first
 real proof is step 4 above.
+
+## Seeing that something is going wrong
+
+**In the app.** A coordinator's Profile → "What is switched on" ends with
+"Problems the system noticed in the last 7 days". Each line is one kind
+of fault, how many times it happened and when it last did. A fault on
+the server shows the label of its log line (for example `ASSIGN TASK
+ERROR`) and the kind of error; one in a browser shows the crash message
+and the page. Neither says who was using the system, and a server
+fault's own message is never kept, because it can quote something a
+person typed. A fault not seen for 30 days drops off.
+
+To find the full detail of a server fault, search the backend's log on
+Railway for the same label.
+
+**For the host.** `/api/health` says the server is running.
+`/api/health/ready` also asks the database and answers 503 when it does
+not reply within three seconds. Optional: Railway → backend service →
+Settings → Healthcheck Path → `/api/health/ready`, so a deploy that
+cannot reach its database is not put into service.
+
+**No outside monitoring service is used.** Nothing about faults leaves
+the system, so there is no account to create and nothing to add to the
+privacy notice. The cost is that nobody is told by email or phone when a
+fault happens: someone has to look at the card. If the list should ever
+go to an outside service instead, that is a separate decision, because
+crash reports would then leave the system.

@@ -1876,3 +1876,42 @@ payment card for the free allowance.
 
 **Not built:** a scheduled copy of the DATABASE to a bucket. The
 database backup is still the manual one in `DEPLOY.md`.
+
+## 36. The system keeps a list of its own faults (14 October 2026)
+
+Fourth and last of the workstreams from decision D4. The plan said
+"error monitoring" on a free outside service. It is built inside the
+system instead, for a reason worth stating: an outside service would
+receive crash reports from students' browsers, which would have to be
+declared in the privacy notice, allowed in the content security policy
+and paid attention to on someone else's dashboard. Counting faults in
+the system's own database needs none of that.
+
+- **Each kind of fault is kept once, with a count (migration 048,
+  `services/problems.ts`).** Every route and loop already logs a fault
+  as a labelled line. That line is now also counted, where it is
+  written, so no route had to change. From the server only the label and
+  the kind of error are kept, never the error's message. A browser's
+  crash report, which the app already sent, is kept with its page and
+  version. Nothing about who. Held to one write a minute per fault and
+  forty kinds a minute; gone after 30 days unseen.
+- **The coordinator sees them** at the foot of "What is switched on"
+  (`GET /api/coordinator/problems`).
+- **`GET /api/health/ready`** answers whether the database replies.
+
+**Checked, the way CI runs it:** a new database, all 48 migrations, the
+clock on UTC: 174 API tests, all passing, none skipped. Then a new
+database again and all 32 end-to-end tests with CI's browser: all
+passing, none skipped. That is the first run since the audit with no
+skips at all, and it covers the audit fixes and the push, email, storage
+and monitoring work together. Build and lint clean; the accessibility
+check on the card with a fault showing: clean at both widths. After the
+32 journeys on the new database the fault list was empty.
+
+**Not checked:** how the list reads with real faults over weeks. Whether
+watching the log line costs anything measurable under load (it adds one
+small write a minute per kind of fault at most).
+
+**Not done:** telling anyone when a fault happens. Someone has to look.
+A fault that stops the server altogether is not recorded, because the
+server is what records.
