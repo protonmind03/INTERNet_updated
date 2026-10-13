@@ -2,9 +2,8 @@ import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
 import { Button, Skeleton } from "../../components/ui";
 import { formatDuration, formatHours, formatTime } from "../../lib/format";
-import { toast } from "../../lib/toast";
 import { useMediaQuery } from "../../lib/useMediaQuery";
-import { nextStep, OFFLINE_TIME_IN } from "./nextStep";
+import { nextStep } from "./nextStep";
 import { useTimeIn } from "./timeInContext";
 import { workedMinutes } from "./useAttendance";
 
@@ -84,7 +83,6 @@ export function NextStepButton() {
   const step = loading ? null : nextStep(stage);
   const wide = useMediaQuery("(min-width: 768px)");
   if (!step || !wide) return null;
-  const offline = stage === "not-started" && !timeIn.online;
 
   return (
     <Button
@@ -92,10 +90,7 @@ export function NextStepButton() {
       icon={step.icon}
       disabled={busy}
       aria-label={step.name}
-      // Looks unavailable but still answers a click, to say why.
-      aria-disabled={offline || undefined}
-      className={offline ? "opacity-60" : undefined}
-      onClick={() => (offline ? toast.info(OFFLINE_TIME_IN) : step.run(timeIn))}
+      onClick={() => step.run(timeIn)}
     >
       {step.label}
     </Button>

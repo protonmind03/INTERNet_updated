@@ -102,13 +102,13 @@ export default function TodayAttendance() {
           </p>
         )}
 
-        {/* Time-in is the one step that cannot be saved for later: the camera
-            check is set and confirmed by the server at that moment. */}
+        {/* The camera check is set and confirmed by the server, so with no
+            connection the time-in is recorded without a photo instead. */}
         {!loading && stage === "not-started" && !online && (
           <p role="status" className="mt-2 max-w-md text-sm text-gold-200">
-            Time-in needs a connection, because the camera check is confirmed by the server
-            as you take it. Find a signal and try again. If you cannot get online, ask your
-            supervisor to record your time-in from their own phone.
+            There is no connection, so the camera check cannot run. You can still time in
+            without a photo: it is kept on this phone, sent when you are back online, and your
+            supervisor has to confirm it.
           </p>
         )}
 
@@ -119,11 +119,10 @@ export default function TodayAttendance() {
               <Button
                 variant="gold"
                 size="lg"
-                icon="camera"
-                disabled={!online}
+                icon={online ? "camera" : "clock"}
                 onClick={openTimeIn}
               >
-                Time in
+                {online ? "Time in" : "Time in without a photo"}
               </Button>
             )}
             {stage === "working" && (

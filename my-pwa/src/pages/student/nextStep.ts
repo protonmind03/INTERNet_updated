@@ -33,6 +33,3 @@ export function nextStep(stage: DayStage): NextStep | null {
   return null;
 }
 
-/** What a tap on "Time in" says when there is no connection. */
-export const OFFLINE_TIME_IN =
-  "Time-in needs a connection, because the camera check is confirmed by the server as you take it. Find a signal and try again, or ask your supervisor to use \"Record time-in\" on their phone.";

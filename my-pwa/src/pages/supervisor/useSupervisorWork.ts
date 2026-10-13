@@ -64,6 +64,8 @@ export type AttendanceEntry = {
   capture_method: "liveness" | "supervisor" | null;
   /** At least one step's time came from the intern's phone while it was offline. */
   recorded_offline?: boolean;
+  /** The time-in itself was recorded with no connection: no photo and no camera check. */
+  offline_time_in?: boolean;
   /** What the intern wrote at time-out about the day's work. */
   accomplishments?: string | null;
   /** The tasks the intern said they worked on that day. */
@@ -387,13 +389,20 @@ export function useSupervisorWork(
       id: number,
       status: "Verified" | "Rejected" | "Pending",
       reason?: string,
-      expected?: AttendanceEntry["status"]
+      expected?: AttendanceEntry["status"],
+      // Said when verifying a time-in that has no photo: the server asks for it.
+      confirmOfflineTimeIn?: boolean
     ) =>
       change(() =>
         sendJson(
           "PATCH",
           `/api/attendance/${id}/status`,
-          { status, reason: reason?.trim() || undefined, expected_status: expected },
+          {
+            status,
+            reason: reason?.trim() || undefined,
+            expected_status: expected,
+            confirm_offline_time_in: confirmOfflineTimeIn || undefined,
+          },
           "The attendance log could not be updated."
         )
       ),

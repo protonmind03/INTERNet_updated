@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { useLocation } from "react-router-dom";
 import Icon from "../../components/Icon";
 import { useReportedHeight } from "../../lib/layers";
-import { toast } from "../../lib/toast";
 import { useMediaQuery } from "../../lib/useMediaQuery";
-import { nextStep, OFFLINE_TIME_IN } from "./nextStep";
+import { nextStep } from "./nextStep";
 import { useTimeIn } from "./timeInContext";
 
 /*
@@ -55,7 +54,6 @@ export default function TimeInFab() {
   const step = loading ? null : nextStep(stage);
   if (!phone || !step || HIDDEN_ON.includes(pathname) || dialogOnScreen || timeIn.dialogOpen) return null;
 
-  const offline = stage === "not-started" && !timeIn.online;
   const waiting = todayLog?.waiting?.length ?? 0;
 
   return (
@@ -68,12 +66,8 @@ export default function TimeInFab() {
           ? `${step.name}. ${waiting === 1 ? "1 step is" : `${waiting} steps are`} waiting to be sent.`
           : step.name
       }
-      // Looks unavailable but still answers a tap, to say why.
-      aria-disabled={offline || undefined}
-      onClick={() => (offline ? toast.info(OFFLINE_TIME_IN) : step.run(timeIn))}
-      className={`float-fab inb-press fixed right-4 z-(--z-fab) flex h-14 min-w-14 items-center justify-center gap-2 rounded-full px-4 text-sm font-bold shadow-lg shadow-psu-950/25 ring-1 ring-inset ring-black/5 md:hidden print:hidden ${
-        offline ? "bg-slate-200 text-slate-600" : "bg-gold-400 text-psu-950"
-      }`}
+      onClick={() => step.run(timeIn)}
+      className="float-fab inb-press fixed right-4 z-(--z-fab) flex h-14 min-w-14 items-center justify-center gap-2 rounded-full bg-gold-400 px-4 text-sm font-bold text-psu-950 shadow-lg shadow-psu-950/25 ring-1 ring-inset ring-black/5 md:hidden print:hidden"
     >
       <Icon name={step.icon} size={22} />
       <span>{step.label}</span>

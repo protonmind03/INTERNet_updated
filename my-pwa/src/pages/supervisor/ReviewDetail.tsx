@@ -188,7 +188,17 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
       )}
 
       <CaptureNote entry={entry} />
-      {entry.recorded_offline && (
+      {entry.offline_time_in && (
+        <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+          <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-amber-600" />
+          <span>
+            <span className="font-semibold">No photo and no camera check.</span> The intern
+            recorded this time-in on a phone with no connection, so the time is the phone's own.
+            Verify it only if you know they were at work at that time.
+          </span>
+        </p>
+      )}
+      {entry.recorded_offline && !entry.offline_time_in && (
         <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
           <Icon name="clock" size={16} className="mt-0.5 shrink-0 text-amber-600" />
           <span>
@@ -198,11 +208,11 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         </p>
       )}
 
-      <AttendancePhoto path={entry.image_url} role="supervisor" />
+      {!entry.offline_time_in && <AttendancePhoto path={entry.image_url} role="supervisor" />}
 
       <Decision
         key={`${entry.id}-${entry.status}`}
-        approveLabel={rejected ? "Verify instead" : "Verify"}
+        approveLabel={entry.offline_time_in ? "They were at work: verify" : rejected ? "Verify instead" : "Verify"}
         rejectLabel={entry.status === "Verified" ? "Reject instead" : "Reject"}
         approveHidden={entry.status === "Verified"}
         rejectHidden={rejected}
@@ -217,7 +227,7 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         }
         shortcut={shortcuts}
         onApprove={async () => {
-          await work.decideAttendance(entry.id, "Verified", undefined, entry.status);
+          await work.decideAttendance(entry.id, "Verified", undefined, entry.status, entry.offline_time_in);
           toast.success(
             `${entry.student_name}'s log for ${formatDate(entry.date)} verified.`,
             undoFrom("Verified")

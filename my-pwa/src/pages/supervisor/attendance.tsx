@@ -50,7 +50,7 @@ const awaitsReview = (entry: AttendanceEntry) =>
  * from the phone's clock while it was offline. The detail says more.
  */
 function LogMarks({ entry }: { entry: AttendanceEntry }) {
-  if (!entry.capture_method && !entry.recorded_offline) return null;
+  if (!entry.capture_method && !entry.recorded_offline && !entry.offline_time_in) return null;
   const mark = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium";
   return (
     <span className="mt-1 flex flex-wrap gap-1">
@@ -66,11 +66,18 @@ function LogMarks({ entry }: { entry: AttendanceEntry }) {
           Recorded in person
         </span>
       )}
-      {entry.recorded_offline && (
+      {entry.offline_time_in ? (
         <span className={`${mark} bg-amber-50 text-amber-900`}>
           <Icon name="clock" size={12} />
-          Recorded offline
+          Offline time-in, no photo
         </span>
+      ) : (
+        entry.recorded_offline && (
+          <span className={`${mark} bg-amber-50 text-amber-900`}>
+            <Icon name="clock" size={12} />
+            Recorded offline
+          </span>
+        )
       )}
     </span>
   );

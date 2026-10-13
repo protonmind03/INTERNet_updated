@@ -31,7 +31,7 @@ export default function OfflineBanner() {
       className="fixed inset-x-0 top-0 z-(--z-offline) flex animate-fade-in items-center justify-center gap-2 bg-slate-900 px-4 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] text-center text-sm font-medium text-white print:hidden"
     >
       <Icon name="alert" size={16} className="shrink-0 text-gold-300" />
-      You're offline. Changes can't be saved until your connection is back.
+      You're offline. Most changes can't be saved until your connection is back.
     </div>
   );
 }

@@ -6440,6 +6440,7 @@ app.get(
           a.image_url,
           a.review_notes,
           a.correction_note,
+          (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
           ARRAY_REMOVE(ARRAY[
             CASE WHEN ${openRejectionCondition("a")} THEN 'Rejected by supervisor' END,
             CASE WHEN ${missingTimeoutCondition("a")} THEN 'No time-out recorded' END,

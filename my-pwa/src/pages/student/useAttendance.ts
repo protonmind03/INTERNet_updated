@@ -6,10 +6,13 @@ import { localDateKey } from "../../lib/format";
 import { compressPhoto } from "../../lib/image";
 import { notifyDataChanged } from "../../lib/navCounts";
 import {
+  LOCAL_LOG_ID,
   QUEUE_CHANGED,
   queueStep,
+  queueTimeIn,
   sendWaitingSteps,
   waitingSteps,
+  type QueuedPath,
   type QueuedStep,
   type StepPath,
 } from "../../lib/offlineQueue";
@@ -39,6 +42,8 @@ export type AttendanceLog = {
   capture_method?: "liveness" | "supervisor" | null;
   /** At least one step's time came from the phone while it was offline. */
   recorded_offline?: boolean;
+  /** The time-in itself was recorded with no connection: no photo, no camera check. */
+  offline_time_in?: boolean;
   /** What the student wrote at time-out about the day's work. */
   accomplishments?: string | null;
   /** The tasks the student said they worked on that day. Missing from an older server. */
@@ -47,8 +52,11 @@ export type AttendanceLog = {
   time_corrected_at?: string | null;
   time_correction_reason?: string | null;
   /** Steps taken offline on this phone that have not reached the server yet. */
-  waiting?: StepPath[];
+  waiting?: QueuedPath[];
 };
+
+/** True for a log that exists only on this phone so far: its time-in has not been sent. */
+export const isLocalLog = (log: Pick<AttendanceLog, "id">): boolean => log.id === LOCAL_LOG_ID;
 
 const STEP_FIELD: Record<StepPath, "break_time" | "break_end_time" | "time_out"> = {
   break: "break_time",
@@ -63,11 +71,38 @@ const STEP_FIELD: Record<StepPath, "break_time" | "break_end_time" | "time_out">
  */
 function withWaitingSteps(logs: AttendanceLog[], steps: QueuedStep[]): AttendanceLog[] {
   if (steps.length === 0) return logs;
-  return logs.map((log) => {
+  // A time-in still waiting has no log on the server. The day is shown from
+  // what the phone holds, so the next step can be taken and the same
+  // time-in cannot be recorded twice.
+  const start = steps.find((step) => step.path === "time-in");
+  const shown =
+    start && !logs.some((log) => log.id === LOCAL_LOG_ID)
+      ? [
+          {
+            id: LOCAL_LOG_ID,
+            student_id: "",
+            date: localDateKey(start.occurredAt),
+            time_in: start.occurredAt,
+            break_time: null,
+            break_end_time: null,
+            time_out: null,
+            hours: null,
+            note: typeof start.extra?.note === "string" ? start.extra.note : null,
+            status: "Pending" as const,
+            image_url: null,
+            capture_method: null,
+            recorded_offline: true,
+            offline_time_in: true,
+          },
+          ...logs,
+        ]
+      : logs;
+  return shown.map((log) => {
     const mine = steps.filter((step) => step.logId === log.id);
     if (mine.length === 0) return log;
     const next: AttendanceLog = { ...log, waiting: mine.map((step) => step.path) };
     for (const step of mine) {
+      if (step.path === "time-in") continue;
       const field = STEP_FIELD[step.path];
       if (!next[field]) next[field] = step.occurredAt;
       // A break still open when the student timed out ends at the time-out.
@@ -188,7 +223,10 @@ export function useAttendance(studentId: string | undefined) {
   // An earlier day the student timed in on but never timed out of.
   const openPastLog = useMemo(() => {
     const today = localDateKey(new Date());
-    return logs.find((log) => log.time_in && !log.time_out && logDateKey(log) < today);
+    return logs.find(
+      // One that exists only on this phone cannot be corrected on the server yet.
+      (log) => log.time_in && !log.time_out && logDateKey(log) < today && !isLocalLog(log)
+    );
   }, [logs]);
 
   const run = useCallback(
@@ -241,6 +279,19 @@ export function useAttendance(studentId: string | undefined) {
     },
     [studentId, run]
   );
+
+  /**
+   * Records the time-in on this phone, for when there is no connection. No
+   * photo is taken or kept. False when this browser cannot keep it.
+   */
+  const timeInOffline = useCallback(async (note: string): Promise<boolean> => {
+    const kept = await queueTimeIn(note);
+    if (!kept) return false;
+    setLogs((current) => withWaitingSteps(current, [kept]));
+    // Start trying to send it: this keeps going until it gets through.
+    void sendWaitingSteps();
+    return true;
+  }, []);
 
   /**
    * Records a step on today's log. With a connection it goes straight to the
@@ -343,6 +394,7 @@ export function useAttendance(studentId: string | undefined) {
     stage: stageOf(todayLog),
     livenessChallenge,
     timeIn,
+    timeInOffline,
     startBreak: () => step("break", "Could not record that you went out for lunch."),
     endBreak: () => step("break-end", "Could not record that you are back from lunch."),
     /** Times out, with the student's note of what they did today. */

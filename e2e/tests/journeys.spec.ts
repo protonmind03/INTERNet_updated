@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ACCOUNTS, SECOND_STUDENT, api, apiSession, signIn, today, type Role } from "./helpers";
+import { ACCOUNTS, API, SECOND_STUDENT, api, apiSession, signIn, today, type Role } from "./helpers";
 
 /*
 | The journeys a real person takes, start to finish, in a real browser.
@@ -1066,5 +1066,63 @@ test.describe("attendance steps recorded offline and not sent yet", () => {
     await dialog.getByRole("button", { name: "Sign out and erase" }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect.poll(() => waiting(page)).toBe(0);
+  });
+});
+
+test.describe("time-in with no connection", () => {
+  test("a student times in without a photo, it is sent when the connection is back, and the supervisor sees what it lacks", async ({ page, context, browser }) => {
+    const sessionOf = async (role: Role, account: { email: string; password: string }) => {
+      const response = await fetch(`${API}/api/login/${role}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: account.email, password: account.password }),
+      });
+      const data = await response.json();
+      return { token: String(data.token), id: String(data[role][`${role}_id`]) };
+    };
+    const student = await sessionOf("student", SECOND_STUDENT);
+    const logsNow = async () =>
+      (await api<{ attendance: { id: number; date: string; offline_time_in?: boolean; image_url: string | null; note: string | null }[] }>(
+        student.token, "GET", `/api/attendance/${student.id}`
+      )).body.attendance;
+    test.skip(
+      (await logsNow()).some((log) => log.date === today()),
+      "The second demo student already has a log today (an earlier run of this journey)."
+    );
+
+    await signIn(page, "student", SECOND_STUDENT);
+    await expect(page.getByRole("button", { name: /^Time in/ }).first()).toBeVisible();
+
+    // No connection: the camera check cannot run, and the app says so and offers the other way.
+    await context.setOffline(true);
+    await page.getByRole("button", { name: /^Time in/ }).first().click();
+    const dialog = page.getByRole("dialog", { name: "Time in" });
+    await expect(dialog).toContainText("There is no connection, so the camera check cannot run.");
+    await expect(dialog).toContainText("Your supervisor is told there was no photo or camera check");
+    await dialog.getByLabel(/^Note/).fill("No signal at the site this morning.");
+    await dialog.getByRole("button", { name: "Time in without a photo" }).click();
+    await expect(page.getByText(/Time-in saved on this phone at/)).toBeVisible();
+    // The day goes on from what the phone holds: the next step is offered, a second time-in is not.
+    await expect(page.getByRole("button", { name: /^Out for lunch/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Time in/ })).toHaveCount(0);
+    expect((await logsNow()).some((log) => log.date === today())).toBe(false);
+
+    // Back online: it is sent by itself.
+    await context.setOffline(false);
+    await expect.poll(async () => (await logsNow()).find((log) => log.date === today())?.offline_time_in, { timeout: 30_000 }).toBe(true);
+    const log = (await logsNow()).find((entry) => entry.date === today())!;
+    expect(log.image_url).toBeNull();
+    expect(log.note).toBe("No signal at the site this morning.");
+
+    // The supervisor's list marks it, and it cannot be verified without saying so.
+    const supervisor = await apiSession("supervisor");
+    const blind = await api<{ code?: string }>(supervisor.token, "PATCH", `/api/attendance/${log.id}/status`, { status: "Verified", expected_status: "Pending" });
+    expect(blind.status).toBe(409);
+    const supervisorPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+    await signIn(supervisorPage, "supervisor");
+    await supervisorPage.goto("/supervisor/attendance");
+    // The list is drawn twice, as a table and as cards; the one for this width is the visible one.
+    await expect(supervisorPage.getByText("Offline time-in, no photo").locator("visible=true").first()).toBeVisible();
+    await supervisorPage.context().close();
   });
 });

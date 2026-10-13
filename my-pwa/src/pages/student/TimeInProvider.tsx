@@ -57,9 +57,11 @@ function TimeInActions({ children }: { children: ReactNode }) {
   const [consentOpen, setConsentOpen] = useState(false);
   const mustConsent = Boolean(privacy.state && !privacy.state.current);
   const openTimeIn = useCallback(() => {
-    if (mustConsent) setConsentOpen(true);
+    // With no connection no photo is taken, and agreeing needs the server:
+    // the notice waits for the first time-in that does take one.
+    if (mustConsent && online) setConsentOpen(true);
     else setTimeInOpen(true);
-  }, [mustConsent]);
+  }, [mustConsent, online]);
   const [pending, setPending] = useState<TimeInStep | null>(null);
   const openStep = useCallback((step: TimeInStep) => setPending(step), []);
   // What the student did today, asked for at time-out and kept as a draft
@@ -168,6 +170,8 @@ function TimeInActions({ children }: { children: ReactNode }) {
         onClose={() => setTimeInOpen(false)}
         loadChallenge={attendance.livenessChallenge}
         onSubmit={attendance.timeIn}
+        online={online}
+        onOffline={attendance.timeInOffline}
       />
 
       {consentOpen && privacy.state && (

@@ -209,7 +209,8 @@ export default function SupervisorDashboard() {
     () =>
       scoped.filter(
         (item): item is Extract<QueueItem, { kind: "attendance" }> =>
-          item.kind === "attendance" && Boolean(item.entry.time_out)
+          // A time-in with no photo is confirmed by itself, never in a batch.
+          item.kind === "attendance" && Boolean(item.entry.time_out) && !item.entry.offline_time_in
       ),
     [scoped]
   );

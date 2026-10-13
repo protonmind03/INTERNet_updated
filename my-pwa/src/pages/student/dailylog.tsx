@@ -415,7 +415,9 @@ function PhotoButton({ onClick }: { onClick: () => void }) {
 
 function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolean }) {
   const bySupervisor = log.capture_method === "supervisor";
+  const offlineTimeIn = Boolean(log.offline_time_in);
   if (
+    !offlineTimeIn &&
     !log.note &&
     !log.review_notes &&
     !log.correction_note &&
@@ -431,6 +433,16 @@ function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolea
         <p className="flex items-center gap-1.5 text-sm text-slate-600">
           <Icon name="camera" size={14} className="shrink-0 text-slate-400" />
           Time-in recorded by your supervisor
+        </p>
+      )}
+      {offlineTimeIn && (
+        <p className="flex items-start gap-1.5 text-sm text-amber-900">
+          <Icon name="clock" size={14} className="mt-0.5 shrink-0 text-amber-600" />
+          {log.waiting?.includes("time-in")
+            ? "Time-in recorded on this phone with no connection. Waiting to be sent."
+            : log.status === "Pending"
+              ? "Time-in recorded with no connection, so there is no photo. Your supervisor has to confirm it."
+              : "Time-in recorded with no connection, so there is no photo."}
         </p>
       )}
       {log.note && <p className="text-sm text-slate-600">{log.note}</p>}

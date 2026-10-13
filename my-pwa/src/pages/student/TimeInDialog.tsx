@@ -17,6 +17,11 @@ import type { LivenessChallenge } from "./useAttendance";
 | it has seen a live person. Then the student sees the photo, may add a
 | note, and confirms.
 |
+| With no connection the camera check cannot run: the server sets it and
+| confirms it. The dialog then offers to record the time-in on the phone
+| instead, with no photo, and says what that means: it is sent later and
+| the supervisor has to confirm it.
+|
 */
 
 type Capture = { photo: File; preview: string; report: LivenessReport };
@@ -27,10 +32,16 @@ export default function TimeInDialog({
   onClose,
   loadChallenge,
   onSubmit,
+  online,
+  onOffline,
 }: {
   open: boolean;
   now: Date;
   onClose: () => void;
+  /** What the phone says about its connection now. */
+  online: boolean;
+  /** Keeps the time-in on the phone. False when the browser cannot. */
+  onOffline: (note: string) => Promise<boolean>;
   loadChallenge: () => Promise<LivenessChallenge>;
   onSubmit: (
     photo: File,
@@ -47,23 +58,32 @@ export default function TimeInDialog({
   const [saving, setSaving] = useState(false);
   // Raised to ask the server for a fresh set of prompts.
   const [round, setRound] = useState(0);
+  // Set when the server could not be reached for the camera check.
+  const [unreachable, setUnreachable] = useState(false);
+  const noConnection = !online || unreachable;
 
   // Each time the dialog opens (or the photo is retaken) the server picks
   // new prompts, so no two checks ask for the same thing in the same order.
   useEffect(() => {
-    if (!open) return;
+    // With no connection there is nothing to ask the server for.
+    if (!open || !online) return;
     let cancelled = false;
     loadChallenge()
       .then((next) => {
-        if (!cancelled) setChallenge(next);
+        if (cancelled) return;
+        setUnreachable(false);
+        setChallenge(next);
       })
       .catch((loadError) => {
-        if (!cancelled) setError(errorText(loadError, "Could not start the camera check."));
+        if (cancelled) return;
+        // fetch() rejects with a TypeError when the server cannot be reached.
+        if (loadError instanceof TypeError) setUnreachable(true);
+        else setError(errorText(loadError, "Could not start the camera check."));
       });
     return () => {
       cancelled = true;
     };
-  }, [open, round, loadChallenge]);
+  }, [open, online, round, loadChallenge]);
 
   // Release the preview image when it changes or the dialog goes away.
   const preview = capture?.preview;
@@ -78,6 +98,7 @@ export default function TimeInDialog({
     setCapture(null);
     setNote("");
     setError("");
+    setUnreachable(false);
   };
 
   const close = () => {
@@ -90,7 +111,29 @@ export default function TimeInDialog({
     setCapture(null);
     setChallenge(null);
     setError("");
+    setUnreachable(false);
     setRound((count) => count + 1);
+  };
+
+  const recordOffline = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setError("");
+    try {
+      if (!(await onOffline(note))) {
+        setError("This browser cannot keep a time-in for later. Find a signal, or ask your supervisor to record your time-in.");
+        return;
+      }
+      toast.info(`Time-in saved on this phone at ${formatTime(new Date())}. It will be sent when you're back online.`);
+      discardNote();
+      reset();
+      onClose();
+    } catch (keepError) {
+      setError(errorText(keepError, "Could not save your time-in on this phone."));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -105,7 +148,15 @@ export default function TimeInDialog({
       reset();
       onClose();
     } catch (submitError) {
-      setError(errorText(submitError, "Could not record your time-in."));
+      if (submitError instanceof TypeError) {
+        // The connection went between the camera check and sending it. The
+        // photo cannot be kept on the phone, so it is let go.
+        setCapture(null);
+        setChallenge(null);
+        setUnreachable(true);
+      } else {
+        setError(errorText(submitError, "Could not record your time-in."));
+      }
     } finally {
       setSaving(false);
     }
@@ -119,11 +170,22 @@ export default function TimeInDialog({
       description={
         capture
           ? `Recorded at ${formatTime(now)} when you confirm.`
-          : "A quick camera check, then your photo is taken for you."
+          : noConnection
+            ? "There is no connection, so the camera check cannot run."
+            : "A quick camera check, then your photo is taken for you."
       }
       locked={saving}
       footer={
-        capture ? (
+        !capture && noConnection ? (
+          <>
+            <Button variant="secondary" onClick={close} disabled={saving}>
+              Cancel
+            </Button>
+            <Button type="submit" form="offline-time-in-form" busy={saving} failed={Boolean(error)} busyProcess="timeIn" icon="check">
+              {saving ? "Saving" : "Time in without a photo"}
+            </Button>
+          </>
+        ) : capture ? (
           <>
             <Button variant="secondary" onClick={close} disabled={saving}>
               Cancel
@@ -135,7 +197,41 @@ export default function TimeInDialog({
         ) : undefined
       }
     >
-      {!capture ? (
+      {!capture && noConnection ? (
+        <form id="offline-time-in-form" onSubmit={recordOffline} className="space-y-4">
+          <div className="rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+            <p className="font-semibold">You can still time in, without a photo.</p>
+            <ul className="mt-1.5 list-disc space-y-1 pl-5">
+              <li>The time is {formatTime(now)}, from this phone's clock.</li>
+              <li>It is kept on this phone and sent when you are back online.</li>
+              <li>
+                Your supervisor is told there was no photo or camera check, and has to confirm
+                that you were at work before the day counts.
+              </li>
+            </ul>
+          </div>
+          <div>
+            <label htmlFor="time-in-note" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Note <span className="font-normal text-slate-500">(optional)</span>
+            </label>
+            <textarea
+              id="time-in-note"
+              rows={3}
+              maxLength={500}
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="For example, where you are and why there is no signal."
+              className="field resize-none"
+            />
+          </div>
+          <FormError message={error} />
+          {online && (
+            <Button block variant="secondary" icon="refresh" onClick={retake} disabled={saving}>
+              Try the camera check again
+            </Button>
+          )}
+        </form>
+      ) : !capture ? (
         <div className="space-y-4">
           {challenge ? (
             <LivenessCamera

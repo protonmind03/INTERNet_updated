@@ -81,6 +81,8 @@ type Discrepancy = {
   image_url: string | null;
   review_notes: string | null;
   correction_note: string | null;
+  /** The time-in was recorded with no connection: no photo and no camera check. */
+  offline_time_in?: boolean;
   reasons: string[];
 };
 
@@ -566,7 +568,13 @@ function FlaggedLogDialog({
       await coordinatorRequest(`/api/attendance/${flag.id}/status`, {
         method: "PATCH",
         // Refused if the supervisor decided this log in the meantime.
-        body: { status, reason: reason.trim() || undefined, expected_status: flag.status },
+        body: {
+          status,
+          reason: reason.trim() || undefined,
+          expected_status: flag.status,
+          // The server asks for this before a time-in with no photo is verified.
+          confirm_offline_time_in: (status === "Verified" && flag.offline_time_in) || undefined,
+        },
       });
       toast.success(
         status === "Verified"
@@ -695,7 +703,15 @@ function FlaggedLogDialog({
           </p>
         )}
 
-        <AttendancePhoto path={flag.image_url} role="coordinator" />
+        {flag.offline_time_in ? (
+          <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+            <span className="font-semibold">No photo and no camera check.</span> The student
+            recorded this time-in on a phone with no connection. Verify it only if someone at the
+            company confirms they were at work then.
+          </p>
+        ) : (
+          <AttendancePhoto path={flag.image_url} role="coordinator" />
+        )}
 
         {rejected && (
           <p className="text-sm text-slate-600">

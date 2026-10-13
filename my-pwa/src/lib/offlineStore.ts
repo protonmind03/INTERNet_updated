@@ -335,6 +335,16 @@ export async function queued<T>(role: OfflineRole): Promise<QueuedAction<T>[]> {
   return (rows as QueuedAction<T>[]).sort((a, b) => a.id - b.id);
 }
 
+/** Replaces what one waiting action holds, keeping its place in the queue. */
+export async function requeue<T>(id: number, data: T): Promise<void> {
+  const db = await open();
+  if (!db) return;
+  const transaction = db.transaction(QUEUE, "readwrite");
+  const store = transaction.objectStore(QUEUE);
+  const row = (await done(store.get(id))) as QueuedAction<T> | undefined;
+  if (row) await done(store.put({ ...row, data }));
+}
+
 export async function dequeue(id: number): Promise<void> {
   const db = await open();
   if (!db) return;
