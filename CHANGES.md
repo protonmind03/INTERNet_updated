@@ -2064,3 +2064,38 @@ clean.
 
 **Not checked:** a real phone, its camera and gallery, a real HEIC
 file, a swipe on a touch screen. Steps are in `DEPLOY.md`.
+
+## 40. Sounds and vibration (14 October 2026)
+
+Decision D3: sounds off to begin with, vibration on.
+
+Five short cues, each with one meaning, so a step can be told apart
+without looking at the screen:
+
+| Cue | When | Sound | Vibration |
+|---|---|---|---|
+| Recorded | the server has recorded a time-in, lunch step or time-out | two notes going up | one short buzz |
+| Saved on this phone | a step or a time-in kept for later, with no connection | one soft note | one very short buzz |
+| Sent | steps kept on the phone have reached the server | two quick high notes | three short buzzes |
+| Not accepted | the server refused a step | one low note, falling a little | two longer buzzes |
+| Something new to review | a notification arrives while the app is open (supervisors and coordinators only) | two even notes | two short buzzes |
+
+"Recorded" and "Saved on this phone" are deliberately unlike each other:
+that difference is the point of having cues at all. The tones are made
+by the browser (Web Audio API), each under 200 ms; there are no sound
+files and nothing that sounds like a messaging app.
+
+Profile, for all three roles, has "Sounds and vibration": two switches
+and a button to hear each cue (pressing one plays it even with sound
+off). The choice is kept on that device only. Vibration is greyed out
+where the browser cannot vibrate for a web app, which includes every
+iPhone.
+
+**Checked:** 37 end-to-end tests with CI's browser on a new database, all
+passing, none skipped (one new: the starting choices, each sample giving
+its own cue, and the choice surviving a reload). Build and lint clean.
+The accessibility check on the three Profile pages at both widths with
+the new card: clean.
+
+**Not checked:** the sounds heard by a person, and vibration felt on a
+phone. The tests can tell that a cue was given, not what it sounded like.
