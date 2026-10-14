@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
 import InstallApp from "../../components/InstallApp";
+import CueSettingsCard from "../../components/CueSettingsCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice } from "../../components/ui";
@@ -230,6 +231,7 @@ export default function StudentProfilePage() {
           {studentId && <PasswordForm role="student" accountId={studentId} />}
 
           <NotificationPreferences role="student" />
+          <CueSettingsCard />
 
           {studentId && <PrivacyCard studentId={studentId} />}
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Icon from "../../components/Icon";
 import InstallApp from "../../components/InstallApp";
+import CueSettingsCard from "../../components/CueSettingsCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice } from "../../components/ui";
@@ -227,6 +228,7 @@ export default function SupervisorProfilePage() {
           {supervisorId && <PasswordForm role="supervisor" accountId={supervisorId} />}
 
           <NotificationPreferences role="supervisor" />
+          <CueSettingsCard attention />
 
           <InstallApp />
         </div>

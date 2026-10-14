@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { API_URL } from "../lib/api";
+import { cue } from "../lib/cues";
 import { toast } from "../lib/toast";
 
 type Role = "coordinator" | "student" | "supervisor";
@@ -116,6 +117,8 @@ export default function RealtimeNotificationBridge() {
             const data = eventText.match(/^data:\s*(.+)$/m)?.[1];
             if (eventName !== "notification" || !data) continue;
             const payload = JSON.parse(data) as LiveNotification;
+            // Something new to look at, for those who review. Students get no cue for this.
+            if (role !== "student") cue("attention");
             toast.notice(payload.title, payload.message, {
               label: "View",
               // Straight to what it is about; anything without a page opens

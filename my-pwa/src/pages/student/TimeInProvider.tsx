@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react
 import PicturePicker from "../../components/PicturePicker";
 import { ConfirmDialog } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
+import { cue } from "../../lib/cues";
 import { uploadPictures, type PictureDraft } from "../../lib/attachments";
 import { formatDuration, formatTime } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
@@ -165,6 +166,8 @@ function TimeInActions({ children }: { children: ReactNode }) {
         setOutPictures([]);
         setPictureProgress({});
       }
+      // Recorded on the server, or kept on the phone: two different cues on purpose.
+      cue(outcome === "queued" ? "saved" : "committed");
       if (pictureNote && outcome === "sent") {
         toast.error(`Time-out recorded.${pictureNote}`);
       } else if (outcome === "queued") {
@@ -179,6 +182,7 @@ function TimeInActions({ children }: { children: ReactNode }) {
       }
       setPending(null);
     } catch (error) {
+      cue("refused");
       toast.error(errorText(error, "That didn't go through. Please try again."));
     }
   };

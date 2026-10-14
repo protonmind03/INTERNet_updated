@@ -1,6 +1,7 @@
 import { API_URL, withStudentAuth } from "./api";
 import { notifyDataChanged } from "./navCounts";
 import { dequeue, enqueue, queued, requeue } from "./offlineStore";
+import { cue } from "./cues";
 import { toast } from "./toast";
 
 /*
@@ -251,12 +252,14 @@ async function send(): Promise<"done" | "waiting"> {
   }
 
   if (sent > 0) {
+    cue("sent");
     toast.success(
       sent === 1
         ? "The step you recorded offline has been sent."
         : `The ${sent} steps you recorded offline have been sent.`
     );
   }
+  if (refused.length > 0) cue("refused");
   for (const message of refused) toast.error(message);
   if (sent > 0 || refused.length > 0) {
     window.dispatchEvent(new Event(QUEUE_CHANGED));

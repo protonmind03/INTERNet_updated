@@ -1323,3 +1323,31 @@ test.describe("pictures on a time-out note and on a concern", () => {
     await coordinatorPage.context().close();
   });
 });
+
+test.describe("sounds and vibration", () => {
+  test("sounds start off and vibration on; the choice is kept on the device; each cue can be heard", async ({ page }) => {
+    await signIn(page, "student");
+    await page.goto("/profile");
+    const card = page.locator("section, div").filter({ has: page.getByRole("heading", { name: "Sounds and vibration" }) }).last();
+    const sound = card.getByRole("switch", { name: "Sounds" });
+    await expect(sound).not.toBeChecked();
+    await expect(card.getByRole("switch", { name: /^Vibration/ })).toBeChecked();
+    // Supervisors' and coordinators' cue for new work is not offered to a student.
+    await expect(card.getByRole("button", { name: "Something new to review" })).toHaveCount(0);
+
+    // Each sample gives its own cue (the app announces every cue it gives).
+    await page.evaluate(() => {
+      (window as unknown as { heard: string[] }).heard = [];
+      window.addEventListener("internet-cue", (event) => (window as unknown as { heard: string[] }).heard.push(String((event as CustomEvent).detail)));
+    });
+    for (const name of ["Recorded", "Saved on this phone", "Sent", "Not accepted"]) {
+      await card.getByRole("button", { name, exact: true }).click();
+    }
+    expect(await page.evaluate(() => (window as unknown as { heard: string[] }).heard)).toEqual(["committed", "saved", "sent", "refused"]);
+
+    await sound.check();
+    await page.reload();
+    await expect(page.getByRole("switch", { name: "Sounds" })).toBeChecked();
+    await page.getByRole("switch", { name: "Sounds" }).uncheck();
+  });
+});

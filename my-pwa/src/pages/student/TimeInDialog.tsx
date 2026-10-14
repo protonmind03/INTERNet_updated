@@ -3,6 +3,7 @@ import { BrandLoader } from "../../brand";
 import Icon from "../../components/Icon";
 import LivenessCamera, { type LivenessReport } from "../../components/LivenessCamera";
 import { Button, FormError, Modal, StatusBadge } from "../../components/ui";
+import { cue } from "../../lib/cues";
 import { formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
@@ -125,6 +126,7 @@ export default function TimeInDialog({
         setError("This browser cannot keep a time-in for later. Find a signal, or ask your supervisor to record your time-in.");
         return;
       }
+      cue("saved");
       toast.info(`Time-in saved on this phone at ${formatTime(new Date())}. It will be sent when you're back online.`);
       discardNote();
       reset();
@@ -143,6 +145,7 @@ export default function TimeInDialog({
     setError("");
     try {
       await onSubmit(capture.photo, note, { ticket: challenge.ticket, report: capture.report });
+      cue("committed");
       toast.celebrate("Time-in recorded. Have a good day at work.");
       discardNote();
       reset();
@@ -155,6 +158,7 @@ export default function TimeInDialog({
         setChallenge(null);
         setUnreachable(true);
       } else {
+        cue("refused");
         setError(errorText(submitError, "Could not record your time-in."));
       }
     } finally {
