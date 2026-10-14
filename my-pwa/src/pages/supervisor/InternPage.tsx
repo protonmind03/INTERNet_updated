@@ -278,7 +278,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
           </Fact>
           <Fact label="Mobile">
             {intern.phone ? (
-              <a href={`tel:${intern.phone}`} className="font-medium text-psu-700 hover:underline">
+              <a href={`tel:${intern.phone}`} className="font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900">
                 {intern.phone}
               </a>
             ) : (
@@ -289,7 +289,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
             {intern.emergency_contact_phone ? (
               <>
                 {intern.emergency_contact_name ? `${intern.emergency_contact_name}, ` : ""}
-                <a href={`tel:${intern.emergency_contact_phone}`} className="font-medium text-psu-700 hover:underline">
+                <a href={`tel:${intern.emergency_contact_phone}`} className="font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900">
                   {intern.emergency_contact_phone}
                 </a>
               </>

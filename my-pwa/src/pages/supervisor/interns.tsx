@@ -214,7 +214,7 @@ function InternDialog({
             <div>
               <dt className="inline font-medium">Mobile: </dt>
               <dd className="inline">
-                <a href={`tel:${intern.phone}`} className="text-psu-700 hover:underline">
+                <a href={`tel:${intern.phone}`} className="text-psu-700 underline underline-offset-2 hover:text-psu-900">
                   {intern.phone}
                 </a>
               </dd>
@@ -225,7 +225,7 @@ function InternDialog({
               <dt className="inline font-medium">In an emergency: </dt>
               <dd className="inline">
                 {intern.emergency_contact_name ? `${intern.emergency_contact_name}, ` : ""}
-                <a href={`tel:${intern.emergency_contact_phone}`} className="text-psu-700 hover:underline">
+                <a href={`tel:${intern.emergency_contact_phone}`} className="text-psu-700 underline underline-offset-2 hover:text-psu-900">
                   {intern.emergency_contact_phone}
                 </a>
               </dd>
