@@ -1,0 +1,3005 @@
+{
+ "when": "2026-10-16T14:14:06.636Z",
+ "site": "http://localhost:5176",
+ "rules": "WCAG 2.1 A and AA (axe-core tags wcag2a, wcag2aa, wcag21a, wcag21aa)",
+ "minutes": 14,
+ "results": [
+  {
+   "role": "public",
+   "width": 390,
+   "path": "/",
+   "landed": "/",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "public",
+   "width": 390,
+   "path": "/forgot-password",
+   "landed": "/forgot-password",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "public",
+   "width": 390,
+   "path": "/reset-password",
+   "landed": "/reset-password",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/student/dashboard",
+   "landed": "/student/dashboard",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/daily-log",
+   "landed": "/daily-log",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "button: Time in",
+     "violations": [
+      {
+       "id": "scrollable-region-focusable",
+       "impact": "serious",
+       "help": "Scrollable region must have keyboard access",
+       "nodes": [
+        {
+         "target": ".min-h-0",
+         "html": "<div class=\"min-h-0 flex-1 overflow-y-auto px-5 py-4\">"
+        }
+       ],
+       "count": 1
+      }
+     ]
+    },
+    {
+     "state": "tab: All0",
+     "violations": []
+    },
+    {
+     "state": "tab: Verified0",
+     "violations": []
+    },
+    {
+     "state": "tab: Pending0",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected0",
+     "violations": []
+    },
+    {
+     "state": "button: Report an absence",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/task",
+   "landed": "/task",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "tab: To do2",
+     "violations": []
+    },
+    {
+     "state": "tab: Submitted0",
+     "violations": []
+    },
+    {
+     "state": "tab: Reviewed0",
+     "violations": []
+    },
+    {
+     "state": "tab: All2",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/schedule",
+   "landed": "/schedule",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "tab: Week",
+     "violations": []
+    },
+    {
+     "state": "tab: Month",
+     "violations": []
+    },
+    {
+     "state": "tab: My progress",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/documents",
+   "landed": "/documents",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "button: Upload",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/student/resolution",
+   "landed": "/student/resolution",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "tab: Concerns",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluations",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/report",
+   "landed": "/student/resolution?tab=concerns",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "tab: Concerns",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluations",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/notifications",
+   "landed": "/notifications",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Unread1",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/student/feedback",
+   "landed": "/student/resolution?tab=evaluations",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "tab: Concerns",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluations",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/time-record",
+   "landed": "/time-record",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/announcements",
+   "landed": "/announcements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/journal",
+   "landed": "/journal",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "button: Edit",
+     "violations": []
+    },
+    {
+     "state": "button: Write",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/student/completion",
+   "landed": "/student/completion",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 390,
+   "path": "/profile",
+   "landed": "/profile",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: DSAccount menu for Demo Student",
+     "violations": []
+    },
+    {
+     "state": "button: Recorded",
+     "violations": []
+    },
+    {
+     "state": "menu: More",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/dashboard",
+   "landed": "/supervisor/dashboard",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Record time-in",
+     "violations": []
+    },
+    {
+     "state": "tab: Everything4",
+     "violations": []
+    },
+    {
+     "state": "tab: Attendance1",
+     "violations": []
+    },
+    {
+     "state": "tab: Tasks0",
+     "violations": []
+    },
+    {
+     "state": "tab: Documents1",
+     "violations": []
+    },
+    {
+     "state": "tab: Absences1",
+     "violations": []
+    },
+    {
+     "state": "tab: Weekly reports1",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/interns",
+   "landed": "/supervisor/interns",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/interns/DEMO-STU-0001",
+   "landed": "/supervisor/interns/DEMO-STU-0001",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: Overview",
+     "violations": []
+    },
+    {
+     "state": "tab: Attendance",
+     "violations": []
+    },
+    {
+     "state": "tab: Tasks",
+     "violations": []
+    },
+    {
+     "state": "tab: Documents",
+     "violations": []
+    },
+    {
+     "state": "tab: Weekly reports",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluate",
+     "violations": []
+    },
+    {
+     "state": "tab: Time record",
+     "violations": []
+    },
+    {
+     "state": "tab: Notes",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/attendance",
+   "landed": "/supervisor/attendance",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Record time-in",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Pending1",
+     "violations": []
+    },
+    {
+     "state": "tab: Verified0",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/tasks",
+   "landed": "/supervisor/tasks",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Assign a task",
+     "violations": []
+    },
+    {
+     "state": "tab: Tasks",
+     "violations": []
+    },
+    {
+     "state": "tab: Teams0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/documents",
+   "landed": "/supervisor/documents",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: To review1",
+     "violations": []
+    },
+    {
+     "state": "tab: Approved0",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/journals",
+   "landed": "/supervisor/journals",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Waiting for you1",
+     "violations": []
+    },
+    {
+     "state": "tab: Reviewed0",
+     "violations": []
+    },
+    {
+     "state": "tab: Returned0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/notifications",
+   "landed": "/supervisor/notifications",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: All5",
+     "violations": []
+    },
+    {
+     "state": "tab: Unread5",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/time-record",
+   "landed": "/supervisor/time-record",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/announcements",
+   "landed": "/supervisor/announcements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/evaluation",
+   "landed": "/supervisor/interns",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/complaints",
+   "landed": "/supervisor/complaints",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Report a concern",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 390,
+   "path": "/supervisor/profile",
+   "landed": "/supervisor/profile",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/dashboard",
+   "landed": "/coordinator/dashboard",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Students on track to finish within the term\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Attendance on scheduled days, last 4 weeks\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Median time from time-out to supervisor decision\" cou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Requirements complete, among students past 50% of hou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Open concerns older than 7 days\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Agreements ending within 30 days\" counts",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/students",
+   "landed": "/coordinator/students",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "button: Import",
+     "violations": []
+    },
+    {
+     "state": "tab: All",
+     "violations": []
+    },
+    {
+     "state": "tab: Active",
+     "violations": []
+    },
+    {
+     "state": "tab: No supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: Deactivated",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/students/DEMO-STU-0001",
+   "landed": "/coordinator/students/DEMO-STU-0001",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: Overview",
+     "violations": []
+    },
+    {
+     "state": "tab: Attendance",
+     "violations": []
+    },
+    {
+     "state": "tab: Work, needs attention",
+     "violations": []
+    },
+    {
+     "state": "tab: Documents1, needs attention",
+     "violations": []
+    },
+    {
+     "state": "tab: Notes",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/supervisors",
+   "landed": "/coordinator/supervisors",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "button: Import",
+     "violations": []
+    },
+    {
+     "state": "button: Edit",
+     "violations": []
+    },
+    {
+     "state": "menu: More actions for Demo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/monitoring",
+   "landed": "/coordinator/monitoring",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: All students2",
+     "violations": []
+    },
+    {
+     "state": "tab: Needs attention0",
+     "violations": []
+    },
+    {
+     "state": "tab: At risk0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/complaints",
+   "landed": "/coordinator/complaints",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: All",
+     "violations": []
+    },
+    {
+     "state": "tab: New",
+     "violations": []
+    },
+    {
+     "state": "tab: In review",
+     "violations": []
+    },
+    {
+     "state": "tab: Resolved",
+     "violations": []
+    },
+    {
+     "state": "tab: Dismissed",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/evaluations",
+   "landed": "/coordinator/evaluations",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: All0",
+     "violations": []
+    },
+    {
+     "state": "tab: By supervisors0",
+     "violations": []
+    },
+    {
+     "state": "tab: By coordinator0",
+     "violations": []
+    },
+    {
+     "state": "tab: Company feedback0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/analytics",
+   "landed": "/coordinator/analytics",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: 14 days",
+     "violations": []
+    },
+    {
+     "state": "tab: 30 days",
+     "violations": []
+    },
+    {
+     "state": "tab: 90 days",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Students on track to finish within the term\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Attendance on scheduled days, last 4 weeks\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Median time from time-out to supervisor decision\" cou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Requirements complete, among students past 50% of hou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Open concerns older than 7 days\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Agreements ending within 30 days\" counts",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/profile",
+   "landed": "/coordinator/profile",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/requirements",
+   "landed": "/coordinator/requirements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Endorsement",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Medical",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for MOA",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Waiver",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Insurance",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Consent",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for OJT Evaluation Form (Supervisor)",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Mid-term Report",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Final Narrative Report",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/documents",
+   "landed": "/coordinator/documents",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: All students2",
+     "violations": []
+    },
+    {
+     "state": "tab: Incomplete2",
+     "violations": []
+    },
+    {
+     "state": "tab: By student",
+     "violations": []
+    },
+    {
+     "state": "tab: By college, program and block",
+     "violations": []
+    },
+    {
+     "state": "tab: All",
+     "violations": []
+    },
+    {
+     "state": "tab: With supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: Approved",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/announcements",
+   "landed": "/coordinator/announcements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/notifications",
+   "landed": "/coordinator/notifications",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 1 unread",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Unread1",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/audit",
+   "landed": "/coordinator/audit",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/companies",
+   "landed": "/coordinator/companies",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add company",
+     "violations": []
+    },
+    {
+     "state": "tab: Active0",
+     "violations": []
+    },
+    {
+     "state": "tab: Agreement ending0",
+     "violations": []
+    },
+    {
+     "state": "tab: Inactive0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/terms",
+   "landed": "/coordinator/terms",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add term",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/programs",
+   "landed": "/coordinator/programs",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add college",
+     "violations": []
+    },
+    {
+     "state": "button: Add block",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for College of Arts, Sciences, and Letters",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BA Economics",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BA English Language",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BS Biology",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BS Nutrition and Dietetics",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BS Social Work",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for College of Business and Public Administration",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/holidays",
+   "landed": "/coordinator/holidays",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add holiday",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/coordinators",
+   "landed": "/coordinator/coordinators",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add coordinator",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 390,
+   "path": "/coordinator/site-visits",
+   "landed": "/coordinator/site-visits",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "public",
+   "width": 1280,
+   "path": "/",
+   "landed": "/",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "public",
+   "width": 1280,
+   "path": "/forgot-password",
+   "landed": "/forgot-password",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "public",
+   "width": 1280,
+   "path": "/reset-password",
+   "landed": "/reset-password",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/student/dashboard",
+   "landed": "/student/dashboard",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Time in",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/daily-log",
+   "landed": "/daily-log",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Time in",
+     "violations": []
+    },
+    {
+     "state": "tab: All0",
+     "violations": []
+    },
+    {
+     "state": "tab: Verified0",
+     "violations": []
+    },
+    {
+     "state": "tab: Pending0",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected0",
+     "violations": []
+    },
+    {
+     "state": "button: Report an absence",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/task",
+   "landed": "/task",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: To do2",
+     "violations": []
+    },
+    {
+     "state": "tab: Submitted0",
+     "violations": []
+    },
+    {
+     "state": "tab: Reviewed0",
+     "violations": []
+    },
+    {
+     "state": "tab: All2",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/schedule",
+   "landed": "/schedule",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: Week",
+     "violations": []
+    },
+    {
+     "state": "tab: Month",
+     "violations": []
+    },
+    {
+     "state": "tab: My progress",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/documents",
+   "landed": "/documents",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/student/resolution",
+   "landed": "/student/resolution",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: Concerns",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluations",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/report",
+   "landed": "/student/resolution?tab=concerns",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: Concerns",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluations",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/notifications",
+   "landed": "/notifications",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Unread0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/student/feedback",
+   "landed": "/student/resolution?tab=evaluations",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: Concerns",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluations",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/time-record",
+   "landed": "/time-record",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/announcements",
+   "landed": "/announcements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/journal",
+   "landed": "/journal",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Edit",
+     "violations": []
+    },
+    {
+     "state": "button: Write",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/student/completion",
+   "landed": "/student/completion",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "student",
+   "width": 1280,
+   "path": "/profile",
+   "landed": "/profile",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/dashboard",
+   "landed": "/supervisor/dashboard",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Record time-in",
+     "violations": []
+    },
+    {
+     "state": "tab: Everything4",
+     "violations": []
+    },
+    {
+     "state": "tab: Attendance1",
+     "violations": []
+    },
+    {
+     "state": "tab: Tasks0",
+     "violations": []
+    },
+    {
+     "state": "tab: Documents1",
+     "violations": []
+    },
+    {
+     "state": "tab: Absences1",
+     "violations": []
+    },
+    {
+     "state": "tab: Weekly reports1",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/interns",
+   "landed": "/supervisor/interns",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/interns/DEMO-STU-0001",
+   "landed": "/supervisor/interns/DEMO-STU-0001",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: Overview",
+     "violations": []
+    },
+    {
+     "state": "tab: Attendance",
+     "violations": []
+    },
+    {
+     "state": "tab: Tasks",
+     "violations": []
+    },
+    {
+     "state": "tab: Documents",
+     "violations": []
+    },
+    {
+     "state": "tab: Weekly reports",
+     "violations": []
+    },
+    {
+     "state": "tab: Evaluate",
+     "violations": []
+    },
+    {
+     "state": "tab: Time record",
+     "violations": []
+    },
+    {
+     "state": "tab: Notes",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/attendance",
+   "landed": "/supervisor/attendance",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Record time-in",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Pending1",
+     "violations": []
+    },
+    {
+     "state": "tab: Verified0",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/tasks",
+   "landed": "/supervisor/tasks",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Assign a task",
+     "violations": []
+    },
+    {
+     "state": "tab: Tasks",
+     "violations": []
+    },
+    {
+     "state": "tab: Teams0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/documents",
+   "landed": "/supervisor/documents",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: To review1",
+     "violations": []
+    },
+    {
+     "state": "tab: Approved0",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/journals",
+   "landed": "/supervisor/journals",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Waiting for you1",
+     "violations": []
+    },
+    {
+     "state": "tab: Reviewed0",
+     "violations": []
+    },
+    {
+     "state": "tab: Returned0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/notifications",
+   "landed": "/supervisor/notifications",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: All5",
+     "violations": []
+    },
+    {
+     "state": "tab: Unread5",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/time-record",
+   "landed": "/supervisor/time-record",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/announcements",
+   "landed": "/supervisor/announcements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/evaluation",
+   "landed": "/supervisor/interns",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/complaints",
+   "landed": "/supervisor/complaints",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    },
+    {
+     "state": "button: Report a concern",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "supervisor",
+   "width": 1280,
+   "path": "/supervisor/profile",
+   "landed": "/supervisor/profile",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications, 5 unread",
+     "violations": []
+    },
+    {
+     "state": "menu: Account menu for Demo SupervisorDSDemo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/dashboard",
+   "landed": "/coordinator/dashboard",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Students on track to finish within the term\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Attendance on scheduled days, last 4 weeks\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Median time from time-out to supervisor decision\" cou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Requirements complete, among students past 50% of hou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Open concerns older than 7 days\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Agreements ending within 30 days\" counts",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/students",
+   "landed": "/coordinator/students",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Import",
+     "violations": []
+    },
+    {
+     "state": "tab: All",
+     "violations": []
+    },
+    {
+     "state": "tab: Active",
+     "violations": []
+    },
+    {
+     "state": "tab: No supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: Deactivated",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/students/DEMO-STU-0001",
+   "landed": "/coordinator/students/DEMO-STU-0001",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: Overview",
+     "violations": []
+    },
+    {
+     "state": "tab: Attendance",
+     "violations": []
+    },
+    {
+     "state": "tab: Work, needs attention",
+     "violations": []
+    },
+    {
+     "state": "tab: Documents1, needs attention",
+     "violations": []
+    },
+    {
+     "state": "tab: Notes",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/supervisors",
+   "landed": "/coordinator/supervisors",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Import",
+     "violations": []
+    },
+    {
+     "state": "button: Edit",
+     "violations": []
+    },
+    {
+     "state": "menu: More actions for Demo Supervisor",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/monitoring",
+   "landed": "/coordinator/monitoring",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: All students2",
+     "violations": []
+    },
+    {
+     "state": "tab: Needs attention0",
+     "violations": []
+    },
+    {
+     "state": "tab: At risk0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/complaints",
+   "landed": "/coordinator/complaints",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: All",
+     "violations": []
+    },
+    {
+     "state": "tab: New",
+     "violations": []
+    },
+    {
+     "state": "tab: In review",
+     "violations": []
+    },
+    {
+     "state": "tab: Resolved",
+     "violations": []
+    },
+    {
+     "state": "tab: Dismissed",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/evaluations",
+   "landed": "/coordinator/evaluations",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: All0",
+     "violations": []
+    },
+    {
+     "state": "tab: By supervisors0",
+     "violations": []
+    },
+    {
+     "state": "tab: By coordinator0",
+     "violations": []
+    },
+    {
+     "state": "tab: Company feedback0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/analytics",
+   "landed": "/coordinator/analytics",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: 14 days",
+     "violations": []
+    },
+    {
+     "state": "tab: 30 days",
+     "violations": []
+    },
+    {
+     "state": "tab: 90 days",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Students on track to finish within the term\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Attendance on scheduled days, last 4 weeks\" counts",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Median time from time-out to supervisor decision\" cou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Requirements complete, among students past 50% of hou",
+     "violations": []
+    },
+    {
+     "state": "menu: ?What \"Open concerns older than 7 days\" counts",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/profile",
+   "landed": "/coordinator/profile",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/requirements",
+   "landed": "/coordinator/requirements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Endorsement",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Medical",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for MOA",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Waiver",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Insurance",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Consent",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for OJT Evaluation Form (Supervisor)",
+     "violations": []
+    },
+    {
+     "state": "button: Due date and reviewer for Mid-term Report",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/documents",
+   "landed": "/coordinator/documents",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: All students2",
+     "violations": []
+    },
+    {
+     "state": "tab: Incomplete2",
+     "violations": []
+    },
+    {
+     "state": "tab: By student",
+     "violations": []
+    },
+    {
+     "state": "tab: By college, program and block",
+     "violations": []
+    },
+    {
+     "state": "tab: All",
+     "violations": []
+    },
+    {
+     "state": "tab: With supervisor",
+     "violations": []
+    },
+    {
+     "state": "tab: Approved",
+     "violations": []
+    },
+    {
+     "state": "tab: Rejected",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/announcements",
+   "landed": "/coordinator/announcements",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/notifications",
+   "landed": "/coordinator/notifications",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "tab: All1",
+     "violations": []
+    },
+    {
+     "state": "tab: Unread0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/audit",
+   "landed": "/coordinator/audit",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/companies",
+   "landed": "/coordinator/companies",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add company",
+     "violations": []
+    },
+    {
+     "state": "tab: Active0",
+     "violations": []
+    },
+    {
+     "state": "tab: Agreement ending0",
+     "violations": []
+    },
+    {
+     "state": "tab: Inactive0",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/terms",
+   "landed": "/coordinator/terms",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add term",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/programs",
+   "landed": "/coordinator/programs",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add college",
+     "violations": []
+    },
+    {
+     "state": "button: Add block",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for College of Arts, Sciences, and Letters",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BA Economics",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BA English Language",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BS Biology",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BS Nutrition and Dietetics",
+     "violations": []
+    },
+    {
+     "state": "menu: Actions for BS Social Work",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/holidays",
+   "landed": "/coordinator/holidays",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add holiday",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/coordinators",
+   "landed": "/coordinator/coordinators",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    },
+    {
+     "state": "button: Add coordinator",
+     "violations": []
+    }
+   ]
+  },
+  {
+   "role": "coordinator",
+   "width": 1280,
+   "path": "/coordinator/site-visits",
+   "landed": "/coordinator/site-visits",
+   "states": [
+    {
+     "state": "page",
+     "violations": []
+    },
+    {
+     "state": "button: Sign out",
+     "violations": []
+    },
+    {
+     "state": "menu: Notifications",
+     "violations": []
+    }
+   ]
+  }
+ ]
+}
