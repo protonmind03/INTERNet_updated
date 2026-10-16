@@ -117,7 +117,15 @@ function withWaitingSteps(logs: AttendanceLog[], steps: QueuedStep[]): Attendanc
 }
 
 /** The prompts the server picked for one time-in, and the ticket that proves it. */
-export type LivenessChallenge = { ticket: string; prompts: Prompt[]; spare: Prompt };
+export type LivenessChallenge = {
+  ticket: string;
+  /** "strict" adds the colour light test (services/liveness.ts on the server). */
+  level: "standard" | "strict";
+  prompts: Prompt[];
+  spare: Prompt | null;
+  /** When the ticket runs out, on this device's clock (ms). */
+  expiresAt: number;
+};
 
 /** Where the student is in today's attendance. */
 export type DayStage = "not-started" | "working" | "on-break" | "back" | "done";
@@ -257,7 +265,16 @@ export function useAttendance(studentId: string | undefined) {
     if (!response.ok || typeof data.ticket !== "string") {
       throw new Error(messageFrom(data, "Could not start the camera check."));
     }
-    return data as unknown as LivenessChallenge;
+    // The server says how long the ticket lasts; a few seconds are kept back
+    // for the time the answer took to arrive.
+    const lasts = (Number(data.expires_in) || 600) - 5;
+    return {
+      ticket: data.ticket,
+      level: data.level === "strict" ? "strict" : "standard",
+      prompts: (Array.isArray(data.prompts) ? data.prompts : []) as Prompt[],
+      spare: (typeof data.spare === "string" ? data.spare : null) as Prompt | null,
+      expiresAt: Date.now() + lasts * 1000,
+    };
   }, []);
 
   const timeIn = useCallback(

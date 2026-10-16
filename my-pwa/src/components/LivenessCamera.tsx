@@ -22,10 +22,16 @@ import { useWakeLock } from "../lib/useWakeLock";
 | CAMERA CHECK
 |--------------------------------------------------------------------------
 |
-| The time-in camera. It opens the front camera, makes sure a live person
-| is there (they follow two or three quick prompts while the screen lights
-| their face), then takes the photo by itself on a sharp, steady frame.
-| There is no shutter button and no way to choose a file.
+| The time-in camera. It opens the front camera and makes sure a live
+| person is there: they turn their head once or twice (on the strict level
+| the screen also lights their face in colours). Then a round "Take photo"
+| button appears, enabled only while one face is centred, facing forward,
+| eyes open and sharp, so the student can settle before the shot. The photo
+| kept is the sharpest frame from just before the tap. There is no way to
+| choose a file.
+|
+| The preview is mirrored, as people expect while posing; the photo is the
+| camera's own frame, not mirrored (grabFrame).
 |
 | When the camera or the check cannot work on this device, it says why and
 | points the student to their supervisor, who can record the time-in from
@@ -41,7 +47,7 @@ export type LivenessReport = {
   duration_ms: number;
 };
 
-type Problem = "unsupported" | "blocked" | "no-camera" | "in-use" | "tracker" | "failed";
+type Problem = "unsupported" | "blocked" | "no-camera" | "in-use" | "tracker" | "failed" | "expired";
 
 const PROBLEMS: Record<Problem, { title: string; detail: string }> = {
   unsupported: {
@@ -68,7 +74,18 @@ const PROBLEMS: Record<Problem, { title: string; detail: string }> = {
     title: "The check didn't go through",
     detail: "Find a brighter spot, hold the phone at arm's length, and try once more.",
   },
+  expired: {
+    title: "The camera check timed out",
+    detail: "Each check lasts 10 minutes. Start a new one to time in.",
+  },
 };
+
+// Frames kept while the button is enabled, so the photo is the sharpest one
+// from just before the tap, not one shaken by it.
+const KEEP_EVERY_MS = 250;
+const KEEP_FOR_MS = 800;
+// The countdown shows in the ticket's last minute.
+const COUNTDOWN_FROM_S = 60;
 
 const PROMPT_TEXT: Record<Prompt, { text: string; icon: IconName; flip?: boolean }> = {
   blink: { text: "Blink your eyes", icon: "user" },
@@ -91,7 +108,10 @@ const HINT_TEXT: Record<Hint, string> = {
   "face-forward": "Face the camera",
   "eyes-open": "Keep your eyes open",
   "close-mouth": "Relax your mouth",
+  blurry: "Hold the phone steady",
   "try-again": "That took too long. Let's go again",
+  "face-lost": "We lost your face. Let's start again",
+  "another-face": "Someone else came into view. Let's start again",
 };
 
 const FLASH_COLOURS: Record<FlashColour, string> = {
@@ -121,24 +141,40 @@ function viewKey(view: EngineView): string {
     view.celebrating,
     view.attempts,
     view.prompts.length,
+    // Whether the "Take photo" button is enabled.
+    view.shoot,
   ].join("|");
 }
 
 export default function LivenessCamera({
   prompts,
   spare,
+  strict,
+  expiresAt,
   onPassed,
+  onRenew,
 }: {
   /** The prompts the server picked for this time-in. */
   prompts: Prompt[];
-  spare: Prompt;
+  spare: Prompt | null;
+  /** The strict level: the colour light test runs too. */
+  strict: boolean;
+  /** When the server's ticket runs out, on this device's clock (ms). */
+  expiresAt: number;
   onPassed: (photo: File, report: LivenessReport) => void;
+  /** Asks the server for a new check, when this one has run out. */
+  onRenew: () => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const passed = useRef(onPassed);
   useEffect(() => {
     passed.current = onPassed;
   }, [onPassed]);
+  // Set while the camera runs: what the "Take photo" button does.
+  const takeRef = useRef<(() => void) | null>(null);
+  // Set while the camera runs: stops it when the ticket runs out.
+  const expireRef = useRef<(() => void) | null>(null);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
 
   // Raised to start the camera again after a problem.
   const [run, setRun] = useState(0);
@@ -206,7 +242,7 @@ export default function LivenessCamera({
       }
 
       const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      const engine = createEngine({ prompts, spare, flash: !reducedMotion });
+      const engine = createEngine({ prompts, spare, flash: strict && !reducedMotion });
       const reader = createFaceReader(tracker, video);
       const startedAt = performance.now();
       setStarting(false);
@@ -215,8 +251,9 @@ export default function LivenessCamera({
       let lastVideoTime = -1;
       let lastKey = "";
       let flashStarted = false;
-      // The sharpest frame seen while the person held still for the photo.
-      let best: ReturnType<typeof grabFrame> = null;
+      // Full frames kept while the button is enabled, newest last.
+      type Kept = { time: number; frame: NonNullable<ReturnType<typeof grabFrame>> };
+      let kept: Kept[] = [];
 
       const publish = (next: EngineView) => {
         const key = viewKey(next);
@@ -260,8 +297,7 @@ export default function LivenessCamera({
         publish(engine.finishFlash(judgeFlash(readings), performance.now()));
       };
 
-      const finish = () => {
-        const frame = best ?? (latest?.box ? grabFrame(video, latest.box) : null);
+      const finish = (frame: ReturnType<typeof grabFrame>) => {
         if (!frame) {
           fail("failed");
           return;
@@ -296,28 +332,61 @@ export default function LivenessCamera({
           flashStarted = true;
           void runFlash();
         }
-        if (next.phase !== "capture" && next.phase !== "passed") best = null;
-        if (next.shoot && latest.box) {
+        const now = performance.now();
+        if (!next.shoot) {
+          kept = [];
+        } else if (latest.box && (kept.length === 0 || now - kept[kept.length - 1].time >= KEEP_EVERY_MS)) {
           const frame = grabFrame(video, latest.box);
-          if (frame && (!best || frame.sharpness > best.sharpness)) best = frame;
+          if (frame) kept = [...kept.filter((entry) => now - entry.time <= KEEP_FOR_MS), { time: now, frame }];
         }
 
         publish(next);
-        if (next.phase === "passed") {
-          cancelAnimationFrame(frameRequest);
-          finish();
-        } else if (next.phase === "failed") {
-          fail("failed");
-        }
+        if (next.phase === "failed") fail("failed");
       };
+
+      takeRef.current = () => {
+        const now = performance.now();
+        const next = engine.takePhoto(now);
+        publish(next);
+        if (next.phase !== "passed") return;
+        cancelAnimationFrame(frameRequest);
+        // The sharpest frame from just before the tap; the frame now if none.
+        const recent = kept.filter((entry) => now - entry.time <= KEEP_FOR_MS);
+        const best = recent.reduce<Kept | null>(
+          (top, entry) => (!top || entry.frame.sharpness > top.frame.sharpness ? entry : top),
+          null
+        );
+        finish(best?.frame ?? (latest?.box ? grabFrame(video, latest.box) : null));
+      };
+      expireRef.current = () => fail("expired");
       loop();
     })();
 
     return () => {
       cancelled = true;
+      takeRef.current = null;
+      expireRef.current = null;
       stopCamera();
     };
-  }, [prompts, spare, run]);
+  }, [prompts, spare, strict, run]);
+
+  // The ticket's last minute is counted down; when it runs out the camera
+  // stops and a new check is offered.
+  useEffect(() => {
+    if (finished || problem) return;
+    const tick = () => {
+      const left = Math.ceil((expiresAt - Date.now()) / 1000);
+      if (left <= 0) {
+        setSecondsLeft(null);
+        expireRef.current?.();
+        return;
+      }
+      setSecondsLeft(left <= COUNTDOWN_FROM_S ? left : null);
+    };
+    tick();
+    const timer = window.setInterval(tick, 1000);
+    return () => window.clearInterval(timer);
+  }, [expiresAt, finished, problem]);
 
   const retry = () => {
     setProblem(null);
@@ -337,9 +406,15 @@ export default function LivenessCamera({
             <p className="mt-0.5 text-sm text-amber-900">{PROBLEMS[problem].detail}</p>
           </div>
         </div>
-        <Button block variant="secondary" icon="refresh" onClick={retry}>
-          Try again
-        </Button>
+        {problem === "expired" ? (
+          <Button block variant="secondary" icon="refresh" onClick={onRenew}>
+            Start a new check
+          </Button>
+        ) : (
+          <Button block variant="secondary" icon="refresh" onClick={retry}>
+            Try again
+          </Button>
+        )}
         <SupervisorTip />
       </div>
     );
@@ -367,16 +442,24 @@ export default function LivenessCamera({
   } else if (phase === "prompt" && prompt) {
     instruction = prompt.text;
     detail = hint;
+  } else if (phase === "capture" && view?.shoot) {
+    instruction = "Ready when you are";
+    detail = "Tap the round button to take your photo";
   } else if (phase === "capture") {
-    instruction = "Look at the camera and hold still";
-    detail = hint || "Taking your photo";
+    instruction = "Look at the camera";
+    detail = hint || "Hold still";
   } else if (view?.hint === "try-again") {
     instruction = HINT_TEXT["try-again"];
     detail = `Attempt ${view.attempts} of ${MAX_ATTEMPTS}`;
+  } else if (view?.hint === "face-lost" || view?.hint === "another-face") {
+    instruction = HINT_TEXT[view.hint];
+    detail = "Fit your face in the oval";
   }
+  const waitingForTap = phase === "capture" && !finished && !starting;
+  const ready = waitingForTap && Boolean(view?.shoot);
 
   const working = phase === "prompt" || phase === "capture";
-  const ovalColour = finished || view?.celebrating ? "#34d399" : working ? "#fac515" : "#ffffff";
+  const ovalColour = finished || view?.celebrating || ready ? "#34d399" : working ? "#fac515" : "#ffffff";
   const steps = view ? view.prompts.length + 1 : prompts.length + 1;
   const stepsDone = finished ? steps : (view?.done ?? 0);
 
@@ -424,10 +507,33 @@ export default function LivenessCamera({
             <Icon name="check" size={28} strokeWidth={2.5} />
           </span>
         )}
+        {secondsLeft !== null && !finished && (
+          <span className="tabular absolute right-2 top-2 rounded-full bg-black/60 px-2.5 py-1 text-xs font-semibold text-white">
+            <span className="sr-only">Time left for this check: </span>
+            {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, "0")}
+          </span>
+        )}
+        {/* The shutter: centred at the bottom of the frame, above the phone's safe area. */}
+        {waitingForTap && (
+          <div className="absolute inset-x-0 bottom-0 flex justify-center pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <button
+              type="button"
+              onClick={() => takeRef.current?.()}
+              disabled={!ready}
+              aria-label="Take photo"
+              aria-describedby="liveness-instruction"
+              className={`flex h-16 w-16 items-center justify-center rounded-full border-4 border-white shadow-raised transition-[background-color,opacity] duration-150 focus-visible:outline-3 focus-visible:outline-offset-2 focus-visible:outline-gold-400 ${
+                ready ? "bg-white hover:bg-gold-50" : "cursor-not-allowed bg-white/20 opacity-60"
+              }`}
+            >
+              <Icon name="camera" size={26} className={ready ? "text-psu-800" : "text-white"} />
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="mt-4 text-center" role="status" aria-live="polite">
-        <p className="flex items-center justify-center gap-2 text-lg font-semibold text-slate-900">
+        <p id="liveness-instruction" className="flex items-center justify-center gap-2 text-lg font-semibold text-slate-900">
           {phase === "prompt" && prompt && !view?.celebrating && prompt.icon !== "user" && (
             <Icon
               name={prompt.icon}

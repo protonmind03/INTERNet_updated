@@ -231,7 +231,7 @@ test.describe("completion", () => {
 test.describe("the student's menu", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone: five tabs, two things under More, and the Resolution Center under the avatar", async ({ page }) => {
+  test("on a phone: five tabs, two things under More, and the Resolution Center as the icon beside the bell", async ({ page }) => {
     await signIn(page, "student");
     const bar = page.getByRole("navigation", { name: "Main" }).last();
     for (const name of ["Today", "Attendance", "Tasks", "Documents"]) {
@@ -247,7 +247,7 @@ test.describe("the student's menu", () => {
     await page.getByRole("button", { name: /Account menu/ }).click();
     await expect(page.getByRole("button", { name: "Profile", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
-    await page.getByRole("button", { name: "Resolution Center", exact: true }).click();
+    await page.getByRole("link", { name: /^Resolution Center/ }).click();
     await expect(page).toHaveURL(/\/student\/resolution/);
     await expect(page.getByRole("tab", { name: "Concerns" })).toHaveAttribute("aria-selected", "true");
     await page.getByRole("tab", { name: "Evaluations" }).click();

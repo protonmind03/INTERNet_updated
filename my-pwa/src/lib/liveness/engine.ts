@@ -11,12 +11,19 @@
 | The check runs in this order:
 |
 |   position  one face, close enough, lit well enough, held for a moment
-|   flash     the screen lights the face in colours (run by the camera view)
-|   prompt    the prompts the server picked: blink, smile, turn the head
-|   capture   face forward, eyes open, holding still; then the photo is taken
+|   flash     the screen lights the face in colours (run by the camera view);
+|             only on the strict level, which the server chooses
+|   prompt    the prompts the server picked: one or two head turns (a blink
+|             too on the strict level when the light test is unclear)
+|   capture   the "Take photo" button waits. It is enabled only while one
+|             face is centred, facing forward, eyes open, still and sharp;
+|             the student taps it when they are ready
 |
-| It is tuned to be quick for a real person (about six seconds) and to give
-| a few tries before sending the student to their supervisor.
+| While the button waits the face is still tracked: a second face, or the
+| face gone for more than 1.5 seconds, starts the check again.
+|
+| It is tuned to be quick for a real person and to give a few tries before
+| sending the student to their supervisor.
 |
 */
 
@@ -50,6 +57,8 @@ export type FaceSample = {
   brightness: number;
   /** How fast the face is moving, in face-widths per second. */
   speed: number;
+  /** How sharp the face is (sharpnessOf, on a small crop of it); 0 when unknown. */
+  sharpness: number;
 };
 
 export type Phase = "position" | "flash" | "prompt" | "capture" | "passed" | "failed";
@@ -68,7 +77,10 @@ export type Hint =
   | "face-forward"
   | "eyes-open"
   | "close-mouth"
-  | "try-again";
+  | "blurry"
+  | "try-again"
+  | "face-lost"
+  | "another-face";
 
 export type EngineView = {
   phase: Phase;
@@ -81,16 +93,16 @@ export type EngineView = {
   current: Prompt | null;
   /** True for a moment after a prompt is completed, for a tick on screen. */
   celebrating: boolean;
-  /** True on frames good enough to keep as the attendance photo. */
+  /** True while the photo may be taken: the "Take photo" button is enabled. */
   shoot: boolean;
   attempts: number;
 };
 
 export type EngineOptions = {
   prompts: Prompt[];
-  /** Asked as well when the light check is not conclusive. */
-  spare: Prompt;
-  /** False when the colour flash should not run (reduced motion). */
+  /** Asked as well when the light check is not conclusive (strict level only). */
+  spare: Prompt | null;
+  /** True on the strict level, unless the person asks for reduced motion. */
   flash: boolean;
 };
 
@@ -134,9 +146,14 @@ const FACE_LOST_MS = 1200;
 // The photo.
 const FORWARD = 0.09;
 const STILL_SPEED = 0.45;
-const CAPTURE_GOOD_MS = 500;
-const CAPTURE_GOOD_FRAMES = 4;
-const CAPTURE_LIMIT_MS = 10_000;
+// Real time-in photos have scored 67 to 118; this only refuses a frame that
+// is plainly blurred (a shaking phone). To be checked on real phones.
+export const MIN_SHARPNESS = 25;
+// Good frames in a row before the button is enabled, so it does not flicker.
+const READY_FRAMES = 3;
+// While the button waits, the face may be gone this long before the check
+// starts over.
+const READY_LOST_MS = 1500;
 
 export const MAX_ATTEMPTS = 3;
 
@@ -147,6 +164,7 @@ export function createEngine(options: EngineOptions) {
   let attempts = 1;
   let done = 0;
   let flashResult: FlashResult | null = options.flash ? null : "skipped";
+  // Strict level with reduced motion: no light test, so the spare is asked.
   if (!options.flash) addSpare();
 
   // Timers, all in sample time.
@@ -181,12 +199,13 @@ export function createEngine(options: EngineOptions) {
   const eyesClosed = (sample: FaceSample) =>
     sample.eyeMostOpen >= Math.max(EYE_CLOSED_FLOOR, (eyeRest ?? 0) + EYE_CLOSED_MARGIN);
 
-  // Progress toward the photo.
-  let goodSince: number | null = null;
+  // Progress toward the photo: good frames in a row, and whether the
+  // button is enabled on the latest one.
   let goodFrames = 0;
+  let ready = false;
 
   function addSpare() {
-    if (!prompts.includes(options.spare)) prompts.push(options.spare);
+    if (options.spare && !prompts.includes(options.spare)) prompts.push(options.spare);
   }
 
   function resetPrompt() {
@@ -199,13 +218,13 @@ export function createEngine(options: EngineOptions) {
     phase = next;
     phaseSince = time;
     heldSince = null;
-    goodSince = null;
     goodFrames = 0;
+    ready = false;
     resetPrompt();
   }
 
   /** Starts the prompts over from the first one. */
-  function restart(time: number, countsAsAttempt: boolean) {
+  function restart(time: number, countsAsAttempt: boolean, why: Hint = "try-again") {
     if (countsAsAttempt) {
       attempts += 1;
       if (attempts > MAX_ATTEMPTS) {
@@ -216,7 +235,7 @@ export function createEngine(options: EngineOptions) {
     }
     done = 0;
     enter("position", time);
-    hint = "try-again";
+    hint = why;
   }
 
   function framingProblem(sample: FaceSample): Hint {
@@ -303,6 +322,7 @@ export function createEngine(options: EngineOptions) {
     if (!eyesOpen(sample)) return "eyes-open";
     if (sample.mouthOpen > 0.3) return "close-mouth";
     if (sample.speed > STILL_SPEED) return "hold-still";
+    if (sample.sharpness < MIN_SHARPNESS) return "blurry";
     return "none";
   }
 
@@ -335,8 +355,8 @@ export function createEngine(options: EngineOptions) {
           return view(time);
         }
         heldSince ??= time;
-        // Keep "let's try again" on screen until they are back in place.
-        if (hint !== "try-again") hint = "none";
+        // Keep "let's go again" on screen until they are back in place.
+        if (hint !== "try-again" && hint !== "face-lost" && hint !== "another-face") hint = "none";
         if (time - heldSince >= POSITION_HOLD_MS) {
           hint = "none";
           enter(flashResult === null ? "flash" : "prompt", time);
@@ -344,13 +364,22 @@ export function createEngine(options: EngineOptions) {
         return view(time);
       }
 
+      // While the button waits, someone else in view starts the check over at
+      // once, and the face may be gone a little longer than during prompts.
+      if (phase === "capture" && sample.faces > 1) {
+        lostSince = null;
+        restart(time, false, "another-face");
+        return view(time);
+      }
       // From here a face is expected to stay in view.
       if (sample.faces !== 1) {
+        ready = false;
+        goodFrames = 0;
         lostSince ??= time;
         hint = sample.faces === 0 ? "no-face" : "many-faces";
-        if (time - lostSince > FACE_LOST_MS) {
+        if (time - lostSince > (phase === "capture" ? READY_LOST_MS : FACE_LOST_MS)) {
           lostSince = null;
-          restart(time, false);
+          restart(time, false, phase === "capture" ? "face-lost" : "try-again");
         }
         return view(time);
       }
@@ -371,25 +400,24 @@ export function createEngine(options: EngineOptions) {
         return view(time);
       }
 
-      // Capture: wait for a run of clean frames, then the photo is taken.
+      // Capture: the button is enabled while the frames are good. There is
+      // no time limit here; the ticket's own ten minutes bound the wait.
       if (time < celebrateUntil) return view(time);
-      if (time - (phaseSince ?? time) > CAPTURE_LIMIT_MS) {
-        restart(time, true);
-        return view(time);
-      }
       hint = photoProblem(sample);
       if (hint !== "none") {
-        goodSince = null;
         goodFrames = 0;
+        ready = false;
         return view(time);
       }
-      goodSince ??= time;
       goodFrames += 1;
-      if (time - goodSince >= CAPTURE_GOOD_MS && goodFrames >= CAPTURE_GOOD_FRAMES) {
-        enter("passed", time);
-        return view(time, true);
-      }
-      return view(time, true);
+      ready = goodFrames >= READY_FRAMES;
+      return view(time, ready);
+    },
+
+    /** The "Take photo" button: passes only while the button is enabled. */
+    takePhoto(time: number): EngineView {
+      if (phase === "capture" && ready) enter("passed", time);
+      return view(time);
     },
 
     /** Called by the camera view when the colour flash has finished. */

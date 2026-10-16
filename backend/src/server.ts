@@ -5,7 +5,7 @@ import cors from "cors";
 import helmet from "helmet";
 import { Pool, type QueryResult } from "pg";
 import multer from "multer";
-import { createHash, randomBytes, randomInt, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import path from "path";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -82,6 +82,7 @@ import {
 import { registerExtensionRoutes } from "./routes/extensions";
 import { PH_PG_OPTIONS, PH_TIME_ZONE, phToday, usePhilippineProcessTime } from "./services/phTime";
 import { cleanId, sameId, sqlSameId } from "./services/ids";
+import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, syncLivenessStrict, type LivenessLevel, type LivenessPrompt } from "./services/liveness";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
@@ -2275,11 +2276,12 @@ app.get(
 |--------------------------------------------------------------------------
 |
 | A time-in photo used to be any file the student chose. Now the app's
-| camera has to see a live face follow a few prompts before it takes the
-| photo itself. The prompts are picked here, at random, and handed out in a
-| short-lived signed ticket, so a recording made earlier will not match
-| them. The time-in below is refused without a ticket and a report saying
-| every prompt in it was completed.
+| camera has to see a live face follow a few prompts before the student
+| takes the photo. The prompts are picked here, at random, and handed out
+| in a short-lived signed ticket, so a recording made earlier will not
+| match them. The time-in below is refused without a ticket and a report
+| saying every prompt in it was completed. The rules and the two levels
+| (standard, strict) are in services/liveness.ts.
 |
 | The check itself runs on the student's device, so this is a strong
 | deterrent rather than proof: the supervisor still sees the photo and
@@ -2287,25 +2289,11 @@ app.get(
 |
 */
 
-const LIVENESS_PROMPTS = ["blink", "smile", "turn-left", "turn-right"] as const;
-type LivenessPrompt = (typeof LIVENESS_PROMPTS)[number];
 const LIVENESS_TICKET_MINUTES = 10;
 
-function isLivenessPrompt(value: unknown): value is LivenessPrompt {
-  return LIVENESS_PROMPTS.includes(value as LivenessPrompt);
-}
-
-/** Two different prompts, plus a spare used when the light check is unclear. */
-function pickLivenessPrompts(): { prompts: LivenessPrompt[]; spare: LivenessPrompt } {
-  const shuffled = [...LIVENESS_PROMPTS];
-  for (let index = shuffled.length - 1; index > 0; index -= 1) {
-    const other = randomInt(index + 1);
-    [shuffled[index], shuffled[other]] = [shuffled[other], shuffled[index]];
-  }
-  return { prompts: shuffled.slice(0, 2), spare: shuffled[2] };
-}
-
 type LivenessReport = {
+  /** The check this photo passed; absent on time-ins from before the levels. */
+  level: LivenessLevel;
   completed: LivenessPrompt[];
   flash: "passed" | "inconclusive" | "skipped";
   sharpness: number | null;
@@ -2354,11 +2342,10 @@ function readLivenessReport(
   const flash =
     parsed.flash === "passed" || parsed.flash === "skipped" ? parsed.flash : "inconclusive";
 
-  // Every prompt on the ticket must be done; when the light check did not
-  // clearly pass, the spare prompt is required as well.
-  const required: unknown[] = Array.isArray(claims.prompts) ? [...claims.prompts] : [];
-  if (flash !== "passed") required.push(claims.spare);
-  if (required.length < 2 || !required.every((prompt) => completed.includes(prompt as LivenessPrompt))) {
+  // Every prompt on the ticket must be done; on the strict level, when the
+  // light check did not clearly pass, the spare prompt is required as well.
+  const required = requiredPrompts(claims, flash);
+  if (required.length < 1 || !required.every((prompt) => completed.includes(prompt as LivenessPrompt))) {
     return refusal;
   }
 
@@ -2374,6 +2361,7 @@ function readLivenessReport(
         ? claims.jti
         : createHash("sha256").update(ticket).digest("hex"),
     report: {
+      level: claims.level === "standard" ? "standard" : "strict",
       completed: [...new Set(completed)],
       flash,
       sharpness: number(parsed.sharpness, 100_000),
@@ -2386,18 +2374,30 @@ function readLivenessReport(
 app.post(
   "/api/attendance/liveness-challenge",
   requireRole("student"),
-  (req, res) => {
+  async (req, res) => {
     const auth = (req as AuthedRequest).auth;
     if (!auth) return res.status(401).json({ message: "Sign in again." });
 
-    const { prompts, spare } = pickLivenessPrompts();
-    const ticket = jwt.sign({ purpose: "liveness", prompts, spare }, JWT_SECRET, {
-      subject: auth.id,
-      expiresIn: `${LIVENESS_TICKET_MINUTES}m`,
-      // What marks this ticket as spent once a time-in has used it.
-      jwtid: randomUUID(),
-    });
-    return res.json({ ticket, prompts, spare });
+    try {
+      const student = await pool.query<{ liveness_strict: boolean }>(
+        `SELECT liveness_strict FROM students WHERE student_id = $1`,
+        [auth.id]
+      );
+      const level: LivenessLevel = student.rows[0]?.liveness_strict ? "strict" : "standard";
+      const { prompts, spare } = pickLivenessPrompts(level);
+      const ticket = jwt.sign({ purpose: "liveness", level, prompts, spare }, JWT_SECRET, {
+        subject: auth.id,
+        expiresIn: `${LIVENESS_TICKET_MINUTES}m`,
+        // What marks this ticket as spent once a time-in has used it.
+        jwtid: randomUUID(),
+      });
+      // The app counts down the last minute from its own clock, so it is
+      // told how long the ticket lasts rather than when it ends.
+      return res.json({ ticket, level, prompts, spare, expires_in: LIVENESS_TICKET_MINUTES * 60 });
+    } catch (error) {
+      console.error("LIVENESS CHALLENGE ERROR:", error);
+      return res.status(500).json({ message: "Could not start the camera check." });
+    }
   }
 );
 
@@ -3189,6 +3189,14 @@ app.put(
           message:
             "Attendance record not found or time-out was already recorded.",
         });
+      }
+
+      // A time-in the supervisor recorded in person is verified here, which
+      // ends a strict camera check (services/liveness.ts).
+      if (result.rows[0].status === "Verified") {
+        await syncLivenessStrict(pool, String(result.rows[0].student_id)).catch((error) =>
+          console.error("LIVENESS LEVEL ERROR:", error)
+        );
       }
 
       // The links are extra to the time-out: if they cannot be saved the
@@ -4458,6 +4466,11 @@ app.patch(
       // Verified hours changed, so the student may have just completed (or
       // dropped back under) their requirement.
       await syncCompletion(String(result.rows[0].student_id));
+      // A rejection puts the student's next time-ins on the strict camera
+      // check; a verification, or this decision withdrawn, can take it off.
+      await syncLivenessStrict(pool, String(result.rows[0].student_id)).catch((error) =>
+        console.error("LIVENESS LEVEL ERROR:", error)
+      );
 
       if (status === "Pending") {
         await createNotification({
@@ -5021,7 +5034,15 @@ app.get(
             resolution_notes,
             resolved_at,
             created_at,
-            updated_at
+            updated_at,
+            -- Coordinator replies since the student last opened the
+            -- conversation: the count on the Resolution Center icon.
+            (
+              SELECT COUNT(*)::int FROM complaint_messages m
+              WHERE m.complaint_id = complaints.id
+                AND m.author_role = 'coordinator'
+                AND m.created_at > COALESCE(complaints.filer_seen_at, '-infinity'::timestamp)
+            ) AS new_replies
           FROM complaints
           WHERE student_id = $1
           ORDER BY created_at DESC

@@ -408,13 +408,19 @@ function CaptureNote({ entry }: { entry: AttendanceEntry }) {
   }
 
   if (entry.capture_method === "liveness") {
-    const lightUnclear = entry.liveness_checks?.flash !== "passed";
+    const checks = entry.liveness_checks;
+    // A check from before the levels always ran the light test.
+    const strict = checks?.level !== "standard";
+    const lightUnclear = strict && checks?.flash !== "passed";
     return (
       <p className="flex items-start gap-2 rounded-lg bg-emerald-50 px-3 py-2.5 text-sm text-emerald-950 ring-1 ring-inset ring-emerald-600/15">
         <Icon name="check-circle" size={16} className="mt-0.5 shrink-0 text-emerald-600" />
         <span>
-          Taken by the camera check: a live face followed the prompts before this photo was
-          taken.
+          {checks?.level === "standard"
+            ? "Taken after the camera check: a live face turned their head as asked before this photo was taken."
+            : checks?.level === "strict"
+              ? "Taken after the stricter camera check, used since a rejected log: a live face turned their head as asked and the screen-light test ran."
+              : "Taken by the camera check: a live face followed the prompts before this photo was taken."}
           {lightUnclear && " The light check was not conclusive, so an extra prompt was asked."}
         </span>
       </p>

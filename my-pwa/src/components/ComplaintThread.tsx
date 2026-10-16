@@ -5,6 +5,7 @@ import { API_URL, withRoleAuth } from "../lib/api";
 import { formatDateTime } from "../lib/format";
 import type { SessionRole } from "../lib/session";
 import { errorText } from "../lib/toast";
+import { notifyDataChanged } from "../lib/navCounts";
 
 type Message = {
   id: number;
@@ -48,6 +49,9 @@ export default function ComplaintThread({
       if (!response.ok) throw new Error(data.message || "Could not load the conversation.");
       setMessages(data.messages || []);
       setError("");
+      // Opening it marks its replies read, which may clear the count on the
+      // student's Resolution Center icon.
+      if (role === "student") notifyDataChanged();
     } catch (loadError) {
       setError(errorText(loadError, "Could not load the conversation."));
     } finally {

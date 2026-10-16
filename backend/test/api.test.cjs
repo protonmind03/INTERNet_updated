@@ -1575,23 +1575,21 @@ test("time-in is refused without a passed camera check", async () => {
   assert.equal(noTicket.response.status, 400);
   assert.match(noTicket.body.message, /camera check/i);
 
-  assert.equal(challenge.body.prompts.length, 2);
-  assert.notEqual(challenge.body.prompts[0], challenge.body.prompts[1]);
-  assert.equal(challenge.body.prompts.includes(challenge.body.spare), false);
+  // Head turns only, one or two of them, never the same twice.
+  const { level, prompts, spare } = challenge.body;
+  assert.ok(["standard", "strict"].includes(level));
+  assert.ok(prompts.length >= 1 && prompts.length <= 2);
+  assert.ok(prompts.every((prompt) => prompt === "turn-left" || prompt === "turn-right"));
+  assert.equal(new Set(prompts).size, prompts.length);
+  assert.equal(challenge.body.expires_in, 600);
+  if (level === "standard") assert.equal(spare, null);
 
   // A ticket alone is not enough: the report must cover every prompt on it.
-  const onePrompt = await timeIn({
+  const nothingDone = await timeIn({
     liveness_ticket: challenge.body.ticket,
-    liveness_report: JSON.stringify({ completed: [challenge.body.prompts[0]], flash: "passed" }),
+    liveness_report: JSON.stringify({ completed: prompts.slice(1), flash: "passed" }),
   });
-  assert.equal(onePrompt.response.status, 400);
-
-  // When the light check was not conclusive, the spare prompt is required too.
-  const noSpare = await timeIn({
-    liveness_ticket: challenge.body.ticket,
-    liveness_report: JSON.stringify({ completed: challenge.body.prompts, flash: "inconclusive" }),
-  });
-  assert.equal(noSpare.response.status, 400);
+  assert.equal(nothingDone.response.status, 400);
 
   // A sign-in token is not a camera-check ticket.
   const wrongTicket = await timeIn({
@@ -8943,4 +8941,213 @@ test("coordinator edits not named elsewhere: college, major, company, term, site
     if (made.college) await pool.query(`DELETE FROM colleges WHERE id = $1`, [made.college]);
     await pool.end();
   }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 3: student capture
+|--------------------------------------------------------------------------
+*/
+
+test("the camera check's levels: one or two head turns by default, both and the light test when strict", () => {
+  require("tsx/cjs");
+  const { pickLivenessPrompts, requiredPrompts } = require("../src/services/liveness.ts");
+  // A fixed "random" choice, so each branch is seen.
+  const always = (value) => () => value;
+  assert.deepEqual(pickLivenessPrompts("standard", always(0)), { prompts: ["turn-left"], spare: null });
+  assert.deepEqual(pickLivenessPrompts("standard", always(1)), { prompts: ["turn-right", "turn-left"], spare: null });
+  assert.deepEqual(pickLivenessPrompts("strict", always(0)), { prompts: ["turn-left", "turn-right"], spare: "blink" });
+  for (let run = 0; run < 50; run += 1) {
+    const { prompts, spare } = pickLivenessPrompts("standard");
+    assert.ok(prompts.length >= 1 && prompts.length <= 2 && spare === null);
+    assert.ok(prompts.every((prompt) => prompt.startsWith("turn-")), "no blink or smile by default");
+  }
+
+  // Standard: the turns, whatever the light test says (it does not run).
+  const standard = { level: "standard", prompts: ["turn-right"], spare: null };
+  assert.deepEqual(requiredPrompts(standard, "skipped"), ["turn-right"]);
+  // Strict: the spare too, unless the light test passed.
+  const strict = { level: "strict", prompts: ["turn-left", "turn-right"], spare: "blink" };
+  assert.deepEqual(requiredPrompts(strict, "passed"), ["turn-left", "turn-right"]);
+  assert.deepEqual(requiredPrompts(strict, "inconclusive"), ["turn-left", "turn-right", "blink"]);
+  assert.deepEqual(requiredPrompts(strict, "skipped"), ["turn-left", "turn-right", "blink"], "reduced motion skips the light test, so the spare is asked");
+  // A ticket issued before the levels keeps its old rule.
+  assert.deepEqual(requiredPrompts({ prompts: ["blink", "smile"], spare: "turn-left" }, "inconclusive"), ["blink", "smile", "turn-left"]);
+});
+
+test("a rejected log puts the student on the strict check until a log is verified, and the level is kept with the photo", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { phToday } = require("../src/services/phTime.ts");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `STRICT-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@strict.test`;
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Strict Check', TRUE, $4)`, [sid, email, await bcrypt.hash("StrictTest123!", 4), supervisor.supervisor.supervisor_id]);
+    const mine = await login("student", email, "StrictTest123!");
+    const challenge = async () => (await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(mine.token) })).body;
+    const strictNow = async () => (await pool.query(`SELECT liveness_strict FROM students WHERE student_id = $1`, [sid])).rows[0].liveness_strict;
+    const decide = (id, status, extra = {}) =>
+      jsonRequest(`/api/attendance/${id}/status`, jsonBody(supervisor.token, "PATCH", { status, ...extra }));
+    const pastLog = async (daysAgo) =>
+      (await pool.query(
+        `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status)
+         VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + TIME '16:00', 8, 'Pending') RETURNING id`,
+        [sid, shiftDay(phToday(), -daysAgo)]
+      )).rows[0].id;
+
+    // A new student: the standard check.
+    assert.equal((await challenge()).level, "standard");
+    assert.equal(await strictNow(), false);
+
+    // Rejected: strict from now on, both head turns and a blink as the spare.
+    const first = await pastLog(3);
+    assert.equal((await decide(first, "Rejected", { reason: "The photo shows someone else." })).response.status, 200);
+    assert.equal(await strictNow(), true);
+    const hard = await challenge();
+    assert.equal(hard.level, "strict");
+    assert.deepEqual([...hard.prompts].sort(), ["turn-left", "turn-right"]);
+    assert.equal(hard.spare, "blink");
+
+    // On the strict level, an unclear light test without the spare is refused; with it the time-in is kept, marked strict.
+    const timeIn = (ticket, report) => {
+      const form = new FormData();
+      form.set("student_id", sid);
+      form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "attendance.jpg");
+      form.set("liveness_ticket", ticket);
+      form.set("liveness_report", JSON.stringify(report));
+      return jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(mine.token), body: form });
+    };
+    assert.equal((await timeIn(hard.ticket, { completed: hard.prompts, flash: "inconclusive" })).response.status, 400);
+    const kept = await timeIn(hard.ticket, { completed: [...hard.prompts, "blink"], flash: "inconclusive" });
+    assert.equal(kept.response.status, 201, JSON.stringify(kept.body));
+    const stored = (await pool.query(`SELECT liveness_checks FROM attendance WHERE id = $1`, [kept.body.attendance?.id ?? kept.body.id])).rows[0].liveness_checks;
+    assert.equal(stored.level, "strict");
+
+    // Verified: back to the standard check. Withdrawn: strict again, because the rejection is the latest decision.
+    const second = await pastLog(2);
+    assert.equal((await decide(second, "Verified")).response.status, 200);
+    assert.equal(await strictNow(), false);
+    assert.equal((await challenge()).level, "standard");
+    assert.equal((await decide(second, "Pending")).response.status, 200);
+    assert.equal(await strictNow(), true);
+    // And the rejection withdrawn too: nothing left to be strict about.
+    assert.equal((await decide(first, "Pending")).response.status, 200);
+    assert.equal(await strictNow(), false);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Strict Check%'`, [sid]);
+    await pool.query(`DELETE FROM audit_log WHERE entity_id IN (SELECT id::text FROM attendance WHERE student_id = $1)`, [sid]).catch(() => undefined);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("a concern's new coordinator replies are counted for its student until they open the conversation", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const sid = `REPLY-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@reply.test`;
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Reply Check', TRUE)`, [sid, email, await bcrypt.hash("ReplyTest123!", 4)]);
+    const mine = await login("student", email, "ReplyTest123!");
+    const concernId = (await pool.query(
+      `INSERT INTO complaints (student_id, report_type, category, description) VALUES ($1, 'supervisor', 'Workplace safety', 'The fire exit is locked.') RETURNING id`,
+      [sid]
+    )).rows[0].id;
+    const newReplies = async () =>
+      (await jsonRequest(`/api/complaints/student/${sid}`, { headers: authHeaders(mine.token) })).body.complaints.find((row) => row.id === concernId).new_replies;
+
+    assert.equal(await newReplies(), 0);
+    // The student's own message is not news to them.
+    assert.equal((await jsonRequest(`/api/complaints/${concernId}/messages`, jsonBody(mine.token, "POST", { message: "It was locked again today." }))).response.status, 201);
+    assert.equal(await newReplies(), 0);
+    // Two coordinator replies: counted.
+    for (const message of ["We will call the company.", "They have unlocked it."]) {
+      assert.equal((await jsonRequest(`/api/complaints/${concernId}/messages`, jsonBody(coordinatorToken, "POST", { message }))).response.status, 201);
+    }
+    assert.equal(await newReplies(), 2);
+    // The coordinator reading it changes nothing for the student.
+    assert.equal((await jsonRequest(`/api/complaints/${concernId}/messages`, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    assert.equal(await newReplies(), 2);
+    // The student opening it: read.
+    assert.equal((await jsonRequest(`/api/complaints/${concernId}/messages`, { headers: authHeaders(mine.token) })).response.status, 200);
+    assert.equal(await newReplies(), 0);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE '%Workplace safety%'`, [sid]);
+    await pool.query(`DELETE FROM complaints WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("after the head turns the photo waits for the button, which is enabled only on a good frame", () => {
+  require("tsx/cjs");
+  const { createEngine, MIN_SHARPNESS } = require("../../my-pwa/src/lib/liveness/engine.ts");
+  let now = 0;
+  const face = (extra = {}) => ({
+    time: (now += 40), faces: 1, centerX: 0.5, centerY: 0.5, size: 0.5, turn: 0.5,
+    eyeMostOpen: 0.05, eyeMostClosed: 0.1, smile: 0, mouthOpen: 0, mouthWidth: 0.4,
+    brightness: 120, speed: 0, sharpness: 80, ...extra,
+  });
+  const run = (engine, frames, extra) => {
+    let view;
+    for (let index = 0; index < frames; index += 1) view = engine.step(face(extra));
+    return view;
+  };
+  const toCapture = () => {
+    now = 0;
+    const engine = createEngine({ prompts: ["turn-left"], spare: null, flash: false });
+    run(engine, 20); // framed and held
+    run(engine, 5, { turn: 0.7 }); // the turn
+    let view = run(engine, 20); // facing forward again, past the celebration
+    assert.equal(view.phase, "capture");
+    return engine;
+  };
+
+  // No flash and no spare on the standard level: one prompt, then the photo.
+  const engine = toCapture();
+  assert.deepEqual(engine.report().completed, ["turn-left"]);
+  assert.equal(engine.report().flash, "skipped");
+
+  // Never taken by itself, however long the good frames go on.
+  let view = run(engine, 200);
+  assert.equal(view.phase, "capture");
+  assert.equal(view.shoot, true);
+  assert.equal(engine.takePhoto(now).phase, "passed");
+
+  // Not enabled on a blurred frame, eyes closed or a turned head; a tap then does nothing.
+  for (const bad of [{ sharpness: MIN_SHARPNESS - 1 }, { eyeMostClosed: 0.9, eyeMostOpen: 0.9 }, { turn: 0.7 }]) {
+    const waiting = toCapture();
+    run(waiting, 10);
+    view = run(waiting, 3, bad);
+    assert.equal(view.shoot, false, JSON.stringify(bad));
+    assert.equal(waiting.takePhoto(now).phase, "capture");
+    // Good frames again: enabled after a few in a row.
+    assert.equal(run(waiting, 1).shoot, false, "one good frame is not enough");
+    assert.equal(run(waiting, 3).shoot, true);
+  }
+
+  // A second face: the check starts over at once.
+  const crowded = toCapture();
+  view = crowded.step(face({ faces: 2 }));
+  assert.deepEqual([view.phase, view.hint], ["position", "another-face"]);
+
+  // The face gone: up to 1.5 seconds is forgiven, longer starts over.
+  const lost = toCapture();
+  run(lost, 30, { faces: 0 }); // 1.2 s
+  assert.equal(run(lost, 3).phase, "capture");
+  view = run(lost, 40, { faces: 0 }); // 1.6 s
+  assert.deepEqual([view.phase, view.hint], ["position", "no-face"]);
+
+  // The strict level: the light test first, and the spare when it is unclear.
+  now = 0;
+  const strict = createEngine({ prompts: ["turn-left", "turn-right"], spare: "blink", flash: true });
+  assert.equal(run(strict, 20).phase, "flash");
+  assert.deepEqual(strict.finishFlash("inconclusive", now).prompts, ["turn-left", "turn-right", "blink"]);
+  // Strict with reduced motion: no light test, the spare asked from the start.
+  assert.deepEqual(createEngine({ prompts: ["turn-left", "turn-right"], spare: "blink", flash: false }).step(face()).prompts, ["turn-left", "turn-right", "blink"]);
 });

@@ -71,6 +71,12 @@ export function createFaceReader(tracker: FaceLandmarker, video: HTMLVideoElemen
   probe.width = 96;
   probe.height = 96;
   const context = probe.getContext("2d", { willReadFrequently: true });
+  // The face alone at one small size, for sharpness on every frame. The full
+  // frame is only drawn when a photo may be kept (grabFrame).
+  const crop = document.createElement("canvas");
+  crop.width = SHARPNESS_SIDE;
+  crop.height = SHARPNESS_SIDE;
+  const cropContext = crop.getContext("2d", { willReadFrequently: true });
 
   let last: { time: number; x: number; y: number } | null = null;
 
@@ -89,6 +95,7 @@ export function createFaceReader(tracker: FaceLandmarker, video: HTMLVideoElemen
       mouthWidth: 0,
       brightness: 0,
       speed: 0,
+      sharpness: 0,
     },
     box: null,
     colour: null,
@@ -157,6 +164,7 @@ export function createFaceReader(tracker: FaceLandmarker, video: HTMLVideoElemen
       last = { time, x: nose.x, y: nose.y };
 
       const colour = averageColour(box);
+      const sharpness = cropContext ? faceSharpness(cropContext, video, video.videoWidth, video.videoHeight, box) : 0;
       const brightness = colour
         ? 0.299 * colour.r + 0.587 * colour.g + 0.114 * colour.b
         : 128;
@@ -182,6 +190,7 @@ export function createFaceReader(tracker: FaceLandmarker, video: HTMLVideoElemen
             ) / width,
           brightness,
           speed,
+          sharpness,
         },
         box,
         colour,
@@ -192,7 +201,9 @@ export function createFaceReader(tracker: FaceLandmarker, video: HTMLVideoElemen
 
 /**
  * Takes the attendance photo from the video, at the camera's full size, and
- * scores how sharp the face is in it.
+ * scores how sharp the face is in it. The frame is drawn as the camera gives
+ * it, with no transform: the preview on screen is mirrored, the photo is
+ * not, so it shows the scene as others see it (a name tag reads correctly).
  */
 export function grabFrame(
   video: HTMLVideoElement,
@@ -209,16 +220,29 @@ export function grabFrame(
   if (!context) return null;
   context.drawImage(video, 0, 0, width, height);
 
-  // Sharpness is judged on the face alone, scaled to one size so cameras of
-  // different resolutions are scored alike.
-  const side = 128;
   const crop = document.createElement("canvas");
-  crop.width = side;
-  crop.height = side;
+  crop.width = SHARPNESS_SIDE;
+  crop.height = SHARPNESS_SIDE;
   const cropContext = crop.getContext("2d", { willReadFrequently: true });
   if (!cropContext) return { canvas, sharpness: 0 };
+  return { canvas, sharpness: faceSharpness(cropContext, canvas, width, height, box) };
+}
+
+// Sharpness is judged on the face alone, scaled to one size so cameras of
+// different resolutions are scored alike.
+const SHARPNESS_SIDE = 128;
+
+function faceSharpness(
+  cropContext: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  width: number,
+  height: number,
+  box: FaceBox
+): number {
+  if (!width || !height) return 0;
+  const side = SHARPNESS_SIDE;
   cropContext.drawImage(
-    canvas,
+    source,
     Math.max(0, box.left * width),
     Math.max(0, box.top * height),
     Math.min(width, box.width * width),
@@ -233,5 +257,5 @@ export function grabFrame(
   for (let index = 0; index < grey.length; index += 1) {
     grey[index] = 0.299 * data[index * 4] + 0.587 * data[index * 4 + 1] + 0.114 * data[index * 4 + 2];
   }
-  return { canvas, sharpness: sharpnessOf(grey, side, side) };
+  return sharpnessOf(grey, side, side);
 }

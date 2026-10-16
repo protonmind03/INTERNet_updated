@@ -14,9 +14,9 @@ import type { LivenessChallenge } from "./useAttendance";
 | TIME-IN DIALOG
 |--------------------------------------------------------------------------
 |
-| Two steps. First the camera check, which takes the photo by itself once
-| it has seen a live person. Then the student sees the photo, may add a
-| note, and confirms.
+| Two steps. First the camera check; once it has seen a live person the
+| student takes the photo with the round button. Then the student sees the
+| photo (as it is saved, not mirrored), may add a note, and confirms.
 |
 | With no connection the camera check cannot run: the server sets it and
 | confirms it. The dialog then offers to record the time-in on the phone
@@ -176,7 +176,7 @@ export default function TimeInDialog({
           ? `Recorded at ${formatTime(now)} when you confirm.`
           : noConnection
             ? "There is no connection, so the camera check cannot run."
-            : "A quick camera check, then your photo is taken for you."
+            : "A quick camera check, then you take your photo."
       }
       locked={saving}
       footer={
@@ -242,6 +242,9 @@ export default function TimeInDialog({
               key={challenge.ticket}
               prompts={challenge.prompts}
               spare={challenge.spare}
+              strict={challenge.level === "strict"}
+              expiresAt={challenge.expiresAt}
+              onRenew={retake}
               onPassed={(photo, report) =>
                 setCapture({ photo, report, preview: URL.createObjectURL(photo) })
               }

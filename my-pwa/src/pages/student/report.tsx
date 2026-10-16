@@ -32,6 +32,8 @@ type Complaint = {
   description: string;
   status: string;
   resolution_notes: string | null;
+  /** Coordinator replies since the conversation was last opened. */
+  new_replies?: number;
   created_at: string;
 };
 
@@ -457,9 +459,14 @@ export default function ConcernsPanel() {
                         <button
                           type="button"
                           onClick={() => setOpenThread(report.id)}
-                          className="mt-2 text-sm font-semibold text-psu-700 hover:underline"
+                          className="mt-2 inline-flex items-center gap-2 text-sm font-semibold text-psu-700 hover:underline"
                         >
                           Conversation with the coordinator
+                          {Number(report.new_replies) > 0 && (
+                            <span className="rounded-full bg-red-600 px-2 py-0.5 text-xs font-semibold text-white">
+                              {report.new_replies === 1 ? "New reply" : `${report.new_replies} new replies`}
+                            </span>
+                          )}
                         </button>
                       )}
                     </li>

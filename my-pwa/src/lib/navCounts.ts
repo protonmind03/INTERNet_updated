@@ -49,11 +49,13 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
   if (!id) return {};
 
   if (role === "student") {
-    const [tasks, attendance] = await Promise.all([
+    const [tasks, attendance, concerns] = await Promise.all([
       savedFetch(role, "tasks", `${API_URL}/api/tasks/student/${id}`, withRoleAuth(role)).then(
         (response) => (response.ok ? response.json() : [])
       ),
       getJson(role, `/api/attendance/${id}`, "attendance"),
+      // Extra to the other two: without it there is just no badge.
+      getJson(role, `/api/complaints/student/${id}`).catch(() => ({ complaints: [] })),
     ]);
     const today = phDateKey(new Date());
     return {
@@ -66,6 +68,8 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
           log.status === "Rejected" ||
           (!log.time_out && String(log.date).slice(0, 10) < today)
       ).length,
+      // Concerns with a coordinator reply the student has not opened yet.
+      "/student/resolution": rows(concerns.complaints).filter((concern) => Number(concern.new_replies) > 0).length,
     };
   }
 

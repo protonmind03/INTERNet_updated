@@ -81,7 +81,8 @@ export type AttendanceEntry = {
   /** Set when the supervisor corrected the times on this log, with the reason. */
   time_corrected_at?: string | null;
   time_correction_reason?: string | null;
-  liveness_checks: { flash?: string; attempts?: number | null } | null;
+  /** level: "standard" (head turns) or "strict" (with the light test); absent before the levels. */
+  liveness_checks: { level?: "standard" | "strict"; flash?: string; attempts?: number | null } | null;
   /** Why the supervisor recorded the time-in instead of the camera check. */
   capture_reason: string | null;
 };

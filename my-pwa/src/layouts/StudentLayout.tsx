@@ -4,6 +4,7 @@ import { PortalBrand, PortalHeader } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import NotificationBell from "../components/NotificationBell";
 import SavedDataNotice from "../components/SavedDataNotice";
+import Tooltip from "../components/Tooltip";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts, type NavCounts } from "../lib/navCounts";
@@ -24,11 +25,12 @@ import TimeInProvider from "../pages/student/TimeInProvider";
 | with Schedule and Weekly report one tap away under "More". On a desktop
 | the same destinations are a sidebar.
 |
-| What is about the account rather than the day is in the header: the bell
+| What is about the account rather than the day is in the header: the
+| Resolution Center as an icon left of the bell (on a phone and a desktop
+| alike, with a count of concerns that have a new reply), the bell
 | (notifications and announcements) and, under the avatar on a phone,
-| Profile, the Resolution Center and Sign out. On a desktop the Resolution
-| Center is a labelled button in the header and Profile and Sign out are
-| at the foot of the sidebar. The next step of the day is the floating
+| Profile and Sign out. On a desktop Profile and Sign out are at the foot
+| of the sidebar. The next step of the day is the floating
 | button on a phone and a button in the page header on a desktop.
 |
 */
@@ -188,19 +190,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
             }
             right={
               <>
-                {desktop && (
-                  <NavLink
-                    to={RESOLUTION_NAV.path}
-                    className={({ isActive }) =>
-                      `flex h-11 items-center gap-2 rounded-lg px-3 text-sm font-semibold ${
-                        isActive ? "bg-psu-50 text-psu-800" : "text-slate-600 hover:bg-slate-100"
-                      }`
-                    }
-                  >
-                    <Icon name={RESOLUTION_NAV.icon} size={18} />
-                    {RESOLUTION_NAV.label}
-                  </NavLink>
-                )}
+                <ResolutionButton count={counts[RESOLUTION_NAV.path] ?? 0} onDark={!desktop} />
                 <NotificationBell
                   role="student"
                   announcementsFor="student"
@@ -237,17 +227,6 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
                         >
                           <Icon name="user" className="text-slate-400" />
                           Profile
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setMenuOpen(false);
-                            navigate(RESOLUTION_NAV.path);
-                          }}
-                          className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-slate-700 hover:bg-slate-50"
-                        >
-                          <Icon name={RESOLUTION_NAV.icon} className="text-slate-400" />
-                          {RESOLUTION_NAV.label}
                         </button>
                         <button
                           type="button"
@@ -437,6 +416,43 @@ function SidebarGroup({ items, counts }: { items: NavItem[]; counts: NavCounts }
         </NavLink>
       ))}
     </div>
+  );
+}
+
+/**
+ * The Resolution Center (concerns and evaluations) as an icon. Its name says
+ * what the badge shows, so what is seen and what is announced agree.
+ */
+function ResolutionButton({ count, onDark }: { count: number; onDark: boolean }) {
+  const shown = count > 99 ? "99+" : String(count);
+  return (
+    <Tooltip label={RESOLUTION_NAV.label} side="left">
+      <NavLink
+        to={RESOLUTION_NAV.path}
+        aria-label={
+          count > 0
+            ? `${RESOLUTION_NAV.label}, ${count === 1 ? "1 concern" : `${count} concerns`} with a new reply`
+            : RESOLUTION_NAV.label
+        }
+        className={({ isActive }) =>
+          `relative flex h-11 w-11 items-center justify-center rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 ${
+            onDark
+              ? `text-white hover:bg-white/10 focus-visible:outline-white ${isActive ? "bg-white/15" : ""}`
+              : `focus-visible:outline-psu-500 ${isActive ? "bg-psu-50 text-psu-800" : "text-slate-600 hover:bg-slate-100"}`
+          }`
+        }
+      >
+        <Icon name={RESOLUTION_NAV.icon} />
+        {count > 0 && (
+          <span
+            aria-hidden="true"
+            className="tabular absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white ring-2 ring-white"
+          >
+            {shown}
+          </span>
+        )}
+      </NavLink>
+    </Tooltip>
   );
 }
 

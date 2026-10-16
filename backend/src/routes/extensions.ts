@@ -2459,6 +2459,14 @@ export function registerExtensionRoutes(
            ORDER BY created_at, id`,
           [complaint.id]
         );
+        // Whoever filed it has now read every reply in it.
+        const filer = complaint.student_id ? "student" : "supervisor";
+        const filedBy = complaint.student_id ?? complaint.filed_by_supervisor_id;
+        if (auth.role === filer && sameId(filedBy, auth.id)) {
+          await quietly("COMPLAINT SEEN ERROR", () =>
+            pool.query(`UPDATE complaints SET filer_seen_at = NOW() WHERE id = $1`, [complaint.id])
+          );
+        }
         return res.json({ messages: result.rows });
       } catch (error) {
         console.error("GET COMPLAINT MESSAGES ERROR:", error);
