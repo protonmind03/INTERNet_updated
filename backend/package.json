@@ -23,7 +23,8 @@
     "privacy:purge-photos": "tsx src/scripts/purge-photos.ts",
     "uploads:backup": "tsx src/scripts/backup-uploads.ts",
     "test": "node --test test/*.test.cjs",
-    "lint": "tsx src/scripts/lint-time-zone.ts"
+    "lint": "tsx src/scripts/lint-time-zone.ts",
+    "check:route-tests": "tsx src/scripts/check-route-tests.ts"
   },
   "keywords": [],
   "author": "",

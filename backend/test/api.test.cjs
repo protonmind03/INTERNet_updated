@@ -8737,3 +8737,210 @@ test("the backend's date lint refuses a date formatted without its time zone (M3
   assert.deepEqual(lines(`const a = new Intl.DateTimeFormat("en-CA", {\n  timeZone,\n  year: "numeric",\n});`), []);
   assert.deepEqual(lines(`// d.toLocaleDateString()\nconst s = "x.toLocaleDateString()";\nconst n = (5).toLocaleString("en-PH");`), [], "comments, strings and numbers are left alone");
 });
+
+test("the route check reads every registration and matches an address however its id is written (M10)", () => {
+  require("tsx/cjs");
+  const { registeredRoutes, routePattern } = require("../src/scripts/check-route-tests.ts");
+  assert.ok(routePattern("/api/attendance/:id/break-end").test("jsonRequest(`/api/attendance/${logId}/break-end`, x)"));
+  assert.ok(routePattern("/api/absences/:id").test('fetch("/api/absences/12", x)'));
+  assert.ok(!routePattern("/api/attendance/:id").test("`/api/attendance/${logId}/break-end`"), "a longer address is another route");
+  assert.ok(routePattern("/api/coordinator/students").test("`/api/coordinator/students?term=${id}`"));
+  // It sees the same routes the guard sweep reads.
+  const source = nodePath.join(__dirname, "..", "src");
+  const files = [nodePath.join(source, "server.ts"), ...fs.readdirSync(nodePath.join(source, "routes")).map((file) => nodePath.join(source, "routes", file))];
+  assert.equal(registeredRoutes(files).length, sweepRoutes.length);
+});
+
+test("supervisor routes not named elsewhere: dashboard, own concerns, and own password (M10)", async (t) => {
+  const supervisor = await supervisorSession();
+  const id = supervisor.supervisor.supervisor_id;
+  const other = encodeURIComponent(`${id}-other`);
+
+  const dashboard = await jsonRequest(`/api/supervisor/dashboard/${encodeURIComponent(id)}`, { headers: authHeaders(supervisor.token) });
+  assert.equal(dashboard.response.status, 200, JSON.stringify(dashboard.body));
+  assert.equal(typeof dashboard.body.totalInterns, "number");
+  assert.equal((await jsonRequest(`/api/supervisor/dashboard/${other}`, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest(`/api/supervisor/dashboard/${encodeURIComponent(id)}`, { headers: authHeaders(studentToken) })).response.status, 403);
+
+  const concerns = await jsonRequest(`/api/complaints/supervisor/${encodeURIComponent(id)}`, { headers: authHeaders(supervisor.token) });
+  assert.equal(concerns.response.status, 200);
+  assert.ok(Array.isArray(concerns.body.complaints));
+  assert.ok(concerns.body.complaints.every((row) => row.filed_by_supervisor_id === id), "only the concerns this supervisor filed");
+  assert.equal((await jsonRequest(`/api/complaints/supervisor/${other}`, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+  // Someone else's password, never; checked before anything is read.
+  const notMine = await jsonRequest(`/api/supervisors/${other}/password`, jsonBody(supervisor.token, "PUT", { current_password: supervisorPassword, new_password: "Whatever123!x" }));
+  assert.equal(notMine.response.status, 403);
+  if (needsWrites(t)) return;
+
+  // A throwaway supervisor changes their own: a wrong current one is refused, then it works and the new one signs in.
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supId = `PWSUP-${Date.now()}`;
+  const email = `${supId.toLowerCase()}@password.test`;
+  try {
+    await pool.query(`INSERT INTO supervisors (supervisor_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Password Check', TRUE)`, [supId, email, await bcrypt.hash("OldPassword123!", 4)]);
+    const mine = await login("supervisor", email, "OldPassword123!");
+    const wrong = await jsonRequest(`/api/supervisors/${supId}/password`, jsonBody(mine.token, "PUT", { current_password: "NotThePassword1!", new_password: "NewPassword456!" }));
+    assert.equal(wrong.response.status, 401);
+    const same = await jsonRequest(`/api/supervisors/${supId}/password`, jsonBody(mine.token, "PUT", { current_password: "OldPassword123!", new_password: "OldPassword123!" }));
+    assert.equal(same.response.status, 400);
+    const changed = await jsonRequest(`/api/supervisors/${supId}/password`, jsonBody(mine.token, "PUT", { current_password: "OldPassword123!", new_password: "NewPassword456!" }));
+    assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
+    await login("supervisor", email, "NewPassword456!");
+  } finally {
+    await pool.query(`DELETE FROM supervisors WHERE supervisor_id = $1`, [supId]);
+    await pool.end();
+  }
+});
+
+test("student routes not named elsewhere: company, documents, unread count and read-all (M10)", async (t) => {
+  const own = encodeURIComponent(student.student_id);
+  const company = await jsonRequest(`/api/company/${own}`, { headers: authHeaders(studentToken) });
+  assert.equal(company.response.status, 200, JSON.stringify(company.body));
+  assert.equal((await jsonRequest("/api/company/someone-else", { headers: authHeaders(studentToken) })).response.status, 403);
+
+  const documents = await jsonRequest("/api/documents/student", { headers: authHeaders(studentToken) });
+  assert.equal(documents.response.status, 200);
+  assert.ok(documents.body.documents.every((row) => row.student_id === student.student_id), "only the student's own");
+  assert.equal((await jsonRequest("/api/documents/student")).response.status, 401);
+  assert.equal((await jsonRequest("/api/documents/student", { headers: authHeaders(coordinatorToken) })).response.status, 403);
+
+  assert.equal((await jsonRequest("/api/notifications/student/someone-else/unread-count", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/notifications/student/someone-else/read-all", jsonBody(studentToken, "PUT", {}))).response.status, 403);
+  if (needsWrites(t)) return;
+
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const sid = `UNREAD-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@unread.test`;
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Unread Check', TRUE)`, [sid, email, await bcrypt.hash("UnreadTest123!", 4)]);
+    await pool.query(`INSERT INTO notifications (student_id, title, message, type) VALUES ($1, 'One', 'First', 'info'), ($1, 'Two', 'Second', 'info')`, [sid]);
+    const mine = await login("student", email, "UnreadTest123!");
+    const count = async () => (await jsonRequest(`/api/notifications/student/${sid}/unread-count`, { headers: authHeaders(mine.token) })).body.count;
+    assert.equal(await count(), 2);
+    const read = await jsonRequest(`/api/notifications/student/${sid}/read-all`, jsonBody(mine.token, "PUT", {}));
+    assert.equal(read.response.status, 200);
+    assert.equal(await count(), 0);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("absences: the supervisor's list holds their interns' requests, and a student withdraws an unreviewed one (M10)", async (t) => {
+  const supervisor = await supervisorSession();
+  const list = await jsonRequest("/api/absences/supervisor", { headers: authHeaders(supervisor.token) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.absences));
+  assert.equal((await jsonRequest("/api/absences/supervisor", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/absences/not-a-number", jsonBody(studentToken, "DELETE", {}))).response.status, 404);
+  if (needsWrites(t)) return;
+
+  require("tsx/cjs");
+  const { phToday } = require("../src/services/phTime.ts");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const sid = `ABSENT-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@absence.test`;
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Absence Check', TRUE, $4)`, [sid, email, await bcrypt.hash("AbsenceTest123!", 4), supervisor.supervisor.supervisor_id]);
+    const mine = await login("student", email, "AbsenceTest123!");
+    const filed = await jsonRequest("/api/absences", jsonBody(mine.token, "POST", { date: shiftDay(phToday(), 10), reason: "A medical appointment." }));
+    assert.equal(filed.response.status, 201, JSON.stringify(filed.body));
+    const absenceId = filed.body.absence.id;
+    const seen = (await jsonRequest("/api/absences/supervisor", { headers: authHeaders(supervisor.token) })).body.absences;
+    assert.ok(seen.some((row) => row.id === absenceId), "the supervisor sees their intern's request");
+
+    // Only its owner withdraws it, and only once.
+    assert.equal((await jsonRequest(`/api/absences/${absenceId}`, jsonBody(studentToken, "DELETE", {}))).response.status, 404, "another student cannot");
+    assert.equal((await jsonRequest(`/api/absences/${absenceId}`, jsonBody(mine.token, "DELETE", {}))).response.status, 200);
+    assert.equal((await jsonRequest(`/api/absences/${absenceId}`, jsonBody(mine.token, "DELETE", {}))).response.status, 404);
+    assert.equal((await pool.query(`SELECT 1 FROM absences WHERE id = $1`, [absenceId])).rows.length, 0);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Absence Check %'`, [sid]);
+    await pool.query(`DELETE FROM removed_records WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM absences WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("coordinator edits not named elsewhere: college, major, company, term, site visit and a coordinator's status (M10)", async (t) => {
+  // A coordinator never deactivates themselves; a bad value is refused first.
+  const me = encodeURIComponent(coordinator.coordinator_id);
+  assert.equal((await jsonRequest(`/api/coordinator/coordinators/${me}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: "no" }))).response.status, 400);
+  assert.equal((await jsonRequest(`/api/coordinator/coordinators/${me}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: false }))).response.status, 409);
+  assert.equal((await jsonRequest("/api/coordinator/colleges/999999999", jsonBody(coordinatorToken, "PUT", { name: "Nobody" }))).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/majors/999999999", jsonBody(coordinatorToken, "PUT", { name: "Nobody" }))).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/company-records/abc", jsonBody(coordinatorToken, "PUT", { name: "Nobody" }))).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/terms/abc", jsonBody(coordinatorToken, "PUT", {}))).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/site-visits/abc", jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+  if (needsWrites(t)) return;
+
+  const send = (method, path, payload) => jsonRequest(path, jsonBody(coordinatorToken, method, payload));
+  const pool = localTestPool();
+  const stamp = String(Date.now()).slice(-7);
+  const made = { college: null, program: null, major: null, company: null, term: null, student: null };
+  const bcrypt = require("bcryptjs");
+  try {
+    made.college = (await send("POST", "/api/coordinator/colleges", { name: `Edit College ${stamp}`, short_name: `EC${stamp}` })).body.college.id;
+    const college = await send("PUT", `/api/coordinator/colleges/${made.college}`, { name: `Edited College ${stamp}`, is_active: false });
+    assert.equal(college.response.status, 200, JSON.stringify(college.body));
+    assert.deepEqual([college.body.college.name, college.body.college.short_name, college.body.college.is_active], [`Edited College ${stamp}`, `EC${stamp}`, false], "what is not sent is kept");
+    assert.equal((await send("PUT", `/api/coordinator/colleges/${made.college}`, { is_active: "yes" })).response.status, 400);
+
+    made.program = (await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `BS Edit ${stamp}`, short_code: `BSE${stamp}` })).body.program.id;
+    made.major = (await send("POST", "/api/coordinator/majors", { program_id: made.program, name: "Before" })).body.major.id;
+    const major = await send("PUT", `/api/coordinator/majors/${made.major}`, { name: "After" });
+    assert.equal(major.response.status, 200, JSON.stringify(major.body));
+    assert.deepEqual([major.body.major.name, major.body.major.is_active], ["After", true]);
+    assert.equal((await send("PUT", `/api/coordinator/majors/${made.major}`, { name: "x" })).response.status, 400);
+
+    made.company = (await pool.query(`INSERT INTO companies (name) VALUES ($1) RETURNING id`, [`Edit Company ${stamp}`])).rows[0].id;
+    const company = await send("PUT", `/api/coordinator/company-records/${made.company}`, { name: `Edited Company ${stamp}`, slots: 4, contact_email: "hr@example.com" });
+    assert.equal(company.response.status, 200, JSON.stringify(company.body));
+    assert.equal(company.body.company.name, `Edited Company ${stamp}`);
+    assert.equal((await send("PUT", `/api/coordinator/company-records/${made.company}`, { name: `Edited Company ${stamp}`, contact_email: "not an email" })).response.status, 400);
+    const off = await send("PATCH", `/api/coordinator/company-records/${made.company}/status`, { is_active: false });
+    assert.equal(off.response.status, 200);
+    assert.equal(off.body.company.is_active, false);
+    assert.equal((await send("PATCH", `/api/coordinator/company-records/${made.company}/status`, {})).response.status, 400);
+    assert.equal((await send("PATCH", "/api/coordinator/company-records/999999999/status", { is_active: true })).response.status, 404);
+
+    const visit = (await send("POST", "/api/coordinator/site-visits", { company_id: made.company, visit_date: "2026-02-10", findings: "First look at the desks." })).body.visit;
+    const revisit = await send("PUT", `/api/coordinator/site-visits/${visit.id}`, { company_id: made.company, visit_date: "2026-02-11", findings: "It was the 11th." });
+    assert.equal(revisit.response.status, 200, JSON.stringify(revisit.body));
+    assert.equal(revisit.body.visit.visit_date, "2026-02-11");
+    assert.equal((await send("DELETE", `/api/coordinator/site-visits/${visit.id}`, {})).response.status, 200);
+    assert.equal((await send("PUT", `/api/coordinator/site-visits/${visit.id}`, { company_id: made.company, visit_date: "2026-02-11", findings: "This visit was removed a moment ago." })).response.status, 404);
+
+    made.term = (await send("POST", "/api/coordinator/terms", { name: `Edit Term ${stamp}`, start_date: "2032-01-05", end_date: "2032-05-28" })).body.term.id;
+    const term = await send("PUT", `/api/coordinator/terms/${made.term}`, { name: `Edited Term ${stamp}`, start_date: "2032-01-12", end_date: "2032-05-28" });
+    assert.equal(term.response.status, 200, JSON.stringify(term.body));
+    assert.equal(term.body.term.name, `Edited Term ${stamp}`);
+    assert.equal((await send("PUT", `/api/coordinator/terms/${made.term}`, { name: `Edited Term ${stamp}`, start_date: "2032-06-01", end_date: "2032-05-28" })).response.status, 400, "a term ends after it starts");
+
+    made.student = `TERM-${stamp}`;
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Term Check', TRUE)`, [made.student, `${made.student.toLowerCase()}@term.test`, await bcrypt.hash("TermTest123!", 4)]);
+    assert.equal((await send("POST", `/api/coordinator/terms/${made.term}/students`, { student_ids: [] })).response.status, 400);
+    const added = await send("POST", `/api/coordinator/terms/${made.term}/students`, { student_ids: [` ${made.student} `] });
+    assert.equal(added.response.status, 200, JSON.stringify(added.body));
+    assert.equal(added.body.count, 1);
+    assert.equal((await pool.query(`SELECT term_id FROM students WHERE student_id = $1`, [made.student])).rows[0].term_id, made.term);
+  } finally {
+    if (made.student) await pool.query(`DELETE FROM students WHERE student_id = $1`, [made.student]);
+    if (made.term) await pool.query(`DELETE FROM terms WHERE id = $1`, [made.term]);
+    if (made.company) {
+      await pool.query(`DELETE FROM removed_records WHERE table_name = 'site_visits' AND data->>'company_id' = $1::text`, [made.company]);
+      await pool.query(`DELETE FROM site_visits WHERE company_id = $1`, [made.company]);
+      await pool.query(`DELETE FROM companies WHERE id = $1`, [made.company]);
+    }
+    if (made.major) await pool.query(`DELETE FROM majors WHERE id = $1`, [made.major]);
+    if (made.program) await pool.query(`DELETE FROM programs WHERE id = $1`, [made.program]);
+    if (made.college) await pool.query(`DELETE FROM colleges WHERE id = $1`, [made.college]);
+    await pool.end();
+  }
+});

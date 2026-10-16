@@ -60,9 +60,13 @@ jobs:
 
       - run: npm ci
 
-      # Needs no database: a date formatted without a time zone fails the build.
+      # Neither needs the database: dates formatted without a time zone,
+      # and a registered route that no test names, both fail the build.
       - name: Dates name their time zone
         run: npm run lint
+
+      - name: Every route has a test
+        run: npm run check:route-tests
 
       - name: Apply migrations
         run: npm run db:migrate
