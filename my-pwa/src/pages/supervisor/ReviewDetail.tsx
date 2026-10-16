@@ -422,6 +422,8 @@ function CaptureNote({ entry }: { entry: AttendanceEntry }) {
               ? "Taken after the stricter camera check, used since a rejected log: a live face turned their head as asked and the screen-light test ran."
               : "Taken by the camera check: a live face followed the prompts before this photo was taken."}
           {lightUnclear && " The light check was not conclusive, so an extra prompt was asked."}
+          {/* The check gives three tries; more than one is worth a closer look. */}
+          {Number(checks?.attempts) > 1 && ` It took ${checks?.attempts} tries.`}
         </span>
       </p>
     );

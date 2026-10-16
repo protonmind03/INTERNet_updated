@@ -77,10 +77,7 @@ export type Hint =
   | "face-forward"
   | "eyes-open"
   | "close-mouth"
-  | "blurry"
-  | "try-again"
-  | "face-lost"
-  | "another-face";
+  | "blurry";
 
 export type EngineView = {
   phase: Phase;
@@ -96,6 +93,9 @@ export type EngineView = {
   /** True while the photo may be taken: the "Take photo" button is enabled. */
   shoot: boolean;
   attempts: number;
+  /** Why the check started over, kept on screen until the person is back in
+   *  place and the check moves on; null when it has not started over. */
+  notice: "try-again" | "face-lost" | "another-face" | null;
 };
 
 export type EngineOptions = {
@@ -163,6 +163,7 @@ export function createEngine(options: EngineOptions) {
   let hint: Hint = "none";
   let attempts = 1;
   let done = 0;
+  let notice: EngineView["notice"] = null;
   let flashResult: FlashResult | null = options.flash ? null : "skipped";
   // Strict level with reduced motion: no light test, so the spare is asked.
   if (!options.flash) addSpare();
@@ -224,7 +225,7 @@ export function createEngine(options: EngineOptions) {
   }
 
   /** Starts the prompts over from the first one. */
-  function restart(time: number, countsAsAttempt: boolean, why: Hint = "try-again") {
+  function restart(time: number, countsAsAttempt: boolean, why: NonNullable<EngineView["notice"]> = "try-again") {
     if (countsAsAttempt) {
       attempts += 1;
       if (attempts > MAX_ATTEMPTS) {
@@ -235,7 +236,8 @@ export function createEngine(options: EngineOptions) {
     }
     done = 0;
     enter("position", time);
-    hint = why;
+    hint = "none";
+    notice = why;
   }
 
   function framingProblem(sample: FaceSample): Hint {
@@ -336,6 +338,7 @@ export function createEngine(options: EngineOptions) {
       celebrating: time < celebrateUntil,
       shoot,
       attempts,
+      notice,
     };
   }
 
@@ -355,10 +358,9 @@ export function createEngine(options: EngineOptions) {
           return view(time);
         }
         heldSince ??= time;
-        // Keep "let's go again" on screen until they are back in place.
-        if (hint !== "try-again" && hint !== "face-lost" && hint !== "another-face") hint = "none";
+        hint = "none";
         if (time - heldSince >= POSITION_HOLD_MS) {
-          hint = "none";
+          notice = null;
           enter(flashResult === null ? "flash" : "prompt", time);
         }
         return view(time);

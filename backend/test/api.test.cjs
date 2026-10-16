@@ -9134,14 +9134,17 @@ test("after the head turns the photo waits for the button, which is enabled only
   // A second face: the check starts over at once.
   const crowded = toCapture();
   view = crowded.step(face({ faces: 2 }));
-  assert.deepEqual([view.phase, view.hint], ["position", "another-face"]);
+  assert.deepEqual([view.phase, view.notice], ["position", "another-face"]);
 
   // The face gone: up to 1.5 seconds is forgiven, longer starts over.
   const lost = toCapture();
   run(lost, 30, { faces: 0 }); // 1.2 s
   assert.equal(run(lost, 3).phase, "capture");
   view = run(lost, 40, { faces: 0 }); // 1.6 s
-  assert.deepEqual([view.phase, view.hint], ["position", "no-face"]);
+  assert.deepEqual([view.phase, view.hint, view.notice], ["position", "no-face", "face-lost"]);
+  // Why it started over stays until the person is back in place and it moves on.
+  assert.equal(run(lost, 3).notice, "face-lost");
+  assert.equal(run(lost, 20).notice, null);
 
   // The strict level: the light test first, and the spare when it is unclear.
   now = 0;

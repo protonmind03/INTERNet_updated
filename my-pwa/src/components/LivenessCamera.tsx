@@ -109,6 +109,10 @@ const HINT_TEXT: Record<Hint, string> = {
   "eyes-open": "Keep your eyes open",
   "close-mouth": "Relax your mouth",
   blurry: "Hold the phone steady",
+};
+
+/** Why the check started over: the headline until it moves on again. */
+const NOTICE_TEXT: Record<NonNullable<EngineView["notice"]>, string> = {
   "try-again": "That took too long. Let's go again",
   "face-lost": "We lost your face. Let's start again",
   "another-face": "Someone else came into view. Let's start again",
@@ -143,6 +147,7 @@ function viewKey(view: EngineView): string {
     view.prompts.length,
     // Whether the "Take photo" button is enabled.
     view.shoot,
+    view.notice,
   ].join("|");
 }
 
@@ -448,12 +453,12 @@ export default function LivenessCamera({
   } else if (phase === "capture") {
     instruction = "Look at the camera";
     detail = hint || "Hold still";
-  } else if (view?.hint === "try-again") {
-    instruction = HINT_TEXT["try-again"];
-    detail = `Attempt ${view.attempts} of ${MAX_ATTEMPTS}`;
-  } else if (view?.hint === "face-lost" || view?.hint === "another-face") {
-    instruction = HINT_TEXT[view.hint];
-    detail = "Fit your face in the oval";
+  } else if (phase === "position" && view?.notice) {
+    // Why it started over stays as the headline; what to fix comes under it.
+    instruction = NOTICE_TEXT[view.notice];
+    detail =
+      hint ||
+      (view.notice === "try-again" ? `Attempt ${view.attempts} of ${MAX_ATTEMPTS}` : "Fit your face in the oval");
   }
   const waitingForTap = phase === "capture" && !finished && !starting;
   const ready = waitingForTap && Boolean(view?.shoot);
