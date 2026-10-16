@@ -10,7 +10,8 @@
     "prebuild": "node scripts/copy-mediapipe.mjs",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "startup-images": "node scripts/make-startup-images.mjs"
   },
   "dependencies": {
     "@fontsource-variable/bricolage-grotesque": "^5.3.0",

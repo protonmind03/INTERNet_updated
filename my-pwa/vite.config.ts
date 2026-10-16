@@ -78,6 +78,8 @@ export default defineConfig(({ mode }) => {
               'service-worker-killswitch.js',
               // Only the browser's install dialog uses these.
               'screenshots/**',
+              // Only an iPhone opening from the Home Screen uses these, once each.
+              'startup/**',
             ],
           },
         })
