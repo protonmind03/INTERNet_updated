@@ -18,6 +18,9 @@ type Status = {
     consent_asked: boolean;
     notice_is_placeholder: boolean;
     photo_retention_days: number | null;
+    /** The Philippine time the nightly clean-up runs. Missing from an older server. */
+    photo_purge_time?: string;
+    last_photo_purge?: { ran_at: string; retention_days: number; removed: number; failed: number; by_hand: boolean } | null;
   };
 };
 
@@ -182,7 +185,7 @@ export default function SystemStatus() {
             state={status.privacy.photo_retention_days !== null ? "Removed" : "Kept"}
             about={
               status.privacy.photo_retention_days !== null
-                ? `Removed after ${status.privacy.photo_retention_days} days, when the clean-up is run.`
+                ? photoPurgeText(status.privacy)
                 : "Kept with no limit."
             }
           />
@@ -223,6 +226,19 @@ export default function SystemStatus() {
         </section>
       )}
     </Card>
+  );
+}
+
+function photoPurgeText(privacy: Status["privacy"]): string {
+  const days = privacy.photo_retention_days;
+  if (!privacy.photo_purge_time) return `Removed after ${days} days, when the clean-up is run.`;
+  const last = privacy.last_photo_purge;
+  const when = last ? new Date(last.ran_at).toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short" }) : "";
+  return (
+    `Removed after ${days} days, every night at 2:30 AM Philippine time. ` +
+    (last
+      ? `Last run ${when}: ${last.removed === 1 ? "1 photo" : `${last.removed} photos`} removed${last.failed > 0 ? `, ${last.failed} could not be deleted` : ""}.`
+      : "It has not run yet.")
   );
 }
 

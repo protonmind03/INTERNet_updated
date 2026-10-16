@@ -8365,3 +8365,65 @@ test("the phone's clock gap: worked out from the clock it sends, kept per offlin
     await pool.end();
   }
 });
+
+test("old time-in photos are removed each night at 02:30 when retention is set: once, under a lock, logs kept, last run on the status card", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { runPhotoPurgeIfDue } = require("../src/services/photoPurge.ts");
+  const { Pool } = require("pg");
+  const pool = new Pool({ connectionString: process.env.DATABASE_PUBLIC_URL, options: "-c timezone=Asia/Manila" });
+  const env = { PHOTO_RETENTION_DAYS: "30" };
+  // 10:00 in the Philippines on a date of its own, so earlier runs of the suite are not in the way.
+  const day = new Date(Date.UTC(2091, 0, 1 + (Date.now() % 3000)));
+  const at = (time) => new Date(`${day.toISOString().slice(0, 10)}T${time}:00+08:00`);
+  const sid = `PURGE-${Date.now()}`;
+  const removed = [];
+  const removeFile = async (name) => { removed.push(name); };
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Purge Check', TRUE)`, [sid, `${sid.toLowerCase()}@purge.test`]);
+    const log = async (daysAgo, status, file) => (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status, image_url)
+       VALUES ($1, CURRENT_DATE - $2::int, NOW() - make_interval(days => $2), NOW() - make_interval(days => $2) + INTERVAL '8 hours', 8, $3, $4) RETURNING id`,
+      [sid, daysAgo, status, `/uploads/${file}`]
+    )).rows[0].id;
+    const old = await log(45, "Verified", "1700000000000-aaaaaaaaaaa1.jpg");
+    const oldRejected = await log(40, "Rejected", "1700000000000-aaaaaaaaaaa2.jpg");
+    const oldWaiting = await log(50, "Pending", "1700000000000-aaaaaaaaaaa3.jpg");
+    const recent = await log(10, "Verified", "1700000000000-aaaaaaaaaaa4.jpg");
+    const imageOf = async (id) => (await pool.query(`SELECT image_url FROM attendance WHERE id = $1`, [id])).rows[0].image_url;
+
+    // Off without the setting, and before 02:30.
+    assert.equal(await runPhotoPurgeIfDue(pool, { now: at("10:00"), env: {}, removeFile }), null);
+    assert.equal(await runPhotoPurgeIfDue(pool, { now: at("02:29"), env, removeFile }), null);
+    assert.deepEqual(removed, []);
+
+    // Two servers checking at the same moment: one run.
+    const both = await Promise.all([
+      runPhotoPurgeIfDue(pool, { now: at("02:31"), env, removeFile }),
+      runPhotoPurgeIfDue(pool, { now: at("02:31"), env, removeFile }),
+    ]);
+    const runs = both.filter(Boolean);
+    assert.equal(runs.length, 1, "only one of them ran");
+    assert.ok(runs[0].removed >= 2);
+    for (const id of [old, oldRejected]) assert.equal(await imageOf(id), null, "an old decided photo is removed");
+    assert.match(await imageOf(oldWaiting), /aaaaaaaaaaa3/, "a photo still waiting for review is kept");
+    assert.match(await imageOf(recent), /aaaaaaaaaaa4/, "a recent photo is kept");
+    assert.ok(removed.includes("1700000000000-aaaaaaaaaaa1.jpg"));
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attendance WHERE student_id = $1`, [sid])).rows[0].n, 4, "the logs themselves are kept");
+    // Later the same night: already done.
+    assert.equal(await runPhotoPurgeIfDue(pool, { now: at("23:00"), env, removeFile }), null);
+    const recorded = await pool.query(`SELECT retention_days, by_hand FROM photo_purge_runs WHERE ran_on = $1::date`, [day.toISOString().slice(0, 10)]);
+    assert.deepEqual(recorded.rows, [{ retention_days: 30, by_hand: false }]);
+
+    // The coordinator's status card names the last run.
+    const status = await jsonRequest("/api/coordinator/system-status", { headers: authHeaders(coordinatorToken) });
+    assert.equal(status.body.privacy.photo_purge_time, "02:30");
+    assert.ok(status.body.privacy.last_photo_purge, "a run is shown");
+    assert.equal(typeof status.body.privacy.last_photo_purge.removed, "number");
+  } finally {
+    await pool.query(`DELETE FROM photo_purge_runs WHERE ran_on = $1::date`, [day.toISOString().slice(0, 10)]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});

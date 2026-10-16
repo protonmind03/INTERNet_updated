@@ -8,6 +8,7 @@ import { EmailLimitError, accountReserve, emailDailyLimit, emailsSentToday } fro
 import { PRIVACY_NOTICE, consentRequired, photoRetentionDays } from "../services/privacy";
 import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
 import { recentProblems } from "../services/problems";
+import { PURGE_TIME, lastPhotoPurge } from "../services/photoPurge";
 
 /*
 |--------------------------------------------------------------------------
@@ -65,6 +66,8 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
           consent_asked: consentRequired(),
           notice_is_placeholder: PRIVACY_NOTICE.placeholder,
           photo_retention_days: photoRetentionDays(),
+          photo_purge_time: PURGE_TIME,
+          last_photo_purge: await lastPhotoPurge(pool),
         },
       });
     } catch (error) {

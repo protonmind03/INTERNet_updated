@@ -1,6 +1,6 @@
 import { confirmed as writeConfirmed, connect } from "./fk-shared";
-import { deletePrivateFile } from "../services/privateFileStore";
 import { photoRetentionDays } from "../services/privacy";
+import { photosDue, removePhotos } from "../services/photoPurge";
 
 // Removes time-in photos older than PHOTO_RETENTION_DAYS. The attendance
 // log itself, its times and its hours are kept; only the photo goes.
@@ -14,6 +14,9 @@ import { photoRetentionDays } from "../services/privacy";
 //
 // The photos are on the server's own disk, so on the hosting platform this
 // must be run on the server (see DEPLOY.md), not from a laptop.
+//
+// The server also runs this by itself each night at 02:30 Philippine time
+// (services/photoPurge.ts). A run from here is recorded beside those.
 
 async function purge() {
   const days = photoRetentionDays();
@@ -27,37 +30,23 @@ async function purge() {
   const client = await connect();
   try {
     if (!confirm) await client.query("SET default_transaction_read_only = on");
-    const due = await client.query<{ id: number; student_id: string; date: string; image_url: string }>(
-      `SELECT id, student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date, image_url
-       FROM attendance
-       WHERE image_url IS NOT NULL
-         AND status IN ('Verified', 'Rejected')
-         AND date < CURRENT_DATE - $1::int
-       ORDER BY date, id`,
-      [days]
-    );
-    console.log(
-      `${due.rows.length} time-in photo${due.rows.length === 1 ? "" : "s"} older than ${days} days` +
-        (due.rows.length > 0 ? ` (${due.rows[0].date} to ${due.rows[due.rows.length - 1].date}).` : ".")
-    );
-    if (due.rows.length === 0) return;
+    const due = await photosDue(client, days);
+    console.log(`${due.length} time-in photo${due.length === 1 ? "" : "s"} older than ${days} days.`);
+    if (due.length === 0) return;
     if (!confirm) {
       console.log("Dry run: nothing was removed. Run again with --confirm to remove them.");
       return;
     }
-
-    let removed = 0;
-    for (const row of due.rows) {
-      try {
-        await deletePrivateFile(row.image_url.replace(/^\/uploads\//, ""));
-      } catch (error) {
-        // A file already gone is still a photo no longer kept.
-        console.warn(`Log ${row.id}: the file could not be deleted (${(error as Error).message}).`);
-      }
-      await client.query(`UPDATE attendance SET image_url = NULL WHERE id = $1`, [row.id]);
-      removed += 1;
-    }
-    console.log(`Removed ${removed} photo${removed === 1 ? "" : "s"}. The logs themselves are unchanged.`);
+    const { removed, failed } = await removePhotos(client, due);
+    await client.query(
+      `INSERT INTO photo_purge_runs (ran_on, retention_days, removed, failed, by_hand)
+       VALUES (CURRENT_DATE, $1, $2, $3, TRUE)`,
+      [days, removed, failed]
+    );
+    console.log(
+      `Removed ${removed} photo${removed === 1 ? "" : "s"}. The logs themselves are unchanged.` +
+        (failed > 0 ? ` ${failed} file${failed === 1 ? "" : "s"} could not be deleted.` : "")
+    );
   } finally {
     await client.end();
   }

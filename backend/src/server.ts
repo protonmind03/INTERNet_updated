@@ -19,6 +19,7 @@ import {
 import { isEmailConfigured, sendEmail, useEmailBudget } from "./services/mailer";
 import { claimEmail, returnEmail } from "./services/emailBudget";
 import { createProblemKeeper, problemFromBrowser, watchServerErrors } from "./services/problems";
+import { runPhotoPurgeIfDue } from "./services/photoPurge";
 import {
   publishNotification,
   closeNotificationStreams,
@@ -9685,6 +9686,7 @@ app.listen(
     startPostgresNotificationListener(pool);
     startDeadlineReminderScheduler(pool, createNotification);
     startTimeOutReminderScheduler(pool, createNotification);
-    startDigestScheduler(pool, [sendCoordinatorDigests]);
+    // The nightly photo clean-up rides on the same check (services/photoPurge.ts).
+    startDigestScheduler(pool, [sendCoordinatorDigests, runPhotoPurgeIfDue]);
   }
 );
