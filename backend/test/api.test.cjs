@@ -8294,3 +8294,74 @@ test("pictures on an entry: added by whoever wrote it, seen by whoever may see i
     await pool.end();
   }
 });
+
+test("the phone's clock gap: worked out from the clock it sends, kept per offline step, the largest kept on the log, and shown to the supervisor", async (t) => {
+  require("tsx/cjs");
+  const { readClockSkew } = require("../src/services/offlineActions.ts");
+  const now = new Date("2026-10-16T02:00:00Z");
+  assert.equal(readClockSkew({ client_sent_at: "2026-10-16T02:07:00Z" }, now), 420, "seven minutes ahead");
+  assert.equal(readClockSkew({ client_sent_at: "2026-10-16T09:53:00+08:00" }, now), -420, "seven minutes behind, written in Philippine time");
+  assert.equal(readClockSkew({ client_sent_at: "2026-10-16T02:00:00.400Z" }, now), 0);
+  for (const unusable of [{}, { client_sent_at: "" }, { client_sent_at: "2026-10-16 02:00" }, { client_sent_at: "2026-10-16T02:00:00" }, { client_sent_at: 1760580000000 }, { client_sent_at: "2026-13-40T99:99:99Z" }, { client_sent_at: "2099-01-01T00:00:00Z" }, null]) {
+    assert.equal(readClockSkew(unusable, now), null, JSON.stringify(unusable));
+  }
+
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `SKEW-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@skew.test`;
+  // A phone whose clock runs seven minutes slow: every time it gives is seven minutes early.
+  const slow = (minutesAgo) => new Date(Date.now() - (minutesAgo + 7) * 60_000).toISOString();
+  try {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Clock Gap', TRUE, $4)`,
+      [sid, email, await bcrypt.hash("SkewTest123!", 4), supervisor.supervisor.supervisor_id]
+    );
+    const mine = await login("student", email, "SkewTest123!");
+    const started = await jsonRequest("/api/attendance/offline-time-in", jsonBody(mine.token, "POST", {
+      occurred_at: slow(120), client_request_id: `skew-in-${Date.now()}`, client_sent_at: slow(0),
+    }));
+    assert.equal(started.response.status, 201, JSON.stringify(started.body));
+    const logId = started.body.attendance.id;
+    const gapOf = async () => (await pool.query(`SELECT clock_skew_seconds FROM attendance WHERE id = $1`, [logId])).rows[0].clock_skew_seconds;
+    assert.ok(Math.abs((await gapOf()) + 420) <= 5, `about -420 seconds, got ${await gapOf()}`);
+
+    // A step from an older copy of the app, which does not send its clock: recorded, gap left as it was.
+    const lunch = await jsonRequest(`/api/attendance/${logId}/break`, jsonBody(mine.token, "PUT", { occurred_at: slow(60), client_request_id: `skew-lunch-${Date.now()}` }));
+    assert.equal(lunch.response.status, 200, JSON.stringify(lunch.body));
+    const lunchRow = (await pool.query(`SELECT clock_skew_seconds FROM offline_action_ledger WHERE attendance_id = $1 AND action = 'break'`, [logId])).rows[0];
+    assert.equal(lunchRow.clock_skew_seconds, null, "not measured, not zero");
+    assert.ok(Math.abs((await gapOf()) + 420) <= 5);
+
+    // A step from a phone whose clock is now further out: that step keeps its own gap, and the log keeps the larger one.
+    const later = await jsonRequest(`/api/attendance/${logId}/break-end`, jsonBody(mine.token, "PUT", {
+      occurred_at: new Date(Date.now() - 30 * 60_000).toISOString(), client_request_id: `skew-back-${Date.now()}`,
+      client_sent_at: new Date(Date.now() - 15 * 60_000).toISOString(),
+    }));
+    assert.equal(later.response.status, 200, JSON.stringify(later.body));
+    const backRow = (await pool.query(`SELECT clock_skew_seconds FROM offline_action_ledger WHERE attendance_id = $1 AND action = 'break-end'`, [logId])).rows[0];
+    assert.ok(Math.abs(backRow.clock_skew_seconds + 900) <= 5, `about -900, got ${backRow.clock_skew_seconds}`);
+    assert.ok(Math.abs((await gapOf()) + 900) <= 5, "the larger gap is the one kept on the log");
+
+    // A live step (no offline fields) never touches it.
+    const out = await jsonRequest(`/api/attendance/${logId}/time-out`, jsonBody(mine.token, "PUT", { accomplishments: "Sorted the files for the audit." }));
+    assert.equal(out.response.status, 200, JSON.stringify(out.body));
+    assert.ok(Math.abs((await gapOf()) + 900) <= 5);
+
+    // The supervisor's list carries it, for the review card.
+    const list = await jsonRequest(`/api/supervisor/attendance/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) });
+    assert.equal(list.response.status, 200);
+    const rows = list.body.attendance ?? list.body.logs ?? list.body;
+    const row = (Array.isArray(rows) ? rows : []).find((item) => item.id === logId);
+    assert.ok(row, "the log is in the supervisor's list");
+    assert.ok(Math.abs(row.clock_skew_seconds + 900) <= 5);
+  } finally {
+    await pool.query(`DELETE FROM offline_action_ledger WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Clock Gap%'`, [sid]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});

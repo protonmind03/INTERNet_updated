@@ -66,6 +66,12 @@ export type AttendanceEntry = {
   recorded_offline?: boolean;
   /** The time-in itself was recorded with no connection: no photo and no camera check. */
   offline_time_in?: boolean;
+  /**
+   * How far the intern's phone clock was from the server's when offline steps
+   * of this log were sent, in seconds; positive when the phone was ahead.
+   * Null when it was not measured.
+   */
+  clock_skew_seconds?: number | null;
   /** What the intern wrote at time-out about the day's work. */
   accomplishments?: string | null;
   /** How many pictures are attached. Missing from an older server. */

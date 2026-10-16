@@ -1,6 +1,6 @@
 import type express from "express";
 import type { Pool } from "pg";
-import { readOfflineStamp } from "../services/offlineActions";
+import { readClockSkew, readOfflineStamp } from "../services/offlineActions";
 import { consentRequired, hasCurrentConsent } from "../services/privacy";
 
 /*
@@ -111,14 +111,14 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
       try {
         created = await pool.query(
           `INSERT INTO attendance
-             (student_id, date, time_in, note, status, image_url, capture_method, recorded_offline, offline_time_in_request)
+             (student_id, date, time_in, note, status, image_url, capture_method, recorded_offline, offline_time_in_request, clock_skew_seconds)
            VALUES
              ($1,
               ($2::timestamptz AT TIME ZONE 'Asia/Manila')::date,
               $2::timestamptz AT TIME ZONE 'Asia/Manila',
-              $3, 'Pending', NULL, NULL, TRUE, $4)
+              $3, 'Pending', NULL, NULL, TRUE, $4, $5)
            RETURNING ${LOG_COLUMNS}, TO_CHAR(time_in, 'HH12:MI AM') AS at`,
-          [auth.id, stamp.occurredAt.toISOString(), rawNote || null, stamp.requestId]
+          [auth.id, stamp.occurredAt.toISOString(), rawNote || null, stamp.requestId, readClockSkew(req.body)]
         );
       } catch (error) {
         // Two arrivals at once: the unique index on (student, day) let one through.

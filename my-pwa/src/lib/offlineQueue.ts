@@ -193,6 +193,8 @@ async function send(): Promise<"done" | "waiting"> {
             ...(step.extra ?? {}),
             occurred_at: step.occurredAt,
             client_request_id: step.requestId,
+            // This phone's clock now, so the server can tell how far it is off.
+            client_sent_at: new Date().toISOString(),
           }),
         })
       );

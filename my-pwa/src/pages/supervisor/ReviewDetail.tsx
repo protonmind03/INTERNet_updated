@@ -200,6 +200,7 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
           </span>
         </p>
       )}
+      <ClockGap seconds={entry.clock_skew_seconds} />
       {entry.recorded_offline && !entry.offline_time_in && (
         <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
           <Icon name="clock" size={16} className="mt-0.5 shrink-0 text-amber-600" />
@@ -361,6 +362,30 @@ export function CorrectTimesDialog({
         <FormError message={error} />
       </form>
     </Modal>
+  );
+}
+
+/**
+ * How far the intern's phone clock was from the server's when steps of
+ * this log recorded offline were sent. Shown only above a minute: within
+ * that it is ordinary drift and the time it took to send.
+ */
+export function ClockGap({ seconds }: { seconds?: number | null }) {
+  if (seconds === undefined || seconds === null || Math.abs(seconds) <= 60) return null;
+  const minutes = Math.round(Math.abs(seconds) / 60);
+  const amount =
+    minutes >= 120 ? `${Math.round(minutes / 60)} hours` : minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  return (
+    <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+      <Icon name="clock" size={16} className="mt-0.5 shrink-0 text-amber-600" />
+      <span>
+        <span className="font-semibold">
+          The intern's phone clock was {amount} {seconds > 0 ? "ahead of" : "behind"} the server's
+        </span>{" "}
+        when the steps recorded offline were sent. Those times come from that clock, so each may be
+        off by about as much.
+      </span>
+    </p>
   );
 }
 

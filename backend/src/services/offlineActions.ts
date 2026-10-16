@@ -121,3 +121,31 @@ export function readOfflineStamp(
     requestId: rawId,
   };
 }
+
+/** The most a phone's clock is believed to be off by; beyond this the reading is ignored as nonsense. */
+const MAX_SKEW_SECONDS = 30 * 24 * 60 * 60;
+
+/**
+ * How far the phone's clock is from the server's, in whole seconds:
+ * positive when the phone is ahead. Worked out from `client_sent_at`, the
+ * phone's clock when it sent the request, which an offline step carries
+ * beside the time it happened. Null when the request does not carry it (an
+ * older copy of the app) or carries something that is not a full date and
+ * time with a zone. The time the request spent on the way is not taken off,
+ * so the figure is a few seconds wide; it is meant to show a clock set
+ * minutes or hours wrong.
+ */
+export function readClockSkew(body: unknown, now: Date = new Date()): number | null {
+  const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const raw = input.client_sent_at;
+  if (
+    typeof raw !== "string" ||
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?(Z|[+-]\d{2}:\d{2})$/.test(raw)
+  ) {
+    return null;
+  }
+  const sent = new Date(raw).getTime();
+  if (Number.isNaN(sent)) return null;
+  const seconds = Math.round((sent - now.getTime()) / 1000);
+  return Math.abs(seconds) > MAX_SKEW_SECONDS ? null : seconds;
+}

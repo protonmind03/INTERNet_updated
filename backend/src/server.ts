@@ -71,6 +71,7 @@ import {
   type NotificationEntity,
 } from "./services/notificationLinks";
 import {
+  readClockSkew,
   readOfflineStamp,
   type LogTimes,
   type OfflineAction,
@@ -2717,7 +2718,12 @@ app.post(
 |
 */
 
-type AttendanceStep = { at: Date | null; requestId: string | null };
+type AttendanceStep = {
+  at: Date | null;
+  requestId: string | null;
+  /** How far the phone's clock was from the server's, for a step sent from offline; null when not measured. */
+  skewSeconds?: number | null;
+};
 
 /**
  * Works out the time to record for a break, back-to-work or time-out.
@@ -2781,7 +2787,7 @@ async function attendanceStepFor(
     return null;
   }
   return stamp.kind === "offline"
-    ? { at: stamp.occurredAt, requestId: stamp.requestId }
+    ? { at: stamp.occurredAt, requestId: stamp.requestId, skewSeconds: readClockSkew(body) }
     : { at: null, requestId: null };
 }
 
@@ -2827,11 +2833,19 @@ async function rememberOfflineStep(
   try {
     await pool.query(
       `INSERT INTO offline_action_ledger
-         (client_request_id, student_id, attendance_id, action, occurred_at, response)
-       VALUES ($1, $2, $3, $4, $5, $6)
+         (client_request_id, student_id, attendance_id, action, occurred_at, response, clock_skew_seconds)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        ON CONFLICT (client_request_id) DO NOTHING`,
-      [step.requestId, attendance.student_id, attendance.id, action, step.at, JSON.stringify(attendance)]
+      [step.requestId, attendance.student_id, attendance.id, action, step.at, JSON.stringify(attendance), step.skewSeconds ?? null]
     );
+    // The log keeps the largest gap seen on any of its steps.
+    if (step.skewSeconds !== undefined && step.skewSeconds !== null) {
+      await pool.query(
+        `UPDATE attendance SET clock_skew_seconds = $2
+         WHERE id = $1 AND (clock_skew_seconds IS NULL OR ABS($2::int) > ABS(clock_skew_seconds))`,
+        [attendance.id, step.skewSeconds]
+      );
+    }
   } catch (error) {
     // The step itself is saved; only the note for a repeat is missing. A
     // repeat then gets "already recorded", which the app treats as done.
@@ -3664,6 +3678,7 @@ app.get(
             a.capture_method,
             a.recorded_offline,
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
+            a.clock_skew_seconds,
             (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'attendance' AND px.owner_id = a.id AND px.removed_at IS NULL) AS pictures,
             a.accomplishments,
             a.time_corrected_at,
