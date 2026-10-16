@@ -278,8 +278,13 @@ function Overview({ intern, work, onReview }: Reviewable) {
           </Fact>
           <Fact label="Mobile">
             {intern.phone ? (
-              <a href={`tel:${intern.phone}`} className="font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900">
-                {intern.phone}
+              <a
+              href={`tel:${intern.phone}`}
+              aria-label={`Call ${intern.name}, ${intern.phone}`}
+              className="inline-flex items-center gap-1 font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900"
+              >
+              <Icon name="phone" size={14} className="shrink-0" />
+              {intern.phone}
               </a>
             ) : (
               "Not given"
@@ -289,7 +294,12 @@ function Overview({ intern, work, onReview }: Reviewable) {
             {intern.emergency_contact_phone ? (
               <>
                 {intern.emergency_contact_name ? `${intern.emergency_contact_name}, ` : ""}
-                <a href={`tel:${intern.emergency_contact_phone}`} className="font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900">
+                <a
+                  href={`tel:${intern.emergency_contact_phone}`}
+                  aria-label={`Call the emergency contact, ${intern.emergency_contact_phone}`}
+                  className="inline-flex items-center gap-1 font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900"
+                >
+                  <Icon name="phone" size={14} className="shrink-0" />
                   {intern.emergency_contact_phone}
                 </a>
               </>
