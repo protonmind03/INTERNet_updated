@@ -1,5 +1,5 @@
 import type { Prompt } from "./liveness/engine";
-import { precacheFaceTracker } from "./liveness/trackerFiles";
+import { faceTrackerKept, precacheFaceTracker } from "./liveness/trackerFiles";
 import { API_URL, withStudentAuth } from "./api";
 import { deviceInstall, nextCounter, rememberRegistration, sha256Hex, signWithDeviceKey } from "./deviceKey";
 import { attestationMessage } from "./attestation";
@@ -156,5 +156,26 @@ export async function attestTimeIn(
   return {
     attestation: JSON.stringify(attestation),
     signature: await signWithDeviceKey(install, attestationMessage(attestation)),
+  };
+}
+
+export type OfflineReadiness = {
+  /** False when this browser cannot keep a key or a queued photo at all. */
+  supported: boolean;
+  /** The face-tracking files are on the phone. */
+  filesKept: boolean;
+  /** The days, "YYYY-MM-DD", this phone holds a voucher for. */
+  days: string[];
+};
+
+/** How ready this phone is to time in with a photo offline, for the Profile page. */
+export async function offlineReadiness(): Promise<OfflineReadiness> {
+  const supported = Boolean(globalThis.crypto?.subtle) && typeof indexedDB !== "undefined" && typeof caches !== "undefined";
+  if (!supported) return { supported, filesKept: false, days: [] };
+  const vouchers = (await readRecord<OfflineVoucher[]>("student", VOUCHERS)) ?? [];
+  return {
+    supported,
+    filesKept: await faceTrackerKept(),
+    days: vouchers.map((voucher) => voucher.date).sort(),
   };
 }

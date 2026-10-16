@@ -15,6 +15,7 @@ import { errorText, toast } from "../../lib/toast";
 import CompletionChecklist from "./CompletionChecklist";
 import ContactDetails, { CoordinatorCard, type Contact, type Coordinator } from "./ContactDetails";
 import { PrivacyCard } from "./Privacy";
+import OfflineReadyCard from "./OfflineReadyCard";
 import { resolutionPath } from "./resolutionTabs";
 
 type StudentProfile = {
@@ -232,6 +233,7 @@ export default function StudentProfilePage() {
 
           <NotificationPreferences role="student" />
           <CueSettingsCard />
+          {studentId && <OfflineReadyCard studentId={studentId} />}
 
           {studentId && <PrivacyCard studentId={studentId} />}
 

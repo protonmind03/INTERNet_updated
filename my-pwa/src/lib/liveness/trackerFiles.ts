@@ -52,3 +52,15 @@ export function precacheFaceTracker(): Promise<boolean> {
   });
   return precaching;
 }
+
+/** Whether the face-tracking files are already in the caches (either build will do). */
+export async function faceTrackerKept(): Promise<boolean> {
+  if (typeof caches === "undefined") return false;
+  try {
+    const kept = async (file: { cache: string; url: string }) => Boolean(await (await caches.open(file.cache)).match(file.url));
+    const either = async (simd: boolean) => (await Promise.all(trackerFiles(simd).map(kept))).every(Boolean);
+    return (await either(true)) || (await either(false));
+  } catch {
+    return false;
+  }
+}

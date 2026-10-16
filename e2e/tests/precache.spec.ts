@@ -32,3 +32,13 @@ test("signing in as a student puts the face-tracking files in the phone's caches
     )
     .toBe(true);
 });
+
+test("the Profile says when this phone is ready to time in with a photo and no signal", async ({ page }) => {
+  await signIn(page, "student");
+  await page.goto("/profile");
+  const card = page.getByRole("heading", { name: "Timing in with no signal" }).locator("..");
+  await expect(card).toBeVisible();
+  // The demo student has scheduled days ahead, so once the files are kept it is ready.
+  await expect(card.getByRole("status")).toContainText("Ready.", { timeout: 60_000 });
+  await expect(card.getByRole("status")).toContainText("With no signal, you can still time in with your photo");
+});
