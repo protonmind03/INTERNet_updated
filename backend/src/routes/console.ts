@@ -9,6 +9,7 @@ import { PRIVACY_NOTICE, consentRequired, photoRetentionDays } from "../services
 import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
 import { recentProblems } from "../services/problems";
 import { PURGE_TIME, lastPhotoPurge } from "../services/photoPurge";
+import { uploadUsage } from "../services/uploadQuota";
 
 /*
 |--------------------------------------------------------------------------
@@ -73,6 +74,18 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
     } catch (error) {
       console.error("SYSTEM STATUS ERROR:", error);
       return res.status(500).json({ message: "Failed to read what is switched on." });
+    }
+  });
+
+  // How much of their room for uploads a student has used (services/uploadQuota.ts).
+  app.get("/api/coordinator/students/:studentId/upload-usage", requireCoordinator, async (req, res) => {
+    try {
+      const found = await pool.query(`SELECT 1 FROM students WHERE student_id = $1`, [req.params.studentId]);
+      if (found.rows.length === 0) return res.status(404).json({ message: "Student not found." });
+      return res.json(await uploadUsage(pool, "student", String(req.params.studentId)));
+    } catch (error) {
+      console.error("UPLOAD USAGE ERROR:", error);
+      return res.status(500).json({ message: "Failed to read the student's uploads." });
     }
   });
 

@@ -21,6 +21,7 @@ import { claimEmail, returnEmail } from "./services/emailBudget";
 import { createProblemKeeper, problemFromBrowser, watchServerErrors } from "./services/problems";
 import { runPhotoPurgeIfDue } from "./services/photoPurge";
 import { stripImageMetadata } from "./services/imageMetadata";
+import { recordUpload, uploadQuota } from "./services/uploadQuota";
 import {
   publishNotification,
   closeNotificationStreams,
@@ -4775,6 +4776,7 @@ app.post(
   "/api/complaints",
   requireRole("student"),
   upload.single("evidence"),
+  uploadQuota(pool, "evidence"),
   async (req, res) => {
     let uploadedFileName: string | undefined;
     let complaintSaved = false;
@@ -7295,7 +7297,7 @@ app.get(
 |--------------------------------------------------------------------------
 */
 
-app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), async (req, res) => {
+app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), uploadQuota(pool, "task_file"), async (req, res) => {
   let attachmentFileName: string | undefined;
   let taskSaved = false;
   try {
@@ -7470,6 +7472,7 @@ app.post(
   "/api/tasks/:id/submit",
   requireRole("student"),
   upload.single("attachment"),
+  uploadQuota(pool, "task_file"),
   async (req, res) => {
     let uploadedFileName: string | undefined;
     let taskSaved = false;
@@ -8505,6 +8508,7 @@ app.post(
   "/api/complaints/supervisor",
   requireRole("supervisor"),
   upload.single("evidence"),
+  uploadQuota(pool, "evidence"),
   async (req, res) => {
   let uploadedFileName: string | undefined;
   let complaintSaved = false;
@@ -8990,6 +8994,7 @@ app.post(
   "/api/documents",
   requireRole("student"),
   documentUpload.single("file"),
+  uploadQuota(pool, "document", { record: false }),
   async (req, res) => {
     let uploadedFileName: string | undefined;
     let documentSaved = false;
@@ -9075,6 +9080,12 @@ app.post(
           type: "document",
         });
       }
+
+      // Counted against the student's room for uploads, under its own id.
+      await recordUpload(pool, "student", String(result.rows[0].student_id), "document", Number(result.rows[0].size_bytes), {
+        table: "documents",
+        id: Number(result.rows[0].id),
+      }).catch((ledgerError) => console.error("UPLOAD LEDGER ERROR:", ledgerError));
 
       return res.status(201).json({
         message: "Document uploaded and submitted for review.",

@@ -8512,3 +8512,81 @@ test("camera details and GPS tags are taken out of every uploaded image, the pic
     await pool.end();
   }
 });
+
+test("uploads are counted per account: refused with a plain sentence past the room or the day's files, counted only when stored", async (t) => {
+  require("tsx/cjs");
+  const { quotaLimits, quotaProblem } = require("../src/services/uploadQuota.ts");
+  const MB = 1024 * 1024;
+  assert.deepEqual(quotaLimits("student", {}), { bytes: 300 * MB, dailyFiles: 60 });
+  assert.deepEqual(quotaLimits("supervisor", {}), { bytes: 200 * MB, dailyFiles: 60 });
+  assert.deepEqual(quotaLimits("student", { UPLOAD_QUOTA_MB_STUDENT: "50", UPLOAD_DAILY_FILES: "5" }), { bytes: 50 * MB, dailyFiles: 5 });
+  for (const ignored of ["0", "-3", "1.5", "lots", ""]) assert.equal(quotaLimits("supervisor", { UPLOAD_QUOTA_MB_SUPERVISOR: ignored }).bytes, 200 * MB, ignored);
+  const usage = (used, today) => ({ used_bytes: used, files_today: today, quota_bytes: 300 * MB, daily_files: 60 });
+  assert.equal(quotaProblem(usage(0, 0), 5 * MB), null);
+  assert.equal(quotaProblem(usage(300 * MB - 5 * MB, 0), 5 * MB), null, "exactly full is allowed");
+  assert.match(quotaProblem(usage(300 * MB - 5 * MB, 0), 5 * MB + 1), /past the 300 MB each account may keep/);
+  assert.match(quotaProblem(usage(0, 60), 1), /uploaded 60 files today/);
+
+  // The coordinator's view, coordinators only.
+  const path = `/api/coordinator/students/${encodeURIComponent(student.student_id)}/upload-usage`;
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/students/NO-SUCH-STUDENT/upload-usage", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  const seen = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(seen.response.status, 200);
+  assert.deepEqual(Object.keys(seen.body).sort(), ["daily_files", "files_today", "quota_bytes", "used_bytes"]);
+
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const sid = `QUOTA-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@quota.test`;
+  const requirement = (await pool.query(`SELECT name FROM ojt_requirements WHERE is_active AND due_rule IS DISTINCT FROM 'weekly' ORDER BY sort_order LIMIT 1`)).rows[0].name;
+  const pdf = Buffer.from("%PDF-1.4\n%%EOF\n");
+  try {
+    const supervisor = await supervisorSession();
+    // A document needs a supervisor to go to.
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Quota Check', TRUE, $4)`, [sid, email, await bcrypt.hash("QuotaTest123!", 4), supervisor.supervisor.supervisor_id]);
+    const mine = await login("student", email, "QuotaTest123!");
+    const upload = async () => {
+      const form = new FormData();
+      form.append("doc_type", requirement);
+      form.append("file", new Blob([pdf], { type: "application/pdf" }), "endorsement.pdf");
+      const response = await fetch(new URL("/api/documents", apiBaseUrl), { method: "POST", headers: authHeaders(mine.token), body: form });
+      return { status: response.status, body: await response.json().catch(() => ({})) };
+    };
+    const ledger = async () => (await pool.query(`SELECT kind, bytes, source FROM upload_ledger WHERE account_id = $1 ORDER BY id`, [sid])).rows;
+
+    // Stored, and counted once, under the document's own id.
+    const first = await upload();
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    assert.deepEqual((await ledger()).map((row) => [row.kind, Number(row.bytes), row.source]), [["document", pdf.length, "documents"]]);
+
+    // Past the room: 413, a plain sentence, and nothing stored or counted.
+    await pool.query(`DELETE FROM documents WHERE student_id = $1`, [sid]);
+    await pool.query(`INSERT INTO upload_ledger (role, account_id, kind, bytes, created_at) VALUES ('student', $1, 'document', $2, NOW() - INTERVAL '3 days')`, [sid, 300 * MB - 4]);
+    const full = await upload();
+    assert.equal(full.status, 413);
+    assert.equal(full.body.code, "UPLOAD_QUOTA");
+    assert.match(full.body.message, /300 MB each account may keep/);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM documents WHERE student_id = $1`, [sid])).rows[0].n, 0);
+    assert.equal((await ledger()).length, 2, "a refused upload is not counted");
+
+    // Past the day's files: 413 and a sentence that says to try tomorrow.
+    await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [sid]);
+    await pool.query(`INSERT INTO upload_ledger (role, account_id, kind, bytes) SELECT 'student', $1, 'evidence', 10 FROM generate_series(1, 60)`, [sid]);
+    const busy = await upload();
+    assert.equal(busy.status, 413);
+    assert.match(busy.body.message, /60 files today/);
+
+    // The coordinator sees it.
+    const view = await jsonRequest(`/api/coordinator/students/${sid}/upload-usage`, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual([view.body.files_today, view.body.used_bytes], [60, 600]);
+  } finally {
+    await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [sid]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM documents WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});

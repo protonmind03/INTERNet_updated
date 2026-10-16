@@ -10,6 +10,7 @@ import { deleteKeeping } from "../services/removedRecords";
 import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverables";
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
+import { uploadQuota } from "../services/uploadQuota";
 
 /*
 |--------------------------------------------------------------------------
@@ -428,7 +429,7 @@ export function registerExtensionRoutes(
   |
   */
 
-  app.put("/api/tasks/:id", requireRole("supervisor"), upload.single("attachment"), async (req, res) => {
+  app.put("/api/tasks/:id", requireRole("supervisor"), upload.single("attachment"), uploadQuota(pool, "task_file"), async (req, res) => {
     let newFileName: string | undefined;
     let saved = false;
     try {

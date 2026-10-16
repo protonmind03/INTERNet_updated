@@ -30,6 +30,7 @@ import {
   type TaskFilter,
 } from "./studentRecord/model";
 import RecordOverview from "./studentRecord/RecordOverview";
+import UploadUsage from "./UploadUsage";
 import {
   AttendanceSection,
   DocumentsSection,
@@ -402,7 +403,12 @@ export default function StudentRecord() {
               />
             )}
             {tab === "evaluations" && <EvaluationsSection data={data} perf={perf} final={final.evaluation} />}
-            {tab === "documents" && <DocumentsSection data={data} perf={perf} canDecide={canDecide} online={online} onApprove={approve} onReject={setRejecting} />}
+            {tab === "documents" && (
+              <>
+                <DocumentsSection data={data} perf={perf} canDecide={canDecide} online={online} onApprove={approve} onReject={setRejecting} />
+                <UploadUsage studentId={studentId} />
+              </>
+            )}
             {tab === "notes" && <NotesSection data={data} />}
           </div>
         </div>

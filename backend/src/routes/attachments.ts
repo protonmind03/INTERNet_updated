@@ -9,6 +9,7 @@ import {
   savePrivateFile,
 } from "../services/privateFileStore";
 import { stripImageMetadata } from "../services/imageMetadata";
+import { quotaProblem, recordUpload, uploadUsage } from "../services/uploadQuota";
 
 /*
 |--------------------------------------------------------------------------
@@ -168,6 +169,9 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
         if (!entry.open) {
           return res.status(409).json({ message: "This entry has been decided, so pictures can no longer be added to it." });
         }
+        // The uploader's room on the server, and their files today.
+        const room = quotaProblem(await uploadUsage(pool, auth.role as "student" | "supervisor", auth.id), req.file.buffer.length);
+        if (room) return res.status(413).json({ code: "UPLOAD_QUOTA", message: room });
         const caption = typeof req.body?.caption === "string" ? req.body.caption.trim().slice(0, CAPTION_MAX) : "";
         const side = (value: unknown) => {
           const n = whole(value);
@@ -197,6 +201,10 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
           await deletePrivateFile(stored).catch(() => undefined);
           return res.status(409).json({ message: `An entry can have at most ${MAX_PICTURES} pictures.` });
         }
+        await recordUpload(pool, auth.role as "student" | "supervisor", auth.id, "picture", req.file.buffer.length, {
+          table: "attachments",
+          id: Number(added.rows[0].id),
+        }).catch((ledgerError) => console.error("UPLOAD LEDGER ERROR:", ledgerError));
         return res.status(201).json({ message: "Picture attached.", attachment: added.rows[0] });
       } catch (error) {
         if (stored) await deletePrivateFile(stored).catch(() => undefined);
