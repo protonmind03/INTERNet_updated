@@ -1,5 +1,6 @@
 import type express from "express";
 import type { Pool } from "pg";
+import { phSql } from "./phTime";
 
 /*
 |--------------------------------------------------------------------------
@@ -53,7 +54,7 @@ export async function uploadUsage(
 ): Promise<Usage> {
   const found = await db.query<{ used: string; today: number }>(
     `SELECT COALESCE(SUM(bytes), 0)::bigint AS used,
-            COUNT(*) FILTER (WHERE (created_at AT TIME ZONE 'Asia/Manila')::date = (NOW() AT TIME ZONE 'Asia/Manila')::date)::int AS today
+            COUNT(*) FILTER (WHERE ${phSql.date("created_at")} = ${phSql.today})::int AS today
      FROM upload_ledger WHERE role = $1 AND account_id = $2`,
     [role, accountId]
   );

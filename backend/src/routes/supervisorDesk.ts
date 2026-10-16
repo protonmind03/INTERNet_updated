@@ -1,9 +1,10 @@
 import type express from "express";
 import type { Pool } from "pg";
-import { manilaClock } from "../services/digests";
+import { phClock, phSql } from "../services/phTime";
 import { SLOW_REVIEW_DAYS } from "../services/insights";
 import { readReleaseDay, scheduledLater } from "../services/taskRelease";
 import { deleteKeeping } from "../services/removedRecords";
+import { sqlSameId } from "../services/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -85,7 +86,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
                 COALESCE(o.hours, 0)::float AS hours, o.focus
          FROM ojt_schedule o
          JOIN students s ON s.student_id = o.student_id
-         WHERE TRIM(s.supervisor_id::text) = TRIM($1::text) AND s.is_active = TRUE AND o.is_active = TRUE
+         WHERE ${sqlSameId("s.supervisor_id", "$1")} AND s.is_active = TRUE AND o.is_active = TRUE
          ORDER BY o.student_id, o.start_time`,
         [auth.id]
       );
@@ -174,7 +175,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
     const ids = [...new Set((value as string[]).map((item) => item.trim()))];
     const mine = await pool.query<{ student_id: string }>(
       `SELECT student_id FROM students
-       WHERE student_id = ANY($1::text[]) AND TRIM(supervisor_id::text) = TRIM($2::text) AND is_active = TRUE`,
+       WHERE student_id = ANY($1::text[]) AND ${sqlSameId("supervisor_id", "$2")} AND is_active = TRUE`,
       [ids, supervisorId]
     );
     if (mine.rows.length !== ids.length) return { problem: "A team can only have your own active interns." };
@@ -310,7 +311,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
     const description = text(input.description);
     const priority = input.priority === undefined || input.priority === "" ? "Medium" : input.priority;
     const dueDate = text(input.due_date);
-    const { date: today } = manilaClock(new Date());
+    const { date: today } = phClock(new Date());
     if (!title || title.length > 200) return { problem: "A task title is required, 200 characters or fewer." };
     if (description.length > 5000) return { problem: "Keep the description to 5000 characters." };
     if (typeof priority !== "string" || !["High", "Medium", "Low"].includes(priority)) {
@@ -342,7 +343,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
       const members = await pool.query<{ student_id: string; name: string }>(
         `SELECT s.student_id, s.name FROM task_group_members m
          JOIN students s ON s.student_id = m.student_id
-         WHERE m.group_id = $1 AND TRIM(s.supervisor_id::text) = TRIM($2::text) AND s.is_active = TRUE
+         WHERE m.group_id = $1 AND ${sqlSameId("s.supervisor_id", "$2")} AND s.is_active = TRUE
          ORDER BY s.name`,
         [teamId, auth.id]
       );
@@ -409,7 +410,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
         `SELECT COUNT(*) FILTER (WHERE t.status IN ('Pending', 'In Progress'))::int AS open, COUNT(*)::int AS total,
                 TO_CHAR(MAX(t.available_from) FILTER (WHERE t.status IN ('Pending', 'In Progress') AND ${scheduledLater("t.")}), 'YYYY-MM-DD') AS waits_until
          FROM tasks t JOIN students s ON s.student_id = t.student_id
-         WHERE t.group_task_id = $1 AND TRIM(s.supervisor_id::text) = TRIM($2::text)`,
+         WHERE t.group_task_id = $1 AND ${sqlSameId("s.supervisor_id", "$2")}`,
         [groupTaskId, auth.id]
       );
       if (rows.rows[0].total === 0) return res.status(404).json({ message: "Team task not found." });
@@ -428,7 +429,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
                THEN COALESCE($7::date, CURRENT_DATE) ELSE t.available_from END
          FROM students s
          WHERE t.group_task_id = $1 AND s.student_id = t.student_id
-           AND TRIM(s.supervisor_id::text) = TRIM($2::text)
+           AND ${sqlSameId("s.supervisor_id", "$2")}
            AND t.status IN ('Pending', 'In Progress')
          RETURNING t.id`,
         [groupTaskId, auth.id, fields.title, fields.description, fields.priority, fields.dueDate, fields.releaseDay, moving]
@@ -456,7 +457,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
       if (groupTaskId === null) return res.status(404).json({ message: "Team task not found." });
       const total = await pool.query<{ total: number }>(
         `SELECT COUNT(*)::int AS total FROM tasks t JOIN students s ON s.student_id = t.student_id
-         WHERE t.group_task_id = $1 AND TRIM(s.supervisor_id::text) = TRIM($2::text)`,
+         WHERE t.group_task_id = $1 AND ${sqlSameId("s.supervisor_id", "$2")}`,
         [groupTaskId, auth.id]
       );
       if (total.rows[0].total === 0) return res.status(404).json({ message: "Team task not found." });
@@ -467,7 +468,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
           where: `
             USING students s
             WHERE t.group_task_id = $1 AND s.student_id = t.student_id
-              AND TRIM(s.supervisor_id::text) = TRIM($2::text)
+              AND ${sqlSameId("s.supervisor_id", "$2")}
               AND t.status IN ('Pending', 'In Progress')`,
           select: `t.id, t.student_id, t.title, t.attachment_file, NOT ${scheduledLater("t.")} AS told`,
           actor: ["$3", "$4"],
@@ -513,7 +514,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
   async function notedStudent(auth: { role: Role; id: string }, studentId: string) {
     const found = await pool.query<{ student_id: string; name: string; supervisor_id: string | null }>(
       `SELECT student_id, name, supervisor_id FROM students
-       WHERE student_id = $1 AND ($2 = 'coordinator' OR TRIM(supervisor_id::text) = TRIM($3::text))`,
+       WHERE student_id = $1 AND ($2 = 'coordinator' OR ${sqlSameId("supervisor_id", "$3")})`,
       [studentId, auth.role, auth.id]
     );
     return found.rows[0] ?? null;
@@ -620,7 +621,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
              WHERE s.is_active = TRUE AND s.supervisor_id = $1 AND j.status = 'Submitted'
          )
          SELECT kind, COUNT(*)::int AS items,
-                FLOOR(EXTRACT(EPOCH FROM (NOW() AT TIME ZONE 'Asia/Manila') - MIN(since)) / 86400)::int AS oldest_days
+                FLOOR(EXTRACT(EPOCH FROM ${phSql.now} - MIN(since)) / 86400)::int AS oldest_days
          FROM waiting GROUP BY kind ORDER BY kind`,
         [supervisorId]
       );
@@ -631,7 +632,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
       const oldest = Math.max(...waiting.rows.map((row) => row.oldest_days));
 
       // Claimed before it is sent: the second reminder of the day is refused.
-      const { date: today } = manilaClock(new Date());
+      const { date: today } = phClock(new Date());
       const claimed = await pool.query(
         `INSERT INTO digest_log (kind, account_id, period_key) VALUES ('coordinator_nudge', $1, $2)
          ON CONFLICT (kind, account_id, period_key) DO NOTHING RETURNING id`,

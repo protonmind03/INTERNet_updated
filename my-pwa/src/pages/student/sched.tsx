@@ -18,7 +18,7 @@ import {
   formatDate,
   formatHours,
   formatLongDate,
-  localDateKey,
+  phDateKey,
 } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
@@ -29,6 +29,7 @@ import { useHolidays } from "../../lib/useHolidays";
 import ScheduleMonth from "./ScheduleMonth";
 import { deliverablesForCalendar, useDeliverables } from "./useDeliverables";
 import ScheduleProgress from "./ScheduleProgress";
+import { formatPh } from "../../lib/phTime";
 
 /** The page's three views. The one shown is in the address, so Back returns to it. */
 type View = "week" | "month" | "progress";
@@ -81,7 +82,7 @@ function thisWeekDates(now: Date): Map<string, string> {
     WEEK.map((day, offset) => {
       const date = new Date(monday);
       date.setDate(monday.getDate() + offset);
-      return [day, localDateKey(date)];
+      return [day, phDateKey(date)];
     })
   );
 }
@@ -166,14 +167,15 @@ export default function OjtSchedule() {
     void Promise.resolve().then(load);
   }, [load]);
 
-  const today = new Date().toLocaleDateString("en-US", { weekday: "long" });
+  // The schedule names its days in English ("Monday").
+  const today = formatPh(new Date(), { weekday: "long" }, "en-US");
   const byDay = useMemo(() => new Map(schedule.map((item) => [item.day, item])), [schedule]);
   const weeklyHours = schedule.reduce((sum, item) => sum + (Number(item.hours) || 0), 0);
   const todayShift = byDay.get(today);
 
   // The weekly list is any week; holidays are dates. So each weekday is
   // matched to its date this week, and a holiday on it is named there.
-  const todayKey = localDateKey(new Date());
+  const todayKey = phDateKey(new Date());
   const holidayOn = useMemo(
     () => new Map(holidays.map((holiday) => [holiday.date, holiday.name])),
     [holidays]
@@ -196,7 +198,7 @@ export default function OjtSchedule() {
         holidays,
         company: company?.name || student?.company || "",
         today: todayKey,
-        until: projection?.projected_finish || localDateKey(halfYear),
+        until: projection?.projected_finish || phDateKey(halfYear),
         stamp: `${new Date().toISOString().replace(/[-:]/g, "").slice(0, 15)}Z`,
       })
     );

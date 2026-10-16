@@ -14,6 +14,7 @@
 */
 
 import { LATE_AFTER_MINUTES, weekdayOf, type CalendarShift } from "./studentCalendar";
+import { PH_TIME_ZONE } from "./phTime";
 
 /**
  * on        timed in, not yet timed out
@@ -33,8 +34,8 @@ export function clockMinutes(time: string | null | undefined): number | null {
   return Number.isNaN(value) ? null : value;
 }
 
-/** The minute of the day a moment falls on, in a time zone (the viewer's when none is given). */
-export function minuteOfDay(value: string | Date, timeZone?: string): number | null {
+/** The minute of the day a moment falls on, in a time zone (the Philippines' when none is given). */
+export function minuteOfDay(value: string | Date, timeZone: string = PH_TIME_ZONE): number | null {
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   const parts = new Intl.DateTimeFormat("en-GB", {

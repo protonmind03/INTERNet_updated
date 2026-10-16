@@ -21,6 +21,7 @@ import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
 import { useSupervisorWork, type Intern } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 type Complaint = {
   id: number;
@@ -239,7 +240,7 @@ function FileDialog({
       return;
     }
     const form = new FormData();
-    const internName = interns.find((intern) => intern.student_id === studentId)?.name;
+    const internName = interns.find((intern) => sameId(intern.student_id, studentId))?.name;
     if (internName) form.append("reported_student_name", internName);
     // The ID lets the coordinator know exactly which intern this is about.
     if (studentId) form.append("reported_student_id", studentId);

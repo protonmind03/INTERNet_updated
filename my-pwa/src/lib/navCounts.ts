@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
-import { localDateKey } from "./format";
+import { phDateKey } from "./format";
 import { savedFetch } from "./offlineStore";
 import type { SessionRole } from "./session";
 
@@ -55,7 +55,7 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
       ),
       getJson(role, `/api/attendance/${id}`, "attendance"),
     ]);
-    const today = localDateKey(new Date());
+    const today = phDateKey(new Date());
     return {
       "/task": rows(tasks).filter(
         (task) => task.status === "Pending" || task.status === "In Progress"

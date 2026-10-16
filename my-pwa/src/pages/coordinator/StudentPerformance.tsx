@@ -7,6 +7,7 @@ import { saveCsv } from "../../lib/csv";
 import { formatDate, formatHours } from "../../lib/format";
 import { toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
+import { phStamp, phToday } from "../../lib/phTime";
 import {
   STATUS_ORDER,
   STATUS_TONE,
@@ -142,11 +143,11 @@ export default function StudentPerformance({ query, covered }: { query: string; 
   }, [state, sort]);
   const pager = usePagination(sorted, 25);
 
-  const fileName = (extension: string) => `internet-student-performance-${new Date().toISOString().slice(0, 10)}.${extension}`;
+  const fileName = (extension: string) => `internet-student-performance-${phToday()}.${extension}`;
   const downloadCsv = () => {
     const section = performanceSection(sorted);
     saveCsv(
-      [["INTERNet Student Performance"], ["Generated at", new Date().toLocaleString()], ["Students", covered], [], section.head, ...section.rows],
+      [["INTERNet Student Performance"], ["Generated at", phStamp()], ["Students", covered], [], section.head, ...section.rows],
       fileName("csv")
     );
   };
@@ -163,7 +164,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
             rows: (state?.rules.rules ?? []).map((rule) => [rule.status, rule.rule]),
           },
         ],
-        `${new Date().toLocaleString()} · Students: ${covered}`,
+        `${phStamp()} · Students: ${covered}`,
         "INTERNet Student Performance"
       ).save(fileName("pdf"));
       toast.success("Student performance PDF ready.");

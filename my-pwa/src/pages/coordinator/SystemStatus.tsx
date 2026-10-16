@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Card, SkeletonRows } from "../../components/ui";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import { PH_TIME_ZONE, phStamp } from "../../lib/phTime";
 
 type Status = {
   email: {
@@ -36,7 +37,7 @@ type Problem = {
 };
 
 const when = new Intl.DateTimeFormat("en-PH", {
-  timeZone: "Asia/Manila",
+  timeZone: PH_TIME_ZONE,
   month: "short",
   day: "numeric",
   hour: "numeric",
@@ -233,7 +234,7 @@ function photoPurgeText(privacy: Status["privacy"]): string {
   const days = privacy.photo_retention_days;
   if (!privacy.photo_purge_time) return `Removed after ${days} days, when the clean-up is run.`;
   const last = privacy.last_photo_purge;
-  const when = last ? new Date(last.ran_at).toLocaleString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium", timeStyle: "short" }) : "";
+  const when = last ? phStamp(new Date(last.ran_at)) : "";
   return (
     `Removed after ${days} days, every night at 2:30 AM Philippine time. ` +
     (last

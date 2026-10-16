@@ -20,6 +20,7 @@ import ReviewDetail from "./ReviewDetail";
 import { downloadDocument, useSupervisorWork, type DocumentEntry } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
+import { sameId } from "../../lib/ids";
 
 type Filter = "all" | "Pending" | "Approved" | "Rejected";
 
@@ -37,7 +38,7 @@ export default function SupervisorDocuments() {
 
   const scoped = useMemo(
     () =>
-      (internId ? documents.filter((item) => item.student_id === internId) : documents).filter((item) =>
+      (internId ? documents.filter((item) => sameId(item.student_id, internId)) : documents).filter((item) =>
         inGroup(item.student_id)
       ),
     [documents, internId, inGroup]

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "./Icon";
 import { Card, Modal, StatusBadge } from "./ui";
-import { formatHours, formatLongDate, formatTime, localDateKey } from "../lib/format";
+import { formatHours, formatLongDate, formatTime, phDateKey } from "../lib/format";
 import {
   addDays,
   addMonths,
@@ -19,6 +19,7 @@ import {
   type DayFacts,
 } from "../lib/studentCalendar";
 import { STEP_LABELS } from "../lib/timeColumns";
+import { formatPh, phCalendarDate } from "../lib/phTime";
 
 /*
 |--------------------------------------------------------------------------
@@ -91,7 +92,7 @@ function describe(facts: DayFacts): string {
 
 function monthName(month: string): string {
   const [year, index] = month.split("-").map(Number);
-  return new Date(year, index - 1, 1).toLocaleDateString("en-PH", { month: "long", year: "numeric" });
+  return formatPh(phCalendarDate(year, index, 1), { month: "long", year: "numeric" });
 }
 
 export default function MonthCalendar({
@@ -115,7 +116,7 @@ export default function MonthCalendar({
   dayFooter?: (facts: DayFacts) => React.ReactNode;
 }) {
   const words = WORDS[reader];
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
 
   const [month, setMonth] = useState(today.slice(0, 7));
   const [opened, setOpened] = useState<string | null>(null);

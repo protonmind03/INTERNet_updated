@@ -21,7 +21,7 @@ import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import type { ReportSection } from "../../lib/analyticsPdf";
 import { saveCsv } from "../../lib/csv";
-import { formatDate, formatDateTime, formatHours, localDateKey } from "../../lib/format";
+import { formatDate, formatDateTime, formatHours, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import GroupSummary from "./GroupSummary";
 import KpiCards from "./KpiCards";
@@ -30,6 +30,7 @@ import StudentPerformance from "./StudentPerformance";
 import { coordinatorRequest } from "./request";
 import FilterBar from "./FilterBar";
 import { describeFilters, useStudentFilters } from "./useStudentFilters";
+import { formatPh, phCalendarDate, phStamp, phToday } from "../../lib/phTime";
 
 type TrendDay = { day: string; logs: number; hours: number; students: number };
 
@@ -113,13 +114,13 @@ const plural = (count: number, one: string, many = `${one}s`) =>
 /** "Oct 2026" for the month a "YYYY-MM-DD" day is in. */
 function monthLabel(day: string): string {
   const [year, month] = day.split("-").map(Number);
-  return new Date(year, month - 1, 1).toLocaleDateString("en-PH", { month: "short", year: "numeric" });
+  return formatPh(phCalendarDate(year, month, 1), { month: "short", year: "numeric" });
 }
 
 /** The days the attendance figures cover, in the few ways the page says it. */
 function periodWords(data: AnalyticsData): { title: string; sentence: string; plain: string; previous: string } {
   const quick =
-    !data.from || !data.to || (data.to === localDateKey(new Date()) && PERIODS.some((period) => period === data.days));
+    !data.from || !data.to || (data.to === phDateKey(new Date()) && PERIODS.some((period) => period === data.days));
   if (quick) {
     return {
       title: `The last ${data.days} days`,
@@ -269,7 +270,7 @@ async function programmeTables(term: string): Promise<ReportSection[]> {
 }
 
 const reportFileName = (extension: string) =>
-  `internet-analytics-${new Date().toISOString().slice(0, 10)}.${extension}`;
+  `internet-analytics-${phToday()}.${extension}`;
 
 export default function CoordinatorAnalytics() {
   // The days covered: one of the quick periods, or any first and last day.
@@ -320,7 +321,7 @@ export default function CoordinatorAnalytics() {
     setRange({ days: period });
   };
 
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   /** Why the two dates typed cannot be a range yet; "" when they can, or when nothing is typed. */
   const dateProblem =
     !typed.from && !typed.to
@@ -349,7 +350,7 @@ export default function CoordinatorAnalytics() {
       const { buildAnalyticsPdf } = await import("../../lib/analyticsPdf");
       // The company summary fits a page; the per-student table is in the CSV.
       const programme = (await programmeTables(term)).slice(1);
-      buildAnalyticsPdf([...reportSections(data), ...programme], new Date().toLocaleString()).save(
+      buildAnalyticsPdf([...reportSections(data), ...programme], phStamp()).save(
         reportFileName("pdf")
       );
       toast.success("Analytics PDF ready.");
@@ -366,7 +367,7 @@ export default function CoordinatorAnalytics() {
     const programme = await programmeTables(term);
     const rows: (string | number)[][] = [
       ["INTERNet Coordinator Analytics Report"],
-      ["Generated at", new Date().toLocaleString()],
+      ["Generated at", phStamp()],
       ["Students", termName],
       ...[...reportSections(data), ...programme].flatMap((section) => [
         [],

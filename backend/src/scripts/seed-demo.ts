@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 import bcrypt from "bcryptjs";
 import { Client } from "pg";
+import { PH_PG_OPTIONS } from "../services/phTime";
 
 dotenv.config();
 
@@ -64,12 +65,12 @@ async function seedDemoData() {
   const client = new Client({
     connectionString,
     ssl: false,
+    options: PH_PG_OPTIONS,
   });
   await client.connect();
 
   try {
     await client.query("BEGIN");
-    await client.query("SET LOCAL TIME ZONE 'Asia/Manila'");
 
     const supervisorPassword = await bcrypt.hash(
       demoSupervisor.password,

@@ -4,6 +4,7 @@ import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
 import { releaseDueTasks, released } from "./taskRelease";
 import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
+import { phSql } from "./phTime";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -47,22 +48,18 @@ export function startDeadlineReminderScheduler(
         `
         INSERT INTO task_deadline_reminders(task_id, reminder_type, scheduled_at)
         SELECT t.id, '24_hours',
-               (((t.due_date + 1)::timestamp - INTERVAL '1 second' - INTERVAL '24 hours')
-                 AT TIME ZONE 'Asia/Manila')
+               ${phSql.moment("((t.due_date + 1)::timestamp - INTERVAL '1 second' - INTERVAL '24 hours')")}
         FROM tasks t
         WHERE t.status IN ('Pending', 'In Progress')
           AND ${released("t.")}
-          AND (((t.due_date + 1)::timestamp - INTERVAL '1 second' - INTERVAL '24 hours')
-                 AT TIME ZONE 'Asia/Manila') BETWEEN NOW() - INTERVAL '24 hours' AND NOW()
+          AND ${phSql.moment("((t.due_date + 1)::timestamp - INTERVAL '1 second' - INTERVAL '24 hours')")} BETWEEN NOW() - INTERVAL '24 hours' AND NOW()
         UNION ALL
         SELECT t.id, 'deadline',
-               (((t.due_date + 1)::timestamp - INTERVAL '1 second')
-                 AT TIME ZONE 'Asia/Manila')
+               ${phSql.moment("((t.due_date + 1)::timestamp - INTERVAL '1 second')")}
         FROM tasks t
         WHERE t.status IN ('Pending', 'In Progress')
           AND ${released("t.")}
-          AND (((t.due_date + 1)::timestamp - INTERVAL '1 second')
-                 AT TIME ZONE 'Asia/Manila') BETWEEN NOW() - INTERVAL '24 hours' AND NOW()
+          AND ${phSql.moment("((t.due_date + 1)::timestamp - INTERVAL '1 second')")} BETWEEN NOW() - INTERVAL '24 hours' AND NOW()
         ON CONFLICT (task_id, reminder_type) DO NOTHING
         `
       );

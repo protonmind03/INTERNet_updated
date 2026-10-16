@@ -22,9 +22,10 @@
 */
 
 import type { Pool } from "pg";
-import { manilaClock } from "./digests";
+import { phClock } from "./phTime";
 import { MISSED_DAYS_ALERT, MOA_WARNING_DAYS, SLOW_REVIEW_DAYS, coordinatorAlerts } from "./insights";
 import { bindFilters, filterConditions, filtersAsQuery, type StudentFilters } from "./studentScope";
+import { sqlSameId } from "./ids";
 
 export type ActionRow = {
   key: string;
@@ -67,7 +68,7 @@ export async function coordinatorActions(
   now: Date = new Date()
 ): Promise<CoordinatorActions> {
   const filters = options.filters ?? {};
-  const clock = manilaClock(now);
+  const clock = phClock(now);
   // The chosen students, written against "s" (services/studentScope.ts).
   const inTerm = `TRUE${filterConditions(filters, "s")}`;
   const run = <Row extends Record<string, unknown>>(sql: string, params: unknown[]) => {
@@ -140,7 +141,7 @@ export async function coordinatorActions(
         COALESCE(SUM((SELECT COUNT(*) FROM tasks t
           WHERE t.student_id = s.student_id AND t.status = 'Submitted')), 0)::int AS tasks
       FROM students s
-      JOIN supervisors sup ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+      JOIN supervisors sup ON ${sqlSameId("sup.supervisor_id", "s.supervisor_id")}
       WHERE s.is_active = TRUE AND ${inTerm}
       GROUP BY sup.supervisor_id, sup.name
       `,

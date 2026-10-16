@@ -17,7 +17,7 @@ import {
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { API_URL, downloadProtectedUpload, withSupervisorAuth } from "../../lib/api";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
-import { daysUntil, dueLabel, formatDate, localDateKey } from "../../lib/format";
+import { daysUntil, dueLabel, formatDate, phDateKey } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
@@ -33,6 +33,7 @@ import {
   type Intern,
   type TaskEntry,
 } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 type Filter = "all" | "open" | "Submitted" | "Reviewed";
 type View = "tasks" | "teams";
@@ -82,7 +83,7 @@ export default function SupervisorTasks() {
 
   const scoped = useMemo(
     () =>
-      (internId ? tasks.filter((task) => task.student_id === internId) : tasks).filter((task) =>
+      (internId ? tasks.filter((task) => sameId(task.student_id, internId)) : tasks).filter((task) =>
         inGroup(task.student_id)
       ),
     [tasks, internId, inGroup]
@@ -594,7 +595,7 @@ function TaskDialog({
   const [priority, setPriority] = useState<"High" | "Medium" | "Low">(
     editing?.priority ?? "Medium"
   );
-  const [dueDate, setDueDate] = useState(editing ? localDateKey(editing.due_date) : "");
+  const [dueDate, setDueDate] = useState(editing ? phDateKey(editing.due_date) : "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   // A newly chosen file, and whether the file already on the task is kept.
@@ -618,7 +619,7 @@ function TaskDialog({
     studentId ||
     defaultInternId ||
     (interns.length === 1 && teams.length === 0 ? interns[0].student_id : "");
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   const team = chosen.startsWith("team:") ? teams.find((item) => `team:${item.id}` === chosen) : undefined;
   const forTeam = Boolean(team) || Boolean(teamEdit);
 
@@ -675,7 +676,7 @@ function TaskDialog({
       }
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "The task could not be saved.");
-      const name = interns.find((intern) => intern.student_id === chosen)?.name || "the intern";
+      const name = interns.find((intern) => sameId(intern.student_id, chosen))?.name || "the intern";
       const later = canSchedule && releaseDay > today;
       toast.success(
         forTeam

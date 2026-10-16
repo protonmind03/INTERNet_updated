@@ -17,6 +17,7 @@ import { useProjections } from "../../lib/useProjections";
 import ProjectionLine from "../../components/ProjectionLine";
 import { internPath } from "./internPath";
 import { useSupervisorWork, type Intern, type SupervisorWork } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 export default function SupervisorInterns() {
   const supervisor = useAccount("supervisor");
@@ -36,7 +37,7 @@ export default function SupervisorInterns() {
     );
   }, [interns, search]);
 
-  const opened = interns.find((intern) => intern.student_id === openId) ?? null;
+  const opened = interns.find((intern) => sameId(intern.student_id, openId)) ?? null;
 
   return (
     <SupervisorLayout
@@ -152,7 +153,7 @@ export default function SupervisorInterns() {
 
 /** Items of this intern's that are waiting for the supervisor's decision. */
 function pendingFor(work: SupervisorWork, studentId: string): number {
-  return work.queue.filter((item) => item.entry.student_id === studentId).length;
+  return work.queue.filter((item) => sameId(item.entry.student_id, studentId)).length;
 }
 
 /**

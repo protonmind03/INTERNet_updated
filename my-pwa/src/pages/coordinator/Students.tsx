@@ -30,6 +30,7 @@ import FilterBar from "./FilterBar";
 import BlockScheduleDialog from "./BlockScheduleDialog";
 import { useStudentFilters } from "./useStudentFilters";
 import ResetPassword from "./ResetPassword";
+import { sameId } from "../../lib/ids";
 
 type Student = {
   student_id: string;
@@ -185,7 +186,7 @@ export default function CoordinatorStudents() {
 
   const filtered = search.trim() !== "" || status !== "all";
 
-  const chosenBlock = studentFilters.options.blocks.find((block) => String(block.id) === studentFilters.filters.block);
+  const chosenBlock = studentFilters.options.blocks.find((block) => sameId(block.id, studentFilters.filters.block));
 
   return (
     <CoordinatorLayout
@@ -536,29 +537,29 @@ function StudentDialog({
   // has been made inactive is offered only while it is the one chosen.
   const programs = (academics?.programs ?? []).filter(
     (item) =>
-      String(item.id) === form.program_id ||
-      (item.is_active && item.ojt_applies && (!form.college_id || String(item.college_id) === form.college_id))
+      sameId(item.id, form.program_id) ||
+      (item.is_active && item.ojt_applies && (!form.college_id || sameId(item.college_id, form.college_id)))
   );
   const majors = (academics?.majors ?? []).filter(
-    (item) => String(item.program_id) === form.program_id && (item.is_active || String(item.id) === form.major_id)
+    (item) => sameId(item.program_id, form.program_id) && (item.is_active || sameId(item.id, form.major_id))
   );
   const blocks = (academics?.blocks ?? []).filter(
     (item) =>
-      String(item.program_id) === form.program_id &&
-      (item.is_active || String(item.id) === form.block_id) &&
-      (!form.major_id || item.major_id === null || String(item.major_id) === form.major_id)
+      sameId(item.program_id, form.program_id) &&
+      (item.is_active || sameId(item.id, form.block_id)) &&
+      (!form.major_id || item.major_id === null || sameId(item.major_id, form.major_id))
   );
   const chooseCollege = (value: string) =>
     setForm((current) => {
-      const program = academics?.programs.find((item) => String(item.id) === current.program_id);
-      const keeps = !value || !program || String(program.college_id) === value;
+      const program = academics?.programs.find((item) => sameId(item.id, current.program_id));
+      const keeps = !value || !program || sameId(program.college_id, value);
       return keeps
         ? { ...current, college_id: value }
         : { ...current, college_id: value, program_id: "", major_id: "", block_id: "" };
     });
   const chooseProgram = (value: string) =>
     setForm((current) => {
-      const program = academics?.programs.find((item) => String(item.id) === value);
+      const program = academics?.programs.find((item) => sameId(item.id, value));
       return {
         ...current,
         program_id: value,
@@ -570,13 +571,13 @@ function StudentDialog({
     });
   const chooseMajor = (value: string) =>
     setForm((current) => {
-      const block = academics?.blocks.find((item) => String(item.id) === current.block_id);
-      const keeps = !value || !block || block.major_id === null || String(block.major_id) === value;
+      const block = academics?.blocks.find((item) => sameId(item.id, current.block_id));
+      const keeps = !value || !block || block.major_id === null || sameId(block.major_id, value);
       return { ...current, major_id: value, block_id: keeps ? current.block_id : "" };
     });
   const chooseBlock = (value: string) =>
     setForm((current) => {
-      const block = academics?.blocks.find((item) => String(item.id) === value);
+      const block = academics?.blocks.find((item) => sameId(item.id, value));
       // A block of one major says which major its students are of.
       return { ...current, block_id: value, major_id: block?.major_id ? String(block.major_id) : current.major_id };
     });
@@ -586,7 +587,7 @@ function StudentDialog({
 
   // Choosing a supervisor fills in their company when the field is empty.
   const chooseSupervisor = (supervisorId: string) => {
-    const chosen = supervisors.find((item) => item.supervisor_id === supervisorId);
+    const chosen = supervisors.find((item) => sameId(item.supervisor_id, supervisorId));
     setForm((current) => ({
       ...current,
       supervisor_id: supervisorId,
@@ -718,7 +719,7 @@ function StudentDialog({
               >
                 <option value="">Any college</option>
                 {academics.colleges
-                  .filter((item) => item.is_active || String(item.id) === form.college_id)
+                  .filter((item) => item.is_active || sameId(item.id, form.college_id))
                   .map((item) => (
                     <option key={item.id} value={String(item.id)}>
                       {item.name}
@@ -838,7 +839,7 @@ function StudentDialog({
           >
             <option value="">Not assigned yet</option>
             {supervisors
-              .filter((item) => item.is_active || item.supervisor_id === form.supervisor_id)
+              .filter((item) => item.is_active || sameId(item.supervisor_id, form.supervisor_id))
               .map((item) => (
                 <option key={item.supervisor_id} value={item.supervisor_id}>
                   {item.name}

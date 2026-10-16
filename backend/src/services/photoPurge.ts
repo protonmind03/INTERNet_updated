@@ -1,5 +1,5 @@
 import type { Pool, PoolClient } from "pg";
-import { manilaClock } from "./digests";
+import { phClock } from "./phTime";
 import { photoRetentionDays } from "./privacy";
 import { deletePrivateFile } from "./privateFileStore";
 
@@ -80,7 +80,7 @@ export async function runPhotoPurgeIfDue(
 ): Promise<PurgeRun | null> {
   const days = photoRetentionDays(options.env);
   if (days === null) return null;
-  const clock = manilaClock(options.now ?? new Date());
+  const clock = phClock(options.now ?? new Date());
   if (clock.time < PURGE_TIME) return null;
 
   let client: PoolClient | null = null;

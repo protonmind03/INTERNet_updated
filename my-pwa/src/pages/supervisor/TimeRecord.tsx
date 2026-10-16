@@ -8,6 +8,7 @@ import { toast } from "../../lib/toast";
 import { changeDtrCertification, useDtrCertifications } from "../../lib/useDtrCertifications";
 import { useHolidays } from "../../lib/useHolidays";
 import { useSupervisorWork } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 /** An intern's printable Daily Time Record, for the supervisor to sign. */
 export default function SupervisorTimeRecord() {
@@ -16,7 +17,7 @@ export default function SupervisorTimeRecord() {
   const holidays = useHolidays("supervisor");
   const [params, setParams] = useSearchParams();
   const studentId = params.get("student") || "";
-  const intern = work.interns.find((item) => item.student_id === studentId);
+  const intern = work.interns.find((item) => sameId(item.student_id, studentId));
   const dtr = useDtrCertifications("supervisor", intern?.student_id);
 
   return (
@@ -65,8 +66,8 @@ export default function SupervisorTimeRecord() {
               company: intern.company,
               supervisor: supervisor?.name,
             }}
-            logs={work.attendance.filter((entry) => entry.student_id === intern.student_id)}
-            absences={work.absences.filter((entry) => entry.student_id === intern.student_id)}
+            logs={work.attendance.filter((entry) => sameId(entry.student_id, intern.student_id))}
+            absences={work.absences.filter((entry) => sameId(entry.student_id, intern.student_id))}
             holidays={holidays}
             certifications={dtr.certifications}
             onCertify={async (month) => {

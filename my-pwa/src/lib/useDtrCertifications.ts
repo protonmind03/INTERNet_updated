@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
 import type { OfflineRole } from "./offlineStore";
+import { sameId } from "./ids";
 
 /** A supervisor's certification of one month of a student's time record. */
 export type DtrCertification = {
@@ -41,7 +42,7 @@ export function useDtrCertifications(role: OfflineRole, studentId: string | unde
     void Promise.resolve().then(reload);
   }, [reload]);
 
-  return { certifications: studentId ? certifications.filter((item) => item.student_id === studentId) : [], reload };
+  return { certifications: studentId ? certifications.filter((item) => sameId(item.student_id, studentId)) : [], reload };
 }
 
 /** Certifies a month, or withdraws a certification. Supervisor only. */

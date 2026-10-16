@@ -15,7 +15,7 @@ import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { withoutCameraDetails } from "../../lib/image";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
-import { formatDate, localDateKey } from "../../lib/format";
+import { formatDate, phDateKey } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { useDeliverables, type WeeklyItem } from "./useDeliverables";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
@@ -274,7 +274,7 @@ export default function Documents() {
             />
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
               {weeksShown.map((item) => {
-                const late = item.status === "Not submitted" && item.due_date < localDateKey(new Date());
+                const late = item.status === "Not submitted" && item.due_date < phDateKey(new Date());
                 const canUpload = item.status === "Not submitted" || item.status === "Rejected";
                 const busy = uploadingType === `${item.name}#${item.item_id}`;
                 return (
@@ -428,14 +428,14 @@ function RequirementRow({
           {(requirement.due_on || requirement.reviewer_role === "coordinator") && (
             <p
               className={`mt-0.5 text-sm ${
-                requirement.due_on && canUpload && requirement.due_on < localDateKey(new Date())
+                requirement.due_on && canUpload && requirement.due_on < phDateKey(new Date())
                   ? "font-semibold text-red-700"
                   : "text-slate-600"
               }`}
             >
               {[
                 requirement.due_on
-                  ? `${canUpload && requirement.due_on < localDateKey(new Date()) ? "Was due" : "Due"} ${formatDate(requirement.due_on)}`
+                  ? `${canUpload && requirement.due_on < phDateKey(new Date()) ? "Was due" : "Due"} ${formatDate(requirement.due_on)}`
                   : "",
                 requirement.reviewer_role === "coordinator" ? "Reviewed by the coordinator" : "",
               ]

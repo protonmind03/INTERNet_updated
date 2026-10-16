@@ -15,6 +15,7 @@ import {
   formatTime,
 } from "../../lib/format";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
+import { PH_TIME_ZONE } from "../../lib/phTime";
 import {
   downloadDocument,
   type AbsenceEntry,
@@ -25,6 +26,7 @@ import {
   type SupervisorWork,
   type TaskEntry,
 } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -256,7 +258,7 @@ function clockValue(value: string | null): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Manila",
+    timeZone: PH_TIME_ZONE,
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -669,7 +671,7 @@ function JournalDetail({ entry, work, onDecided, shortcuts }: DetailProps<Journa
       </div>
       <DailyAccomplishments
         weekStart={entry.week_start}
-        logs={work.attendance.filter((log) => log.student_id === entry.student_id)}
+        logs={work.attendance.filter((log) => sameId(log.student_id, entry.student_id))}
       />
 
       <Decision

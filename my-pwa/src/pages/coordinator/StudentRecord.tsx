@@ -4,7 +4,7 @@ import Icon from "../../components/Icon";
 import { Button, ErrorNotice, FormError, Modal, StatusBadge } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatDate, getInitials, localDateKey } from "../../lib/format";
+import { formatDate, getInitials, phDateKey } from "../../lib/format";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
 import { useDtrCertifications } from "../../lib/useDtrCertifications";
@@ -106,7 +106,7 @@ export default function StudentRecord() {
         setLoadedAt(now);
         setError("");
         // The first time the record opens, today's day is the one shown open.
-        setOverview((current) => (current.day === null && current.week === null ? { ...current, day: localDateKey(now) } : current));
+        setOverview((current) => (current.day === null && current.week === null ? { ...current, day: phDateKey(now) } : current));
       } catch (loadError) {
         setError(errorText(loadError, "Could not load this student's record."));
       } finally {
@@ -131,7 +131,7 @@ export default function StudentRecord() {
   const student = data?.student;
   const canDecide = Boolean(student && !student.supervisor_active);
   const perf = performance?.student ?? null;
-  const today = localDateKey(loadedAt);
+  const today = phDateKey(loadedAt);
   const lateAfter = performance?.rules.thresholds?.late_after_minutes ?? 15;
   const ctx = useMemo(() => (data ? recordContext(data, holidays, lateAfter, today) : null), [data, holidays, lateAfter, today]);
   const weeks = useMemo(() => (data && ctx ? buildWeeks(ctx, data, perf?.projected_finish ?? null) : []), [data, ctx, perf]);

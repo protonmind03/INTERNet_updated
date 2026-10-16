@@ -9,10 +9,13 @@
 | filed and the tasks. Nothing here asks the server for anything, so both
 | work with no connection, from the saved copies.
 |
-| Dates are "YYYY-MM-DD" keys throughout. This file imports nothing, so
-| the arithmetic can be checked by the tests without a browser.
+| Dates are "YYYY-MM-DD" keys throughout. This file imports only the
+| Philippine time zone, so the arithmetic can be checked by the tests
+| without a browser.
 |
 */
+
+import { PH_TIME_ZONE } from "./phTime";
 
 export type CalendarShift = {
   /** The weekday's name: "Monday". */
@@ -222,8 +225,8 @@ export function attendanceOnScheduledDays(
   return { scheduled, attended };
 }
 
-/** The minute of the day a moment falls on, in a time zone (the viewer's when none is given). */
-function minuteOfDay(value: string, timeZone?: string): number | null {
+/** The minute of the day a moment falls on, in a time zone (the Philippines' when none is given). */
+function minuteOfDay(value: string, timeZone: string = PH_TIME_ZONE): number | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   const parts = new Intl.DateTimeFormat("en-GB", {

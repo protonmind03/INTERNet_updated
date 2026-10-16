@@ -3,9 +3,10 @@ import Icon from "../../components/Icon";
 import { Button, FormError, FormField, Modal } from "../../components/ui";
 import { ATTENDANCE_PHOTO_MAX_MB, uploadProblem } from "../../lib/files";
 import { compressPhoto } from "../../lib/image";
-import { formatTime, localDateKey } from "../../lib/format";
+import { formatTime, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import type { SupervisorWork } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -54,14 +55,14 @@ export default function RecordTimeIn({
 
   // Only interns with no log today can be timed in.
   const available = useMemo(() => {
-    const today = localDateKey(new Date());
+    const today = phDateKey(new Date());
     const logged = new Set(
       work.attendance.filter((entry) => entry.date === today).map((entry) => entry.student_id)
     );
     return work.interns.filter((intern) => !logged.has(intern.student_id));
   }, [work.attendance, work.interns]);
 
-  const chosen = available.find((intern) => intern.student_id === studentId) ?? null;
+  const chosen = available.find((intern) => sameId(intern.student_id, studentId)) ?? null;
 
   const reset = () => {
     setStudentId("");

@@ -2,7 +2,7 @@ import { useState } from "react";
 import Icon from "../../components/Icon";
 import { Button, Card, Modal } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import { formatLongDate, localDateKey } from "../../lib/format";
+import { formatLongDate, phDateKey } from "../../lib/format";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
 import { usePrivacy, type PrivacyNotice } from "./usePrivacy";
 
@@ -116,7 +116,7 @@ async function downloadMyData(studentId: string): Promise<void> {
   const objectUrl = URL.createObjectURL(await response.blob());
   const link = window.document.createElement("a");
   link.href = objectUrl;
-  link.download = `internet-my-data-${localDateKey(new Date())}.json`;
+  link.download = `internet-my-data-${phDateKey(new Date())}.json`;
   window.document.body.appendChild(link);
   link.click();
   link.remove();

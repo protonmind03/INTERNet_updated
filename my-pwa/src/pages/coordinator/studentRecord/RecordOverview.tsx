@@ -1,7 +1,7 @@
 import { useId, type ReactNode } from "react";
 import Icon, { type IconName } from "../../../components/Icon";
 import { EmptyState, ProgressRing, Stars, StatusBadge } from "../../../components/ui";
-import { formatDate, formatDayDate, formatHours, formatLongDate, getInitials, localDateKey } from "../../../lib/format";
+import { formatDate, formatDayDate, formatHours, formatLongDate, formatTime, getInitials, phDateKey } from "../../../lib/format";
 import { StatusRules } from "../StudentPerformance";
 import { STATUS_TONE, type PerformanceRules, type PerformanceStudent } from "../performance";
 import {
@@ -39,6 +39,7 @@ import {
   taskTone,
 } from "./model";
 import { CopyButton, DecideButtons } from "./RecordParts";
+import { formatPhDay } from "../../../lib/phTime";
 
 /*
 |--------------------------------------------------------------------------
@@ -99,7 +100,7 @@ function Summary({ data, perf, rules, online, loadedAt, refreshing, onRefresh, o
   const p = perf?.performance;
   const pct = student.required_hours > 0 ? Math.min(100, (student.hours_rendered / student.required_hours) * 100) : 0;
   const dot = p ? { good: "bg-emerald-500", info: "bg-psu-500", waiting: "bg-amber-500", bad: "bg-red-500" }[STATUS_TONE[p.status]] : "";
-  const clock = loadedAt.toLocaleTimeString("en-PH", { hour: "numeric", minute: "2-digit" });
+  const clock = formatTime(loadedAt);
   const metric = (tab: Parameters<Props["onOpen"]>[0]["tab"], label: string, value: ReactNode, hint: string, warn = false) => (
     <button
       type="button"
@@ -421,7 +422,7 @@ function WeekByWeek(props: Props) {
     return {
       logs: data.attendance.filter((log) => inM(log.date)).length,
       tasks: data.tasks.filter((task) => inM(task.due_date)).length,
-      docs: data.documents.filter((doc) => inM(localDateKey(doc.uploaded_at))).length,
+      docs: data.documents.filter((doc) => inM(phDateKey(doc.uploaded_at))).length,
     };
   };
   const selectedMonth = state.view === "month" ? month : monthOf(current.start);
@@ -465,7 +466,7 @@ function WeekByWeek(props: Props) {
                     }}
                     className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium pointer-coarse:h-10 ${on ? "border-transparent bg-linear-to-br from-[#1a237e] to-[#121a5e] text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
                   >
-                    {new Date(`${m}-01T00:00:00`).toLocaleDateString("en-PH", { month: "short" })}
+                    {formatPhDay(`${m}-01`, { month: "short" })}
                     {n > 0 && <sup className="tabular inline-grid h-[18px] min-w-[18px] place-items-center rounded-full bg-gold-400 px-1.5 text-[10.5px] font-bold text-psu-950">{n}</sup>}
                   </button>
                 );
@@ -1184,7 +1185,7 @@ function MonthView(props: Props & { month: string; months: string[] }) {
         <div className="mb-3 flex flex-wrap items-center gap-2.5 px-1">
           <RoundButton label="Previous month" icon="chevron-left" disabled={index <= 0} onClick={() => shiftMonth(-1)} />
           <h3 className="min-w-[140px] flex-1 text-center text-base font-bold text-slate-900 sm:flex-none">
-            {new Date(`${first}T00:00:00`).toLocaleDateString("en-PH", { month: "long", year: "numeric" })}
+            {formatPhDay(first, { month: "long", year: "numeric" })}
           </h3>
           <RoundButton label="Next month" icon="chevron-right" disabled={index >= months.length - 1} onClick={() => shiftMonth(1)} />
           <div className="flex w-full flex-wrap gap-1.5 sm:ml-auto sm:w-auto">
@@ -1196,7 +1197,7 @@ function MonthView(props: Props & { month: string; months: string[] }) {
             {stat(holidays, holidays === 1 ? "holiday" : "holidays")}
           </div>
         </div>
-        <div className="grid grid-cols-7 gap-[3px] sm:gap-1.5" role="group" aria-label={new Date(`${first}T00:00:00`).toLocaleDateString("en-PH", { month: "long", year: "numeric" })}>
+        <div className="grid grid-cols-7 gap-[3px] sm:gap-1.5" role="group" aria-label={formatPhDay(first, { month: "long", year: "numeric" })}>
           {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((name) => (
             <div key={name} aria-hidden="true" className="pb-0.5 text-center text-[11.5px] font-semibold text-slate-500">{name}</div>
           ))}

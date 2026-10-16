@@ -1,5 +1,6 @@
 import dotenv from "dotenv";
 import { Client } from "pg";
+import { PH_PG_OPTIONS, usePhilippineProcessTime } from "../services/phTime";
 
 dotenv.config();
 
@@ -42,7 +43,7 @@ async function connectThroughTunnel(port: string): Promise<Client | null> {
   // Encrypted if the database offers it, plain otherwise: either way the
   // traffic is inside the tunnel.
   for (const ssl of [{ rejectUnauthorized: false }, false] as const) {
-    const client = new Client({ host: "127.0.0.1", port: Number(port), user, password, database, ssl });
+    const client = new Client({ host: "127.0.0.1", port: Number(port), user, password, database, ssl, options: PH_PG_OPTIONS });
     try {
       await client.connect();
       console.log(`Database: ${database} through the tunnel on port ${port}`);
@@ -56,6 +57,8 @@ async function connectThroughTunnel(port: string): Promise<Client | null> {
 }
 
 export async function connect(): Promise<Client> {
+  // Times read back by a script mean what they mean on the server.
+  usePhilippineProcessTime();
   const tunnelPort = process.argv.slice(2).find((value) => /^\d{2,5}$/.test(value));
   if (tunnelPort) {
     const tunnelled = await connectThroughTunnel(tunnelPort);
@@ -83,6 +86,7 @@ export async function connect(): Promise<Client> {
   const client = new Client({
     connectionString,
     ssl: isLocalDatabase ? false : { rejectUnauthorized: false },
+    options: PH_PG_OPTIONS,
   });
   await client.connect();
   console.log(

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Icon, { type IconName } from "./Icon";
 import { Card, EmptyState, ErrorNotice, FilterChips, SkeletonRows } from "./ui";
-import { formatDateTime, formatLongDate, localDateKey } from "../lib/format";
+import { formatDateTime, formatLongDate, phDateKey } from "../lib/format";
 import type { NotificationItem } from "../lib/useNotifications";
 
 type Filter = "all" | "unread";
@@ -38,10 +38,10 @@ export default function NotificationFeed({
   const groups = useMemo(() => {
     const visible =
       filter === "unread" ? notifications.filter((item) => !item.is_read) : notifications;
-    const today = localDateKey(new Date());
+    const today = phDateKey(new Date());
     const byDay = new Map<string, NotificationItem[]>();
     for (const item of visible) {
-      const key = localDateKey(item.created_at);
+      const key = phDateKey(item.created_at);
       byDay.set(key, [...(byDay.get(key) || []), item]);
     }
     return [...byDay.entries()].map(([key, items]) => ({

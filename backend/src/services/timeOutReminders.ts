@@ -15,6 +15,7 @@
 */
 
 import type { Pool } from "pg";
+import { phSql } from "./phTime";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -51,7 +52,7 @@ export async function sendTimeOutReminders(
   // copies of the server cannot both remind the same student.
   const due = await pool.query<{ id: number; student_id: string; scheduled_end: string }>(
     `
-    WITH clock AS (SELECT ($1::timestamptz AT TIME ZONE 'Asia/Manila') AS local_now)
+    WITH clock AS (SELECT ${phSql.wallTime("$1::timestamptz")} AS local_now)
     INSERT INTO time_out_reminders (student_id, reminder_date, attendance_id, scheduled_end)
     SELECT a.student_id, a.date, a.id, shift.end_time
     FROM clock

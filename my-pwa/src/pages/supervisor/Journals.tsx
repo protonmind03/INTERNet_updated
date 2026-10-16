@@ -18,6 +18,7 @@ import { useAccount } from "../../lib/session";
 import { useSupervisorWork, type JournalEntry } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -86,7 +87,7 @@ export default function SupervisorJournals() {
     return [...byId.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [journals]);
 
-  const ofIntern = (internId ? journals.filter((item) => item.student_id === internId) : journals).filter(
+  const ofIntern = (internId ? journals.filter((item) => sameId(item.student_id, internId)) : journals).filter(
     (item) => inGroup(item.student_id)
   );
   const count = (status: JournalEntry["status"]) =>
@@ -173,7 +174,7 @@ export default function SupervisorJournals() {
                   <EntryPictures role="supervisor" owner="journal" ownerId={journal.id} count={journal.pictures} className="" />
                   <DailyAccomplishments
                     weekStart={journal.week_start}
-                    logs={attendance.filter((log) => log.student_id === journal.student_id)}
+                    logs={attendance.filter((log) => sameId(log.student_id, journal.student_id))}
                   />
                   {journal.review_notes && (
                     <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">

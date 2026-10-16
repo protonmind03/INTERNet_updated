@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
 import { Card } from "../../components/ui";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
-import { daysUntil, dueLabel, formatHours, formatLongDate, localDateKey } from "../../lib/format";
+import { daysUntil, dueLabel, formatHours, formatLongDate, phDateKey } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { weekdayOf } from "../../lib/studentCalendar";
 import {
@@ -107,7 +107,7 @@ export default function TodayStrip({
   const schedules = useInternSchedules();
   const holidays = useHolidays("supervisor");
   const nowMinutes = useNowMinutes();
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   const holiday = holidays.find((item) => String(item.date).slice(0, 10) === today);
   const visit = useAnswer<{ visit: Visit | null }>("/api/supervisor/site-visit", "site-visit")?.visit ?? null;
   const unread = useAnswer<Unread>("/api/supervisor/announcement-unread", "announcement-unread");

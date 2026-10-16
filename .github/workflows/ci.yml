@@ -60,6 +60,10 @@ jobs:
 
       - run: npm ci
 
+      # Needs no database: a date formatted without a time zone fails the build.
+      - name: Dates name their time zone
+        run: npm run lint
+
       - name: Apply migrations
         run: npm run db:migrate
 

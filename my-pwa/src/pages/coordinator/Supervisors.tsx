@@ -25,6 +25,7 @@ import CompanyPicker from "./CompanyPicker";
 import ImportAccounts from "./ImportAccounts";
 import { coordinatorRequest } from "./request";
 import ResetPassword from "./ResetPassword";
+import { sameId } from "../../lib/ids";
 
 type Supervisor = {
   supervisor_id: string;
@@ -317,7 +318,7 @@ export default function CoordinatorSupervisors() {
           from={moving}
           count={internsOf(moving)}
           others={supervisors.filter(
-            (item) => item.is_active && item.supervisor_id !== moving.supervisor_id
+            (item) => item.is_active && !sameId(item.supervisor_id, moving.supervisor_id)
           )}
           onClose={() => setMoving(null)}
           onMoved={() => {

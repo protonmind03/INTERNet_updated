@@ -18,7 +18,7 @@ import {
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { isWithinDateRange } from "../../lib/dateRange";
 import { formatFileSize } from "../../lib/files";
-import { formatDate, localDateKey } from "../../lib/format";
+import { formatDate, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import FilterBar from "./FilterBar";
@@ -165,7 +165,7 @@ export default function CoordinatorDocuments() {
         (item) =>
           (status === "all" || item.status === status) &&
           (!docType || item.doc_type === docType) &&
-          isWithinDateRange(localDateKey(item.uploaded_at), dateFrom, dateTo) &&
+          isWithinDateRange(phDateKey(item.uploaded_at), dateFrom, dateTo) &&
           matches([
             item.student_name,
             item.student_id,

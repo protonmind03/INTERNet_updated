@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { coordinatorRequest } from "./request";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -133,32 +134,32 @@ function loadOptions(): Promise<FilterOptions> {
  */
 export function narrowed(options: FilterOptions, filters: StudentFilters): FilterOptions {
   const collegePrograms = (collegeId: string) =>
-    new Set(options.programs.filter((item) => String(item.college_id) === collegeId).map((item) => item.id));
+    new Set(options.programs.filter((item) => sameId(item.college_id, collegeId)).map((item) => item.id));
   const programs = options.programs.filter(
     (item) =>
-      (item.is_active || String(item.id) === filters.program) &&
-      (!filters.college || String(item.college_id) === filters.college)
+      (item.is_active || sameId(item.id, filters.program)) &&
+      (!filters.college || sameId(item.college_id, filters.college))
   );
   const inCollege = filters.college ? collegePrograms(filters.college) : null;
   const blocks = options.blocks.filter(
     (item) =>
-      (item.is_active || String(item.id) === filters.block) &&
-      (!filters.program || String(item.program_id) === filters.program) &&
+      (item.is_active || sameId(item.id, filters.block)) &&
+      (!filters.program || sameId(item.program_id, filters.program)) &&
       (!inCollege || inCollege.has(item.program_id)) &&
       (!filters.term || filters.term === "none"
         ? filters.term !== "none" || item.term_id === null
-        : String(item.term_id) === filters.term)
+        : sameId(item.term_id, filters.term))
   );
   return {
     terms: options.terms,
-    colleges: options.colleges.filter((item) => item.is_active || String(item.id) === filters.college),
+    colleges: options.colleges.filter((item) => item.is_active || sameId(item.id, filters.college)),
     programs,
     blocks,
-    companies: options.companies.filter((item) => item.is_active !== false || String(item.id) === filters.company),
+    companies: options.companies.filter((item) => item.is_active !== false || sameId(item.id, filters.company)),
     supervisors: options.supervisors.filter(
       (item) =>
-        (item.is_active !== false || item.supervisor_id === filters.supervisor) &&
-        (!filters.company || String(item.company_id ?? "") === filters.company)
+        (item.is_active !== false || sameId(item.supervisor_id, filters.supervisor)) &&
+        (!filters.company || sameId(item.company_id, filters.company))
     ),
   };
 }
@@ -166,22 +167,22 @@ export function narrowed(options: FilterOptions, filters: StudentFilters): Filte
 /** Clears the choices below `changed` that no longer fit what is above them. */
 function settle(filters: StudentFilters, options: FilterOptions): StudentFilters {
   const next = { ...filters };
-  const program = options.programs.find((item) => String(item.id) === next.program);
-  if (next.college && program && String(program.college_id) !== next.college) next.program = "";
-  const block = options.blocks.find((item) => String(item.id) === next.block);
+  const program = options.programs.find((item) => sameId(item.id, next.program));
+  if (next.college && program && !sameId(program.college_id, next.college)) next.program = "";
+  const block = options.blocks.find((item) => sameId(item.id, next.block));
   if (block) {
     const blockProgram = options.programs.find((item) => item.id === block.program_id);
     if (
-      (next.program && String(block.program_id) !== next.program) ||
-      (next.college && blockProgram && String(blockProgram.college_id) !== next.college) ||
-      (next.term && next.term !== "none" && String(block.term_id) !== next.term) ||
+      (next.program && !sameId(block.program_id, next.program)) ||
+      (next.college && blockProgram && !sameId(blockProgram.college_id, next.college)) ||
+      (next.term && next.term !== "none" && !sameId(block.term_id, next.term)) ||
       (next.term === "none" && block.term_id !== null)
     ) {
       next.block = "";
     }
   }
-  const supervisor = options.supervisors.find((item) => item.supervisor_id === next.supervisor);
-  if (next.company && supervisor && String(supervisor.company_id ?? "") !== next.company) next.supervisor = "";
+  const supervisor = options.supervisors.find((item) => sameId(item.supervisor_id, next.supervisor));
+  if (next.company && supervisor && !sameId(supervisor.company_id, next.company)) next.supervisor = "";
   return next;
 }
 
@@ -241,12 +242,12 @@ export function useStudentFilters({ remember: remembers = true }: { remember?: b
   useEffect(() => {
     if (options === NO_OPTIONS) return;
     const known: Record<FilterKey, (value: string) => boolean> = {
-      term: (value) => value === "none" || options.terms.length === 0 || options.terms.some((item) => String(item.id) === value),
-      college: (value) => options.colleges.length === 0 || options.colleges.some((item) => String(item.id) === value),
-      program: (value) => options.programs.length === 0 || options.programs.some((item) => String(item.id) === value),
-      block: (value) => value === "none" || options.blocks.length === 0 || options.blocks.some((item) => String(item.id) === value),
-      company: (value) => options.companies.length === 0 || options.companies.some((item) => String(item.id) === value),
-      supervisor: (value) => value === "none" || options.supervisors.length === 0 || options.supervisors.some((item) => item.supervisor_id === value),
+      term: (value) => value === "none" || options.terms.length === 0 || options.terms.some((item) => sameId(item.id, value)),
+      college: (value) => options.colleges.length === 0 || options.colleges.some((item) => sameId(item.id, value)),
+      program: (value) => options.programs.length === 0 || options.programs.some((item) => sameId(item.id, value)),
+      block: (value) => value === "none" || options.blocks.length === 0 || options.blocks.some((item) => sameId(item.id, value)),
+      company: (value) => options.companies.length === 0 || options.companies.some((item) => sameId(item.id, value)),
+      supervisor: (value) => value === "none" || options.supervisors.length === 0 || options.supervisors.some((item) => sameId(item.supervisor_id, value)),
     };
     const cleaned = { ...filters };
     let changed = false;
@@ -301,31 +302,31 @@ export function describeFilters(state: Pick<StudentFilterState, "filters" | "opt
       `Term: ${
         filters.term === "none"
           ? "students with no term"
-          : options.terms.find((item) => String(item.id) === filters.term)?.name || filters.term
+          : options.terms.find((item) => sameId(item.id, filters.term))?.name || filters.term
       }`
     );
   }
-  const college = options.colleges.find((item) => String(item.id) === filters.college);
+  const college = options.colleges.find((item) => sameId(item.id, filters.college));
   if (filters.college) named.push(`College: ${college?.name || filters.college}`);
-  const program = options.programs.find((item) => String(item.id) === filters.program);
+  const program = options.programs.find((item) => sameId(item.id, filters.program));
   if (filters.program) named.push(`Program: ${program?.short_code || filters.program}`);
   if (filters.block) {
     named.push(
       `Block: ${
         filters.block === "none"
           ? "students with no block"
-          : options.blocks.find((item) => String(item.id) === filters.block)?.name || filters.block
+          : options.blocks.find((item) => sameId(item.id, filters.block))?.name || filters.block
       }`
     );
   }
-  const company = options.companies.find((item) => String(item.id) === filters.company);
+  const company = options.companies.find((item) => sameId(item.id, filters.company));
   if (filters.company) named.push(`Company: ${company?.name || filters.company}`);
   if (filters.supervisor) {
     named.push(
       `Supervisor: ${
         filters.supervisor === "none"
           ? "students with no supervisor"
-          : options.supervisors.find((item) => item.supervisor_id === filters.supervisor)?.name || filters.supervisor
+          : options.supervisors.find((item) => sameId(item.supervisor_id, filters.supervisor))?.name || filters.supervisor
       }`
     );
   }

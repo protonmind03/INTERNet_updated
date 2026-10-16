@@ -25,7 +25,8 @@
 import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { allowsChannel } from "./notificationPreferences";
-import { clockSetting, manilaClock, sendOnce, type DigestDeps } from "./digests";
+import { clockSetting, sendOnce, type DigestDeps } from "./digests";
+import { phClock, phSql } from "./phTime";
 import { bindFilters, filterConditions, type StudentFilters } from "./studentScope";
 import { performanceFigures, withStatus, type Performance } from "./performance";
 
@@ -230,7 +231,7 @@ export async function projectionsFor(
   scope: { studentId?: string; supervisorId?: string; filters?: StudentFilters },
   now: Date = new Date()
 ): Promise<StudentProjection[]> {
-  return projectLoaded(await loadStudents(pool, scope), manilaClock(now).date);
+  return projectLoaded(await loadStudents(pool, scope), phClock(now).date);
 }
 
 /**
@@ -264,7 +265,7 @@ export async function studentPerformance(
   studentId: string,
   now: Date = new Date()
 ): Promise<(StudentProjection & { performance: Performance }) | null> {
-  const today = manilaClock(now).date;
+  const today = phClock(now).date;
   const loaded = await loadStudents(pool, { studentId });
   const [projection] = projectLoaded(loaded, today);
   if (!projection) return null;
@@ -296,7 +297,7 @@ export async function coordinatorAlerts(
   now: Date = new Date(),
   filters: StudentFilters = {}
 ): Promise<Alert[]> {
-  const { date: today } = manilaClock(now);
+  const { date: today } = phClock(now);
   const inTerm = `TRUE${filterConditions(filters, "s")}`;
   const slowQuery = bindFilters(
       `
@@ -317,10 +318,10 @@ export async function coordinatorAlerts(
           WHERE s.is_active = TRUE AND ${inTerm} AND j.status = 'Submitted'
       )
       SELECT sup.supervisor_id, sup.name, COUNT(*)::int AS waiting,
-             FLOOR(EXTRACT(EPOCH FROM ($1::timestamptz AT TIME ZONE 'Asia/Manila') - MIN(w.since)) / 86400)::int AS oldest_days
+             FLOOR(EXTRACT(EPOCH FROM ${phSql.wallTime("$1::timestamptz")} - MIN(w.since)) / 86400)::int AS oldest_days
       FROM waiting w JOIN supervisors sup ON sup.supervisor_id = w.supervisor_id
       WHERE sup.is_active = TRUE
-        AND w.since <= ($1::timestamptz AT TIME ZONE 'Asia/Manila') - make_interval(days => $2::int)
+        AND w.since <= ${phSql.wallTime("$1::timestamptz")} - make_interval(days => $2::int)
       GROUP BY sup.supervisor_id, sup.name
       ORDER BY oldest_days DESC, sup.name
       `,
@@ -446,7 +447,7 @@ export async function sendCoordinatorDigests(pool: Pool, deps: DigestDeps = {}):
   const env = deps.env ?? process.env;
   if (!(deps.emailReady ?? deps.smtpReady ?? isEmailConfigured())) return [];
   const now = deps.now ?? new Date();
-  const clock = manilaClock(now);
+  const clock = phClock(now);
   const wanted = DAY_CODES.indexOf((env.COORDINATOR_DIGEST_DAY || "").trim().toUpperCase());
   if (clock.weekday !== (wanted >= 0 ? wanted : 1)) return [];
   if (clock.time < clockSetting(env.COORDINATOR_DIGEST_TIME, "07:30")) return [];
@@ -572,7 +573,7 @@ export async function programmeReport(
   programs: ReportGroup[];
   blocks: ReportGroup[];
 }> {
-  const today = manilaClock(now).date;
+  const today = phClock(now).date;
   const loaded = await loadStudents(pool, { filters });
   const projections = projectLoaded(loaded, today);
   const performance = options.performance ? await performanceOf(pool, loaded, projections, today) : null;

@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import dotenv from "dotenv";
 import { Client } from "pg";
+import { PH_PG_OPTIONS } from "../services/phTime";
 
 dotenv.config();
 
@@ -63,6 +64,7 @@ async function migrate() {
   const client = new Client({
     connectionString,
     ssl: isLocalDatabase ? false : { rejectUnauthorized: false },
+    options: PH_PG_OPTIONS,
   });
 
   await client.connect();

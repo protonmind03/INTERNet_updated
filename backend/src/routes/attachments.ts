@@ -10,6 +10,7 @@ import {
 } from "../services/privateFileStore";
 import { stripImageMetadata } from "../services/imageMetadata";
 import { quotaProblem, recordUpload, uploadUsage } from "../services/uploadQuota";
+import { sameId } from "../services/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -89,8 +90,8 @@ const isOwnerType = (value: unknown): value is OwnerType =>
 
 /** Who wrote the entry: the only one who may add to it or take from it. */
 export function isAuthor(type: OwnerType, entry: Entry, auth: Auth): boolean {
-  if (auth.role === "student") return entry.studentId === auth.id && !(type === "complaint" && entry.filedBySupervisor);
-  if (auth.role === "supervisor") return type === "complaint" && entry.filedBySupervisor === auth.id;
+  if (auth.role === "student") return sameId(entry.studentId, auth.id) && !(type === "complaint" && entry.filedBySupervisor);
+  if (auth.role === "supervisor") return type === "complaint" && sameId(entry.filedBySupervisor, auth.id);
   return false;
 }
 
@@ -99,7 +100,7 @@ export function maySee(type: OwnerType, entry: Entry, auth: Auth): boolean {
   if (auth.role === "coordinator") return true;
   if (isAuthor(type, entry, auth)) return true;
   // A supervisor sees their own interns' logs and weekly reports, never their concerns.
-  return auth.role === "supervisor" && type !== "complaint" && entry.supervisorOfStudent === auth.id;
+  return auth.role === "supervisor" && type !== "complaint" && sameId(entry.supervisorOfStudent, auth.id);
 }
 
 type Dependencies = {

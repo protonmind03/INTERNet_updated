@@ -13,6 +13,7 @@ import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { errorText, toast } from "../../lib/toast";
 import type { Team, TeamsState } from "./useTeams";
 import type { Intern } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -188,7 +189,7 @@ function TeamDialog({
       new Set(
         (editing?.members ?? [])
           // Someone no longer among the supervisor's interns cannot be kept.
-          .filter((member) => interns.some((intern) => intern.student_id === member.student_id))
+          .filter((member) => interns.some((intern) => sameId(intern.student_id, member.student_id)))
           .map((member) => member.student_id)
       )
   );

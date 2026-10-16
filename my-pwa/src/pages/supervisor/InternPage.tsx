@@ -41,6 +41,7 @@ import { fetchFinalEvaluation, internSummarySections } from "./internSummary";
 import { INTERN_TAB_LABELS, INTERN_TABS, type InternTab } from "./internPath";
 import ReviewDetail from "./ReviewDetail";
 import { useInternSchedules } from "./useInternSchedules";
+import { phStamp } from "../../lib/phTime";
 import {
   downloadDocument,
   useSupervisorWork,
@@ -48,6 +49,7 @@ import {
   type QueueItem,
   type SupervisorWork,
 } from "./useSupervisorWork";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -89,7 +91,7 @@ export default function SupervisorInternPage() {
   const tab: InternTab = asked && INTERN_TABS.includes(asked) ? asked : "overview";
   const setTab = (next: InternTab) => setParams(next === "overview" ? {} : { tab: next }, { replace: true });
 
-  const intern = work.interns.find((item) => item.student_id === studentId);
+  const intern = work.interns.find((item) => sameId(item.student_id, studentId));
   const [reviewKey, setReviewKey] = useState<string | null>(null);
   const reviewing = work.queue.find((item) => item.key === reviewKey);
 
@@ -203,8 +205,8 @@ function Overview({ intern, work, onReview }: Reviewable) {
   const projection = projections.get(intern.student_id);
   const schedules = useInternSchedules();
   const shifts = schedules?.get(intern.student_id);
-  const waiting = work.queue.filter((item) => item.entry.student_id === intern.student_id);
-  const finalDue = useFinalDue(work.interns).some((item) => item.entry.student_id === intern.student_id);
+  const waiting = work.queue.filter((item) => sameId(item.entry.student_id, intern.student_id));
+  const finalDue = useFinalDue(work.interns).some((item) => sameId(item.entry.student_id, intern.student_id));
   const [, setParams] = useSearchParams();
   const [buildingPdf, setBuildingPdf] = useState(false);
 
@@ -218,7 +220,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
         fetchFinalEvaluation(intern.student_id),
       ]);
       const mine = <T extends { student_id: string }>(list: T[]) =>
-        list.filter((entry) => entry.student_id === intern.student_id);
+        list.filter((entry) => sameId(entry.student_id, intern.student_id));
       buildAnalyticsPdf(
         internSummarySections({
           intern,
@@ -228,7 +230,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
           projection,
           evaluation,
         }),
-        new Date().toLocaleString(),
+        phStamp(),
         `OJT Summary: ${intern.name}`
       ).save(`internet-summary-${intern.student_id}.pdf`);
       toast.success("Summary PDF ready.");
@@ -279,12 +281,12 @@ function Overview({ intern, work, onReview }: Reviewable) {
           <Fact label="Mobile">
             {intern.phone ? (
               <a
-              href={`tel:${intern.phone}`}
-              aria-label={`Call ${intern.name}, ${intern.phone}`}
-              className="inline-flex items-center gap-1 font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900"
+                href={`tel:${intern.phone}`}
+                aria-label={`Call ${intern.name}, ${intern.phone}`}
+                className="inline-flex items-center gap-1 font-medium text-psu-700 underline underline-offset-2 hover:text-psu-900"
               >
-              <Icon name="phone" size={14} className="shrink-0" />
-              {intern.phone}
+                <Icon name="phone" size={14} className="shrink-0" />
+                {intern.phone}
               </a>
             ) : (
               "Not given"
@@ -409,15 +411,15 @@ function Attendance({ intern, work }: TabProps) {
   const schedules = useInternSchedules();
   const shifts = useMemo(() => schedules?.get(intern.student_id) ?? [], [schedules, intern.student_id]);
   const logs = useMemo(
-    () => work.attendance.filter((entry) => entry.student_id === intern.student_id),
+    () => work.attendance.filter((entry) => sameId(entry.student_id, intern.student_id)),
     [work.attendance, intern.student_id]
   );
   const absences = useMemo(
-    () => work.absences.filter((entry) => entry.student_id === intern.student_id),
+    () => work.absences.filter((entry) => sameId(entry.student_id, intern.student_id)),
     [work.absences, intern.student_id]
   );
   const tasks = useMemo(
-    () => work.tasks.filter((entry) => entry.student_id === intern.student_id && !entry.scheduled),
+    () => work.tasks.filter((entry) => sameId(entry.student_id, intern.student_id) && !entry.scheduled),
     [work.tasks, intern.student_id]
   );
 
@@ -567,7 +569,7 @@ function DayList({
 */
 
 function Tasks({ intern, work, onReview }: Reviewable) {
-  const tasks = work.tasks.filter((task) => task.student_id === intern.student_id);
+  const tasks = work.tasks.filter((task) => sameId(task.student_id, intern.student_id));
   return (
     <Card>
       <CardHeader
@@ -641,7 +643,7 @@ function Tasks({ intern, work, onReview }: Reviewable) {
 }
 
 function Documents({ intern, work, onReview }: Reviewable) {
-  const documents = work.documents.filter((entry) => entry.student_id === intern.student_id);
+  const documents = work.documents.filter((entry) => sameId(entry.student_id, intern.student_id));
   const download = async (entry: (typeof documents)[number]) => {
     try {
       await downloadDocument(entry);
@@ -696,9 +698,9 @@ function Documents({ intern, work, onReview }: Reviewable) {
 
 function Reports({ intern, work, onReview }: Reviewable) {
   const reports = work.journals
-    .filter((entry) => entry.student_id === intern.student_id)
+    .filter((entry) => sameId(entry.student_id, intern.student_id))
     .sort((a, b) => b.week_start.localeCompare(a.week_start));
-  const logs = work.attendance.filter((entry) => entry.student_id === intern.student_id);
+  const logs = work.attendance.filter((entry) => sameId(entry.student_id, intern.student_id));
   const STATE = {
     Submitted: { label: "Waiting for you", tone: "waiting" },
     Reviewed: { label: "Reviewed", tone: "good" },
@@ -770,8 +772,8 @@ function TimeRecord({ intern, work, supervisorName }: TabProps & { supervisorNam
         company: intern.company,
         supervisor: supervisorName,
       }}
-      logs={work.attendance.filter((entry) => entry.student_id === intern.student_id)}
-      absences={work.absences.filter((entry) => entry.student_id === intern.student_id)}
+      logs={work.attendance.filter((entry) => sameId(entry.student_id, intern.student_id))}
+      absences={work.absences.filter((entry) => sameId(entry.student_id, intern.student_id))}
       holidays={holidays}
       certifications={dtr.certifications}
       onCertify={async (month) => {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
 import { savedFetch } from "./offlineStore";
 import { toast } from "./toast";
+import { formatPh } from "./phTime";
 
 export type NotificationRole = "student" | "supervisor" | "coordinator";
 
@@ -130,7 +131,7 @@ export function useNotifications(role: NotificationRole) {
 export function formatNotificationTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleString("en-PH", {
+  return formatPh(date, {
     month: "short",
     day: "numeric",
     hour: "numeric",

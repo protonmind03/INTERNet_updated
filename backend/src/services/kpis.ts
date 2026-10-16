@@ -20,7 +20,7 @@
 */
 
 import type { Pool } from "pg";
-import { manilaClock } from "./digests";
+import { phClock } from "./phTime";
 import { loadStudents, projectFinish } from "./insights";
 import { bindFilters, filterConditions, hasFilters, type StudentFilters } from "./studentScope";
 import {
@@ -326,7 +326,7 @@ export async function coordinatorKpis(
   filters: StudentFilters = {},
   now: Date = new Date()
 ): Promise<{ as_of: string; kpis: Kpi[] }> {
-  const { date: today } = manilaClock(now);
+  const { date: today } = phClock(now);
   const [inputs, targets] = await Promise.all([loadKpiInputs(pool, filters, today), loadKpiTargets(pool)]);
   return { as_of: today, kpis: computeKpis(today, inputs, targets) };
 }

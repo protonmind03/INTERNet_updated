@@ -30,6 +30,8 @@
 |
 */
 
+import { PH_TIME_ZONE } from "./phTime";
+
 export type LogTimes = {
   time_in: string | null;
   break_time: string | null;
@@ -50,8 +52,8 @@ const NOON = 12 * 60;
 /** The last minute a session may end and still be a morning's work: 12:59 PM. */
 const MORNING_ENDS = 12 * 60 + 59;
 
-/** The day and the minute of the day a moment falls on, in a time zone (the viewer's when none is given). */
-function clockOf(value: string, timeZone?: string): { day: string; minutes: number } | null {
+/** The day and the minute of the day a moment falls on, in a time zone (the Philippines' when none is given). */
+function clockOf(value: string, timeZone: string = PH_TIME_ZONE): { day: string; minutes: number } | null {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return null;
   const parts = new Intl.DateTimeFormat("en-CA", {

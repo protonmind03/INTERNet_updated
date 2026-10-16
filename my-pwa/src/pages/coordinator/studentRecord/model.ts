@@ -1,6 +1,7 @@
 import type { IconName } from "../../../components/Icon";
-import { localDateKey } from "../../../lib/format";
+import { phDateKey } from "../../../lib/format";
 import { hoursBetween } from "../scheduleRows";
+import { formatPhDay } from "../../../lib/phTime";
 
 /*
 |--------------------------------------------------------------------------
@@ -204,7 +205,7 @@ export const groupOf = (tab: Tab) => GROUPS.find((group) => group.tabs.some((ite
 export const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
 
 export const dateKey = (value: string | null | undefined) => String(value ?? "").slice(0, 10);
-export const todayKey = () => localDateKey(new Date());
+export const todayKey = () => phDateKey(new Date());
 
 function fromKey(key: string): Date {
   const [year, month, day] = key.split("-").map(Number);
@@ -213,7 +214,7 @@ function fromKey(key: string): Date {
 export function addDays(key: string, days: number): string {
   const date = fromKey(key);
   date.setDate(date.getDate() + days);
-  return localDateKey(date);
+  return phDateKey(date);
 }
 export const weekdayOf = (key: string) => fromKey(key).getDay();
 export const mondayOf = (key: string) => addDays(key, -((weekdayOf(key) + 6) % 7));
@@ -224,10 +225,11 @@ export const monthOf = (key: string) => key.slice(0, 7);
 export function weekRange(monday: string): string {
   const start = fromKey(monday);
   const end = fromKey(addDays(monday, 4));
-  const month = (date: Date) => date.toLocaleDateString("en-PH", { month: "short" });
+  const month = (key: string) => formatPhDay(key, { month: "short" });
+  const last = addDays(monday, 4);
   return start.getMonth() === end.getMonth()
-    ? `${month(start)} ${start.getDate()}–${end.getDate()}`
-    : `${month(start)} ${start.getDate()} – ${month(end)} ${end.getDate()}`;
+    ? `${month(monday)} ${start.getDate()}–${end.getDate()}`
+    : `${month(monday)} ${start.getDate()} – ${month(last)} ${end.getDate()}`;
 }
 
 /** Minutes after midnight of a timestamp, on the viewer's clock. */
@@ -324,7 +326,7 @@ export function recordContext(
     absences: new Map(data.absences.map((item) => [dateKey(item.date), item])),
     holidays: new Map(holidays.map((item) => [dateKey(item.date), item])),
     firstLog: dates[0] ?? null,
-    completedAt: data.student.completed_at ? localDateKey(data.student.completed_at) : null,
+    completedAt: data.student.completed_at ? phDateKey(data.student.completed_at) : null,
   };
 }
 
@@ -403,7 +405,7 @@ export function buildWeeks(ctx: RecordContext, data: Overview, projectedFinish: 
       return key >= start && key <= end;
     };
     const withinLocal = (value: string | null | undefined) => {
-      const key = value ? localDateKey(value) : "";
+      const key = value ? phDateKey(value) : "";
       return key >= start && key <= end;
     };
     const logs = data.attendance.filter((log) => within(log.date)).sort((a, b) => (dateKey(a.date) < dateKey(b.date) ? -1 : 1));
@@ -530,7 +532,7 @@ export function attentionItems(
     });
   }
   for (const item of data.absences.filter((absence) => absence.status === "Pending")) {
-    const label = `Absence on ${new Date(`${dateKey(item.date)}T00:00:00`).toLocaleDateString("en-PH", { weekday: "short", month: "short", day: "numeric" })}`;
+    const label = `Absence on ${formatPhDay(dateKey(item.date), { weekday: "short", month: "short", day: "numeric" })}`;
     out.push({
       key: `absence-${item.id}`, owner: decider, tone: "waiting", icon: "ban", topic: "Absence", title: `${label} needs a decision`, text: item.reason, since: dateKey(item.date),
       action: canDecide
@@ -540,7 +542,7 @@ export function attentionItems(
   }
   for (const doc of data.documents.filter((item) => item.status === "Pending")) {
     out.push({
-      key: `document-${doc.id}`, owner: decider, tone: "waiting", icon: "document", topic: "Requirement", title: `${doc.doc_type} needs a decision`, text: doc.original_filename, since: localDateKey(doc.uploaded_at),
+      key: `document-${doc.id}`, owner: decider, tone: "waiting", icon: "document", topic: "Requirement", title: `${doc.doc_type} needs a decision`, text: doc.original_filename, since: phDateKey(doc.uploaded_at),
       action: canDecide
         ? { kind: "decide", target: { kind: "document", id: doc.id, label: doc.doc_type }, approveLabel: "Approve", rejectLabel: "Reject" }
         : { kind: "open", tab: "documents", label: "View" },
@@ -556,7 +558,7 @@ export function attentionItems(
   }
   const submitted = data.tasks.filter((task) => task.status === "Submitted");
   if (submitted.length) {
-    const since = submitted.map((task) => (task.submitted_at ? localDateKey(task.submitted_at) : "")).filter(Boolean).sort()[0];
+    const since = submitted.map((task) => (task.submitted_at ? phDateKey(task.submitted_at) : "")).filter(Boolean).sort()[0];
     out.push({
       key: "review-tasks", owner: "supervisor", tone: "waiting", icon: "tasks", topic: "Task", title: `${plural(submitted.length, "task", "tasks")} to review`,
       text: submitted.map((task) => task.title).join(", "), since,
@@ -566,7 +568,7 @@ export function attentionItems(
   for (const report of journals.filter((item) => item.status === "Submitted")) {
     out.push({
       key: `report-${report.id}`, owner: "supervisor", tone: "waiting", icon: "note", topic: "Weekly report", title: `Week ${weekNo(dateKey(report.week_start))} report to review`,
-      text: report.activities, since: localDateKey(report.submitted_at),
+      text: report.activities, since: phDateKey(report.submitted_at),
       action: { kind: "open", tab: "journals", label: "Read", report: dateKey(report.week_start) },
     });
   }
@@ -606,7 +608,7 @@ export function attentionItems(
   for (const doc of data.documents.filter((item) => item.status === "Rejected")) {
     out.push({
       key: `rejected-doc-${doc.id}`, owner: "student", tone: "bad", icon: "document", topic: "Requirement", title: `${doc.doc_type} needs a new upload`,
-      text: doc.review_notes ? `Rejected: ${doc.review_notes}` : "Rejected.", since: localDateKey(doc.uploaded_at),
+      text: doc.review_notes ? `Rejected: ${doc.review_notes}` : "Rejected.", since: phDateKey(doc.uploaded_at),
       action: { kind: "open", tab: "documents", label: "View" },
     });
   }
@@ -621,7 +623,7 @@ export function attentionItems(
   if (data.student.completion_requested_at) {
     out.push({
       key: "completion", owner: "you", tone: "good", icon: "cap", topic: "Completion", title: "Asked for a completion review",
-      text: "Check the time record and the final evaluation.", since: localDateKey(data.student.completion_requested_at),
+      text: "Check the time record and the final evaluation.", since: phDateKey(data.student.completion_requested_at),
       action: { kind: "open", tab: "record", label: "Time record" },
     });
   }

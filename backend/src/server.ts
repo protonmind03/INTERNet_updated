@@ -80,13 +80,13 @@ import {
   type OfflineAction,
 } from "./services/offlineActions";
 import { registerExtensionRoutes } from "./routes/extensions";
+import { PH_PG_OPTIONS, PH_TIME_ZONE, phToday, usePhilippineProcessTime } from "./services/phTime";
+import { cleanId, sameId, sqlSameId } from "./services/ids";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
-// displayed time by eight hours.
-// Set unconditionally: a host that presets TZ (for example to UTC) would
-// otherwise shift them just the same.
-process.env.TZ = "Asia/Manila";
+// displayed time by eight hours (services/phTime.ts).
+usePhilippineProcessTime();
 
 const app = express();
 
@@ -252,7 +252,7 @@ const isLocalDatabase = ["localhost", "127.0.0.1", "::1"].includes(
 const pool = new Pool({
   connectionString: databaseUrl,
   ssl: isLocalDatabase ? false : { rejectUnauthorized: false },
-  options: "-c timezone=Asia/Manila",
+  options: PH_PG_OPTIONS,
 });
 
 const vapidPublicKey = process.env.WEB_PUSH_VAPID_PUBLIC_KEY;
@@ -1765,7 +1765,7 @@ app.get("/api/test-db", async (_req, res) => {
 
     return res.json({
       message: "Database connected!",
-      timezone: "Asia/Manila",
+      timezone: PH_TIME_ZONE,
       time: result.rows[0].now,
     });
   } catch (error) {
@@ -2036,7 +2036,7 @@ app.get(
             "Student ID is required.",
         });
       }
-      if (auth?.role === "student" && auth.id !== studentId) {
+      if (auth?.role === "student" && !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own student information.",
         });
@@ -2114,7 +2114,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({ message: "You can only view your own tasks." });
       }
       if (!studentId) {
@@ -2191,7 +2191,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own attendance.",
         });
@@ -2429,7 +2429,7 @@ app.post(
             "Student ID is required.",
         });
       }
-      if (!auth || auth.id !== String(student_id)) {
+      if (!auth || !sameId(auth.id, String(student_id))) {
         return res.status(403).json({
           message: "You can only record your own attendance.",
         });
@@ -2588,8 +2588,8 @@ app.post(
       | INSERT ATTENDANCE
       |--------------------------------------------------------------------------
       |
-      | NOW() uses Asia/Manila because the PostgreSQL
-      | connection timezone was configured above.
+      | NOW() is Philippine time because the PostgreSQL
+      | connection is opened with PH_PG_OPTIONS (services/phTime.ts).
       |
       */
 
@@ -2766,7 +2766,7 @@ async function attendanceStepFor(
     if (seen.rows.length > 0) {
       const first = seen.rows[0];
       if (
-        first.student_id === auth?.id &&
+        sameId(first.student_id, auth?.id) &&
         first.attendance_id === logId &&
         first.action === action
       ) {
@@ -3054,7 +3054,7 @@ app.put(
       |--------------------------------------------------------------------------
       |
       | NOW() = Philippine Time because the database
-      | connection timezone is Asia/Manila.
+      | connection is opened with PH_PG_OPTIONS.
       |
       | $4 is the time the button was pressed, for a time-out recorded while
       | the phone was offline; it is NULL for a live request.
@@ -3602,7 +3602,7 @@ app.get(
         supervisorId,
       } = req.params;
 
-      if (!auth || auth.id !== supervisorId) {
+      if (!auth || !sameId(auth.id, supervisorId)) {
         return res.status(403).json({
           message: "You can only view attendance for your own interns.",
         });
@@ -3890,7 +3890,7 @@ app.get(
         `
         WITH mine AS (
           SELECT TRIM(student_id::text) AS student_id FROM students
-          WHERE TRIM(supervisor_id::text) = TRIM($1::text) AND is_active = TRUE
+          WHERE ${sqlSameId("supervisor_id", "$1")} AND is_active = TRUE
         )
         SELECT
           (SELECT COUNT(*) FROM attendance a
@@ -3925,7 +3925,7 @@ app.get(
     try {
       const auth = (req as AuthedRequest).auth;
       const { supervisorId } = req.params;
-      if (!auth || auth.id !== supervisorId) {
+      if (!auth || !sameId(auth.id, supervisorId)) {
         return res.status(403).json({
           message: "You can only view your own dashboard.",
         });
@@ -4543,7 +4543,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own dashboard.",
         });
@@ -4989,7 +4989,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own concerns.",
         });
@@ -5067,7 +5067,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own notifications.",
         });
@@ -5080,7 +5080,7 @@ app.get(
         });
       }
 
-      return res.json(await notificationList(req, "student_id", studentId, ""));
+      return res.json(await notificationList(req, "student_id", auth.id, ""));
     } catch (error) {
       console.error(
         "GET NOTIFICATIONS ERROR:",
@@ -5115,7 +5115,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own notifications.",
         });
@@ -5187,7 +5187,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own notification count.",
         });
@@ -5332,7 +5332,7 @@ app.put(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only mark your own notifications as read.",
         });
@@ -5428,7 +5428,7 @@ app.get(
         studentId,
       } = req.params;
 
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({
           message: "You can only view your own OJT schedule.",
         });
@@ -5503,7 +5503,7 @@ app.get(
   try {
     const auth = (req as AuthedRequest).auth;
     const { studentId } = req.params;
-    if (!auth || auth.id !== studentId) {
+    if (!auth || !sameId(auth.id, studentId)) {
       return res.status(403).json({
         message: "You can only view your own company information.",
       });
@@ -5668,7 +5668,7 @@ app.get(
           ), 0) / s.required_hours ELSE 0 END AS progress
         FROM students s
         LEFT JOIN supervisors sup
-          ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+          ON ${sqlSameId("sup.supervisor_id", "s.supervisor_id")}
         LEFT JOIN terms term ON term.id = s.term_id
         LEFT JOIN programs prog ON prog.id = s.program_id
         LEFT JOIN majors major ON major.id = s.major_id
@@ -5728,7 +5728,7 @@ async function notifySupervisorAssignment(
         type: "info",
       });
     }
-    if (previousSupervisorId && previousSupervisorId !== currentSupervisorId) {
+    if (previousSupervisorId && !sameId(previousSupervisorId, currentSupervisorId)) {
       await createNotification({
         supervisorId: previousSupervisorId,
         title: "Intern reassigned",
@@ -5751,19 +5751,18 @@ async function supervisorProblem(
   supervisorId: unknown,
   currentStudentId?: string
 ): Promise<string | null> {
-  if (supervisorId === undefined || supervisorId === null || supervisorId === "") {
-    return null;
-  }
+  const id = cleanId(supervisorId);
+  if (!id) return null;
   const result = await pool.query<{ is_active: boolean }>(
     `SELECT is_active FROM supervisors WHERE supervisor_id = $1`,
-    [String(supervisorId)]
+    [id]
   );
   if (result.rows.length === 0) return "Selected supervisor does not exist.";
   if (result.rows[0].is_active) return null;
   if (currentStudentId) {
     const current = await pool.query(
       `SELECT 1 FROM students WHERE student_id = $1 AND supervisor_id = $2`,
-      [currentStudentId, String(supervisorId)]
+      [currentStudentId, id]
     );
     if (current.rows.length > 0) return null;
   }
@@ -5808,15 +5807,16 @@ app.post(
   async (req, res) => {
     try {
       const {
-        student_id,
         email,
         password,
         name,
         program,
         company,
-        supervisor_id,
         required_hours,
       } = req.body;
+      // Ids are saved trimmed, so every comparison can be a plain one.
+      const student_id = cleanId(req.body?.student_id);
+      const supervisor_id = cleanId(req.body?.supervisor_id);
 
       if (!student_id || !email || !password || !name) {
         return res.status(400).json({
@@ -5982,7 +5982,7 @@ app.put(
           // A chosen program's name is the text that is displayed.
           placement ? placement.program_text : program || null,
           company || null,
-          supervisor_id || null,
+          cleanId(supervisor_id) || null,
           required_hours ? Math.round(Number(required_hours)) : null,
           studentId,
           // Only reassign (or unassign) when the request names a supervisor
@@ -6014,7 +6014,7 @@ app.put(
 
       const previousSupervisor = before.rows[0]?.supervisor_id ?? null;
       const currentSupervisor = result.rows[0].supervisor_id ?? null;
-      if (previousSupervisor !== currentSupervisor) {
+      if (cleanId(previousSupervisor) !== cleanId(currentSupervisor)) {
         await notifySupervisorAssignment(
           String(result.rows[0].student_id),
           result.rows[0].name,
@@ -6119,7 +6119,7 @@ app.get(
           sup.id, sup.supervisor_id, sup.email, sup.name, sup.company,
           sup.department, sup.is_active,
           (SELECT COUNT(*) FROM students s
-            WHERE TRIM(s.supervisor_id::text) = TRIM(sup.supervisor_id::text)
+            WHERE ${sqlSameId("s.supervisor_id", "sup.supervisor_id")}
               AND s.is_active = TRUE
           ) AS intern_count
         FROM supervisors sup
@@ -6239,8 +6239,8 @@ app.post(
   requireCoordinator,
   async (req, res) => {
     try {
-      const { supervisor_id, email, password, name, company, department } =
-        req.body;
+      const { email, password, name, company, department } = req.body;
+      const supervisor_id = cleanId(req.body?.supervisor_id);
 
       if (!supervisor_id || !email || !password || !name) {
         return res.status(400).json({
@@ -6739,7 +6739,7 @@ app.get(
           tk.overdue_tasks
         FROM students s
         LEFT JOIN supervisors sup
-          ON TRIM(sup.supervisor_id::text) = TRIM(s.supervisor_id::text)
+          ON ${sqlSameId("sup.supervisor_id", "s.supervisor_id")}
         LEFT JOIN programs prog ON prog.id = s.program_id
         LEFT JOIN blocks blk ON blk.id = s.block_id
         LEFT JOIN programs blkprog ON blkprog.id = blk.program_id
@@ -6762,7 +6762,7 @@ app.get(
                 AND ($2::date IS NULL OR a.date <= $2::date)
             ) AS period_logs
           FROM attendance a
-          WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)
+          WHERE ${sqlSameId("a.student_id", "s.student_id")}
         ) att ON TRUE
         LEFT JOIN LATERAL (
           SELECT
@@ -6772,7 +6772,7 @@ app.get(
               WHERE t.status IN ('Pending', 'In Progress') AND t.due_date < CURRENT_DATE
             ) AS overdue_tasks
           FROM tasks t
-          WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+          WHERE ${sqlSameId("t.student_id", "s.student_id")}
             AND ${released("t.")}
         ) tk ON TRUE
         WHERE s.is_active = TRUE${scope.sql}
@@ -7018,7 +7018,7 @@ app.get(
       // The days covered: "the last N days", or any first and last day (services/analyticsRange.ts).
       const range = readRange(
         req.query as Record<string, unknown>,
-        new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date())
+        phToday()
       );
       if ("problem" in range) return res.status(400).json({ message: range.problem });
       const days = range.days;
@@ -7321,9 +7321,7 @@ app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), u
     }
 
     // Dates are compared as text in Philippine time, the zone deadlines use.
-    const todayInManila = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Manila",
-    }).format(new Date());
+    const todayInManila = phToday();
     if (
       typeof due_date !== "string" ||
       !/^\d{4}-\d{2}-\d{2}$/.test(due_date) ||
@@ -7428,7 +7426,7 @@ app.get(
     try {
       const auth = (req as AuthedRequest).auth;
       const { supervisorId } = req.params;
-      if (!auth || auth.id !== supervisorId) {
+      if (!auth || !sameId(auth.id, supervisorId)) {
         return res.status(403).json({ message: "You can only view your own task queue." });
       }
 
@@ -7441,8 +7439,8 @@ app.get(
           (SELECT g.name FROM task_groups g WHERE g.id = t.task_group_id) AS team_name
         FROM tasks t
         INNER JOIN students s
-          ON TRIM(s.student_id::text) = TRIM(t.student_id::text)
-        WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+          ON ${sqlSameId("s.student_id", "t.student_id")}
+        WHERE ${sqlSameId("s.supervisor_id", "$1")}
           AND s.is_active = TRUE
         ORDER BY
           CASE t.status WHEN 'Submitted' THEN 0 ELSE 1 END,
@@ -7679,7 +7677,7 @@ app.post(
 
     const evaluatorType =
       auth.role === "coordinator" ? "teacher" : auth.role;
-    if (auth.role === "student" && auth.id !== String(student_id)) {
+    if (auth.role === "student" && !sameId(auth.id, String(student_id))) {
       return res.status(403).json({
         message: "Students can only submit feedback about their own placement.",
       });
@@ -7815,7 +7813,7 @@ app.get(
     if (!auth) {
       return res.status(401).json({ message: "Login is required." });
     }
-    if (auth.role === "student" && auth.id !== studentId) {
+    if (auth.role === "student" && !sameId(auth.id, studentId)) {
       return res.status(403).json({ message: "You can only view your own evaluations." });
     }
     if (auth.role === "supervisor") {
@@ -7864,13 +7862,13 @@ app.get(
     try {
       const auth = (req as AuthedRequest).auth;
       const { supervisorId } = req.params;
-      if (!auth || auth.id !== supervisorId) {
+      if (!auth || !sameId(auth.id, supervisorId)) {
         return res.status(403).json({
           message: "You can only view your own notifications.",
         });
       }
 
-      return res.json(await notificationList(req, "supervisor_id", supervisorId, "LIMIT 100"));
+      return res.json(await notificationList(req, "supervisor_id", auth.id, "LIMIT 100"));
     } catch (error) {
       console.error("GET SUPERVISOR NOTIFICATIONS ERROR:", error);
       return res.status(500).json({
@@ -7888,13 +7886,13 @@ app.get(
     try {
       const auth = (req as AuthedRequest).auth;
       const { coordinatorId } = req.params;
-      if (!auth || auth.id !== coordinatorId) {
+      if (!auth || !sameId(auth.id, coordinatorId)) {
         return res.status(403).json({
           message: "You can only view your own notifications.",
         });
       }
 
-      return res.json(await notificationList(req, "coordinator_id", coordinatorId, "LIMIT 100"));
+      return res.json(await notificationList(req, "coordinator_id", auth.id, "LIMIT 100"));
     } catch (error) {
       console.error("GET COORDINATOR NOTIFICATIONS ERROR:", error);
       return res.status(500).json({
@@ -7923,7 +7921,7 @@ app.get(
   try {
     const auth = (req as AuthedRequest).auth;
     const { studentId } = req.params;
-    if (!auth || auth.id !== studentId) {
+    if (!auth || !sameId(auth.id, studentId)) {
       return res.status(403).json({ message: "You can only view your own profile." });
     }
 
@@ -7992,7 +7990,7 @@ app.put(
     const auth = (req as AuthedRequest).auth;
     const { studentId } = req.params;
 
-    if (!auth || auth.id !== studentId) {
+    if (!auth || !sameId(auth.id, studentId)) {
       return res.status(403).json({ message: "You can only update your own profile." });
     }
     // A request with no body leaves req.body undefined.
@@ -8057,7 +8055,7 @@ app.put(
     try {
       const auth = (req as AuthedRequest).auth;
       const { studentId } = req.params;
-      if (!auth || auth.id !== studentId) {
+      if (!auth || !sameId(auth.id, studentId)) {
         return res.status(403).json({ message: "You can only update your own contact details." });
       }
       const body = (req.body ?? {}) as Record<string, unknown>;
@@ -8118,7 +8116,7 @@ app.put(
     const auth = (req as AuthedRequest).auth;
     const accountId = String(req.params.studentId);
 
-    if (!auth || auth.id !== accountId) {
+    if (!auth || !sameId(auth.id, accountId)) {
       return res.status(403).json({
         message: "You can only change your own password.",
       });
@@ -8149,7 +8147,7 @@ app.get(
   try {
     const auth = (req as AuthedRequest).auth;
     const { supervisorId } = req.params;
-    if (!auth || auth.id !== supervisorId) {
+    if (!auth || !sameId(auth.id, supervisorId)) {
       return res.status(403).json({ message: "You can only view your own profile." });
     }
 
@@ -8199,7 +8197,7 @@ app.put(
     const { supervisorId } = req.params;
     const { name, email, department } = req.body;
 
-    if (!auth || auth.id !== supervisorId) {
+    if (!auth || !sameId(auth.id, supervisorId)) {
       return res.status(403).json({ message: "You can only update your own profile." });
     }
     if (!name || !email) {
@@ -8249,7 +8247,7 @@ app.put(
     const auth = (req as AuthedRequest).auth;
     const accountId = String(req.params.supervisorId);
 
-    if (!auth || auth.id !== accountId) {
+    if (!auth || !sameId(auth.id, accountId)) {
       return res.status(403).json({
         message: "You can only change your own password.",
       });
@@ -8280,7 +8278,7 @@ app.get(
     const auth = (req as AuthedRequest).auth;
     const { coordinatorId } = req.params;
 
-    if (!auth || auth.id !== coordinatorId) {
+    if (!auth || !sameId(auth.id, coordinatorId)) {
       return res.status(403).json({
         message: "You can only view your own profile.",
       });
@@ -8328,7 +8326,7 @@ app.put(
         ? req.body.department.trim()
         : null;
 
-    if (!auth || auth.id !== coordinatorId) {
+    if (!auth || !sameId(auth.id, coordinatorId)) {
       return res.status(403).json({
         message: "You can only update your own profile.",
       });
@@ -8385,7 +8383,7 @@ app.put(
     const auth = (req as AuthedRequest).auth;
     const accountId = String(req.params.coordinatorId);
 
-    if (!auth || auth.id !== accountId) {
+    if (!auth || !sameId(auth.id, accountId)) {
       return res.status(403).json({
         message: "You can only change your own password.",
       });
@@ -8426,7 +8424,7 @@ app.get(
   try {
     const auth = (req as AuthedRequest).auth;
     const { supervisorId } = req.params;
-    if (!auth || auth.id !== supervisorId) {
+    if (!auth || !sameId(auth.id, supervisorId)) {
       return res.status(403).json({ message: "You can only view your own interns." });
     }
 
@@ -8443,22 +8441,22 @@ app.get(
           WHERE b.id = s.block_id) AS block_name,
         (
           SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
-          WHERE TRIM(a.student_id::text) = TRIM(s.student_id::text)
+          WHERE ${sqlSameId("a.student_id", "s.student_id")}
             AND a.status = 'Verified'
         ) AS hours_rendered,
         (
           SELECT COUNT(*) FROM tasks t
-          WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+          WHERE ${sqlSameId("t.student_id", "s.student_id")}
             AND t.status IN ('Pending', 'In Progress')
             AND ${released("t.")}
         ) AS active_tasks,
         (
           SELECT COUNT(*) FROM tasks t
-          WHERE TRIM(t.student_id::text) = TRIM(s.student_id::text)
+          WHERE ${sqlSameId("t.student_id", "s.student_id")}
             AND t.status = 'Submitted'
         ) AS tasks_awaiting_review
       FROM students s
-      WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+      WHERE ${sqlSameId("s.supervisor_id", "$1")}
       AND s.is_active = TRUE
       ORDER BY s.name ASC
       `,
@@ -8614,7 +8612,7 @@ app.get(
   try {
     const auth = (req as AuthedRequest).auth;
     const { supervisorId } = req.params;
-    if (!auth || auth.id !== supervisorId) {
+    if (!auth || !sameId(auth.id, supervisorId)) {
       return res.status(403).json({
         message: "You can only view your own concerns.",
       });
@@ -9699,7 +9697,7 @@ app.listen(
     );
 
     console.log(
-      "Server timezone: Asia/Manila"
+      `Server timezone: ${PH_TIME_ZONE}`
     );
     startPostgresNotificationListener(pool);
     startDeadlineReminderScheduler(pool, createNotification);

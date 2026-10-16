@@ -38,6 +38,8 @@ import ProjectionLine from "../../components/ProjectionLine";
 import { useProjections } from "../../lib/useProjections";
 import { downloadSectionsCsv, fetchProgrammeReport, programmeSections } from "./programmeReport";
 import { describeFilters, useStudentFilters } from "./useStudentFilters";
+import { phStamp, phToday } from "../../lib/phTime";
+import { sameId } from "../../lib/ids";
 
 type MonitorRow = {
   student_id: string;
@@ -182,7 +184,7 @@ export default function CoordinatorMonitoring() {
         (flag) =>
           // With a term chosen, only the logs of the students listed above.
           (!term || termStudents.has(flag.student_id)) &&
-          (!focusStudent || flag.student_id === focusStudent) &&
+          (!focusStudent || sameId(flag.student_id, focusStudent)) &&
           isWithinDateRange(flag.date, dateFrom, dateTo) &&
           (!text ||
             [flag.student_name, flag.student_id, flag.company, flag.supervisor_name]
@@ -194,7 +196,7 @@ export default function CoordinatorMonitoring() {
 
   const rowPager = usePagination(visibleRows, 20);
   const flagPager = usePagination(visibleFlags, 10);
-  const focused = rows.find((row) => row.student_id === focusStudent);
+  const focused = rows.find((row) => sameId(row.student_id, focusStudent));
   const attentionCount = rows.filter(needsAttention).length;
   const hasRange = Boolean(dateFrom || dateTo);
 
@@ -207,10 +209,10 @@ export default function CoordinatorMonitoring() {
       const report = await fetchProgrammeReport(term);
       const termName = describeFilters(studentFilters);
       downloadSectionsCsv(
-        `internet-monitoring-${new Date().toISOString().slice(0, 10)}.csv`,
+        `internet-monitoring-${phToday()}.csv`,
         [
           ["INTERNet Monitoring Report"],
-          ["Generated at", new Date().toLocaleString()],
+          ["Generated at", phStamp()],
           ["Students", termName],
           ["Active students", report.students.length],
         ],

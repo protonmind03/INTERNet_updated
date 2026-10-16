@@ -24,7 +24,6 @@ import {
   formatHours,
   formatTime,
   greetingFor,
-  localDateKey,
 } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { savedFetch } from "../../lib/offlineStore";
@@ -35,6 +34,7 @@ import DayStatus, { NextStepButton } from "./DayStatus";
 import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
+import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 
 type DashboardData = {
   hoursRendered: number;
@@ -460,14 +460,13 @@ function WeekCard({ logs, loading }: { logs: AttendanceLog[]; loading: boolean }
         byDate.set(key, (byDate.get(key) || 0) + hours);
       }
     }
-    const today = new Date();
+    const today = phToday();
     return Array.from({ length: 7 }, (_, index) => {
-      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - (6 - index));
-      const key = localDateKey(date);
+      const key = phAddDays(today, index - 6);
       return {
         key,
         hours: byDate.get(key) || 0,
-        weekday: date.toLocaleDateString("en-PH", { weekday: "short" }),
+        weekday: formatPhDay(key, { weekday: "short" }),
         isToday: index === 6,
       };
     });

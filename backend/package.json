@@ -19,9 +19,11 @@
     "uploads:copy-to-bucket": "tsx src/scripts/copy-uploads-to-bucket.ts",
     "db:fk-orphans": "tsx src/scripts/fk-orphans.ts",
     "db:fk-validate": "tsx src/scripts/fk-validate.ts",
+    "db:id-spaces": "tsx src/scripts/id-spaces.ts",
     "privacy:purge-photos": "tsx src/scripts/purge-photos.ts",
     "uploads:backup": "tsx src/scripts/backup-uploads.ts",
-    "test": "node --test test/*.test.cjs"
+    "test": "node --test test/*.test.cjs",
+    "lint": "tsx src/scripts/lint-time-zone.ts"
   },
   "keywords": [],
   "author": "",

@@ -20,6 +20,7 @@ import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import BlockScheduleDialog from "./BlockScheduleDialog";
 import { refreshFilterOptions } from "./useStudentFilters";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -137,8 +138,8 @@ export default function CoordinatorPrograms() {
 
   const blocks = (data?.blocks ?? []).filter(
     (block) =>
-      (!blockProgram || String(block.program_id) === blockProgram) &&
-      (!blockTerm || (blockTerm === "none" ? block.term_id === null : String(block.term_id) === blockTerm))
+      (!blockProgram || sameId(block.program_id, blockProgram)) &&
+      (!blockTerm || (blockTerm === "none" ? block.term_id === null : sameId(block.term_id, blockTerm)))
   );
 
   const collegeMenu = (college: College): RowMenuItem[] => [
@@ -471,7 +472,7 @@ function EditDialog({
   const [error, setError] = useState("");
 
   const what = { college: "college", program: "program", major: "major", block: "block" }[kind];
-  const program = data.programs.find((item) => String(item.id) === programId);
+  const program = data.programs.find((item) => sameId(item.id, programId));
   const preview = program && section.trim() ? `${program.short_code} ${year}${section.trim().toUpperCase()}` : "";
 
   const submit = async (event: React.FormEvent) => {
@@ -597,7 +598,7 @@ function EditDialog({
               >
                 <option value="">Choose a program</option>
                 {data.programs
-                  .filter((item) => item.is_active || String(item.id) === programId)
+                  .filter((item) => item.is_active || sameId(item.id, programId))
                   .map((item) => (
                     <option key={item.id} value={String(item.id)}>
                       {item.short_code}: {item.name}
@@ -605,7 +606,7 @@ function EditDialog({
                   ))}
               </select>
             </FormField>
-            {data.majors.some((major) => String(major.program_id) === programId) && (
+            {data.majors.some((major) => sameId(major.program_id, programId)) && (
               <FormField
                 label="Major"
                 htmlFor="academic-major"
@@ -615,7 +616,7 @@ function EditDialog({
                 <select id="academic-major" value={majorId} onChange={(event) => setMajorId(event.target.value)} className="field">
                   <option value="">Any major</option>
                   {data.majors
-                    .filter((major) => String(major.program_id) === programId && (major.is_active || String(major.id) === majorId))
+                    .filter((major) => sameId(major.program_id, programId) && (major.is_active || sameId(major.id, majorId)))
                     .map((major) => (
                       <option key={major.id} value={String(major.id)}>
                         {major.name}
@@ -650,7 +651,7 @@ function EditDialog({
               <select id="academic-term" value={termId} onChange={(event) => setTermId(event.target.value)} className="field">
                 <option value="">No term</option>
                 {terms
-                  .filter((term) => !term.is_closed || String(term.id) === termId)
+                  .filter((term) => !term.is_closed || sameId(term.id, termId))
                   .map((term) => (
                     <option key={term.id} value={String(term.id)}>
                       {term.name}

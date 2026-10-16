@@ -24,6 +24,7 @@ import EvaluationFormEditor from "./EvaluationFormEditor";
 import FilterBar from "./FilterBar";
 import { coordinatorRequest } from "./request";
 import { useStudentFilters } from "./useStudentFilters";
+import { sameId } from "../../lib/ids";
 
 type EvaluatorType = "supervisor" | "student" | "teacher";
 
@@ -327,7 +328,7 @@ function EvaluateDialog({
         body: { student_id: studentId, category, rating, comments: comments.trim() || null },
       });
       const name =
-        students.find((item) => item.student_id === studentId)?.name ||
+        students.find((item) => sameId(item.student_id, studentId))?.name ||
         editing?.student_name ||
         "The student";
       toast.success(`Evaluation ${editing ? "updated" : "saved"}. ${name} has been notified.`);
@@ -369,7 +370,7 @@ function EvaluateDialog({
           >
             <option value="">Choose a student</option>
             {/* Keeps the name showing for a student who is no longer active. */}
-            {editing && !students.some((item) => item.student_id === editing.student_id) && (
+            {editing && !students.some((item) => sameId(item.student_id, editing.student_id)) && (
               <option value={editing.student_id}>
                 {editing.student_name || editing.student_id}
               </option>

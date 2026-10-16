@@ -15,6 +15,8 @@
 |
 */
 
+import { PH_TIME_ZONE } from "./phTime";
+
 export type CalendarShift = {
   day: string;
   start_time: string | null;
@@ -82,9 +84,9 @@ export function scheduleCalendar(input: {
     "CALSCALE:GREGORIAN",
     "METHOD:PUBLISH",
     "X-WR-CALNAME:OJT schedule",
-    "X-WR-TIMEZONE:Asia/Manila",
+    `X-WR-TIMEZONE:${PH_TIME_ZONE}`,
     "BEGIN:VTIMEZONE",
-    "TZID:Asia/Manila",
+    `TZID:${PH_TIME_ZONE}`,
     "BEGIN:STANDARD",
     "DTSTART:19700101T000000",
     "TZOFFSETFROM:+0800",
@@ -109,11 +111,11 @@ export function scheduleCalendar(input: {
       "BEGIN:VEVENT",
       `UID:ojt-${code.toLowerCase()}-${compact(first)}@internet-ojt`,
       `DTSTAMP:${input.stamp}`,
-      `DTSTART;TZID=Asia/Manila:${compact(first)}T${clock(shift.start_time)}`,
-      `DTEND;TZID=Asia/Manila:${compact(first)}T${clock(shift.end_time)}`,
+      `DTSTART;TZID=${PH_TIME_ZONE}:${compact(first)}T${clock(shift.start_time)}`,
+      `DTEND;TZID=${PH_TIME_ZONE}:${compact(first)}T${clock(shift.end_time)}`,
       // The end of the last day in the Philippines is 15:59:59 UTC.
       `RRULE:FREQ=WEEKLY;BYDAY=${code};UNTIL=${compact(input.until)}T155959Z`,
-      ...(skipped.length > 0 ? [`EXDATE;TZID=Asia/Manila:${skipped.join(",")}`] : []),
+      ...(skipped.length > 0 ? [`EXDATE;TZID=${PH_TIME_ZONE}:${skipped.join(",")}`] : []),
       `SUMMARY:${text(place ? `OJT at ${place}` : "OJT")}`,
       ...(shift.focus ? [`DESCRIPTION:${text(shift.focus)}`] : []),
       ...(place ? [`LOCATION:${text(place)}`] : []),

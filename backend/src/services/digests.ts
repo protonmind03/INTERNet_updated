@@ -18,6 +18,7 @@ import type { Pool } from "pg";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
+import { phClock } from "./phTime";
 
 type Mailer = (email: { to: string; subject: string; text: string }) => Promise<void>;
 
@@ -37,24 +38,6 @@ const CHECK_EVERY_MS = 5 * 60_000;
 export function clockSetting(value: string | undefined, fallback: string): string {
   const raw = (value || "").trim();
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(raw) ? raw : fallback;
-}
-
-/** The date ("YYYY-MM-DD"), time ("HH:MM") and weekday (0 = Sunday) in the Philippines. */
-export function manilaClock(now: Date): { date: string; time: string; weekday: number } {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Manila",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  }).formatToParts(now);
-  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? "";
-  const date = `${part("year")}-${part("month")}-${part("day")}`;
-  // "24" is how some runtimes write midnight.
-  const time = `${part("hour") === "24" ? "00" : part("hour")}:${part("minute")}`;
-  return { date, time, weekday: new Date(`${date}T00:00:00Z`).getUTCDay() };
 }
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -116,7 +99,7 @@ export async function sendOnce(
 export async function sendSupervisorDigests(pool: Pool, deps: DigestDeps = {}): Promise<string[]> {
   const env = deps.env ?? process.env;
   if (!(deps.emailReady ?? deps.smtpReady ?? isEmailConfigured())) return [];
-  const clock = manilaClock(deps.now ?? new Date());
+  const clock = phClock(deps.now ?? new Date());
   if (clock.time < clockSetting(env.SUPERVISOR_DIGEST_TIME, "07:30")) return [];
   const send = deps.send ?? sendEmail;
 

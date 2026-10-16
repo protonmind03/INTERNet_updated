@@ -13,7 +13,7 @@ import {
   SkeletonRows,
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatLongDate, localDateKey } from "../../lib/format";
+import { formatLongDate, phDateKey } from "../../lib/format";
 import type { Holiday } from "../../lib/useHolidays";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
@@ -53,7 +53,7 @@ export default function CoordinatorHolidays() {
     void Promise.resolve().then(load);
   }, [load]);
 
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   const upcoming = holidays.filter((holiday) => holiday.date >= today);
   const past = holidays.filter((holiday) => holiday.date < today).reverse();
 

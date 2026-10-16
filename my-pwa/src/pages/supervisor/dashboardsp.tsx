@@ -20,7 +20,7 @@ import {
   formatDayDate,
   formatHours,
   greetingFor,
-  localDateKey,
+  phDateKey,
 } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { useAccount } from "../../lib/session";
@@ -33,6 +33,7 @@ import TodayStrip from "./TodayStrip";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
+import { sameId } from "../../lib/ids";
 
 /** A row of the queue: something to decide, or a final evaluation to write. */
 type ReviewItem = QueueItem | FinalDue;
@@ -155,10 +156,10 @@ export default function SupervisorDashboard() {
   // The figures for the summary row, all from lists already loaded.
   const summary = useMemo(() => {
     const now = new Date();
-    const today = localDateKey(now);
+    const today = phDateKey(now);
     // Monday of this week.
     const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
-    const weekStart = localDateKey(monday);
+    const weekStart = phDateKey(monday);
     const open = work.tasks.filter(
       (task) => task.status === "Pending" || task.status === "In Progress"
     );
@@ -176,7 +177,7 @@ export default function SupervisorDashboard() {
   // The queue narrowed to one intern, when one is chosen.
   const scoped = useMemo(
     () =>
-      (internId ? queue.filter((item) => item.entry.student_id === internId) : queue).filter((item) =>
+      (internId ? queue.filter((item) => sameId(item.entry.student_id, internId)) : queue).filter((item) =>
         inGroup(item.entry.student_id)
       ),
     [queue, internId, inGroup]

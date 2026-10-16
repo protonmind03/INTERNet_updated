@@ -18,6 +18,30 @@ export default defineConfig([
     languageOptions: {
       globals: globals.browser,
     },
+    rules: {
+      // A date formatted without a time zone shows the device's day and
+      // hour, not the Philippine ones the server means. Use formatPh or
+      // the helpers in lib/format.ts, or state timeZone in the call.
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector:
+            "CallExpression[callee.property.name=/^toLocale(Date|Time)String$/]:not(:has(Property[key.name='timeZone']))",
+          message:
+            'Give toLocaleDateString/toLocaleTimeString a timeZone, or use formatPh from lib/phTime.ts.',
+        },
+        {
+          selector:
+            "CallExpression[callee.property.name='toLocaleString'][callee.object.type='NewExpression'][callee.object.callee.name='Date']:not(:has(Property[key.name='timeZone']))",
+          message: 'Give new Date().toLocaleString() a timeZone, or use phStamp from lib/phTime.ts.',
+        },
+        {
+          selector:
+            "NewExpression[callee.object.name='Intl'][callee.property.name='DateTimeFormat']:not(:has(Property[key.name='timeZone']))",
+          message: 'Give Intl.DateTimeFormat a timeZone (PH_TIME_ZONE from lib/phTime.ts).',
+        },
+      ],
+    },
   },
   {
     // The brand kit's feedback file exports its hooks beside its components,

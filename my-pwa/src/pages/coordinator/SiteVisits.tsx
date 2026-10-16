@@ -13,9 +13,10 @@ import {
   SkeletonRows,
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatLongDate, localDateKey } from "../../lib/format";
+import { formatLongDate, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import { sameId } from "../../lib/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -214,7 +215,7 @@ function VisitDialog({
   onClose: () => void;
   onSaved: () => void;
 }) {
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   const [company, setCompany] = useState(String(visit?.company_id ?? startCompany ?? ""));
   const [date, setDate] = useState(visit?.visit_date || today);
   const [findings, setFindings] = useState(visit?.findings || "");
@@ -274,7 +275,7 @@ function VisitDialog({
             >
               <option value="">Choose a company</option>
               {companies
-                .filter((item) => item.is_active || String(item.id) === company)
+                .filter((item) => item.is_active || sameId(item.id, company))
                 .map((item) => (
                   <option key={item.id} value={item.id}>
                     {item.name}

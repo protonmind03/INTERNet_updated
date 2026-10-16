@@ -4,13 +4,14 @@ import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
 import { loadCatalogue, resolvePlacement } from "../services/academics";
-import { manilaClock } from "../services/digests";
+import { phClock, phSql, phToday } from "../services/phTime";
 import { readReleaseDay, released, scheduledLater } from "../services/taskRelease";
 import { deleteKeeping } from "../services/removedRecords";
 import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverables";
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
 import { uploadQuota } from "../services/uploadQuota";
+import { sameId, sqlSameId } from "../services/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -83,11 +84,6 @@ const JOURNAL_COLUMNS = `
   j.submitted_at, j.updated_at, j.reviewed_at,
   (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'journal' AND px.owner_id = j.id AND px.removed_at IS NULL) AS pictures
 `;
-
-/** Today's date in the Philippines, the zone every OJT date is kept in. */
-function todayInManila(): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
-}
 
 /** "YYYY-MM-DD" a number of days from a given date. */
 function shiftDate(date: string, days: number): string {
@@ -176,7 +172,7 @@ export function registerExtensionRoutes(
       if (reason.length < 5) {
         return res.status(400).json({ message: "Give a reason for the absence." });
       }
-      const today = todayInManila();
+      const today = phToday();
       if (date < shiftDate(today, -30) || date > shiftDate(today, 30)) {
         return res.status(400).json({
           message: "An absence can be filed up to 30 days back or 30 days ahead.",
@@ -235,7 +231,7 @@ export function registerExtensionRoutes(
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
-        if (auth.id !== req.params.studentId) {
+        if (!sameId(auth.id, req.params.studentId)) {
           return res.status(403).json({ message: "You can only view your own absences." });
         }
         const result = await pool.query(
@@ -451,7 +447,7 @@ export function registerExtensionRoutes(
       if (!DATE_PATTERN.test(dueDate) || Number.isNaN(Date.parse(dueDate))) {
         return res.status(400).json({ message: "Due date must be a valid date (YYYY-MM-DD)." });
       }
-      if (dueDate < todayInManila()) {
+      if (dueDate < phToday()) {
         return res.status(400).json({ message: "The due date cannot be in the past." });
       }
 
@@ -469,7 +465,7 @@ export function registerExtensionRoutes(
       const wasScheduled = previous.rows[0]?.scheduled === true;
       let releaseDay: string | null = null;
       if (wasScheduled) {
-        const today = todayInManila();
+        const today = phToday();
         if (req.body?.available_from === undefined) {
           releaseDay = previous.rows[0].release_day;
           if (releaseDay && dueDate < releaseDay) {
@@ -1561,7 +1557,7 @@ export function registerExtensionRoutes(
       const target = resettable[req.params.kind as keyof typeof resettable];
       if (!target) return next();
       // Your own password is changed on your Profile, with the current one.
-      if (target.role === "coordinator" && req.params.id === (req as AuthedRequest).auth?.id) {
+      if (target.role === "coordinator" && sameId(req.params.id, (req as AuthedRequest).auth?.id)) {
         return res.status(409).json({
           message: "Change your own password from your Profile.",
         });
@@ -2283,8 +2279,8 @@ export function registerExtensionRoutes(
       `
         WHERE ($1 = '' OR a.action = $1 OR a.action LIKE $1 || '.%')
           AND ($2 = '' OR a.actor_role = $2)
-          AND ($3 = '' OR (a.created_at AT TIME ZONE 'Asia/Manila')::date >= $3::date)
-          AND ($4 = '' OR (a.created_at AT TIME ZONE 'Asia/Manila')::date <= $4::date)
+          AND ($3 = '' OR ${phSql.date("a.created_at")} >= $3::date)
+          AND ($4 = '' OR ${phSql.date("a.created_at")} <= $4::date)
           AND ($5 = ''
             OR a.actor_id ILIKE '%' || $5 || '%'
             OR a.entity_id ILIKE '%' || $5 || '%'
@@ -2338,7 +2334,7 @@ export function registerExtensionRoutes(
       const [entries, total] = await Promise.all([
         pool.query(
           `
-          SELECT TO_CHAR(a.created_at AT TIME ZONE 'Asia/Manila', 'YYYY-MM-DD HH24:MI:SS') AS at,
+          SELECT TO_CHAR(${phSql.wallTime("a.created_at")}, 'YYYY-MM-DD HH24:MI:SS') AS at,
                  a.actor_role, a.actor_id, COALESCE(st.name, sup.name, co.name, '') AS actor_name,
                  a.action, a.entity_type, a.entity_id, a.details
           ${filters.joins} ${filters.where}
@@ -2361,7 +2357,7 @@ export function registerExtensionRoutes(
           ? [[`Only the newest ${entries.rows.length} of ${matched} matching entries are in this file. Narrow the dates to get the rest.`]]
           : []),
       ];
-      const { date } = manilaClock(new Date());
+      const { date } = phClock(new Date());
       res.locals.auditNote = {
         rows: entries.rows.length,
         filters: Object.entries(filters.summary).map(([key, value]) => `${key}=${value}`),
@@ -2442,8 +2438,8 @@ export function registerExtensionRoutes(
     if (!complaint) return null;
     const allowed =
       auth.role === "coordinator" ||
-      (auth.role === "student" && complaint.student_id === auth.id) ||
-      (auth.role === "supervisor" && complaint.filed_by_supervisor_id === auth.id);
+      (auth.role === "student" && sameId(complaint.student_id, auth.id)) ||
+      (auth.role === "supervisor" && sameId(complaint.filed_by_supervisor_id, auth.id));
     return allowed ? complaint : null;
   }
 
@@ -2722,7 +2718,7 @@ export function registerExtensionRoutes(
   app.get("/api/journals/student/:studentId", requireRole("student"), async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth!;
-      if (auth.id !== req.params.studentId) {
+      if (!sameId(auth.id, req.params.studentId)) {
         return res.status(403).json({ message: "You can only read your own weekly report." });
       }
       const result = await pool.query(
@@ -2732,7 +2728,7 @@ export function registerExtensionRoutes(
       );
       return res.json({
         journals: result.rows,
-        current_week_start: mondayOf(todayInManila()),
+        current_week_start: mondayOf(phToday()),
         limits: { min: JOURNAL_MIN, max: JOURNAL_MAX },
       });
     } catch (error) {
@@ -2748,7 +2744,7 @@ export function registerExtensionRoutes(
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
-        if (auth.id !== req.params.studentId) {
+        if (!sameId(auth.id, req.params.studentId)) {
           return res.status(403).json({ message: "You can only write your own weekly report." });
         }
         const week = String(req.params.weekStart);
@@ -2758,7 +2754,7 @@ export function registerExtensionRoutes(
         if (mondayOf(week) !== week) {
           return res.status(400).json({ message: "A report's week starts on a Monday." });
         }
-        if (week > mondayOf(todayInManila())) {
+        if (week > mondayOf(phToday())) {
           return res.status(400).json({ message: "That week has not started yet." });
         }
         const read = readJournal(req.body);
@@ -3083,7 +3079,7 @@ export function registerExtensionRoutes(
   app.get("/api/students/:studentId/completion", requireRole("student"), async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth!;
-      if (auth.id !== req.params.studentId) {
+      if (!sameId(auth.id, req.params.studentId)) {
         return res.status(403).json({ message: "You can only see your own checklist." });
       }
       const checklist = await completionChecklist(auth.id);
@@ -3105,7 +3101,7 @@ export function registerExtensionRoutes(
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
-        if (auth.id !== req.params.studentId) {
+        if (!sameId(auth.id, req.params.studentId)) {
           return res.status(403).json({ message: "You can only ask for your own review." });
         }
         const checklist = await completionChecklist(auth.id);
@@ -3165,7 +3161,7 @@ export function registerExtensionRoutes(
   app.get("/api/students/:studentId/privacy", requireRole("student"), async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth!;
-      if (auth.id !== req.params.studentId) {
+      if (!sameId(auth.id, req.params.studentId)) {
         return res.status(403).json({ message: "You can only see your own privacy settings." });
       }
       const result = await pool.query<{ privacy_consent_at: string | null; privacy_consent_version: string | null }>(
@@ -3193,7 +3189,7 @@ export function registerExtensionRoutes(
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
-        if (auth.id !== req.params.studentId) {
+        if (!sameId(auth.id, req.params.studentId)) {
           return res.status(403).json({ message: "You can only agree for yourself." });
         }
         // The version read is sent back, so nobody agrees to wording they were not shown.
@@ -3230,7 +3226,7 @@ export function registerExtensionRoutes(
   app.get("/api/students/:studentId/data-export", requireRole("student"), async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth!;
-      if (auth.id !== req.params.studentId) {
+      if (!sameId(auth.id, req.params.studentId)) {
         return res.status(403).json({ message: "You can only download your own data." });
       }
       const mine = (sql: string) => pool.query(sql, [auth.id]).then((result) => result.rows);
@@ -3278,7 +3274,7 @@ export function registerExtensionRoutes(
       const { password: _password, auth_version: _version, must_change_password: _must, ...account } =
         profile[0] as Record<string, unknown>;
 
-      const today = todayInManila();
+      const today = phToday();
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="internet-my-data-${today}.json"`
@@ -3338,7 +3334,7 @@ export function registerExtensionRoutes(
       try {
         const auth = (req as AuthedRequest).auth!;
         const id = String(req.params.studentId);
-        if (auth.role === "student" && auth.id !== id) {
+        if (auth.role === "student" && !sameId(auth.id, id)) {
           return res.status(403).json({ message: "You can only see your own time record." });
         }
         if (auth.role === "supervisor") {
@@ -3371,7 +3367,7 @@ export function registerExtensionRoutes(
       if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
         return res.status(400).json({ message: "Name the month as YYYY-MM." });
       }
-      if (month > todayInManila().slice(0, 7)) {
+      if (month > phToday().slice(0, 7)) {
         return res.status(400).json({ message: "That month has not started yet." });
       }
       const owner = await pool.query<{ name: string; supervisor_name: string }>(
@@ -3565,8 +3561,8 @@ export function registerExtensionRoutes(
       const result = await pool.query<{ student_id: string }>(
         `SELECT TRIM(e.student_id::text) AS student_id
          FROM final_evaluations e
-         JOIN students s ON TRIM(s.student_id::text) = TRIM(e.student_id::text)
-         WHERE TRIM(s.supervisor_id::text) = TRIM($1::text)
+         JOIN students s ON ${sqlSameId("s.student_id", "e.student_id")}
+         WHERE ${sqlSameId("s.supervisor_id", "$1")}
          ORDER BY 1`,
         [auth.id]
       );
@@ -3584,7 +3580,7 @@ export function registerExtensionRoutes(
       try {
         const auth = (req as AuthedRequest).auth!;
         const id = String(req.params.studentId);
-        if (auth.role === "student" && auth.id !== id) {
+        if (auth.role === "student" && !sameId(auth.id, id)) {
           return res.status(403).json({ message: "You can only see your own evaluation." });
         }
         if (auth.role === "supervisor") {
@@ -3873,7 +3869,7 @@ export function registerExtensionRoutes(
         return res.status(400).json({ message: "Say whether the account is active." });
       }
       const active: boolean = req.body.is_active;
-      if (!active && target === auth.id) {
+      if (!active && sameId(target, auth.id)) {
         return res.status(409).json({
           message: "You cannot deactivate your own account. Ask another coordinator to do it.",
         });
@@ -3885,7 +3881,7 @@ export function registerExtensionRoutes(
       const actives = await client.query<{ coordinator_id: string }>(
         `SELECT coordinator_id FROM coordinators WHERE is_active = TRUE FOR UPDATE`
       );
-      if (!active && actives.rows.length === 1 && actives.rows[0].coordinator_id === target) {
+      if (!active && actives.rows.length === 1 && sameId(actives.rows[0].coordinator_id, target)) {
         await client.query("ROLLBACK");
         return res.status(409).json({
           message: "This is the only active coordinator account. Add or reactivate another before deactivating it.",
@@ -3944,7 +3940,7 @@ export function registerExtensionRoutes(
     if (!DATE_PATTERN.test(date) || Number.isNaN(Date.parse(`${date}T00:00:00Z`))) {
       return { problem: "Give the date of the visit, written as YYYY-MM-DD." };
     }
-    if (date > todayInManila()) {
+    if (date > phToday()) {
       return { problem: "A visit is logged after it happens; that date has not come yet." };
     }
     if (findings.length < 10 || findings.length > 3000) {

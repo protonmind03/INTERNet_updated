@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useState } from "react";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import { FILTER_KEYS, type StudentFilterState, type StudentFilters } from "./useStudentFilters";
+import { sameId } from "../../lib/ids";
 
 /*
 | The coordinator's saved views of the filter bar: a set of the bar's
@@ -89,7 +90,7 @@ export default function SavedViews({ state }: { state: StudentFilterState }) {
             id={selectId}
             value={current ? String(current.id) : ""}
             onChange={(event) => {
-              const view = views.find((item) => String(item.id) === event.target.value);
+              const view = views.find((item) => sameId(item.id, event.target.value));
               if (view) state.apply(view.filters);
             }}
             className="h-10 w-full min-w-44 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"

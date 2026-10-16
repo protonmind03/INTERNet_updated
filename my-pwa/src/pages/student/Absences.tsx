@@ -12,7 +12,7 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import { formatDayDate, localDateKey } from "../../lib/format";
+import { formatDayDate, phDateKey } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
@@ -29,7 +29,7 @@ type Absence = {
 function daysFromToday(days: number): string {
   const date = new Date();
   date.setDate(date.getDate() + days);
-  return localDateKey(date);
+  return phDateKey(date);
 }
 
 /**
@@ -188,7 +188,7 @@ function FileAbsenceDialog({
   onClose: () => void;
   onFiled: () => void;
 }) {
-  const [date, setDate] = useState(() => localDateKey(new Date()));
+  const [date, setDate] = useState(() => phDateKey(new Date()));
   const [reason, setReason] = useState("");
   const discardReason = useDraft("student", "absence-reason", reason, setReason);
   const [error, setError] = useState("");

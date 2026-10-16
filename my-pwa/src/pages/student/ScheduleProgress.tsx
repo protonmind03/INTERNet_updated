@@ -1,7 +1,7 @@
 import { useId, useMemo, useState } from "react";
 import { ColumnChart } from "../../components/charts";
 import { Card, CardHeader } from "../../components/ui";
-import { formatDate, formatHours, formatLongDate, localDateKey } from "../../lib/format";
+import { formatDate, formatHours, formatLongDate, phDateKey } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import {
   LATE_AFTER_MINUTES,
@@ -82,7 +82,7 @@ export default function ScheduleProgress({
   const { attendance } = useTimeIn();
   const logs = attendance.logs;
   const projection = [...useProjections("student").values()][0];
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
 
   const figures = useMemo(() => {
     const since = countedFrom(logs, termStart);

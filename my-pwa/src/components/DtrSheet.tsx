@@ -3,6 +3,7 @@ import { Button, Card } from "./ui";
 import { formatHours, formatLongDate, formatTime } from "../lib/format";
 import { timeColumns } from "../lib/timeColumns";
 import { errorText, toast } from "../lib/toast";
+import { formatPh, phCalendarDate } from "../lib/phTime";
 
 export type DtrLog = {
   id: number;
@@ -85,7 +86,7 @@ const monthOf = (date: string) => String(date).slice(0, 7);
 
 function monthLabel(month: string): string {
   const [year, index] = month.split("-").map(Number);
-  return new Date(year, index - 1, 1).toLocaleDateString("en-PH", {
+  return formatPh(phCalendarDate(year, index, 1), {
     month: "long",
     year: "numeric",
   });
@@ -144,7 +145,7 @@ export default function DtrSheet({
     return Array.from({ length: days }, (_, offset) => {
       const day = offset + 1;
       const key = `${month}-${String(day).padStart(2, "0")}`;
-      const weekday = new Date(year, index - 1, day).toLocaleDateString("en-PH", {
+      const weekday = formatPh(phCalendarDate(year, index, day), {
         weekday: "short",
       });
       const log = byDate.get(key);

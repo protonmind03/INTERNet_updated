@@ -1,5 +1,6 @@
 import { API_URL, withCoordinatorAuth } from "../../lib/api";
 import { withWorkingToast } from "../../lib/toast";
+import { phToday } from "../../lib/phTime";
 
 /**
  * Calls a coordinator endpoint and returns its JSON. A failed request
@@ -51,7 +52,7 @@ export async function downloadDocumentsZip(query: string): Promise<void> {
   const link = window.document.createElement("a");
   link.href = objectUrl;
   // Named here: the browser cannot read the server's file name across origins.
-  link.download = `internet-documents-${new Date().toISOString().slice(0, 10)}.zip`;
+  link.download = `internet-documents-${phToday()}.zip`;
   window.document.body.appendChild(link);
   link.click();
   link.remove();

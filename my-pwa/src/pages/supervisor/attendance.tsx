@@ -24,6 +24,7 @@ import ReviewDetail, { CorrectTimesDialog } from "./ReviewDetail";
 import { useSupervisorWork, type AttendanceEntry } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
+import { sameId } from "../../lib/ids";
 
 type Filter = "all" | "Pending" | "Verified" | "Rejected";
 
@@ -103,7 +104,7 @@ export default function SupervisorAttendanceApproval() {
 
   const scoped = useMemo(
     () =>
-      (internId ? attendance.filter((entry) => entry.student_id === internId) : attendance).filter((entry) =>
+      (internId ? attendance.filter((entry) => sameId(entry.student_id, internId)) : attendance).filter((entry) =>
         inGroup(entry.student_id)
       ),
     [attendance, internId, inGroup]
@@ -143,7 +144,7 @@ export default function SupervisorAttendanceApproval() {
     const text = search.trim().toLowerCase();
     return work.absences.filter(
       (item) =>
-        (!internId || item.student_id === internId) &&
+        (!internId || sameId(item.student_id, internId)) &&
         inGroup(item.student_id) &&
         isWithinDateRange(item.date, dateFrom, dateTo) &&
         (!text ||

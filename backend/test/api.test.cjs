@@ -4072,13 +4072,14 @@ test("each person keeps their own notification choices, and they default to on",
 
 test("the summary email rules: the clock, the setting and the wording", () => {
   require("tsx/cjs");
-  const { clockSetting, manilaClock, supervisorDigestLines } = require("../src/services/digests.ts");
+  const { clockSetting, supervisorDigestLines } = require("../src/services/digests.ts");
+  const { phClock } = require("../src/services/phTime.ts");
   assert.equal(clockSetting(undefined, "07:30"), "07:30");
   assert.equal(clockSetting(" 06:00 ", "07:30"), "06:00");
   for (const bad of ["7:30", "24:00", "07:60", "morning", ""]) assert.equal(clockSetting(bad, "07:30"), "07:30", bad);
   // 23:45 UTC on a Sunday is 07:45 on Monday in the Philippines.
-  assert.deepEqual(manilaClock(new Date("2026-10-11T23:45:00Z")), { date: "2026-10-12", time: "07:45", weekday: 1 });
-  assert.deepEqual(manilaClock(new Date("2026-10-11T16:00:00Z")), { date: "2026-10-12", time: "00:00", weekday: 1 });
+  assert.deepEqual(phClock(new Date("2026-10-11T23:45:00Z")), { date: "2026-10-12", time: "07:45", weekday: 1 });
+  assert.deepEqual(phClock(new Date("2026-10-11T16:00:00Z")), { date: "2026-10-12", time: "00:00", weekday: 1 });
   assert.deepEqual(supervisorDigestLines({ attendance: 0, tasks: 0, documents: 0, absences: 0, journals: 0 }), []);
   assert.deepEqual(
     supervisorDigestLines({ attendance: 1, tasks: 2, documents: 0, absences: 1, journals: 3 }),
@@ -8590,4 +8591,149 @@ test("uploads are counted per account: refused with a plain sentence past the ro
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.end();
   }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 1: ids, Philippine time, and a test for every route
+|--------------------------------------------------------------------------
+*/
+
+test("ids are compared one way, as trimmed text where an empty id names nothing, on both sides (M2)", () => {
+  require("tsx/cjs");
+  const server = require("../src/services/ids.ts");
+  const app = require("../../my-pwa/src/lib/ids.ts");
+  for (const { sameId, cleanId } of [server, app]) {
+    assert.equal(sameId("DEMO-STU-0001", " DEMO-STU-0001 "), true);
+    assert.equal(sameId(12, "12"), true, "a numeric id and the picker's text");
+    assert.equal(sameId("DEMO-STU-0001", "DEMO-STU-0002"), false);
+    assert.equal(sameId("abc", "ABC"), false, "ids keep their capitals");
+    for (const [left, right] of [["", ""], [null, null], [undefined, ""], ["  ", " "]]) {
+      assert.equal(sameId(left, right), false, `${JSON.stringify(left)} and ${JSON.stringify(right)} name nothing`);
+    }
+    assert.equal(cleanId("  STU-1 "), "STU-1");
+    assert.equal(cleanId(null), "");
+  }
+  assert.equal(server.sqlSameId("s.supervisor_id", "$1"), "TRIM(s.supervisor_id::text) = TRIM($1::text)");
+});
+
+test("ids a coordinator types are saved without outer spaces, so a plain comparison finds them (M2)", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const stamp = Date.now();
+  const sid = `TRIM-${stamp}`;
+  const supId = `TRIMSUP-${stamp}`;
+  try {
+    const made = await jsonRequest("/api/coordinator/students", jsonBody(coordinatorToken, "POST", {
+      student_id: `  ${sid} `,
+      email: `${sid.toLowerCase()}@trim.test`,
+      password: "TrimTest123!",
+      name: "Trim Check",
+      supervisor_id: ` ${supervisor.supervisor.supervisor_id}  `,
+    }));
+    assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    const supMade = await jsonRequest("/api/coordinator/supervisors", jsonBody(coordinatorToken, "POST", {
+      supervisor_id: ` ${supId} `,
+      email: `${supId.toLowerCase()}@trim.test`,
+      password: "TrimTest123!",
+      name: "Trim Supervisor",
+    }));
+    assert.equal(supMade.response.status, 201, JSON.stringify(supMade.body));
+    const stored = (await pool.query(`SELECT student_id, supervisor_id FROM students WHERE student_id = $1`, [sid])).rows[0];
+    assert.deepEqual(stored, { student_id: sid, supervisor_id: supervisor.supervisor.supervisor_id });
+    assert.equal((await pool.query(`SELECT 1 FROM supervisors WHERE supervisor_id = $1`, [supId])).rows.length, 1);
+
+    // An edit that names the supervisor with spaces keeps the same one, and announces no change.
+    const edited = await jsonRequest(`/api/coordinator/students/${sid}`, jsonBody(coordinatorToken, "PUT", { supervisor_id: `${supervisor.supervisor.supervisor_id} ` }));
+    assert.equal(edited.response.status, 200, JSON.stringify(edited.body));
+    assert.equal(edited.body.student.supervisor_id, supervisor.supervisor.supervisor_id);
+    const announced = await pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND title = 'Supervisor assigned'`, [sid]);
+    assert.equal(announced.rows[0].n, 1, "only the first assignment is announced");
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR supervisor_id = $2 OR message LIKE '%Trim Check%'`, [sid, supId]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM supervisors WHERE supervisor_id = $1`, [supId]);
+    await pool.end();
+  }
+});
+
+test("Philippine time comes from one module, and its SQL reads the same on a UTC connection (M3)", async () => {
+  require("tsx/cjs");
+  const ph = require("../src/services/phTime.ts");
+  // 16:30 UTC on the 16th is half past midnight on Saturday the 17th in Manila.
+  assert.deepEqual(ph.phClock(new Date("2026-10-16T16:30:00Z")), { date: "2026-10-17", time: "00:30", weekday: 6 });
+  assert.equal(ph.phToday(new Date("2026-10-16T15:59:00Z")), "2026-10-16");
+  assert.equal(ph.phMoment("2026-10-17", "08:00").toISOString(), "2026-10-17T00:00:00.000Z");
+  assert.equal(ph.PH_PG_OPTIONS, "-c timezone=Asia/Manila");
+
+  const { Client } = require("pg");
+  const url = new URL(process.env.DATABASE_PUBLIC_URL || "");
+  assert.ok(allowedLocalHosts.has(url.hostname), "direct database tests are for a local database only");
+  const wall = "'2026-10-17 08:00:00'::timestamp";
+  const read = async (zone) => {
+    const client = new Client({ connectionString: url.toString(), options: `-c timezone=${zone}` });
+    await client.connect();
+    try {
+      return (await client.query(
+        `SELECT ${ph.phSql.today}::text AS today,
+                EXTRACT(EPOCH FROM ${ph.phSql.moment(wall)})::bigint AS helper,
+                EXTRACT(EPOCH FROM ${wall}::timestamptz)::bigint AS naive,
+                ${ph.phSql.date("'2026-10-16T16:30:00Z'::timestamptz")}::text AS day,
+                TO_CHAR(${ph.phSql.wallTime("'2026-10-16T16:30:00Z'::timestamptz")}, 'HH24:MI') AS clock`
+      )).rows[0];
+    } finally {
+      await client.end();
+    }
+  };
+  const moment = Date.parse("2026-10-17T08:00:00+08:00") / 1000;
+  for (const zone of ["UTC", "Asia/Manila", "America/Los_Angeles"]) {
+    const before = ph.phToday();
+    const row = await read(zone);
+    assert.equal(Number(row.helper), moment, `${zone}: a stored Philippine time is the same moment`);
+    assert.equal(row.day, "2026-10-17", zone);
+    assert.equal(row.clock, "00:30", zone);
+    assert.ok([before, ph.phToday()].includes(row.today), `${zone}: today is the Philippine day`);
+  }
+  // Without the helper, a UTC reader is eight hours off. This is why it exists.
+  assert.equal(Number((await read("UTC")).naive), moment + 8 * 3600);
+});
+
+test("the app shows Philippine days and times whatever zone the device is set to (M3)", () => {
+  require("tsx/cjs");
+  const ph = require("../../my-pwa/src/lib/phTime.ts");
+  const format = require("../../my-pwa/src/lib/format.ts");
+  const kept = process.env.TZ;
+  try {
+    // A device in Kiribati (UTC+14), then one on UTC: the answers must not move.
+    for (const zone of ["Pacific/Kiritimati", "UTC"]) {
+      process.env.TZ = zone;
+      assert.equal(ph.phDateKey("2026-10-16T17:00:00.000Z"), "2026-10-17", zone);
+      assert.equal(ph.phDateKey("2026-10-16"), "2026-10-16", zone);
+      assert.equal(ph.phHour(new Date("2026-10-16T17:00:00Z")), 1, zone);
+      assert.equal(format.formatTime("2026-10-16T17:05:00.000Z").replace(/\s/g, " "), "1:05 AM", zone);
+      assert.equal(format.formatDate("2026-10-17"), "Oct 17, 2026", zone);
+      assert.equal(ph.formatPhDay("2026-10-17", { weekday: "short" }), "Sat", zone);
+      assert.equal(ph.phCalendarDate(2026, 12, 32).toISOString(), "2026-12-31T16:00:00.000Z", "a day past the month's end rolls over");
+      assert.equal(ph.phAddDays("2026-10-31", 1), "2026-11-01");
+      assert.equal(ph.daysBetween("2026-10-17", "2026-10-20"), 3);
+      assert.equal(format.greetingFor(new Date("2026-10-16T23:00:00Z")), "Good morning", `${zone}: 7 AM in Manila`);
+    }
+  } finally {
+    if (kept === undefined) delete process.env.TZ;
+    else process.env.TZ = kept;
+  }
+});
+
+test("the backend's date lint refuses a date formatted without its time zone (M3)", () => {
+  require("tsx/cjs");
+  const { timeZoneProblems } = require("../src/scripts/lint-time-zone.ts");
+  const lines = (source) => timeZoneProblems(source).map((problem) => problem.line);
+  assert.deepEqual(lines(`const a = d.toLocaleDateString("en-PH");`), [1]);
+  assert.deepEqual(lines(`const a = d.toLocaleTimeString("en-PH", { hour: "numeric" });`), [1]);
+  assert.deepEqual(lines(`const a = new Date().toLocaleString();`), [1]);
+  assert.deepEqual(lines(`const a = new Intl.DateTimeFormat("en-CA", options(x));`), [1]);
+  assert.deepEqual(lines(`const a = d.toLocaleDateString("en-PH", { timeZone: PH_TIME_ZONE, month: "short" });`), []);
+  assert.deepEqual(lines(`const a = new Intl.DateTimeFormat("en-CA", {\n  timeZone,\n  year: "numeric",\n});`), []);
+  assert.deepEqual(lines(`// d.toLocaleDateString()\nconst s = "x.toLocaleDateString()";\nconst n = (5).toLocaleString("en-PH");`), [], "comments, strings and numbers are left alone");
 });

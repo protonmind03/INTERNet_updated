@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { LivenessReport } from "../../components/LivenessCamera";
 import type { Prompt } from "../../lib/liveness/engine";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import { localDateKey } from "../../lib/format";
+import { phDateKey } from "../../lib/format";
 import { compressPhoto } from "../../lib/image";
 import { notifyDataChanged } from "../../lib/navCounts";
 import {
@@ -83,7 +83,7 @@ function withWaitingSteps(logs: AttendanceLog[], steps: QueuedStep[]): Attendanc
           {
             id: LOCAL_LOG_ID,
             student_id: "",
-            date: localDateKey(start.occurredAt),
+            date: phDateKey(start.occurredAt),
             time_in: start.occurredAt,
             break_time: null,
             break_end_time: null,
@@ -138,7 +138,7 @@ function messageFrom(data: Record<string, unknown>, fallback: string): string {
 
 /** The calendar day a log belongs to, as "YYYY-MM-DD". */
 export function logDateKey(log: AttendanceLog): string {
-  return log.time_in ? localDateKey(log.time_in) : String(log.date).split("T")[0];
+  return log.time_in ? phDateKey(log.time_in) : String(log.date).split("T")[0];
 }
 
 export function stageOf(log: AttendanceLog | undefined): DayStage {
@@ -218,13 +218,13 @@ export function useAttendance(studentId: string | undefined) {
   }, [load]);
 
   const todayLog = useMemo(() => {
-    const today = localDateKey(new Date());
+    const today = phDateKey(new Date());
     return logs.find((log) => logDateKey(log) === today);
   }, [logs]);
 
   // An earlier day the student timed in on but never timed out of.
   const openPastLog = useMemo(() => {
-    const today = localDateKey(new Date());
+    const today = phDateKey(new Date());
     return logs.find(
       // One that exists only on this phone cannot be corrected on the server yet.
       (log) => log.time_in && !log.time_out && logDateKey(log) < today && !isLocalLog(log)

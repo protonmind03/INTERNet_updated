@@ -1,6 +1,7 @@
 import type express from "express";
 import type { Pool } from "pg";
 import { appliesTo, dueOn, dueText, oneOff, readDeliverable } from "../services/deliverables";
+import { sameId } from "../services/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -82,7 +83,7 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
   app.get("/api/students/:studentId/deliverables", requireRole("student"), async (req, res) => {
     try {
       const auth = (req as Authed).auth!;
-      if (auth.id !== req.params.studentId) {
+      if (!sameId(auth.id, req.params.studentId)) {
         return res.status(403).json({ message: "You can only view your own requirements." });
       }
       const [once, weekly] = await Promise.all([

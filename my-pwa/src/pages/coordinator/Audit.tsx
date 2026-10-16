@@ -12,7 +12,7 @@ import {
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { API_URL, withCoordinatorAuth } from "../../lib/api";
-import { formatDateTime, localDateKey } from "../../lib/format";
+import { formatDateTime, phDateKey } from "../../lib/format";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
 import { serverPagination } from "../../lib/usePagination";
 import FilterBar from "./FilterBar";
@@ -113,11 +113,11 @@ type TermDates = { name: string; start_date: string; end_date: string; is_closed
 /** The dates a preset stands for. "This week" starts on Monday. */
 function presetRange(when: string, term: TermDates | null): { from: string; to: string } | null {
   const now = new Date();
-  const today = localDateKey(now);
+  const today = phDateKey(now);
   if (when === "today") return { from: today, to: today };
   if (when === "week") {
     const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
-    return { from: localDateKey(monday), to: today };
+    return { from: phDateKey(monday), to: today };
   }
   if (when === "term" && term) {
     return { from: String(term.start_date).slice(0, 10), to: String(term.end_date).slice(0, 10) };
@@ -375,7 +375,7 @@ export default function CoordinatorAudit() {
     coordinatorRequest<{ terms: TermDates[] }>("/api/coordinator/terms")
       .then((data) => {
         if (!current) return;
-        const today = localDateKey(new Date());
+        const today = phDateKey(new Date());
         const list = data.terms || [];
         setTerm(
           list.find(
@@ -481,7 +481,7 @@ export default function CoordinatorAudit() {
         throw new Error(data.message || "The audit log could not be exported.");
       }
       // Named here: a page on another address than the server cannot read the name the server gave it.
-      const name = `internet-audit-log-${localDateKey(new Date())}.csv`;
+      const name = `internet-audit-log-${phDateKey(new Date())}.csv`;
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;

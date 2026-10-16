@@ -23,7 +23,7 @@ import {
   formatHours,
   formatLongDate,
   formatTime,
-  localDateKey,
+  phDateKey,
 } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { focusId, recordId, useFocus, useFocusRecord } from "../../lib/useFocusRecord";
@@ -39,6 +39,7 @@ import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
 import TodayAttendance from "./TodayAttendance";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
+import { sameId } from "../../lib/ids";
 
 type Filter = "All" | "Verified" | "Pending" | "Rejected";
 
@@ -71,7 +72,7 @@ function DailyLogPage() {
   const [resubmitting, setResubmitting] = useState<AttendanceLog | null>(null);
   const [closing, setClosing] = useState<AttendanceLog | null>(null);
 
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   /** What the student can do about a log that is not in order, if anything. */
   const fixFor = (log: AttendanceLog): { label: string; run: () => void } | null => {
     if (!log.time_out && logDateKey(log) < today) {
@@ -123,7 +124,7 @@ function DailyLogPage() {
   const desktop = useMediaQuery("(min-width: 768px)");
   const focusedLog = focusId(useFocus(), "attendance");
   const focusedAt = focusedLog
-    ? visibleLogs.findIndex((log) => String(log.id) === focusedLog)
+    ? visibleLogs.findIndex((log) => sameId(log.id, focusedLog))
     : -1;
   const turnTo = pager.setPage;
   const [turned, setTurned] = useState(false);

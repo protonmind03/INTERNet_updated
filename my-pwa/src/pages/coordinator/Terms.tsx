@@ -15,7 +15,7 @@ import {
   type RowMenuItem,
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatDate, localDateKey } from "../../lib/format";
+import { formatDate, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import TermSetup from "./TermSetup";
@@ -51,12 +51,12 @@ function settingUp(term: Term): boolean {
   if (term.is_closed) return false;
   const limit = new Date();
   limit.setDate(limit.getDate() - SETUP_SHOWN_FOR_DAYS);
-  return term.start_date >= localDateKey(limit);
+  return term.start_date >= phDateKey(limit);
 }
 
 function standing(term: Term): { label: string; tone: "good" | "waiting" | "neutral" | "info" } {
   if (term.is_closed) return { label: "Closed", tone: "neutral" };
-  const today = localDateKey(new Date());
+  const today = phDateKey(new Date());
   if (today < term.start_date) return { label: "Not started", tone: "info" };
   if (today > term.end_date) return { label: "Ended, not closed", tone: "waiting" };
   return { label: "Running", tone: "good" };

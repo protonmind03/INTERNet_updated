@@ -3,7 +3,7 @@ import nodePath from "node:path";
 import type express from "express";
 import { Zip, ZipPassThrough } from "fflate";
 import type { Pool } from "pg";
-import { manilaClock } from "../services/digests";
+import { phClock } from "../services/phTime";
 import { zipNames, zipProblem } from "../services/documentZip";
 import { readPrivateFile } from "../services/privateFileStore";
 import { programmeReport, studentPerformance } from "../services/insights";
@@ -20,6 +20,7 @@ import { KPI_DEFINITIONS, readTarget, type KpiDefinition } from "../services/kpi
 import { loadKpiTargets } from "../services/kpis";
 import { compareSchedule, readSchedule, scheduleKey, type ScheduleDay } from "../services/schedules";
 import { termSetup } from "../services/termSetup";
+import { sameId } from "../services/ids";
 
 /*
 |--------------------------------------------------------------------------
@@ -285,7 +286,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
           .filter(Boolean)
           .join("; ") || "none";
 
-      res.status(200).type("application/zip").attachment(`internet-documents-${manilaClock(new Date()).date}.zip`);
+      res.status(200).type("application/zip").attachment(`internet-documents-${phClock(new Date()).date}.zip`);
       let failed = false;
       const zip = new Zip((error, chunk, final) => {
         if (error) {
@@ -389,7 +390,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       [students.rows.map((row) => row.student_id)]
     );
     const standing: Standing[] = students.rows.map((student) => {
-      const current = rows.rows.filter((row) => row.student_id === student.student_id);
+      const current = rows.rows.filter((row) => sameId(row.student_id, student.student_id));
       return { ...student, state: compareSchedule(current, wanted), current: scheduleKey(current) };
     });
     return { block: block.rows[0].name, students: standing };
