@@ -2,6 +2,7 @@
 import { cleanupOutdatedCaches, matchPrecache, precacheAndRoute } from "workbox-precaching";
 import { NavigationRoute, registerRoute } from "workbox-routing";
 import { CacheFirst } from "workbox-strategies";
+import { MEDIAPIPE_CACHE, MODELS_CACHE } from "./lib/liveness/trackerFiles";
 
 /*
 |--------------------------------------------------------------------------
@@ -12,8 +13,9 @@ import { CacheFirst } from "workbox-strategies";
 |
 | 1. Keeps a copy of the app itself (scripts, styles, icons, the sign-in
 |    font) so the app opens with no connection.
-| 2. Keeps the face-tracking files after their first download; they are
-|    large and never change within a version.
+| 2. Keeps the face-tracking files; they are large and never change within
+|    a version. A student's phone puts them here at sign-in
+|    (lib/liveness/trackerFiles.ts), so the camera check works offline.
 | 3. Shows push notifications and opens the right page when one is tapped.
 | 4. Waits to take over until the person agrees to the update.
 |
@@ -25,11 +27,7 @@ import { CacheFirst } from "workbox-strategies";
 
 declare const self: ServiceWorkerGlobalScope;
 
-// Bump these when the files under public/mediapipe or public/models change:
-// MEDIAPIPE to the @mediapipe/tasks-vision version pinned in package.json,
-// MODELS by one. The old cache is deleted when the new worker takes over.
-const MEDIAPIPE_CACHE = "mediapipe-0.10.14";
-const MODELS_CACHE = "models-v1";
+// The cache names live in lib/liveness/trackerFiles.ts, shared with the app.
 const VERSIONED_PREFIXES = ["mediapipe-", "models-"];
 // The cache the hand-written worker used before this one.
 const LEGACY_CACHES = ["internet-offline-v1"];

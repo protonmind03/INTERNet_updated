@@ -16,9 +16,12 @@ import { toast } from "./toast";
 | supervisor sees it when reviewing. Each step carries an id of its own, so
 | sending it twice records it once.
 |
-| Time-in can be kept too, when there is no connection at all. The camera
-| check needs the server, so a time-in recorded this way has no photo: the
-| server marks it, and the supervisor confirms it by itself. Until it has
+| Time-in can be kept too, when there is no connection at all. With a
+| voucher collected while online, the camera check runs on the phone and
+| the time-in waits here with its photo and the record the phone's key
+| signed (lib/offlineTimeIn.ts); it is sent as a form with the photo.
+| Without one it has no photo: the server marks it, and the supervisor
+| confirms it by itself. Either way, until it has
 | been sent the day has no log on the server, so the steps taken after it
 | are kept against LOCAL_LOG_ID and are given the real log's id the moment
 | the time-in is accepted. If the server answers that the day already has
@@ -50,6 +53,8 @@ export type QueuedStep = {
   requestId: string;
   /** Anything else the step carries: at time-out, the accomplishment note and the tasks worked on. */
   extra?: Record<string, unknown>;
+  /** A time-in's photo, when the camera check ran offline; sent as a form with `extra`. */
+  photo?: Blob;
 };
 
 /** Sent to the pages that show attendance, so they reload after a step is sent. */
@@ -72,25 +77,33 @@ function requestId(): string {
 
 /**
  * Keeps a time-in recorded with no connection. Returns it, or null when
- * this browser cannot keep it or one is already waiting.
+ * this browser cannot keep it or one is already waiting. `attested` is the
+ * photo and what was signed about it, when the camera check ran offline;
+ * its time is the moment the photo was taken.
  */
-export async function queueTimeIn(note: string): Promise<QueuedStep | null> {
+export async function queueTimeIn(
+  note: string,
+  attested?: { photo: Blob; takenAt: string; fields: Record<string, string> }
+): Promise<QueuedStep | null> {
   if ((await waitingSteps()).some((step) => step.path === "time-in")) return null;
-  return queueStep(LOCAL_LOG_ID, "time-in", note.trim() ? { note: note.trim() } : undefined);
+  const extra = { ...(note.trim() ? { note: note.trim() } : {}), ...(attested?.fields ?? {}) };
+  return queueStep(LOCAL_LOG_ID, "time-in", Object.keys(extra).length > 0 ? extra : undefined, attested);
 }
 
 /** Keeps a step for later. Returns it, or null when this browser cannot keep it. */
 export async function queueStep(
   logId: number,
   path: QueuedPath,
-  extra?: Record<string, unknown>
+  extra?: Record<string, unknown>,
+  attested?: { photo: Blob; takenAt: string }
 ): Promise<QueuedStep | null> {
   const step: QueuedStep = {
     logId,
     path,
-    occurredAt: new Date().toISOString(),
+    occurredAt: attested?.takenAt ?? new Date().toISOString(),
     requestId: requestId(),
     ...(extra ? { extra } : {}),
+    ...(attested ? { photo: attested.photo } : {}),
   };
   try {
     const id = await enqueue("student", step);
@@ -180,23 +193,32 @@ async function send(): Promise<"done" | "waiting"> {
       step = { ...step, logId: startedLog };
     }
     const timeIn = step.path === "time-in";
+    const fields = {
+      ...(step.extra ?? {}),
+      occurred_at: step.occurredAt,
+      client_request_id: step.requestId,
+      // This phone's clock now, so the server can tell how far it is off.
+      client_sent_at: new Date().toISOString(),
+    };
+    let body: BodyInit;
+    let headers: Record<string, string> = { "Content-Type": "application/json" };
+    if (step.photo) {
+      // A time-in with its photo goes as a form; the browser sets the type.
+      const form = new FormData();
+      for (const [key, value] of Object.entries(fields)) form.set(key, typeof value === "string" ? value : JSON.stringify(value));
+      form.set("image", new File([step.photo], "time-in.jpg", { type: step.photo.type || "image/jpeg" }));
+      body = form;
+      headers = {};
+    } else {
+      body = JSON.stringify(fields);
+    }
     let response: Response;
     try {
       response = await fetch(
         timeIn
           ? `${API_URL}/api/attendance/offline-time-in`
           : `${API_URL}/api/attendance/${step.logId}/${step.path}`,
-        withStudentAuth({
-          method: timeIn ? "POST" : "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...(step.extra ?? {}),
-            occurred_at: step.occurredAt,
-            client_request_id: step.requestId,
-            // This phone's clock now, so the server can tell how far it is off.
-            client_sent_at: new Date().toISOString(),
-          }),
-        })
+        withStudentAuth({ method: timeIn ? "POST" : "PUT", headers, body })
       );
     } catch {
       // No connection yet: keep this step and everything after it, and try again.

@@ -27,6 +27,7 @@ import {
   type TaskEntry,
 } from "./useSupervisorWork";
 import { sameId } from "../../lib/ids";
+import AttestedNote from "../../components/AttestedNote";
 
 /*
 |--------------------------------------------------------------------------
@@ -191,8 +192,9 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         </Quote>
       )}
 
-      <CaptureNote entry={entry} />
-      {entry.offline_time_in && (
+      {!entry.offline_attestation && <CaptureNote entry={entry} />}
+      {entry.offline_attestation && <AttestedNote attestation={entry.offline_attestation} />}
+      {entry.offline_time_in && !entry.offline_attestation && (
         <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
           <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-amber-600" />
           <span>
@@ -213,7 +215,9 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         </p>
       )}
 
-      {!entry.offline_time_in && <AttendancePhoto path={entry.image_url} role="supervisor" />}
+      {(!entry.offline_time_in || entry.offline_attestation) && (
+        <AttendancePhoto path={entry.image_url} role="supervisor" />
+      )}
 
       <Decision
         key={`${entry.id}-${entry.status}`}

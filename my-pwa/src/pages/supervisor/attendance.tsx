@@ -67,7 +67,12 @@ function LogMarks({ entry }: { entry: AttendanceEntry }) {
           Recorded in person
         </span>
       )}
-      {entry.offline_time_in ? (
+      {entry.offline_time_in && entry.offline_attestation ? (
+        <span className={`${mark} ${entry.offline_attestation.clock_moved ? "bg-red-50 text-red-900" : "bg-emerald-50 text-emerald-900"}`}>
+          <Icon name="check-circle" size={12} />
+          Offline · attested{entry.offline_attestation.clock_moved ? ", clock changed" : ""}
+        </span>
+      ) : entry.offline_time_in ? (
         <span className={`${mark} bg-amber-50 text-amber-900`}>
           <Icon name="clock" size={12} />
           Offline time-in, no photo

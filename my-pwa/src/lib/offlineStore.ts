@@ -10,15 +10,19 @@ import { useSyncExternalStore } from "react";
 |
 |   records  the last good answer to a few read-only requests (a student's
 |            dashboard, attendance, schedule, tasks and notifications; a
-|            supervisor's interns and review count)
+|            supervisor's interns and review count), and a student's
+|            vouchers for timing in offline (lib/offlineTimeIn.ts)
 |   drafts   text someone was typing and had not sent yet
 |   queue    actions taken offline, waiting to be sent
 |
 | Every row belongs to one account ("role|id"). Signing out, an ended
 | session and a forced password change erase that account's saved records
 | and drafts, so a shared phone does not show one person's records to the
-| next. No photo or file is ever kept, and the service worker stores no API
-| answer at all.
+| next. The service worker stores no API answer at all.
+|
+| No photo or file is kept, with one exception: the photo of a time-in
+| taken with no connection waits in the queue with it, and goes when the
+| time-in is sent, refused, or erased with the queue.
 |
 | Queued actions are the exception. Only a sign-out the person chose erases
 | them. When a session simply ends (it expired, or the password must be
@@ -263,6 +267,36 @@ export async function savedFetch(
       status: 200,
       headers: { "Content-Type": "application/json", "X-Saved-At": row.savedAt },
     });
+  }
+}
+
+/*
+|--------------------------------------------------------------------------
+| RECORDS KEPT BY THE APP ITSELF
+|--------------------------------------------------------------------------
+|
+| Saved like the answers above, and erased with them, but written by the
+| app rather than copied from one request.
+|
+*/
+
+export async function saveRecord<T>(role: OfflineRole, name: string, data: T): Promise<void> {
+  const owner = currentOwner(role);
+  if (!owner) return;
+  try {
+    await put(RECORDS, owner, name, data);
+  } catch {
+    /* Without storage the app works as if nothing had been kept. */
+  }
+}
+
+export async function readRecord<T>(role: OfflineRole, name: string): Promise<T | null> {
+  const owner = currentOwner(role);
+  if (!owner) return null;
+  try {
+    return (await get<T>(RECORDS, owner, name))?.data ?? null;
+  } catch {
+    return null;
   }
 }
 

@@ -7,6 +7,7 @@ import { cue } from "../../lib/cues";
 import { formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
+import type { OfflineVoucher } from "../../lib/offlineTimeIn";
 import type { LivenessChallenge } from "./useAttendance";
 
 /*
@@ -18,14 +19,22 @@ import type { LivenessChallenge } from "./useAttendance";
 | student takes the photo with the round button. Then the student sees the
 | photo (as it is saved, not mirrored), may add a note, and confirms.
 |
-| With no connection the camera check cannot run: the server sets it and
-| confirms it. The dialog then offers to record the time-in on the phone
-| instead, with no photo, and says what that means: it is sent later and
-| the supervisor has to confirm it.
+| With no connection, the camera check runs on the phone with the voucher
+| it collected for today while online (lib/offlineTimeIn.ts): the photo and
+| a record signed by the phone wait on it and are sent when the connection
+| is back. Without a voucher, or when the camera cannot work, the dialog
+| offers the time-in without a photo, and says what that means: it is sent
+| later and the supervisor has to confirm it.
 |
 */
 
-type Capture = { photo: File; preview: string; report: LivenessReport };
+type Capture = {
+  photo: File;
+  preview: string;
+  report: LivenessReport;
+  /** Set when the check ran offline, with today's voucher: when the photo was taken. */
+  offline?: { voucher: OfflineVoucher; takenAt: string };
+};
 
 export default function TimeInDialog({
   open,
@@ -35,6 +44,8 @@ export default function TimeInDialog({
   onSubmit,
   online,
   onOffline,
+  loadOfflineVoucher,
+  onOfflineAttested,
 }: {
   open: boolean;
   now: Date;
@@ -43,6 +54,14 @@ export default function TimeInDialog({
   online: boolean;
   /** Keeps the time-in on the phone. False when the browser cannot. */
   onOffline: (note: string) => Promise<boolean>;
+  /** Today's voucher for a time-in with a photo offline, if the phone has one. */
+  loadOfflineVoucher: () => Promise<OfflineVoucher | null>;
+  /** Keeps a time-in with its photo and signed record on the phone. False when it cannot. */
+  onOfflineAttested: (
+    photo: File,
+    note: string,
+    check: { voucher: OfflineVoucher; report: LivenessReport; takenAt: string }
+  ) => Promise<boolean>;
   loadChallenge: () => Promise<LivenessChallenge>;
   onSubmit: (
     photo: File,
@@ -62,6 +81,24 @@ export default function TimeInDialog({
   // Set when the server could not be reached for the camera check.
   const [unreachable, setUnreachable] = useState(false);
   const noConnection = !online || unreachable;
+  // Offline: today's voucher (undefined while it is looked up), and whether
+  // the student chose the time-in without a photo instead.
+  const [voucher, setVoucher] = useState<OfflineVoucher | null | undefined>(undefined);
+  const [withoutPhoto, setWithoutPhoto] = useState(false);
+  const offlineCamera = noConnection && Boolean(voucher) && !withoutPhoto;
+
+  useEffect(() => {
+    if (!open || !noConnection) return;
+    let cancelled = false;
+    void loadOfflineVoucher()
+      .catch(() => null)
+      .then((found) => {
+        if (!cancelled) setVoucher(found);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, noConnection, loadOfflineVoucher]);
 
   // Each time the dialog opens (or the photo is retaken) the server picks
   // new prompts, so no two checks ask for the same thing in the same order.
@@ -100,6 +137,8 @@ export default function TimeInDialog({
     setNote("");
     setError("");
     setUnreachable(false);
+    setVoucher(undefined);
+    setWithoutPhoto(false);
   };
 
   const close = () => {
@@ -138,9 +177,32 @@ export default function TimeInDialog({
     }
   };
 
+  // The camera check ran offline: the photo and the signed record wait on the phone.
+  const keepAttested = async (taken: Capture, offline: NonNullable<Capture["offline"]>) => {
+    setSaving(true);
+    setError("");
+    try {
+      if (!(await onOfflineAttested(taken.photo, note, { ...offline, report: taken.report }))) {
+        setError("This phone could not keep the photo for later. Time in without a photo, or ask your supervisor.");
+        return;
+      }
+      cue("saved");
+      toast.info(`Time-in saved on this phone at ${formatTime(new Date(offline.takenAt))}, with its photo. It will be sent when you're back online.`);
+      discardNote();
+      reset();
+      onClose();
+    } catch (keepError) {
+      setError(errorText(keepError, "Could not save your time-in on this phone."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (saving || !capture || !challenge) return;
+    if (saving || !capture) return;
+    if (capture.offline) return keepAttested(capture, capture.offline);
+    if (!challenge) return;
     setSaving(true);
     setError("");
     try {
@@ -174,13 +236,17 @@ export default function TimeInDialog({
       description={
         capture
           ? `Recorded at ${formatTime(now)} when you confirm.`
-          : noConnection
-            ? "There is no connection, so the camera check cannot run."
-            : "A quick camera check, then you take your photo."
+          : offlineCamera
+            ? "No connection: the camera check runs on this phone, and your time-in is sent when you're back online."
+            : noConnection
+              ? voucher === undefined
+                ? "There is no connection."
+                : "There is no connection, so the camera check cannot run."
+              : "A quick camera check, then you take your photo."
       }
       locked={saving}
       footer={
-        !capture && noConnection ? (
+        !capture && noConnection && !offlineCamera ? (
           <>
             <Button variant="secondary" onClick={close} disabled={saving}>
               Cancel
@@ -201,7 +267,32 @@ export default function TimeInDialog({
         ) : undefined
       }
     >
-      {!capture && noConnection ? (
+      {!capture && offlineCamera && voucher ? (
+        <div className="space-y-4">
+          <LivenessCamera
+            key={voucher.jti}
+            prompts={voucher.prompts}
+            spare={voucher.spare}
+            strict={voucher.level === "strict"}
+            // The voucher lasts the day; past it there is only the time-in without a photo.
+            expiresAt={Date.parse(`${voucher.date}T23:59:59+08:00`)}
+            onRenew={() => setWithoutPhoto(true)}
+            onPassed={(photo, report) =>
+              setCapture({
+                photo,
+                report,
+                preview: URL.createObjectURL(photo),
+                offline: { voucher, takenAt: new Date().toISOString() },
+              })
+            }
+          />
+          <Button block variant="secondary" onClick={() => setWithoutPhoto(true)}>
+            Time in without a photo instead
+          </Button>
+        </div>
+      ) : !capture && noConnection && voucher === undefined ? (
+        <BrandLoader role="student" process="timeIn" message="Getting the time-in ready…" />
+      ) : !capture && noConnection ? (
         <form id="offline-time-in-form" onSubmit={recordOffline} className="space-y-4">
           <div className="rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
             <p className="font-semibold">You can still time in, without a photo.</p>

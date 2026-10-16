@@ -17,6 +17,8 @@ import {
   type StepPath,
 } from "../../lib/offlineQueue";
 import { savedFetch } from "../../lib/offlineStore";
+import { attestTimeIn, forgetVoucher, prepareOfflineTimeIn, voucherFor, type OfflineVoucher } from "../../lib/offlineTimeIn";
+import { phToday } from "../../lib/phTime";
 
 export type AttendanceStatus = "Verified" | "Pending" | "Flagged" | "Rejected";
 
@@ -299,6 +301,55 @@ export function useAttendance(studentId: string | undefined) {
     [studentId, run]
   );
 
+  // While online, the phone keeps itself ready to time in with a photo
+  // offline: a key, vouchers for the next scheduled days, the face-tracking
+  // files (lib/offlineTimeIn.ts). At sign-in, and when the connection is back.
+  useEffect(() => {
+    if (!studentId) return;
+    void prepareOfflineTimeIn(studentId);
+    const again = () => void prepareOfflineTimeIn(studentId, true);
+    window.addEventListener("online", again);
+    return () => window.removeEventListener("online", again);
+  }, [studentId]);
+
+  /** Today's voucher for a time-in with a photo offline, if this phone has one. */
+  const offlineVoucher = useCallback(() => voucherFor(phToday()), []);
+
+  /**
+   * Records a time-in with a photo on this phone, for when there is no
+   * connection: the camera check ran with the voucher's prompts, and the
+   * record of it is signed with the phone's key. False when this phone
+   * cannot sign or keep it.
+   */
+  const timeInOfflineAttested = useCallback(
+    async (
+      photo: File,
+      note: string,
+      check: { voucher: OfflineVoucher; report: LivenessReport; takenAt: string }
+    ): Promise<boolean> => {
+      // The photo is made ready to send now, so its hash is of what is sent.
+      const image = await compressPhoto(photo);
+      const signed = await attestTimeIn(check.voucher, image, check.takenAt);
+      if (!signed) return false;
+      const kept = await queueTimeIn(note, {
+        photo: image,
+        takenAt: check.takenAt,
+        fields: {
+          voucher: check.voucher.token,
+          attestation: signed.attestation,
+          signature: signed.signature,
+          liveness_report: JSON.stringify(check.report),
+        },
+      });
+      if (!kept) return false;
+      await forgetVoucher(check.voucher.jti);
+      setLogs((current) => withWaitingSteps(current, [kept]));
+      void sendWaitingSteps();
+      return true;
+    },
+    []
+  );
+
   /**
    * Records the time-in on this phone, for when there is no connection. No
    * photo is taken or kept. False when this browser cannot keep it.
@@ -414,6 +465,8 @@ export function useAttendance(studentId: string | undefined) {
     livenessChallenge,
     timeIn,
     timeInOffline,
+    offlineVoucher,
+    timeInOfflineAttested,
     startBreak: () => step("break", "Could not record that you went out for lunch."),
     endBreak: () => step("break-end", "Could not record that you are back from lunch."),
     /** Times out, with the student's note of what they did today. */

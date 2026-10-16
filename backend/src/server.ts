@@ -1731,6 +1731,10 @@ function withSignatureCheck(uploader: multer.Multer) {
               )
             );
           }
+          // The bytes as they arrived, before anything is changed: an
+          // attested offline time-in compares them with the hash its phone
+          // signed (routes/offlineTimeIn.ts).
+          res.locals.uploadSha256 = createHash("sha256").update(req.file.buffer).digest("hex");
           // An image loses its camera details (place, time, device) before it
           // is stored. PDFs and Office files are stored as sent.
           if (extension === ".jpg" || extension === ".jpeg" || extension === ".png") {
@@ -3696,6 +3700,7 @@ app.get(
             a.recorded_offline,
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
             a.clock_skew_seconds,
+            a.offline_attestation,
             (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'attendance' AND px.owner_id = a.id AND px.removed_at IS NULL) AS pictures,
             a.accomplishments,
             a.time_corrected_at,
@@ -4339,9 +4344,10 @@ app.patch(
       // A log with no time-out has no rendered hours yet, so it cannot be
       // confirmed. Rejecting an unfinished log is still allowed.
       if (status === "Verified") {
-        const log = await pool.query<{ time_out: Date | null; hours: string | null; offline_time_in: boolean }>(
+        const log = await pool.query<{ time_out: Date | null; hours: string | null; offline_time_in: boolean; attested: boolean }>(
           `
-          SELECT a.time_out, a.hours, (a.offline_time_in_request IS NOT NULL) AS offline_time_in
+          SELECT a.time_out, a.hours, (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
+                 (a.offline_attestation IS NOT NULL) AS attested
           FROM attendance a
           JOIN students s ON s.student_id = a.student_id
           WHERE a.id = $1
@@ -4355,14 +4361,16 @@ app.patch(
               "This log has no time-out yet. It can be verified after the student times out.",
           });
         }
-        // A time-in recorded with no connection has no photo and no camera
-        // check. Whoever verifies it says they know that, one log at a time,
-        // so it cannot be swept through with a batch.
+        // A time-in recorded with no connection has its time from the phone,
+        // and has no photo or camera check unless it was attested. Whoever
+        // verifies it says they know that, one log at a time, so it cannot be
+        // swept through with a batch.
         if (log.rows.length > 0 && log.rows[0].offline_time_in && req.body?.confirm_offline_time_in !== true) {
           return res.status(409).json({
             code: "CONFIRM_OFFLINE_TIME_IN",
-            message:
-              "This time-in was recorded with no connection, so it has no photo or camera check. Open the log and confirm it by itself.",
+            message: log.rows[0].attested
+              ? "This time-in was recorded with no connection, so its time comes from the phone. Open the log and confirm it by itself."
+              : "This time-in was recorded with no connection, so it has no photo or camera check. Open the log and confirm it by itself.",
           });
         }
         // No single day can add more than one shift to a student's total.
@@ -6490,6 +6498,7 @@ app.get(
           a.review_notes,
           a.correction_note,
           (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
+          a.offline_attestation,
           ARRAY_REMOVE(ARRAY[
             CASE WHEN ${openRejectionCondition("a")} THEN 'Rejected by supervisor' END,
             CASE WHEN ${missingTimeoutCondition("a")} THEN 'No time-out recorded' END,
@@ -9603,7 +9612,15 @@ app.get(
 |
 */
 
-registerOfflineTimeInRoutes(app, { pool, requireRole, createNotification });
+registerOfflineTimeInRoutes(app, {
+  pool,
+  requireRole,
+  createNotification,
+  photoUpload: upload.single("image"),
+  savePrivateFile,
+  deletePrivateFile,
+  jwtSecret: JWT_SECRET,
+});
 registerAttachmentRoutes(app, { pool, requireRole });
 registerConsoleRoutes(app, {
   pool,

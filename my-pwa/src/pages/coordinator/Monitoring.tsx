@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import AttendancePhoto from "../../components/AttendancePhoto";
+import AttestedNote, { type OfflineAttestation } from "../../components/AttestedNote";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
@@ -85,6 +86,7 @@ type Discrepancy = {
   correction_note: string | null;
   /** The time-in was recorded with no connection: no photo and no camera check. */
   offline_time_in?: boolean;
+  offline_attestation?: OfflineAttestation | null;
   reasons: string[];
 };
 
@@ -705,7 +707,12 @@ function FlaggedLogDialog({
           </p>
         )}
 
-        {flag.offline_time_in ? (
+        {flag.offline_attestation ? (
+          <>
+            <AttestedNote attestation={flag.offline_attestation} />
+            <AttendancePhoto path={flag.image_url} role="coordinator" />
+          </>
+        ) : flag.offline_time_in ? (
           <p className="rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
             <span className="font-semibold">No photo and no camera check.</span> The student
             recorded this time-in on a phone with no connection. Verify it only if someone at the

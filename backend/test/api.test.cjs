@@ -9154,3 +9154,285 @@ test("after the head turns the photo waits for the button, which is enabled only
   // Strict with reduced motion: no light test, the spare asked from the start.
   assert.deepEqual(createEngine({ prompts: ["turn-left", "turn-right"], spare: "blink", flash: false }).step(face()).prompts, ["turn-left", "turn-right", "blink"]);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 4: offline time-in with an attested photo
+|--------------------------------------------------------------------------
+*/
+
+/** A phone's key, as WebCrypto would make it: P-256, signatures as raw r||s. */
+function phoneKey() {
+  const { generateKeyPairSync, sign } = require("node:crypto");
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });
+  const jwk = publicKey.export({ format: "jwk" });
+  return {
+    jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y },
+    sign: (message) => sign("sha256", Buffer.from(message, "utf8"), { key: privateKey, dsaEncoding: "ieee-p1363" }).toString("base64url"),
+  };
+}
+
+test("an attested offline time-in's rules: the key, the signed text, the signature and the clock", () => {
+  require("tsx/cjs");
+  const rules = require("../src/services/offlineAttestation.ts");
+  const key = phoneKey();
+  assert.ok("jwk" in rules.readPublicJwk(key.jwk));
+  assert.ok("problem" in rules.readPublicJwk({ ...key.jwk, d: "secret" }), "a private key is refused");
+  assert.ok("problem" in rules.readPublicJwk({ ...key.jwk, crv: "P-384" }));
+  assert.ok("problem" in rules.readPublicJwk({ ...key.jwk, x: "not a point" }));
+  assert.match(rules.keyThumbprint(key.jwk), /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(rules.keyThumbprint(key.jwk), rules.keyThumbprint({ y: key.jwk.y, x: key.jwk.x, crv: "P-256", kty: "EC" }), "member order does not matter");
+
+  const attestation = {
+    voucher_jti: "0b5b3f0e-6a3c-4f55-9f2a-1d2e3f4a5b6c",
+    key_id: rules.keyThumbprint(key.jwk),
+    photo_sha256: "a".repeat(64),
+    local_time: "2026-10-17T00:30:00.000Z",
+    counter: 7,
+    offset_at_issue_ms: -1500,
+  };
+  const message = rules.attestationMessage(attestation);
+  assert.equal(message, JSON.stringify(["internet-offline-time-in-v1", attestation.voucher_jti, attestation.key_id, "a".repeat(64), attestation.local_time, 7, -1500]));
+  // The app builds the very same text.
+  const app = require("../../my-pwa/src/lib/attestation.ts");
+  assert.equal(app.attestationMessage(attestation), message);
+
+  const signature = key.sign(message);
+  assert.equal(rules.signatureValid(key.jwk, message, signature), true);
+  assert.equal(rules.signatureValid(key.jwk, message.replace("7,", "8,"), signature), false, "a changed field breaks it");
+  assert.equal(rules.signatureValid(phoneKey().jwk, message, signature), false, "another phone's key");
+  assert.equal(rules.signatureValid(key.jwk, message, "short"), false);
+  assert.ok("problem" in rules.readAttestation(JSON.stringify({ ...attestation, counter: 0 })), "the counter starts at 1");
+  assert.ok("problem" in rules.readAttestation(JSON.stringify({ ...attestation, photo_sha256: "xyz" })));
+
+  // Two minutes of difference is allowed; more is a moved clock.
+  assert.equal(rules.clockCheck(0, 120).clock_moved, false);
+  assert.equal(rules.clockCheck(0, 121).clock_moved, true);
+  assert.equal(rules.clockCheck(-60_000, -181).clock_moved, true);
+  assert.equal(rules.clockCheck(3_600_000, 3_650).clock_moved, false, "a clock that was off all along is not a moved one");
+});
+
+test("the phone's key and its vouchers: students only, a public key only, vouchers for the scheduled days only", async (t) => {
+  const supervisor = await supervisorSession();
+  const key = phoneKey();
+  assert.equal((await jsonRequest("/api/attendance/device-key", jsonBody(supervisor.token, "POST", { public_key_jwk: key.jwk }))).response.status, 403);
+  assert.equal((await jsonRequest("/api/attendance/device-key", { method: "POST" })).response.status, 401);
+  const bad = await jsonRequest("/api/attendance/device-key", jsonBody(studentToken, "POST", { public_key_jwk: { ...key.jwk, d: "x" } }));
+  assert.equal(bad.response.status, 400);
+  assert.equal(bad.body.code, "DEVICE_KEY_UNREADABLE");
+  assert.equal((await jsonRequest("/api/attendance/offline-vouchers", jsonBody(supervisor.token, "POST", {}))).response.status, 403);
+  const unknown = await jsonRequest("/api/attendance/offline-vouchers", jsonBody(studentToken, "POST", { key_id: "nobody", client_sent_at: new Date().toISOString() }));
+  assert.equal(unknown.response.status, 400);
+  assert.equal(unknown.body.code, "DEVICE_UNKNOWN");
+  if (needsWrites(t)) return;
+
+  require("tsx/cjs");
+  const { keyThumbprint } = require("../src/services/offlineAttestation.ts");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const sid = `KEY-${Date.now()}`;
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Key Check', TRUE)`, [sid, `${sid.toLowerCase()}@key.test`, await bcrypt.hash("KeyCheck123!", 4)]);
+    const mine = (await login("student", `${sid.toLowerCase()}@key.test`, "KeyCheck123!")).token;
+    const registered = await jsonRequest("/api/attendance/device-key", jsonBody(mine, "POST", { public_key_jwk: key.jwk }));
+    assert.equal(registered.response.status, 200);
+    assert.equal(registered.body.key_id, keyThumbprint(key.jwk));
+    // Registering again is the same key.
+    assert.equal((await jsonRequest("/api/attendance/device-key", jsonBody(mine, "POST", { public_key_jwk: key.jwk }))).body.key_id, registered.body.key_id);
+    const ask = () => jsonRequest("/api/attendance/offline-vouchers", jsonBody(mine, "POST", { key_id: registered.body.key_id, client_sent_at: new Date().toISOString() }));
+    assert.equal((await jsonRequest("/api/attendance/offline-vouchers", jsonBody(mine, "POST", { key_id: registered.body.key_id }))).response.status, 400, "the phone's clock is needed");
+    // No schedule, no vouchers.
+    assert.deepEqual((await ask()).body.vouchers, []);
+    // Mondays and Wednesdays: the next two of those, each with head turns only on the standard level.
+    await pool.query(`INSERT INTO ojt_schedule (student_id, day, start_time, end_time) VALUES ($1, 'Monday', '08:00', '17:00'), ($1, 'wednesday ', '08:00', '17:00')`, [sid]);
+    const issued = await ask();
+    assert.equal(issued.response.status, 200);
+    assert.equal(issued.body.vouchers.length, 2);
+    for (const voucher of issued.body.vouchers) {
+      assert.ok([1, 3].includes(new Date(`${voucher.date}T12:00:00Z`).getUTCDay()), voucher.date);
+      assert.equal(voucher.level, "standard");
+      assert.ok(voucher.prompts.every((prompt) => prompt.startsWith("turn-")));
+    }
+    assert.equal(typeof issued.body.offset_ms, "number");
+    // Asking again hands out the same unspent vouchers: a time-in waiting on the phone may carry one.
+    const jtis = (body) => body.vouchers.map((voucher) => JSON.parse(Buffer.from(voucher.token.split(".")[1], "base64url").toString()).jti);
+    assert.deepEqual(jtis((await ask()).body), jtis(issued.body));
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM offline_vouchers WHERE student_id = $1`, [sid])).rows[0].n, 2);
+    // A change of level since (strict after a rejection) gives new ones.
+    await pool.query(`UPDATE students SET liveness_strict = TRUE WHERE student_id = $1`, [sid]);
+    const strict = (await ask()).body;
+    assert.equal(strict.vouchers[0].level, "strict");
+    assert.notDeepEqual(jtis(strict), jtis(issued.body));
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM offline_vouchers WHERE student_id = $1`, [sid])).rows[0].n, 2);
+    // Past five keys, the oldest is retired.
+    for (let index = 0; index < 5; index += 1) await jsonRequest("/api/attendance/device-key", jsonBody(mine, "POST", { public_key_jwk: phoneKey().jwk }));
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM device_keys WHERE student_id = $1 AND revoked_at IS NULL`, [sid])).rows[0].n, 5);
+    const retired = await jsonRequest("/api/attendance/device-key", jsonBody(mine, "POST", { public_key_jwk: key.jwk }));
+    assert.equal(retired.response.status, 409);
+    assert.equal(retired.body.code, "DEVICE_REVOKED");
+  } finally {
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("an offline time-in with a photo: every refusal, then accepted once, a replay, a spent voucher, a reused counter and a moved clock", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { phToday } = require("../src/services/phTime.ts");
+  const { attestationMessage } = require("../src/services/offlineAttestation.ts");
+  const { createHash, randomUUID } = require("node:crypto");
+  const jwt = require("jsonwebtoken");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `ATTEST-${Date.now()}`;
+  const email = `${sid.toLowerCase()}@attest.test`;
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Attest Check', TRUE, $4)`, [sid, email, await bcrypt.hash("AttestCheck123!", 4), supervisor.supervisor.supervisor_id]);
+    await pool.query(
+      `INSERT INTO ojt_schedule (student_id, day, start_time, end_time)
+       SELECT $1, day, '08:00', '17:00' FROM unnest(ARRAY['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']) AS day`,
+      [sid]
+    );
+    const mine = (await login("student", email, "AttestCheck123!")).token;
+    const key = phoneKey();
+    const keyId = (await jsonRequest("/api/attendance/device-key", jsonBody(mine, "POST", { public_key_jwk: key.jwk }))).body.key_id;
+    const vouchers = async () =>
+      (await jsonRequest("/api/attendance/offline-vouchers", jsonBody(mine, "POST", { key_id: keyId, client_sent_at: new Date().toISOString() }))).body.vouchers;
+    const claims = (token) => JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString());
+    let issued = await vouchers();
+    const today = phToday();
+    if (issued[0]?.date !== today) {
+      t.skip("today is a holiday on this database, so no voucher is given for it");
+      return;
+    }
+    const photo = Buffer.from(sampleFiles.jpg);
+    let counter = 0;
+    const occurredAt = () => new Date(Date.now() - 5_000).toISOString();
+
+    /** A time-in as the phone sends it, with any part replaced. */
+    const send = async (voucher, change = {}) => {
+      const at = change.occurred_at ?? occurredAt();
+      const vc = claims(voucher.token);
+      const attestation = {
+        voucher_jti: vc.jti,
+        key_id: keyId,
+        photo_sha256: createHash("sha256").update(photo).digest("hex"),
+        local_time: at,
+        counter: change.counter ?? (counter += 1),
+        offset_at_issue_ms: vc.offset_ms,
+        ...(change.attestation ?? {}),
+      };
+      const form = new FormData();
+      const fields = {
+        occurred_at: at,
+        client_request_id: change.requestId ?? randomUUID(),
+        client_sent_at: new Date(Date.now() + (change.clockAheadMs ?? 0)).toISOString(),
+        voucher: change.voucher ?? voucher.token,
+        attestation: change.rawAttestation ?? JSON.stringify(attestation),
+        signature: change.signature ?? (change.signer ?? key).sign(attestationMessage(attestation)),
+        liveness_report: JSON.stringify({ completed: change.completed ?? voucher.prompts, flash: "skipped", attempts: 1 }),
+        ...(change.fields ?? {}),
+      };
+      for (const [name, value] of Object.entries(fields)) if (value !== null) form.set(name, value);
+      if (change.photo !== null) form.set("image", new Blob([change.photo ?? photo], { type: "image/jpeg" }), "time-in.jpg");
+      const response = await fetch(new URL("/api/attendance/offline-time-in", apiBaseUrl), { method: "POST", headers: authHeaders(mine), body: form });
+      return { status: response.status, body: await response.json().catch(() => ({})), requestId: fields.client_request_id };
+    };
+    const refused = async (label, result, status, code) => {
+      assert.equal(result.status, status, `${label}: ${JSON.stringify(result.body)}`);
+      assert.equal(result.body.code, code, label);
+      assert.equal(typeof result.body.message, "string");
+    };
+    const logs = async () => (await pool.query(`SELECT id FROM attendance WHERE student_id = $1`, [sid])).rows;
+    const todays = () => issued.find((voucher) => voucher.date === today);
+    const tomorrows = () => issued.find((voucher) => voucher.date !== today);
+
+    // Every refusal, none of which adds a log or spends anything.
+    await refused("no photo", await send(todays(), { photo: null }), 400, "PHOTO_MISSING");
+    await refused("unreadable record", await send(todays(), { rawAttestation: "{not json" }), 400, "ATTESTATION_UNREADABLE");
+    const { iat: _iat, exp: _exp, ...voucherClaims } = claims(todays().token);
+    const forged = jwt.sign(voucherClaims, "not-the-server-secret");
+    await refused("forged voucher", await send(todays(), { voucher: forged }), 400, "VOUCHER_INVALID");
+    await refused("record for another voucher", await send(todays(), { attestation: { voucher_jti: claims(tomorrows().token).jti } }), 400, "VOUCHER_MISMATCH");
+    await refused("tomorrow's voucher today", await send(tomorrows()), 400, "VOUCHER_WRONG_DAY");
+    await pool.query(`UPDATE device_keys SET revoked_at = NOW() WHERE student_id = $1`, [sid]);
+    await refused("retired key", await send(todays()), 400, "DEVICE_UNKNOWN");
+    await pool.query(`UPDATE device_keys SET revoked_at = NULL WHERE student_id = $1`, [sid]);
+    await refused("another phone's signature", await send(todays(), { signer: phoneKey() }), 400, "SIGNATURE_INVALID");
+    const at = occurredAt();
+    await refused("signed time is not the time sent", await send(todays(), { occurred_at: at, attestation: { local_time: new Date(Date.parse(at) - 60_000).toISOString() } }), 400, "ATTESTATION_MISMATCH");
+    await refused("a clock gap that was not measured", await send(todays(), { attestation: { offset_at_issue_ms: claims(todays().token).offset_ms + 5_000 } }), 400, "ATTESTATION_MISMATCH");
+    const tampered = Buffer.from(photo);
+    tampered[tampered.length - 3] ^= 0xff;
+    await refused("a tampered photo", await send(todays(), { photo: tampered }), 400, "PHOTO_ALTERED");
+    await refused("the check not finished", await send(todays(), { completed: [] }), 400, "CHECK_INCOMPLETE");
+    await refused("no clock at sending", await send(todays(), { fields: { client_sent_at: null } }), 400, "CLOCK_MISSING");
+    assert.deepEqual(await logs(), [], "no refusal added a log");
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM offline_vouchers WHERE student_id = $1 AND used_at IS NOT NULL`, [sid])).rows[0].n, 0, "nor spent a voucher");
+
+    // Accepted, even though the phone asked for vouchers again meanwhile (it
+    // does so the moment the connection is back, as the time-in is sent):
+    // the photo, the check, the record, the voucher spent and the counter kept.
+    await vouchers();
+    const accepted = await send(todays());
+    assert.equal(accepted.status, 201, JSON.stringify(accepted.body));
+    assert.deepEqual([accepted.body.attested, accepted.body.clock_moved], [true, false]);
+    const log = (await pool.query(`SELECT * FROM attendance WHERE student_id = $1`, [sid])).rows[0];
+    assert.match(log.image_url, /^\/uploads\//);
+    assert.equal(log.capture_method, "liveness");
+    assert.equal(log.recorded_offline, true);
+    assert.equal(log.liveness_checks.offline, true);
+    assert.equal(log.offline_attestation.clock_moved, false);
+    assert.equal(log.offline_attestation.counter, counter);
+    const spent = (await pool.query(`SELECT used_at, attendance_id FROM offline_vouchers WHERE jti = $1`, [claims(todays().token).jti])).rows[0];
+    assert.ok(spent.used_at);
+    assert.equal(spent.attendance_id, log.id);
+    assert.equal(Number((await pool.query(`SELECT counter FROM device_keys WHERE key_id = $1 AND student_id = $2`, [keyId, sid])).rows[0].counter), counter);
+
+    // A replay: the same request again is the first answer; another request for the day is refused.
+    const again = await send(todays(), { requestId: accepted.requestId, counter });
+    assert.equal(again.status, 200);
+    assert.equal(again.body.replayed, true);
+    await refused("a second time-in for the day", await send(todays()), 409, "DAY_HAS_LOG");
+    assert.equal((await logs()).length, 1);
+
+    // The supervisor sees it attested, and it cannot be verified in a batch.
+    const list = await jsonRequest(`/api/supervisor/attendance/${encodeURIComponent(supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(supervisor.token) });
+    const seen = list.body.attendance.find((entry) => entry.id === log.id);
+    assert.equal(seen.offline_time_in, true);
+    assert.equal(seen.offline_attestation.clock_moved, false);
+    await pool.query(`UPDATE attendance SET time_out = time_in + INTERVAL '8 hours', hours = 8 WHERE id = $1`, [log.id]);
+    const batch = await jsonRequest(`/api/attendance/${log.id}/status`, jsonBody(supervisor.token, "PATCH", { status: "Verified" }));
+    assert.equal(batch.response.status, 409);
+    assert.equal(batch.body.code, "CONFIRM_OFFLINE_TIME_IN");
+    assert.match(batch.body.message, /its time comes from the phone/);
+
+    // A spent voucher, once the day is free again: refused.
+    await pool.query(`DELETE FROM attendance WHERE id = $1`, [log.id]);
+    await refused("a spent voucher", await send(todays()), 409, "VOUCHER_USED");
+
+    // A counter used before, on a fresh voucher: refused.
+    issued = await vouchers();
+    const lastAccepted = Number((await pool.query(`SELECT counter FROM device_keys WHERE key_id = $1 AND student_id = $2`, [keyId, sid])).rows[0].counter);
+    await refused("a reused counter", await send(todays(), { counter: lastAccepted }), 409, "COUNTER_REPLAY");
+
+    // A clock moved while offline: accepted, flagged, both gaps kept, the supervisor told.
+    const moved = await send(todays(), { clockAheadMs: 10 * 60 * 1000 });
+    assert.equal(moved.status, 201, JSON.stringify(moved.body));
+    assert.equal(moved.body.clock_moved, true);
+    const flagged = (await pool.query(`SELECT offline_attestation, clock_skew_seconds FROM attendance WHERE student_id = $1`, [sid])).rows[0];
+    assert.equal(flagged.offline_attestation.clock_moved, true);
+    assert.ok(flagged.offline_attestation.clock_gap_at_sync_seconds >= 590);
+    assert.ok(Math.abs(flagged.offline_attestation.clock_gap_at_issue_seconds) <= 5);
+    const told = await pool.query(`SELECT message FROM notifications WHERE supervisor_id = $1 AND message LIKE 'Attest Check%' ORDER BY id DESC LIMIT 1`, [supervisor.supervisor.supervisor_id]);
+    assert.match(told.rows[0].message, /clock was changed while it was offline/);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE message LIKE 'Attest Check%'`);
+    await pool.query(`DELETE FROM offline_vouchers WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});

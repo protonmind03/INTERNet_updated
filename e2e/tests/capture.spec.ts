@@ -138,3 +138,88 @@ test.describe("the time-in photo", () => {
     }
   });
 });
+
+test.describe("a time-in with no connection", () => {
+  test("runs the camera check with the day's voucher, waits on the phone with its photo, and arrives attested", async ({ page, context, browser }) => {
+    const coordinator = await apiSession("coordinator");
+    const supervisor = await apiSession("supervisor");
+    const id = `OFF-${Date.now()}`;
+    const email = `${id.toLowerCase()}@offline.test`;
+    expect((await api(coordinator.token, "POST", "/api/coordinator/students", {
+      student_id: id, email, password: "OfflineStart123!", name: "Offline Check", supervisor_id: supervisor.id,
+    })).status).toBe(201);
+    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+    expect((await api(coordinator.token, "PUT", `/api/coordinator/students/${id}/schedule`, {
+      schedule: days.map((day) => ({ day, start_time: "08:00", end_time: "17:00" })),
+    })).status).toBe(200);
+    const login = async (password: string) =>
+      (await (await fetch(`${API}/api/login/student`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }),
+      })).json()).token as string;
+    expect((await api(await login("OfflineStart123!"), "PUT", `/api/students/${id}/password`, { current_password: "OfflineStart123!", new_password: "OfflineCheck456!" })).status).toBe(200);
+    const token = await login("OfflineCheck456!");
+    const privacy = await api<{ notice: { version: string } }>(token, "GET", `/api/students/${id}/privacy`);
+    expect((await api(token, "POST", `/api/students/${id}/privacy/consent`, { version: privacy.body.notice.version })).status).toBe(200);
+
+    try {
+      await page.route(/\/assets\/vision_bundle-[^/]+\.js$/, (route) =>
+        route.fulfill({ contentType: "application/javascript", body: FAKE_FACE_TRACKER })
+      );
+      // Signing in gets the phone ready: a key, vouchers, and the face tracker loaded.
+      const tracker = page.waitForRequest(/\/assets\/vision_bundle-[^/]+\.js$/);
+      const issued = page.waitForResponse((response) => response.url().endsWith("/api/attendance/offline-vouchers") && response.status() === 200);
+      await signIn(page, "student", { ...ACCOUNTS.student, email, password: "OfflineCheck456!" });
+      const vouchers = (await (await issued).json()).vouchers as { date: string }[];
+      await tracker;
+      test.skip(vouchers[0]?.date !== today(), "Today is a holiday on this database, so no voucher is given for it.");
+
+      // No connection: the check runs on the phone.
+      await context.setOffline(true);
+      await page.getByRole("button", { name: /^Time in/ }).first().click();
+      const dialog = page.getByRole("dialog", { name: "Time in" });
+      await expect(dialog).toContainText("the camera check runs on this phone");
+      await expect(dialog.getByRole("button", { name: "Time in without a photo instead" })).toBeVisible();
+      const shutter = dialog.getByRole("button", { name: "Take photo" });
+      await expect(shutter).toBeVisible({ timeout: 30_000 });
+      await page.evaluate(() => {
+        (globalThis as { __fakeFaceHold?: boolean }).__fakeFaceHold = true;
+      });
+      await expect(shutter).toBeEnabled({ timeout: 10_000 });
+      await shutter.click();
+      await expect(dialog.getByRole("img", { name: "Your attendance photo" })).toBeVisible();
+      await dialog.getByRole("button", { name: "Confirm time-in" }).click();
+      await expect(dialog).toBeHidden();
+      await expect(page.getByText(/saved on this phone .*with its photo/i)).toBeVisible();
+
+      // Nothing has reached the server yet.
+      const logsToday = async () =>
+        (await api<{ attendance: { date: string; image_url: string | null }[] }>(token, "GET", `/api/attendance/${id}`)).body.attendance.filter((entry) => entry.date === today());
+      expect(await logsToday()).toHaveLength(0);
+
+      // Back online: it is sent, with its photo, and the server checked it.
+      await context.setOffline(false);
+      await expect.poll(async () => (await logsToday()).length, { timeout: 30_000 }).toBe(1);
+      const [log] = await logsToday();
+      expect(log.image_url).toBeTruthy();
+      const stored = await redness(page, { upload: { path: log.image_url!, token } });
+      expect(stored.left, JSON.stringify(stored)).toBeGreaterThan(60);
+      expect(stored.right, JSON.stringify(stored)).toBeLessThan(20);
+      const review = await api<{ attendance: { student_id: string; offline_time_in: boolean; offline_attestation: { clock_moved: boolean } | null }[] }>(
+        supervisor.token, "GET", `/api/supervisor/attendance/${supervisor.id}`
+      );
+      const entry = review.body.attendance.find((row) => row.student_id === id);
+      expect(entry?.offline_time_in).toBe(true);
+      expect(entry?.offline_attestation?.clock_moved).toBe(false);
+
+      // The supervisor sees it marked, with its photo.
+      const supervisorContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+      const supervisorPage = await supervisorContext.newPage();
+      await signIn(supervisorPage, "supervisor");
+      await supervisorPage.goto("/supervisor/attendance");
+      await expect(supervisorPage.getByText("Offline · attested").locator("visible=true").first()).toBeVisible();
+      await supervisorContext.close();
+    } finally {
+      await api(coordinator.token, "PATCH", `/api/coordinator/students/${id}/status`, { is_active: false });
+    }
+  });
+});

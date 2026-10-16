@@ -3,6 +3,7 @@ import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { savedFetch } from "../../lib/offlineStore";
 import { errorText, withWorkingToast } from "../../lib/toast";
+import type { OfflineAttestation } from "../../components/AttestedNote";
 
 /*
 |--------------------------------------------------------------------------
@@ -72,6 +73,8 @@ export type AttendanceEntry = {
    * Null when it was not measured.
    */
   clock_skew_seconds?: number | null;
+  /** Set on a time-in recorded offline with the camera check and a record the phone signed. */
+  offline_attestation?: OfflineAttestation | null;
   /** What the intern wrote at time-out about the day's work. */
   accomplishments?: string | null;
   /** How many pictures are attached. Missing from an older server. */

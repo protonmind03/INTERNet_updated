@@ -207,6 +207,8 @@ function TimeInActions({ children }: { children: ReactNode }) {
         onSubmit={attendance.timeIn}
         online={online}
         onOffline={attendance.timeInOffline}
+        loadOfflineVoucher={attendance.offlineVoucher}
+        onOfflineAttested={attendance.timeInOfflineAttested}
       />
 
       {consentOpen && privacy.state && (
