@@ -13,6 +13,7 @@ import {
 import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
+import { withoutCameraDetails } from "../../lib/image";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { formatDate, localDateKey } from "../../lib/format";
 import { useAccount } from "../../lib/session";
@@ -132,10 +133,12 @@ export default function Documents() {
   };
 
   const upload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const chosen = event.target.files?.[0];
     const docType = targetType.current;
     event.target.value = "";
-    if (!file || !docType) return;
+    if (!chosen || !docType) return;
+    // A photo of a document is drawn again first, without the place and time the camera wrote into it.
+    const file = await withoutCameraDetails(chosen);
 
     const problem = uploadProblem(file, MAX_DOCUMENT_MB);
     if (problem) {

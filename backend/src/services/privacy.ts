@@ -24,7 +24,7 @@ export type PrivacyNotice = {
 };
 
 export const PRIVACY_NOTICE: PrivacyNotice = {
-  version: "draft-1",
+  version: "draft-2",
   placeholder: true,
   title: "Privacy notice",
   sections: [
@@ -37,6 +37,11 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
       heading: "Why it is kept",
       body:
         "To record and verify the hours and requirements of your On-the-Job Training. The time-in photo is used only to confirm that you were the one who timed in.",
+    },
+    {
+      heading: "Files you upload",
+      body:
+        "Before a photo or picture is kept, the details your phone's camera writes into it are taken out, including where it was taken. PDF and Word files are kept exactly as you upload them, so check them for anything you do not want to share.",
     },
     {
       heading: "Who can see it",

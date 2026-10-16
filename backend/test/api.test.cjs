@@ -8427,3 +8427,88 @@ test("old time-in photos are removed each night at 02:30 when retention is set: 
     await pool.end();
   }
 });
+
+test("camera details and GPS tags are taken out of every uploaded image, the picture itself untouched", async (t) => {
+  require("tsx/cjs");
+  const { stripImageMetadata } = require("../src/services/imageMetadata.ts");
+  const { jpegWithGps, pngWithGps, webpWithGps } = require("./fixtures/gps-images.cjs");
+  const clean = (buffer, secrets) => secrets.every((secret) => !buffer.includes(Buffer.from(secret, "latin1")));
+
+  const jpeg = jpegWithGps();
+  assert.equal(clean(jpeg.file, jpeg.secrets), false, "the fixture really carries them");
+  const jpegOut = stripImageMetadata(jpeg.file);
+  assert.ok(jpegOut.equals(jpeg.kept), "only APP1 and APP13 go; JFIF, the tables and the picture are copied as they were");
+  assert.ok(clean(jpegOut, jpeg.secrets));
+
+  const png = pngWithGps();
+  const pngOut = stripImageMetadata(png.file);
+  assert.ok(pngOut.equals(png.kept), "eXIf, tEXt and iTXt go; IHDR, IDAT and IEND stay with their checksums");
+  assert.ok(clean(pngOut, png.secrets));
+
+  const webp = webpWithGps();
+  const webpOut = stripImageMetadata(webp.file);
+  assert.ok(clean(webpOut, webp.secrets));
+  assert.ok(webpOut.includes(Buffer.from("/PICTURE-DATA-UNCHANGED")));
+  assert.equal(webpOut.readUInt32LE(4), webpOut.length - 8, "the RIFF size is right after the chunks go");
+  const flags = webpOut[webpOut.indexOf(Buffer.from("VP8X")) + 8];
+  assert.equal(flags & 0x0c, 0, "the header no longer says EXIF or XMP follow");
+
+  // Anything else, or a file cut short, comes back as it was.
+  for (const other of [Buffer.from("%PDF-1.4\n%%EOF"), Buffer.from([0x50, 0x4b, 0x03, 0x04, 1, 2]), jpeg.file.subarray(0, 40), Buffer.alloc(0)]) {
+    assert.ok(stripImageMetadata(other).equals(other));
+  }
+
+  if (needsWrites(t)) return;
+  // THROUGH THE API: a document, a concern's evidence and a picture are each stored clean.
+  const pool = localTestPool();
+  const sid = student.student_id;
+  const form = (fields, name, bytes, type) => {
+    const body = new FormData();
+    for (const [key, value] of Object.entries(fields)) body.append(key, String(value));
+    body.append(name.field, new Blob([bytes], { type }), name.file);
+    return body;
+  };
+  const created = { documents: [], complaints: [], attendance: [] };
+  try {
+    const requirement = (await pool.query(`SELECT name FROM ojt_requirements WHERE is_active AND due_rule IS DISTINCT FROM 'weekly' ORDER BY sort_order DESC LIMIT 1`)).rows[0].name;
+    await pool.query(`DELETE FROM documents WHERE student_id = $1 AND doc_type = $2 AND status = 'Pending'`, [sid, requirement]);
+    const uploaded = await fetch(new URL("/api/documents", apiBaseUrl), { method: "POST", headers: authHeaders(studentToken), body: form({ doc_type: requirement }, { field: "file", file: "scan.jpg" }, jpeg.file, "image/jpeg") });
+    const document = await uploaded.json();
+    assert.equal(uploaded.status, 201, JSON.stringify(document));
+    const documentId = document.document?.id ?? document.id;
+    created.documents.push(documentId);
+    const stored = Buffer.from(await (await fetch(new URL(`/api/documents/${documentId}/file`, apiBaseUrl), { headers: authHeaders(studentToken) })).arrayBuffer());
+    assert.ok(stored.equals(jpeg.kept), "the stored document is the picture without its camera details");
+
+    const concern = await fetch(new URL("/api/complaints", apiBaseUrl), {
+      method: "POST",
+      headers: authHeaders(studentToken),
+      body: form({ student_id: sid, report_type: "supervisor", supervisor_name: "Demo Supervisor", company_name: "Demo Company", category: "Workplace safety", description: "A photo of the broken lock, taken this morning." }, { field: "evidence", file: "lock.png" }, png.file, "image/png"),
+    });
+    const filed = await concern.json();
+    assert.equal(concern.status, 201, JSON.stringify(filed));
+    const concernRow = (await pool.query(`SELECT id, evidence_url FROM complaints WHERE student_id = $1 ORDER BY id DESC LIMIT 1`, [sid])).rows[0];
+    created.complaints.push(concernRow.id);
+    const { readPrivateFile } = require("../src/services/privateFileStore.ts");
+    if (process.env.PRIVATE_UPLOAD_DIR) {
+      const evidence = await readPrivateFile(concernRow.evidence_url.replace(/^\/uploads\//, ""));
+      assert.ok(evidence.buffer.equals(png.kept), "the stored evidence is the picture without its camera details");
+    }
+
+    // A picture on a log (the app redraws it; this is the server covering a client that did not).
+    const logId = (await pool.query(`INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, CURRENT_DATE - 400, NOW() - INTERVAL '400 days', 'Pending') RETURNING id`, [sid])).rows[0].id;
+    created.attendance.push(logId);
+    const picture = await fetch(new URL("/api/attachments", apiBaseUrl), { method: "POST", headers: authHeaders(studentToken), body: form({ owner_type: "attendance", owner_id: logId }, { field: "file", file: "p.webp" }, webp.file, "image/webp") });
+    const added = await picture.json();
+    assert.equal(picture.status, 201, JSON.stringify(added));
+    const pictureBytes = Buffer.from(await (await fetch(new URL(`/api/attachments/${added.attachment.id}/file`, apiBaseUrl), { headers: authHeaders(studentToken) })).arrayBuffer());
+    assert.ok(clean(pictureBytes, webp.secrets));
+    assert.equal(added.attachment.size_bytes, pictureBytes.length, "the size recorded is the cleaned file's");
+  } finally {
+    if (created.attendance.length) await pool.query(`DELETE FROM attachments WHERE owner_type = 'attendance' AND owner_id = ANY($1::int[])`, [created.attendance]);
+    if (created.attendance.length) await pool.query(`DELETE FROM attendance WHERE id = ANY($1::int[])`, [created.attendance]);
+    if (created.documents.length) await pool.query(`DELETE FROM documents WHERE id = ANY($1::int[])`, [created.documents]);
+    if (created.complaints.length) await pool.query(`DELETE FROM complaints WHERE id = ANY($1::int[])`, [created.complaints]);
+    await pool.end();
+  }
+});

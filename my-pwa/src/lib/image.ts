@@ -50,3 +50,38 @@ export async function compressPhoto(
   const name = file.name.replace(/\.[^.]+$/, "") || "attendance";
   return new File([blob], `${name}.jpg`, { type: "image/jpeg" });
 }
+
+/**
+ * Draws an image again before it is uploaded as a document or as a
+ * concern's evidence, which leaves out everything the camera wrote into
+ * the file beside the picture: the place it was taken, the time, the phone.
+ * Unlike compressPhoto it always redraws, however small the file. A JPEG
+ * stays a JPEG and a PNG stays a PNG (a screenshot stays sharp); the long
+ * side is kept to `maxEdge` so a document stays readable. Anything that is
+ * not a JPEG or PNG, or that this browser cannot draw, is returned as it
+ * is; the server takes the same details out of what it receives.
+ */
+export async function withoutCameraDetails(file: File, maxEdge = 2400): Promise<File> {
+  if (file.type !== "image/jpeg" && file.type !== "image/png") return file;
+  let bitmap: ImageBitmap;
+  try {
+    bitmap = await createImageBitmap(file, { imageOrientation: "from-image" });
+  } catch {
+    return file;
+  }
+  const scale = Math.min(1, maxEdge / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext("2d");
+  if (!context) {
+    bitmap.close();
+    return file;
+  }
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, file.type, file.type === "image/jpeg" ? 0.9 : undefined)
+  );
+  return blob ? new File([blob], file.name, { type: file.type }) : file;
+}

@@ -13,6 +13,7 @@ import {
 } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { uploadPictures, type PictureDraft } from "../../lib/attachments";
+import { withoutCameraDetails } from "../../lib/image";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
 import { formatDateTime } from "../../lib/format";
 import { useAccount } from "../../lib/session";
@@ -138,10 +139,12 @@ export default function ConcernsPanel() {
     setContext(next === "supervisor" ? host?.company || "" : "");
   };
 
-  const chooseEvidence = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+  const chooseEvidence = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const chosen = event.target.files?.[0];
     event.target.value = "";
-    if (!file) return;
+    if (!chosen) return;
+    // A photo is drawn again first, without the place and time the camera wrote into it.
+    const file = await withoutCameraDetails(chosen);
     const problem = uploadProblem(file, MAX_EVIDENCE_MB);
     if (problem) {
       setError(problem);

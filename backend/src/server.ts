@@ -20,6 +20,7 @@ import { isEmailConfigured, sendEmail, useEmailBudget } from "./services/mailer"
 import { claimEmail, returnEmail } from "./services/emailBudget";
 import { createProblemKeeper, problemFromBrowser, watchServerErrors } from "./services/problems";
 import { runPhotoPurgeIfDue } from "./services/photoPurge";
+import { stripImageMetadata } from "./services/imageMetadata";
 import {
   publishNotification,
   closeNotificationStreams,
@@ -1727,6 +1728,12 @@ function withSignatureCheck(uploader: multer.Multer) {
                   " file. Choose the original file and try again."
               )
             );
+          }
+          // An image loses its camera details (place, time, device) before it
+          // is stored. PDFs and Office files are stored as sent.
+          if (extension === ".jpg" || extension === ".jpeg" || extension === ".png") {
+            req.file.buffer = stripImageMetadata(req.file.buffer);
+            req.file.size = req.file.buffer.length;
           }
           next();
         });

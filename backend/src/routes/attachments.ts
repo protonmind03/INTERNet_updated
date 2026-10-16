@@ -8,6 +8,7 @@ import {
   readPrivateFile,
   savePrivateFile,
 } from "../services/privateFileStore";
+import { stripImageMetadata } from "../services/imageMetadata";
 
 /*
 |--------------------------------------------------------------------------
@@ -153,6 +154,8 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
           return res.status(400).json({ message: "Say which entry the picture is for." });
         }
         if (!req.file) return res.status(400).json({ message: "Choose a picture to attach." });
+        // The app re-encodes pictures on the phone; this covers anything that did not.
+        req.file.buffer = stripImageMetadata(req.file.buffer);
         const kind = pictureKind(req.file.buffer);
         if (!kind) {
           return res.status(400).json({ message: "That file is not a JPG, PNG or WebP picture." });

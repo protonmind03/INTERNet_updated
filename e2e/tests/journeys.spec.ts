@@ -1351,3 +1351,42 @@ test.describe("sounds and vibration", () => {
     await page.getByRole("switch", { name: "Sounds" }).uncheck();
   });
 });
+
+test.describe("camera details stay on the phone", () => {
+  test("a photo chosen as a document leaves the phone redrawn, without its place or camera details", async ({ page }) => {
+    await signIn(page, "student", SECOND_STUDENT);
+    await page.goto("/documents");
+    // A real photo, larger than needed, with an Exif block naming a place put in after the first two bytes.
+    const drawn = Buffer.from(
+      await page.evaluate(() => {
+        const canvas = document.createElement("canvas");
+        canvas.width = 1200;
+        canvas.height = 900;
+        const context = canvas.getContext("2d")!;
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, 1200, 900);
+        context.fillStyle = "#1a237e";
+        context.fillRect(100, 100, 600, 80);
+        return canvas.toDataURL("image/jpeg", 0.92).split(",")[1];
+      }),
+      "base64"
+    );
+    const details = Buffer.from("Exif\0\0MM\0*GPSLatitude 16.0231N GPSLongitude 120.2311E Lingayen-PSU", "latin1");
+    const block = Buffer.concat([Buffer.from([0xff, 0xe1, (details.length + 2) >> 8, (details.length + 2) & 0xff]), details]);
+    const photo = Buffer.concat([drawn.subarray(0, 2), block, drawn.subarray(2)]);
+
+    // What the phone actually sends.
+    let sent: Buffer | null = null;
+    await page.route("**/api/documents", async (route) => {
+      if (route.request().method() === "POST") sent = route.request().postDataBuffer();
+      await route.continue();
+    });
+    const chooser = page.waitForEvent("filechooser");
+    await page.getByRole("button", { name: /^(Upload|Upload again)$/ }).first().click();
+    await (await chooser).setFiles({ name: "IMG_2041.jpg", mimeType: "image/jpeg", buffer: photo });
+    await expect.poll(() => sent !== null, { timeout: 15_000 }).toBe(true);
+    const body = sent as unknown as Buffer;
+    expect(body.includes(Buffer.from([0xff, 0xd8, 0xff]))).toBe(true);
+    for (const secret of ["Exif", "GPSLatitude", "Lingayen-PSU"]) expect(body.includes(Buffer.from(secret, "latin1"))).toBe(false);
+  });
+});
