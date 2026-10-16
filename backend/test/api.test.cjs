@@ -8489,10 +8489,11 @@ test("camera details and GPS tags are taken out of every uploaded image, the pic
     assert.equal(concern.status, 201, JSON.stringify(filed));
     const concernRow = (await pool.query(`SELECT id, evidence_url FROM complaints WHERE student_id = $1 ORDER BY id DESC LIMIT 1`, [sid])).rows[0];
     created.complaints.push(concernRow.id);
-    const { readPrivateFile } = require("../src/services/privateFileStore.ts");
+    // Read from the folder itself: the store module may already be loaded,
+    // by the bucket test, pointing at a folder of its own.
     if (process.env.PRIVATE_UPLOAD_DIR) {
-      const evidence = await readPrivateFile(concernRow.evidence_url.replace(/^\/uploads\//, ""));
-      assert.ok(evidence.buffer.equals(png.kept), "the stored evidence is the picture without its camera details");
+      const evidence = fs.readFileSync(nodePath.join(process.env.PRIVATE_UPLOAD_DIR, concernRow.evidence_url.replace(/^\/uploads\//, "")));
+      assert.ok(evidence.equals(png.kept), "the stored evidence is the picture without its camera details");
     }
 
     // A picture on a log (the app redraws it; this is the server covering a client that did not).
