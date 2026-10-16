@@ -1,4 +1,7 @@
+import os from "node:os";
+import path from "node:path";
 import { defineConfig } from "@playwright/test";
+import { writeTestCard } from "./camera/test-card";
 
 /*
 |--------------------------------------------------------------------------
@@ -19,10 +22,19 @@ import { defineConfig } from "@playwright/test";
 | against anything that is not this machine.
 |
 | The camera is a fake one the browser provides. It has no face in it, so
-| the time-in test goes as far as the camera check starting, not through
-| it: a complete time-in cannot be automated.
+| the journeys' time-in test goes as far as the camera check starting. The
+| "camera" project (tests/capture.spec.ts) goes through it: its camera plays
+| a test card and the face tracker is replaced by a stand-in
+| (camera/fake-face-tracker.ts), so the app's own button, capture and
+| upload run. It blocks the service worker, which would otherwise serve the
+| real tracker from its cache.
 |
 */
+
+// The camera project's test card, written fresh for each run.
+const testCard = path.join(os.tmpdir(), "internet-e2e-test-card.y4m");
+writeTestCard(testCard);
+const fakeCamera = ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"];
 
 const baseURL = process.env.E2E_BASE_URL || "http://localhost:4173";
 
@@ -55,9 +67,20 @@ export default defineConfig({
     channel: process.env.CI ? undefined : "chrome",
     permissions: ["camera"],
     launchOptions: {
-      args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+      args: fakeCamera,
     },
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
+  projects: [
+    { name: "journeys", testIgnore: /capture\.spec\.ts$/ },
+    {
+      name: "camera",
+      testMatch: /capture\.spec\.ts$/,
+      use: {
+        serviceWorkers: "block",
+        launchOptions: { args: [...fakeCamera, `--use-file-for-fake-video-capture=${testCard}`] },
+      },
+    },
+  ],
 });
