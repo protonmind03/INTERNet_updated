@@ -443,6 +443,15 @@ export function useSupervisorWork(
     [change]
   );
 
+  /** Takes back a photo rejection made in the last 15 minutes, while no new photo has been taken. */
+  const undoRejectTimeIn = useCallback(
+    (id: number) =>
+      change(() =>
+        sendJson("POST", `/api/attendance/${id}/reject-time-in/undo`, {}, "The rejection could not be taken back.")
+      ),
+    [change]
+  );
+
   /** Sets the times on a log ("HH:MM", or null for no break / still open), with a reason. */
   const correctTimes = useCallback(
     (
@@ -647,6 +656,7 @@ export function useSupervisorWork(
     reload: load,
     decideAttendance,
     rejectTimeIn,
+    undoRejectTimeIn,
     correctTimes,
     recordTimeIn,
     verifyMany,

@@ -278,6 +278,13 @@ export const AUDIT_RULES: Rule[] = [
     keep: ["reason"],
     from: (source) => ({ window: source.result.closes }),
   },
+  {
+    method: "POST",
+    path: "/api/attendance/:id/reject-time-in/undo",
+    action: "attendance.reject_time_in_undo",
+    entityType: "attendance",
+    entityId: param("id"),
+  },
   // Appeals to the coordinator
   {
     method: "POST",

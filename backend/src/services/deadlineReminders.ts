@@ -5,7 +5,7 @@ import { allowsChannel } from "./notificationPreferences";
 import { releaseDueTasks, released } from "./taskRelease";
 import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
 import { phSql } from "./phTime";
-import { closeMissedRedos } from "./photoRedo";
+import { closeMissedRedos, remindRedoDeadlines } from "./photoRedo";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -32,6 +32,7 @@ export function startDeadlineReminderScheduler(
     try {
       // A rejected time-in photo not retaken in time closes the day as absent.
       try {
+        await remindRedoDeadlines(pool, createNotification);
         await closeMissedRedos(pool, createNotification);
       } catch (error) {
         console.error("PHOTO REDO DEADLINE ERROR:", error);

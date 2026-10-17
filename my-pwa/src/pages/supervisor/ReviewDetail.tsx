@@ -243,7 +243,13 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
                 label: "Reject time-in (photo)",
                 onReject: async (note) => {
                   await work.rejectTimeIn(entry.id, note);
-                  toast.success(`Time-in photo rejected. ${entry.student_name} has been asked to retake it.`);
+                  toast.success(
+                    `Time-in photo rejected. ${entry.student_name} has been asked to retake it.`,
+                    undoAction(
+                      () => work.undoRejectTimeIn(entry.id),
+                      "Rejection taken back. No new photo is needed."
+                    )
+                  );
                   onDecided();
                 },
               }

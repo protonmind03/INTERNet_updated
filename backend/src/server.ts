@@ -84,7 +84,7 @@ import { registerExtensionRoutes } from "./routes/extensions";
 import { PH_PG_OPTIONS, PH_TIME_ZONE, phToday, usePhilippineProcessTime } from "./services/phTime";
 import { cleanId, sameId, sqlSameId } from "./services/ids";
 import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, syncLivenessStrict, type LivenessLevel, type LivenessPrompt } from "./services/liveness";
-import { redoWindow, removeMissedRedoAbsence } from "./services/photoRedo";
+import { REDO_UNDO_MINUTES, redoWindow, removeMissedRedoAbsence } from "./services/photoRedo";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
@@ -3713,6 +3713,56 @@ app.post(
     } catch (error) {
       console.error("REJECT TIME-IN ERROR:", error);
       return res.status(500).json({ message: "Failed to reject the time-in photo." });
+    }
+  }
+);
+
+/*
+| A photo rejection made by mistake can be taken back by the supervisor who
+| made it, for REDO_UNDO_MINUTES, while no new photo has been taken: the
+| log is as it was, and the student is told. After that, an appeal remains.
+*/
+app.post(
+  "/api/attendance/:id/reject-time-in/undo",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const id = String(req.params.id);
+      if (!/^\d{1,15}$/.test(id)) return res.status(404).json({ message: "Attendance record not found." });
+      const result = await pool.query<{ student_id: string; date: string }>(
+        `UPDATE attendance a
+         SET rejection_scope = NULL,
+             photo_rejection_reason = NULL,
+             photo_rejected_at = NULL,
+             photo_rejected_by = NULL,
+             photo_redo_status = NULL,
+             photo_redo_due_at = NULL,
+             photo_redo_reminded_at = NULL
+         FROM students s
+         WHERE a.id = $1 AND s.student_id = a.student_id AND s.supervisor_id = $2
+           AND a.photo_redo_status = 'required'
+           AND a.photo_rejected_by = $2
+           AND a.photo_rejected_at > NOW() - make_interval(mins => $3)
+         RETURNING a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date`,
+        [id, auth.id, REDO_UNDO_MINUTES]
+      );
+      if (result.rows.length === 0) {
+        return res.status(409).json({ message: "This rejection can no longer be taken back. The intern can appeal it." });
+      }
+      const log = result.rows[0];
+      await syncLivenessStrict(pool, log.student_id).catch((error) => console.error("LIVENESS LEVEL ERROR:", error));
+      await createNotification({
+        studentId: log.student_id,
+        entity: { type: "attendance", id: Number(id) },
+        title: "Time-in photo accepted after all",
+        message: `Your supervisor took back the rejection of your time-in photo for ${log.date}. No new photo is needed.`,
+        type: "attendance",
+      }).catch((error) => console.error("UNDO PHOTO REJECTION NOTIFICATION ERROR:", error));
+      return res.json({ message: "Rejection taken back. The intern has been told." });
+    } catch (error) {
+      console.error("UNDO PHOTO REJECTION ERROR:", error);
+      return res.status(500).json({ message: "Failed to take the rejection back." });
     }
   }
 );

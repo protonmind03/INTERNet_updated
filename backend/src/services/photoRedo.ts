@@ -26,6 +26,10 @@
 */
 
 export const REDO_MINUTES_AFTER_LUNCH = 60;
+/** How long before a set deadline the student is reminded. */
+export const REDO_REMINDER_MINUTES = 15;
+/** How long the supervisor who rejected a photo may take the rejection back. */
+export const REDO_UNDO_MINUTES = 15;
 export const REDO_MISSED_REASON = "Photo not retaken in time";
 /** The reason on the absence the job adds, so it can be told from one a student filed. */
 export const REDO_MISSED_ABSENCE_REASON =
@@ -108,6 +112,39 @@ export async function closeMissedRedos(db: Queryable, notify: Notify): Promise<n
     }
   }
   return closed.rows.length;
+}
+
+/**
+ * Reminds the student, once, when a window with a set end closes within
+ * REDO_REMINDER_MINUTES (a window that closes at "Back from lunch" has no
+ * set end; the banner stands for it). Runs every minute, before the job above.
+ */
+export async function remindRedoDeadlines(db: Queryable, notify: Notify): Promise<number> {
+  const due = await db.query(
+    `UPDATE attendance
+     SET photo_redo_reminded_at = NOW()
+     WHERE photo_redo_status = 'required'
+       AND time_out IS NULL
+       AND photo_redo_reminded_at IS NULL
+       AND photo_redo_due_at > NOW()
+       AND photo_redo_due_at <= NOW() + make_interval(mins => $1)
+     RETURNING id, student_id, TO_CHAR(photo_redo_due_at, 'FMHH12:MI AM') AS due`,
+    [REDO_REMINDER_MINUTES]
+  );
+  for (const log of due.rows) {
+    try {
+      await notify({
+        studentId: String(log.student_id),
+        entity: { type: "attendance", id: Number(log.id) },
+        title: "Retake your time-in photo soon",
+        message: `Your new time-in photo is due by ${log.due}. If it is not taken by then, today is marked absent. Retake it from the banner at the top of the app.`,
+        type: "attendance",
+      });
+    } catch (error) {
+      console.error("PHOTO REDO REMINDER ERROR:", error);
+    }
+  }
+  return due.rows.length;
 }
 
 /** Takes the absence the job added away again (the day was verified or the rejection overturned). */

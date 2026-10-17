@@ -9740,3 +9740,73 @@ test("the coordinator's student record shows a rejected time-in photo in the log
     await f.cleanup();
   }
 });
+
+test("a photo rejection can be taken back by its supervisor for 15 minutes, while no new photo was taken", async (t) => {
+  assert.equal((await jsonRequest("/api/attendance/1/reject-time-in/undo", jsonBody(studentToken, "POST", {}))).response.status, 403);
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("UNDO");
+  try {
+    const undo = (id) => jsonRequest(`/api/attendance/${id}/reject-time-in/undo`, jsonBody(f.supervisor.token, "POST", {}));
+    const today = await f.log();
+    assert.equal((await undo(today)).response.status, 409, "nothing to take back yet");
+    assert.equal((await f.rejectPhoto(today)).response.status, 200);
+    assert.equal((await f.pool.query(`SELECT liveness_strict FROM students WHERE student_id = $1`, [f.sid])).rows[0].liveness_strict, true);
+
+    const undone = await undo(today);
+    assert.equal(undone.response.status, 200, JSON.stringify(undone.body));
+    const log = await f.row(today);
+    assert.deepEqual(
+      [log.rejection_scope, log.photo_rejection_reason, log.photo_redo_status, log.photo_rejected_at, log.status],
+      [null, null, null, null, "Pending"]
+    );
+    assert.equal((await f.pool.query(`SELECT liveness_strict FROM students WHERE student_id = $1`, [f.sid])).rows[0].liveness_strict, false);
+    assert.equal((await f.pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Time-in photo accepted after all'`, [f.sid])).rows.length, 1);
+    assert.equal((await undo(today)).response.status, 409, "once");
+
+    // After 15 minutes, or once a new photo was taken: an appeal remains instead.
+    assert.equal((await f.rejectPhoto(today)).response.status, 200);
+    await f.pool.query(`UPDATE attendance SET photo_rejected_at = NOW() - INTERVAL '16 minutes' WHERE id = $1`, [today]);
+    assert.equal((await undo(today)).response.status, 409);
+    await f.pool.query(`UPDATE attendance SET photo_rejected_at = NOW(), photo_redo_status = 'submitted' WHERE id = $1`, [today]);
+    assert.equal((await undo(today)).response.status, 409);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const audit = await f.pool.query(`SELECT 1 FROM audit_log WHERE action = 'attendance.reject_time_in_undo' AND entity_id = $1`, [String(today)]);
+    assert.equal(audit.rows.length, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("the student is reminded once, 15 minutes before a set redo deadline", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { remindRedoDeadlines } = require("../src/services/photoRedo.ts");
+  const told = [];
+  const f = await rejectionFixture("REMIND");
+  const g = await rejectionFixture("LATER");
+  const h = await rejectionFixture("LUNCH");
+  try {
+    const soon = await f.log({ lunch: "ended" });
+    const later = await g.log({ lunch: "ended" });
+    const atLunch = await h.log({ lunch: "open" });
+    for (const [fixture, id] of [[f, soon], [g, later], [h, atLunch]]) assert.equal((await fixture.rejectPhoto(id)).response.status, 200);
+    await f.pool.query(`UPDATE attendance SET photo_redo_due_at = NOW() + INTERVAL '10 minutes' WHERE id = $1`, [soon]);
+    await g.pool.query(`UPDATE attendance SET photo_redo_due_at = NOW() + INTERVAL '30 minutes' WHERE id = $1`, [later]);
+    const pool = localTestPool();
+    try {
+      await remindRedoDeadlines(pool, async (notification) => told.push(notification));
+      await remindRedoDeadlines(pool, async (notification) => told.push(notification));
+    } finally {
+      await pool.end();
+    }
+    const mine = (sid) => told.filter((notification) => notification.studentId === sid);
+    assert.equal(mine(f.sid).length, 1, "reminded once");
+    assert.match(mine(f.sid)[0].message, /due by \d{1,2}:\d{2} (AM|PM)/);
+    assert.equal(mine(g.sid).length, 0, "not yet");
+    assert.equal(mine(h.sid).length, 0, "a window that closes at Back from lunch has no set end");
+  } finally {
+    await f.cleanup();
+    await g.cleanup();
+    await h.cleanup();
+  }
+});
