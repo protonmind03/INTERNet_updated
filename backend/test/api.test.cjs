@@ -10187,7 +10187,7 @@ test("every page that moved into a hub keeps its address: it redirects to its ta
   for (const hub of Object.values(HUBS)) assert.match(app, new RegExp(`path="${hub.path}"\\s+element=\\{<CoordinatorHub `), hub.path);
 });
 
-test("the coordinator's sidebar wears the student's style: both layouts draw it from the SIDEBAR tokens", () => {
+test("the coordinator's sidebar wears the student's style from the SIDEBAR tokens; the student's portal is now a folder", () => {
   require("tsx/cjs");
   const fs = require("node:fs");
   const path = require("node:path");
@@ -10198,13 +10198,17 @@ test("the coordinator's sidebar wears the student's style: both layouts draw it 
   }
   assert.match(SIDEBAR.activeBar, /bg-gold-400/, "the gold edge on the current page");
   const read = (file) => fs.readFileSync(path.join(__dirname, "../../my-pwa/src/layouts", file), "utf8");
-  for (const file of ["StudentLayout.tsx", "CoordinatorLayout.tsx"]) {
-    const source = read(file);
-    for (const key of ["surface", "groupLabel", "item", "itemActive", "itemIdle", "activeBar", "footer", "signOut"]) {
-      assert.ok(source.includes(`SIDEBAR.${key}`), `${file} uses SIDEBAR.${key}`);
-    }
-    assert.ok(source.includes("inb-scroll-pane"), `${file} has the shared scroll pane`);
+  const coordinatorLayout = read("CoordinatorLayout.tsx");
+  for (const key of ["surface", "groupLabel", "item", "itemActive", "itemIdle", "activeBar", "footer", "signOut"]) {
+    assert.ok(coordinatorLayout.includes(`SIDEBAR.${key}`), `CoordinatorLayout uses SIDEBAR.${key}`);
   }
+  assert.ok(coordinatorLayout.includes("inb-scroll-pane"), "the coordinator's menu is the shared scroll pane");
+  // Iteration 10: the student's portal is a folder; its tab row is the same scroll pane, sideways.
+  assert.ok(read("StudentLayout.tsx").includes("<FolderShell"), "the student layout is a folder");
+  const folder = fs.readFileSync(path.join(__dirname, "../../my-pwa/src/components/folder/FolderShell.tsx"), "utf8");
+  assert.ok(folder.includes("inb-scroll-pane") && folder.includes('data-axis="x"'));
+  // Copied, not imported: the coordinator's record stays exactly as it is.
+  assert.equal(/from ["'][^"']*studentRecord/.test(folder), false, "FolderShell does not import the record's files");
   assert.ok(read("SupervisorLayout.tsx").includes("inb-scroll-pane"), "the supervisor's too");
   assert.equal(read("CoordinatorLayout.tsx").includes("surface-console"), false, "the light console sidebar is gone");
 });

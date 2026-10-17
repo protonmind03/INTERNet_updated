@@ -92,12 +92,12 @@ test.describe("the floating next-step button", () => {
     const button = page.locator("button.float-fab");
     await expect(button).toBeVisible();
     await expect(button).toHaveAccessibleName("Time in");
-    // 56 px tall, in the bottom right corner, clear of the tab bar.
+    // 56 px tall, in the bottom right corner, clear of the screen's edge (Iteration 10: no tab bar below it).
     const box = (await button.boundingBox())!;
-    const bar = (await main.last().boundingBox())!;
+    const screen = page.viewportSize()!;
     expect(box.height).toBe(56);
     expect(box.x + box.width).toBeGreaterThan(390 - 24);
-    expect(box.y + box.height).toBeLessThanOrEqual(bar.y);
+    expect(box.y + box.height).toBeLessThanOrEqual(screen.height - 16);
 
     await main.getByRole("link", { name: "Tasks" }).click();
     await expect(page).toHaveURL(/\/task$/);
@@ -231,18 +231,16 @@ test.describe("completion", () => {
 test.describe("the student's menu", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone: five tabs, two things under More, and the Resolution Center as the icon beside the bell", async ({ page }) => {
+  test("on a phone: the folder's six tabs in one row that scrolls sideways, and the Resolution Center as the icon beside the bell", async ({ page }) => {
     await signIn(page, "student");
-    const bar = page.getByRole("navigation", { name: "Main" }).last();
-    for (const name of ["Today", "Attendance", "Tasks", "Documents"]) {
-      await expect(bar.getByRole("link", { name })).toBeVisible();
-    }
-
-    await bar.getByRole("button", { name: "More" }).click();
-    const more = page.getByRole("dialog", { name: "More" });
-    await expect(more.getByRole("link")).toHaveText(["Schedule", "Weekly report"]);
-    await more.getByRole("link", { name: "Schedule" }).click();
+    // Iteration 10: the portal is a folder; its tabs replace the tab bar and the More sheet.
+    const tabs = page.getByRole("navigation", { name: "Main" });
+    await expect(tabs.getByRole("link")).toHaveText([/^Today/, /^Attendance/, /^Tasks/, /^Documents/, /^Schedule/, /^Weekly report/]);
+    await expect(tabs.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
+    await expect(tabs).toHaveAttribute("data-more-below", "");
+    await tabs.getByRole("link", { name: "Schedule" }).click();
     await expect(page).toHaveURL(/\/schedule$/);
+    await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
 
     await page.getByRole("button", { name: /Account menu/ }).click();
     await expect(page.getByRole("button", { name: "Profile", exact: true })).toBeVisible();
@@ -565,8 +563,7 @@ test.describe("what a student reads about their days", () => {
     test.skip(existing?.status === "Reviewed", "This week's report is already reviewed and closed.");
 
     await signIn(page, "student");
-    await page.getByRole("button", { name: "More" }).click();
-    await page.getByRole("dialog", { name: "More" }).getByRole("link", { name: "Weekly report" }).click();
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Weekly report" }).click();
     await expect(page).toHaveURL(/\/journal$/);
     await page.getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing }).first().click();
     const form = page.getByRole("dialog");
