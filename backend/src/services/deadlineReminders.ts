@@ -5,6 +5,7 @@ import { allowsChannel } from "./notificationPreferences";
 import { releaseDueTasks, released } from "./taskRelease";
 import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
 import { phSql } from "./phTime";
+import { closeMissedRedos } from "./photoRedo";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -12,6 +13,7 @@ type NotificationWriter = (notification: {
   title: string;
   message: string;
   type: string;
+  entity?: { type: string; id: string | number };
 }) => Promise<void>;
 
 const MAX_EMAIL_ATTEMPTS = 5;
@@ -28,6 +30,12 @@ export function startDeadlineReminderScheduler(
     if (running) return;
     running = true;
     try {
+      // A rejected time-in photo not retaken in time closes the day as absent.
+      try {
+        await closeMissedRedos(pool, createNotification);
+      } catch (error) {
+        console.error("PHOTO REDO DEADLINE ERROR:", error);
+      }
       // Tasks whose release day has come are announced first, once each.
       try {
         await releaseDueTasks(pool, createNotification);

@@ -1465,7 +1465,20 @@ export function registerExtensionRoutes(
         const [attendance, tasks, documents, evaluations, absences, schedule, journals] = await Promise.all([
           pool.query(
             `SELECT id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
-                    time_out, hours, note, status, review_notes, correction_note,
+                    time_out, hours, note, status,
+                    -- A rejected time-in photo is told in the reviewer note the
+                    -- record already shows (the frozen record files are not edited).
+                    NULLIF(CONCAT_WS(' ',
+                      review_notes,
+                      CASE WHEN photo_rejected_at IS NOT NULL THEN
+                        'Time-in photo rejected: ' || photo_rejection_reason ||
+                        CASE photo_redo_status
+                          WHEN 'submitted' THEN ' A new photo was taken.'
+                          WHEN 'missed' THEN ' No new photo was taken in time.'
+                          WHEN 'required' THEN ' A new photo is due.'
+                          ELSE '' END
+                      END), '') AS review_notes,
+                    correction_note,
                     accomplishments, recorded_offline,
                     (offline_time_in_request IS NOT NULL) AS offline_time_in,
                     (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'attendance' AND px.owner_id = attendance.id AND px.removed_at IS NULL) AS pictures,

@@ -73,6 +73,14 @@ export type AttendanceEntry = {
    * Null when it was not measured.
    */
   clock_skew_seconds?: number | null;
+  /** 'time_in' when the photo was rejected, 'attendance' when the whole day was. */
+  rejection_scope?: "time_in" | "attendance" | null;
+  photo_rejection_reason?: string | null;
+  /** After a photo rejection: waiting for a new one, taken, or not taken in time. */
+  photo_redo_status?: "required" | "submitted" | "missed" | null;
+  photo_redo_due_at?: string | null;
+  /** The photo that was rejected, kept when a new one replaced it. */
+  rejected_photo_path?: string | null;
   /** Set on a time-in recorded offline with the camera check and a record the phone signed. */
   offline_attestation?: OfflineAttestation | null;
   /** What the intern wrote at time-out about the day's work. */
@@ -423,6 +431,18 @@ export function useSupervisorWork(
     [change]
   );
 
+  /**
+   * Rejects only the photo of today's open log: the intern keeps working and
+   * is asked to retake it (backend services/photoRedo.ts).
+   */
+  const rejectTimeIn = useCallback(
+    (id: number, reason: string) =>
+      change(() =>
+        sendJson("POST", `/api/attendance/${id}/reject-time-in`, { reason: reason.trim() }, "The time-in photo could not be rejected.")
+      ),
+    [change]
+  );
+
   /** Sets the times on a log ("HH:MM", or null for no break / still open), with a reason. */
   const correctTimes = useCallback(
     (
@@ -626,6 +646,7 @@ export function useSupervisorWork(
     error,
     reload: load,
     decideAttendance,
+    rejectTimeIn,
     correctTimes,
     recordTimeIn,
     verifyMany,

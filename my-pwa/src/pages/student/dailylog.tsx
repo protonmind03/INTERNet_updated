@@ -39,6 +39,7 @@ import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
 import TodayAttendance from "./TodayAttendance";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
+import { AppealActions } from "./Appeals";
 import { sameId } from "../../lib/ids";
 
 type Filter = "All" | "Verified" | "Pending" | "Rejected";
@@ -302,6 +303,7 @@ function DailyLogPage() {
                       <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} />
                     )}
                     <FixButton fix={fixFor(log)} />
+<AppealActions log={log} onChanged={() => void attendance.reload()} />
                   </li>
                 ))}
               </ul>
@@ -347,6 +349,7 @@ function DailyLogPage() {
                             <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} className="mt-2" />
                           )}
                           <FixButton fix={fixFor(log)} />
+<AppealActions log={log} onChanged={() => void attendance.reload()} />
                         </td>
                         <td className="px-3 py-3.5">
                           <StatusBadge status={log.status} />
@@ -430,6 +433,8 @@ function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolea
     !log.review_notes &&
     !log.correction_note &&
     !log.time_correction_reason &&
+    !log.photo_rejection_reason &&
+    !log.appeal &&
     !bySupervisor
   ) {
     return inline ? <span className="text-slate-500">—</span> : null;
@@ -472,6 +477,30 @@ function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolea
           }`}
         >
           <span className="font-semibold">Supervisor:</span> {log.review_notes}
+        </p>
+      )}
+      {log.photo_rejection_reason && (
+        <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
+          <span className="font-semibold">Time-in photo rejected:</span> {log.photo_rejection_reason}{" "}
+          {log.photo_redo_status === "submitted"
+            ? "You took a new one."
+            : log.photo_redo_status === "missed"
+              ? "No new photo was taken in time."
+              : log.photo_redo_status === "required"
+                ? "A new photo is due; see the banner at the top."
+                : ""}
+        </p>
+      )}
+      {log.appeal && log.appeal.status !== "withdrawn" && (
+        <p className="rounded-md bg-psu-50 px-2.5 py-1.5 text-sm text-psu-900">
+          <span className="font-semibold">
+            {log.appeal.status === "open"
+              ? "Appeal waiting for the coordinator."
+              : log.appeal.status === "overturned"
+                ? "Appeal accepted."
+                : "Appeal not accepted."}
+          </span>
+          {log.appeal.decision_note ? ` ${log.appeal.decision_note}` : ""}
         </p>
       )}
     </div>

@@ -55,6 +55,16 @@ export type AttendanceLog = {
   /** Set when the supervisor corrected the times on this log, with their reason. */
   time_corrected_at?: string | null;
   time_correction_reason?: string | null;
+  /** 'time_in' when the supervisor rejected the photo, 'attendance' when the whole day. */
+  rejection_scope?: "time_in" | "attendance" | null;
+  photo_rejection_reason?: string | null;
+  photo_rejected_at?: string | null;
+  /** After a photo rejection: a new one is due, was taken, or was not taken in time. */
+  photo_redo_status?: "required" | "submitted" | "missed" | null;
+  /** When the window to retake it closes; null while it closes at "Back from lunch". */
+  photo_redo_due_at?: string | null;
+  /** The latest appeal to the coordinator about this log. */
+  appeal?: { id: number; kind: string; status: "open" | "upheld" | "overturned" | "withdrawn"; decision_note: string | null } | null;
   /** Steps taken offline on this phone that have not reached the server yet. */
   waiting?: QueuedPath[];
 };
@@ -350,6 +360,22 @@ export function useAttendance(studentId: string | undefined) {
     []
   );
 
+  /** Sends the new time-in photo after a rejection, taken with the strict camera check. */
+  const redoPhoto = useCallback(
+    async (logId: number, photo: File, check: { ticket: string; report: LivenessReport }) => {
+      const image = await compressPhoto(photo);
+      const form = new FormData();
+      form.append("liveness_ticket", check.ticket);
+      form.append("liveness_report", JSON.stringify(check.report));
+      form.append("image", image);
+      await run(
+        () => fetch(`${API_URL}/api/attendance/${logId}/photo-redo`, withStudentAuth({ method: "POST", body: form })),
+        "Could not send the new photo."
+      );
+    },
+    [run]
+  );
+
   /**
    * Records the time-in on this phone, for when there is no connection. No
    * photo is taken or kept. False when this browser cannot keep it.
@@ -467,6 +493,7 @@ export function useAttendance(studentId: string | undefined) {
     timeInOffline,
     offlineVoucher,
     timeInOfflineAttested,
+    redoPhoto,
     startBreak: () => step("break", "Could not record that you went out for lunch."),
     endBreak: () => step("break-end", "Could not record that you are back from lunch."),
     /** Times out, with the student's note of what they did today. */

@@ -236,7 +236,11 @@ function TimeInActions({ children }: { children: ReactNode }) {
       <ConfirmDialog
         open={pending === "back"}
         title="Back from lunch?"
-        message={`You will be marked back from lunch at ${formatTime(now)}.`}
+        message={
+          todayLog?.photo_redo_status === "required" && !todayLog.photo_redo_due_at
+            ? `Your new time-in photo is still due. Tapping Back from lunch now closes that chance, and today will be marked absent. Retake the photo first from the banner at the top of the page.`
+            : `You will be marked back from lunch at ${formatTime(now)}.`
+        }
         confirmLabel="Back from lunch"
         busy={busy}
         busyProcess="timeIn"

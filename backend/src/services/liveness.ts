@@ -12,9 +12,10 @@ import { randomInt } from "node:crypto";
 |   strict    both head turns and the colour (screen-light) test; when the
 |             light test does not clearly pass, a blink is asked as well.
 |
-| A student is on the strict level from the moment one of their logs is
-| rejected until one of their logs is verified (students.liveness_strict,
-| kept by syncLivenessStrict). The check runs on the student's phone, so
+| A student is on the strict level from the moment the photo of one of
+| their time-ins is rejected ("Reject time-in", services/photoRedo.ts)
+| until one of their logs is verified (students.liveness_strict, kept by
+| syncLivenessStrict). Rejecting a whole day does not change the level. The check runs on the student's phone, so
 | either level is a deterrent, not proof; the supervisor still reviews the
 | photo.
 |
@@ -61,20 +62,24 @@ export function requiredPrompts(
 type Queryable = { query: (text: string, values?: unknown[]) => Promise<unknown> };
 
 /**
- * Works the student's level out again from their logs: strict while their
- * latest decision on a log is a rejection made after their latest
- * verification. Run after every decision on a log, so a decision that is
- * withdrawn (back to Pending) takes its effect with it.
+ * Works the student's level out again from their logs: strict while a
+ * time-in photo of theirs was rejected after their latest verification,
+ * and that rejection was not overturned on appeal. Run after every decision
+ * on a log, so a decision that is withdrawn takes its effect with it.
  */
 export async function syncLivenessStrict(db: Queryable, studentId: string): Promise<void> {
   await db.query(
     `UPDATE students s SET liveness_strict = EXISTS (
        SELECT 1 FROM attendance r
-       WHERE r.student_id = s.student_id AND r.status = 'Rejected'
-         AND r.verified_at > COALESCE((
+       WHERE r.student_id = s.student_id AND r.photo_rejected_at IS NOT NULL
+         AND r.photo_rejected_at > COALESCE((
            SELECT MAX(v.verified_at) FROM attendance v
            WHERE v.student_id = s.student_id AND v.status = 'Verified'
          ), '-infinity'::timestamp)
+         AND NOT EXISTS (
+           SELECT 1 FROM attendance_appeals p
+           WHERE p.attendance_id = r.id AND p.kind = 'time_in_rejection' AND p.status = 'overturned'
+         )
      )
      WHERE s.student_id = $1`,
     [studentId]

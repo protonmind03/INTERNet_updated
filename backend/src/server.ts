@@ -52,6 +52,7 @@ import {
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
 import { registerConsoleRoutes } from "./routes/console";
 import { registerOfflineTimeInRoutes } from "./routes/offlineTimeIn";
+import { registerAppealRoutes } from "./routes/appeals";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
@@ -83,6 +84,7 @@ import { registerExtensionRoutes } from "./routes/extensions";
 import { PH_PG_OPTIONS, PH_TIME_ZONE, phToday, usePhilippineProcessTime } from "./services/phTime";
 import { cleanId, sameId, sqlSameId } from "./services/ids";
 import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, syncLivenessStrict, type LivenessLevel, type LivenessPrompt } from "./services/liveness";
+import { redoWindow, removeMissedRedoAbsence } from "./services/photoRedo";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
@@ -2239,6 +2241,15 @@ app.get(
             accomplishments,
             time_corrected_at,
             time_correction_reason,
+            rejection_scope,
+            photo_rejection_reason,
+            photo_rejected_at,
+            photo_redo_status,
+            photo_redo_due_at,
+            -- The latest appeal on this log, if any.
+            (SELECT JSON_BUILD_OBJECT('id', p.id, 'kind', p.kind, 'status', p.status, 'decision_note', p.decision_note)
+               FROM attendance_appeals p WHERE p.attendance_id = attendance.id
+              ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS appeal,
             -- The tasks the student said they worked on that day.
             (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
                FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
@@ -3012,6 +3023,14 @@ app.put(
 
       await rememberOfflineStep(step, "break-end", result.rows[0]);
 
+      // A rejected photo not yet retaken: the window closes at "Back from
+      // lunch" (services/photoRedo.ts); the minute job then closes the day.
+      await pool.query(
+        `UPDATE attendance SET photo_redo_due_at = break_end_time
+         WHERE id = $1 AND photo_redo_status = 'required' AND photo_redo_due_at IS NULL`,
+        [result.rows[0].id]
+      ).catch((error) => console.error("PHOTO REDO WINDOW ERROR:", error));
+
       return res.status(200).json({
         message:
           "Back from lunch recorded.",
@@ -3600,6 +3619,185 @@ app.post(
 
 /*
 |--------------------------------------------------------------------------
+| REJECT THE TIME-IN PHOTO, AND RETAKE IT
+|--------------------------------------------------------------------------
+|
+| "Reject time-in" is for a photo that is unusable while the student is
+| plausibly at work: only today's open log, with a reason. The log stays
+| open and Pending, its hours keep counting, the student's time-ins move to
+| the strict camera check, and a window opens to take a new photo
+| (services/photoRedo.ts). The whole day is rejected through the decision
+| route instead ("Reject attendance").
+|
+*/
+
+app.post(
+  "/api/attendance/:id/reject-time-in",
+  requireRole("supervisor"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const id = String(req.params.id);
+      if (!/^\d{1,15}$/.test(id)) return res.status(404).json({ message: "Attendance record not found." });
+      const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
+      if (reason.length < 5) {
+        return res.status(400).json({ message: "Say what is wrong with the photo. The intern will see it." });
+      }
+      const current = await pool.query<{
+        student_id: string;
+        name: string;
+        date: string;
+        is_today: boolean;
+        status: string;
+        time_out: Date | null;
+        image_url: string | null;
+        photo_redo_status: string | null;
+        break_time: Date | null;
+        break_end_time: Date | null;
+      }>(
+        `SELECT a.student_id, s.name, TO_CHAR(a.date, 'YYYY-MM-DD') AS date, (a.date = CURRENT_DATE) AS is_today,
+                a.status, a.time_out, a.image_url, a.photo_redo_status, a.break_time, a.break_end_time
+         FROM attendance a JOIN students s ON s.student_id = a.student_id
+         WHERE a.id = $1 AND s.supervisor_id = $2`,
+        [id, auth.id]
+      );
+      const log = current.rows[0];
+      if (!log) return res.status(404).json({ message: "Attendance record not found." });
+      if (!log.is_today || log.time_out || log.status !== "Pending") {
+        return res.status(409).json({
+          code: "NOT_OPEN_TODAY",
+          message: "Only the photo of today's open log can be rejected. Reject the attendance instead.",
+        });
+      }
+      if (!log.image_url) {
+        return res.status(409).json({ code: "NO_PHOTO", message: "This log has no photo to reject. Reject the attendance instead." });
+      }
+      if (log.photo_redo_status === "required") {
+        return res.status(409).json({ code: "REDO_ALREADY_REQUIRED", message: "A new photo is already being waited for on this log." });
+      }
+
+      const window = redoWindow(log);
+      const updated = await pool.query<{ photo_redo_due_at: string | null; due_clock: string | null }>(
+        `UPDATE attendance
+         SET rejection_scope = 'time_in',
+             photo_rejection_reason = $2,
+             photo_rejected_at = NOW(),
+             photo_rejected_by = $3,
+             photo_redo_status = 'required',
+             photo_redo_due_at = CASE WHEN $4::int IS NULL THEN NULL ELSE NOW() + make_interval(mins => $4::int) END
+         WHERE id = $1 AND time_out IS NULL AND status = 'Pending'
+         RETURNING photo_redo_due_at, TO_CHAR(photo_redo_due_at, 'FMHH12:MI AM') AS due_clock`,
+        [id, reason, auth.id, window.closes === "minutes" ? window.minutes : null]
+      );
+      if (updated.rows.length === 0) {
+        return res.status(409).json({ code: "NOT_OPEN_TODAY", message: "This log changed while you had it open. Check it again." });
+      }
+      await syncLivenessStrict(pool, log.student_id).catch((error) => console.error("LIVENESS LEVEL ERROR:", error));
+
+      const deadline =
+        window.closes === "minutes"
+          ? `by ${updated.rows[0].due_clock}`
+          : "before you tap Back from lunch (or before you time out, if you take no lunch)";
+      await createNotification({
+        studentId: log.student_id,
+        entity: { type: "attendance", id: Number(id) },
+        title: "Time-in photo rejected",
+        message: `Your time-in photo for today was rejected. Reason: ${reason} Keep working: your hours still count. Retake your photo ${deadline} from the Today page, or the day is marked absent. You can also appeal to the OJT coordinator within 7 days.`,
+        type: "attendance",
+      });
+      return res.json({
+        message: "Time-in photo rejected. The intern has been asked to retake it.",
+        attendance: { id: Number(id), photo_redo_status: "required", photo_redo_due_at: updated.rows[0].photo_redo_due_at },
+        closes: window.closes,
+      });
+    } catch (error) {
+      console.error("REJECT TIME-IN ERROR:", error);
+      return res.status(500).json({ message: "Failed to reject the time-in photo." });
+    }
+  }
+);
+
+app.post(
+  "/api/attendance/:id/photo-redo",
+  requireRole("student"),
+  upload.single("image"),
+  async (req, res) => {
+    let uploadedFileName: string | undefined;
+    try {
+      const auth = (req as AuthedRequest).auth!;
+      const id = String(req.params.id);
+      if (!/^\d{1,15}$/.test(id)) return res.status(404).json({ message: "Attendance record not found." });
+      const current = await pool.query<{ photo_redo_status: string | null; open: boolean; window_open: boolean }>(
+        `SELECT photo_redo_status, (time_out IS NULL) AS open,
+                (photo_redo_due_at IS NULL OR photo_redo_due_at > NOW()) AS window_open
+         FROM attendance WHERE id = $1 AND student_id = $2`,
+        [id, auth.id]
+      );
+      const log = current.rows[0];
+      if (!log) return res.status(404).json({ message: "Attendance record not found." });
+      if (log.photo_redo_status !== "required") {
+        return res.status(409).json({ code: "REDO_NOT_REQUIRED", message: "A new photo is not needed for this log." });
+      }
+      if (!log.open || !log.window_open) {
+        return res.status(409).json({ code: "REDO_CLOSED", message: "The time to retake the photo has passed. Talk to your supervisor, or appeal." });
+      }
+      if (!req.file || !["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
+        return res.status(400).json({ message: "Take the new photo with the camera check." });
+      }
+      // The stricter check, with a ticket of its own, spent once.
+      const liveness = readLivenessReport(auth.id, req.body?.liveness_ticket, req.body?.liveness_report);
+      if ("problem" in liveness) return res.status(400).json({ message: liveness.problem });
+      if (liveness.report.level !== "strict") {
+        return res.status(400).json({ code: "STRICT_CHECK_REQUIRED", message: "A retaken photo needs the stricter camera check. Start it again." });
+      }
+      const spent = await pool.query(
+        `INSERT INTO liveness_ticket_uses (jti) VALUES ($1) ON CONFLICT (jti) DO NOTHING RETURNING jti`,
+        [liveness.ticketId]
+      );
+      if (spent.rows.length === 0) {
+        return res.status(409).json({ code: "LIVENESS_TICKET_USED", message: "This camera check was already used. Run it again." });
+      }
+
+      uploadedFileName = await savePrivateFile(req.file);
+      const saved = await pool.query<{ student_name: string; supervisor_id: string | null; date: string }>(
+        `UPDATE attendance a
+         SET rejected_photo_path = COALESCE(a.rejected_photo_path, a.image_url),
+             image_url = $3,
+             capture_method = 'liveness',
+             liveness_checks = $4::jsonb,
+             photo_redo_status = 'submitted'
+         FROM students s
+         WHERE a.id = $1 AND a.student_id = $2 AND s.student_id = a.student_id
+           AND a.photo_redo_status = 'required' AND a.time_out IS NULL
+         RETURNING s.name AS student_name, s.supervisor_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date`,
+        [id, auth.id, `/uploads/${uploadedFileName}`, JSON.stringify(liveness.report)]
+      );
+      if (saved.rows.length === 0) {
+        await deletePrivateFile(uploadedFileName).catch(() => undefined);
+        uploadedFileName = undefined;
+        return res.status(409).json({ code: "REDO_CLOSED", message: "The time to retake the photo has passed. Talk to your supervisor, or appeal." });
+      }
+      uploadedFileName = undefined;
+      if (saved.rows[0].supervisor_id) {
+        await createNotification({
+          supervisorId: saved.rows[0].supervisor_id,
+          entity: { type: "attendance", id: Number(id) },
+          title: "Time-in photo retaken",
+          message: `${saved.rows[0].student_name} took a new time-in photo for ${saved.rows[0].date} with the stricter camera check. The log is back in your queue.`,
+          type: "attendance",
+        }).catch((error) => console.error("PHOTO REDO NOTIFICATION ERROR:", error));
+      }
+      return res.json({ message: "New photo saved. Your supervisor will review it.", attendance: { id: Number(id), photo_redo_status: "submitted" } });
+    } catch (error) {
+      if (uploadedFileName) await deletePrivateFile(uploadedFileName).catch(() => undefined);
+      console.error("PHOTO REDO ERROR:", error);
+      return res.status(500).json({ message: "Failed to save the new photo." });
+    }
+  }
+);
+
+/*
+|--------------------------------------------------------------------------
 | GET SUPERVISOR'S INTERNS' ATTENDANCE
 |--------------------------------------------------------------------------
 */
@@ -3701,6 +3899,11 @@ app.get(
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
             a.clock_skew_seconds,
             a.offline_attestation,
+            a.rejection_scope,
+            a.photo_rejection_reason,
+            a.photo_redo_status,
+            a.photo_redo_due_at,
+            a.rejected_photo_path,
             (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'attendance' AND px.owner_id = a.id AND px.removed_at IS NULL) AS pictures,
             a.accomplishments,
             a.time_corrected_at,
@@ -4104,6 +4307,25 @@ app.get(
 
 const CLOCK_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
+/** "8:00 AM" from "08:00"; "none" when there is no time. */
+function clock12(value: string | null | undefined): string {
+  if (!value) return "none";
+  const [hours, minutes] = value.split(":").map(Number);
+  return `${hours % 12 === 0 ? 12 : hours % 12}:${String(minutes).padStart(2, "0")} ${hours < 12 ? "AM" : "PM"}`;
+}
+
+/** "time in 8:00 AM → 8:15 AM; time out 5:00 PM → 4:45 PM": only what changed. */
+function correctionText(
+  before: Record<"time_in" | "break_time" | "break_end_time" | "time_out", string | null | undefined>,
+  after: Record<"time_in" | "break_time" | "break_end_time" | "time_out", string | null | undefined>
+): string {
+  const names = { time_in: "time in", break_time: "out for lunch", break_end_time: "back from lunch", time_out: "time out" } as const;
+  return (Object.keys(names) as Array<keyof typeof names>)
+    .filter((key) => before[key] !== after[key])
+    .map((key) => `${names[key]} ${clock12(before[key])} → ${clock12(after[key])}`)
+    .join("; ");
+}
+
 app.patch(
   "/api/attendance/:id/times",
   requireRole("supervisor"),
@@ -4234,13 +4456,15 @@ app.patch(
             ) END,
             time_corrected_at = NOW(),
             time_corrected_by = $6,
-            time_correction_reason = $7
+            time_correction_reason = $7,
+            -- What it was, so an appeal can put it back.
+            times_before_correction = $8::jsonb
         WHERE a.id = $1 AND a.flag_acknowledged_at IS NULL
         RETURNING a.id, a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date,
                   a.time_in, a.break_time, a.break_end_time, a.time_out, a.hours, a.status,
                   a.time_corrected_at, a.time_correction_reason
         `,
-        [id, timeIn, breakStart, breakEnd, timeOut, auth?.id, reason]
+        [id, timeIn, breakStart, breakEnd, timeOut, auth?.id, reason, JSON.stringify(before)]
       );
       if (result.rows.length === 0) {
         return res.status(409).json({
@@ -4263,7 +4487,7 @@ app.patch(
           studentId: String(attendance.student_id),
           entity: { type: "attendance", id: attendance.id },
           title: "Attendance times corrected",
-          message: `Your supervisor corrected the times on your log for ${attendance.date}. Reason: ${reason}`,
+          message: `Your supervisor corrected the times on your log for ${attendance.date}: ${correctionText(before, after)}. Reason: ${reason} If you disagree, you can appeal to the OJT coordinator within 7 days.`,
           type: "attendance",
         });
       } catch (error) {
@@ -4392,7 +4616,18 @@ app.patch(
             verified_by = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $5::text END,
             verifier_role = CASE WHEN $1::text = 'Pending' THEN NULL ELSE $4::text END,
             verified_at = CASE WHEN $1::text = 'Pending' THEN NULL ELSE NOW() END,
-            flag_acknowledged_at = NULL
+            flag_acknowledged_at = NULL,
+            -- A rejection here is of the whole day; withdrawing it clears that.
+            rejection_scope = CASE
+              WHEN $1::text = 'Rejected' THEN 'attendance'
+              WHEN $1::text = 'Pending' AND a.rejection_scope = 'attendance' THEN NULL
+              ELSE a.rejection_scope
+            END,
+            -- A decision on the day ends a photo redo still waiting.
+            photo_redo_status = CASE
+              WHEN $1::text <> 'Pending' AND a.photo_redo_status = 'required' THEN NULL
+              ELSE a.photo_redo_status
+            END
 
           FROM students s
           WHERE a.id = $3
@@ -4418,6 +4653,8 @@ app.patch(
             a.status,
             a.image_url,
             a.review_notes,
+            a.rejection_scope,
+            a.photo_redo_status,
             a.verified_by,
             a.verifier_role,
             a.verified_at
@@ -4471,11 +4708,19 @@ app.patch(
         });
       }
 
+      // A day closed as absent for a photo not retaken, verified after all
+      // (the student's phone failed, say): the absence the system added goes.
+      if (status === "Verified" && result.rows[0].photo_redo_status === "missed") {
+        await removeMissedRedoAbsence(pool, String(result.rows[0].student_id), String(result.rows[0].date)).catch((error) =>
+          console.error("MISSED REDO ABSENCE ERROR:", error)
+        );
+      }
+
       // Verified hours changed, so the student may have just completed (or
       // dropped back under) their requirement.
       await syncCompletion(String(result.rows[0].student_id));
-      // A rejection puts the student's next time-ins on the strict camera
-      // check; a verification, or this decision withdrawn, can take it off.
+      // A rejected photo puts the student's next time-ins on the strict camera
+      // check; a verification, or a decision withdrawn, can take it off.
       await syncLivenessStrict(pool, String(result.rows[0].student_id)).catch((error) =>
         console.error("LIVENESS LEVEL ERROR:", error)
       );
@@ -4507,7 +4752,7 @@ app.patch(
               }.`
             : `Your attendance for ${result.rows[0].date} was rejected.${
                 cleanReason ? ` Reason: ${cleanReason}` : ""
-              } You can ask for it to be reviewed again from your Attendance page.`,
+              } You can ask for it to be reviewed again from your Attendance page, or appeal to the OJT coordinator within 7 days.`,
         type: "attendance",
       });
 
@@ -9612,6 +9857,7 @@ app.get(
 |
 */
 
+registerAppealRoutes(app, { pool, requireRole, createNotification, notifyCoordinators, syncCompletion });
 registerOfflineTimeInRoutes(app, {
   pool,
   requireRole,

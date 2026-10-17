@@ -28,6 +28,7 @@ import {
 } from "./useSupervisorWork";
 import { sameId } from "../../lib/ids";
 import AttestedNote from "../../components/AttestedNote";
+import { phToday } from "../../lib/phTime";
 
 /*
 |--------------------------------------------------------------------------
@@ -102,6 +103,10 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
   const [correcting, setCorrecting] = useState(false);
   const decided = entry.status !== "Pending";
   const rejected = entry.status === "Rejected" || entry.status === "Flagged";
+  // Only the photo of today's open log can be rejected on its own.
+  const photoRejectable =
+    open && entry.status === "Pending" && Boolean(entry.image_url) && entry.date.slice(0, 10) === phToday() &&
+    entry.photo_redo_status !== "required";
 
   /** Lets a decision made by mistake be taken back straight from the toast. */
   const undoFrom = (decided: "Verified" | "Rejected") =>
@@ -215,14 +220,35 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         </p>
       )}
 
+      <PhotoRedoNote entry={entry} />
       {(!entry.offline_time_in || entry.offline_attestation) && (
         <AttendancePhoto path={entry.image_url} role="supervisor" />
+      )}
+      {entry.rejected_photo_path && (
+        <details className="text-sm">
+          <summary className="cursor-pointer font-semibold text-psu-700 hover:underline">The rejected photo</summary>
+          <div className="mt-2">
+            <AttendancePhoto path={entry.rejected_photo_path} role="supervisor" />
+          </div>
+        </details>
       )}
 
       <Decision
         key={`${entry.id}-${entry.status}`}
         approveLabel={entry.offline_time_in ? "They were at work: verify" : rejected ? "Verify instead" : "Verify"}
-        rejectLabel={entry.status === "Verified" ? "Reject instead" : "Reject"}
+        rejectLabel={entry.status === "Verified" ? "Reject attendance instead" : "Reject attendance"}
+        alternateReject={
+          photoRejectable
+            ? {
+                label: "Reject time-in (photo)",
+                onReject: async (note) => {
+                  await work.rejectTimeIn(entry.id, note);
+                  toast.success(`Time-in photo rejected. ${entry.student_name} has been asked to retake it.`);
+                  onDecided();
+                },
+              }
+            : undefined
+        }
         approveHidden={entry.status === "Verified"}
         rejectHidden={rejected}
         noteLabel="Reason for rejecting"
@@ -390,6 +416,28 @@ export function ClockGap({ seconds }: { seconds?: number | null }) {
         </span>{" "}
         when the steps recorded offline were sent. Those times come from that clock, so each may be
         off by about as much.
+      </span>
+    </p>
+  );
+}
+
+/** A rejected time-in photo, and where its retake stands. */
+function PhotoRedoNote({ entry }: { entry: AttendanceEntry }) {
+  if (!entry.photo_redo_status && !entry.photo_rejection_reason) return null;
+  const until = entry.photo_redo_due_at
+    ? `by ${formatTime(entry.photo_redo_due_at)}`
+    : "before they tap Back from lunch (or by time-out, if they take no lunch)";
+  const where = {
+    required: `Waiting for a new photo, ${until}. Their hours keep counting meanwhile.`,
+    submitted: "A new photo was taken with the stricter camera check; it is shown below.",
+    missed: "No new photo was taken in time, so the day was closed as absent. If their phone failed, you can still verify it.",
+  }[entry.photo_redo_status ?? "submitted"];
+  return (
+    <p className="flex items-start gap-2 rounded-lg bg-slate-50 px-3 py-2.5 text-sm text-slate-800 ring-1 ring-inset ring-slate-200">
+      <Icon name="camera" size={16} className="mt-0.5 shrink-0 text-slate-500" />
+      <span>
+        <span className="font-semibold">Time-in photo rejected</span>
+        {entry.photo_rejection_reason ? `: ${entry.photo_rejection_reason}` : "."} {where}
       </span>
     </p>
   );
@@ -802,9 +850,12 @@ function Decision({
   rejectHidden = false,
   shortcut = false,
   extra,
+  alternateReject,
   onApprove,
   onReject,
 }: {
+  /** A second way to reject, beside the first (an attendance log's "Reject time-in (photo)"). */
+  alternateReject?: { label: string; onReject: (note: string) => Promise<void> };
   /** When true, pressing A approves. */
   shortcut?: boolean;
   approveLabel: string;
@@ -825,10 +876,10 @@ function Decision({
   const [note, setNote] = useState("");
   const [noteOpen, setNoteOpen] = useState(noteAlwaysVisible);
   const [error, setError] = useState("");
-  const [busy, setBusy] = useState<"approve" | "reject" | null>(null);
+  const [busy, setBusy] = useState<"approve" | "reject" | "alternate" | null>(null);
 
-  const run = async (action: "approve" | "reject") => {
-    if (action === "reject" && !note.trim()) {
+  const run = async (action: "approve" | "reject" | "alternate") => {
+    if (action !== "approve" && !note.trim()) {
       setNoteOpen(true);
       setError(rejectNoteHint || "Write a reason first. The intern will see it.");
       return;
@@ -836,7 +887,7 @@ function Decision({
     setBusy(action);
     setError("");
     try {
-      await (action === "approve" ? onApprove(note) : onReject(note));
+      await (action === "approve" ? onApprove(note) : action === "alternate" ? alternateReject!.onReject(note) : onReject(note));
     } catch (decisionError) {
       setError(errorText(decisionError, "That could not be saved. Please try again."));
       setBusy(null);
@@ -915,7 +966,21 @@ function Decision({
         </p>
       )}
 
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
+        {alternateReject && (
+          <Button
+            variant="secondary"
+            onClick={() => void run("alternate")}
+            busy={busy === "alternate"}
+            busyLabel="Saving"
+            failed={Boolean(error)}
+            busyProcess="verify"
+            disabled={busy !== null}
+            className="text-red-700"
+          >
+            {alternateReject.label}
+          </Button>
+        )}
         {!rejectHidden && (
           <Button
             variant="secondary"

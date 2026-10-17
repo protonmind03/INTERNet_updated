@@ -263,6 +263,49 @@ export const AUDIT_RULES: Rule[] = [
     entityType: "attendance",
     entityId: param("id"),
     keep: ["status", "reason"],
+    // A day closed as absent for a photo not retaken, verified after all.
+    from: (source) =>
+      String(source.body.status) === "Verified" && nested(source.result.attendance, "photo_redo_status") === "missed"
+        ? { after_missed_photo_redo: true }
+        : {},
+  },
+  {
+    method: "POST",
+    path: "/api/attendance/:id/reject-time-in",
+    action: "attendance.reject_time_in",
+    entityType: "attendance",
+    entityId: param("id"),
+    keep: ["reason"],
+    from: (source) => ({ window: source.result.closes }),
+  },
+  // Appeals to the coordinator
+  {
+    method: "POST",
+    path: "/api/appeals",
+    action: "appeal.file",
+    entityType: "attendance",
+    entityId: (source) => source.body.attendance_id,
+    keep: ["kind"],
+    from: (source) => ({ appeal: nested(source.result.appeal, "id") }),
+  },
+  {
+    method: "POST",
+    path: "/api/appeals/:id/withdraw",
+    action: "appeal.withdraw",
+    entityType: "appeal",
+    entityId: param("id"),
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/appeals/:id",
+    action: (source) => (source.body.decision === "overturned" ? "appeal.overturn" : "appeal.uphold"),
+    entityType: "appeal",
+    entityId: param("id"),
+    keep: ["note"],
+    from: (source) => ({
+      kind: nested(source.result.appeal, "kind"),
+      attendance: nested(source.result.appeal, "attendance_id"),
+    }),
   },
   {
     method: "PATCH",

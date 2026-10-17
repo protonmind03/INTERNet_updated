@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -8975,7 +8975,7 @@ test("the camera check's levels: one or two head turns by default, both and the 
   assert.deepEqual(requiredPrompts({ prompts: ["blink", "smile"], spare: "turn-left" }, "inconclusive"), ["blink", "smile", "turn-left"]);
 });
 
-test("a rejected log puts the student on the strict check until a log is verified, and the level is kept with the photo", async (t) => {
+test("a rejected time-in photo puts the student on the strict check until a log is verified; rejecting a day does not", async (t) => {
   if (needsWrites(t)) return;
   require("tsx/cjs");
   const { phToday } = require("../src/services/phTime.ts");
@@ -8989,56 +8989,47 @@ test("a rejected log puts the student on the strict check until a log is verifie
     const mine = await login("student", email, "StrictTest123!");
     const challenge = async () => (await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(mine.token) })).body;
     const strictNow = async () => (await pool.query(`SELECT liveness_strict FROM students WHERE student_id = $1`, [sid])).rows[0].liveness_strict;
-    const decide = (id, status, extra = {}) =>
-      jsonRequest(`/api/attendance/${id}/status`, jsonBody(supervisor.token, "PATCH", { status, ...extra }));
-    const pastLog = async (daysAgo) =>
+    const decide = (id, status, extra = {}) => jsonRequest(`/api/attendance/${id}/status`, jsonBody(supervisor.token, "PATCH", { status, ...extra }));
+    const log = async (daysAgo, open = false) =>
       (await pool.query(
-        `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status)
-         VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + TIME '16:00', 8, 'Pending') RETURNING id`,
-        [sid, shiftDay(phToday(), -daysAgo)]
+        `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status, image_url)
+         VALUES ($1, $2::date, $2::date + TIME '08:00', CASE WHEN $3 THEN NULL ELSE $2::date + TIME '16:00' END, CASE WHEN $3 THEN NULL ELSE 8 END, 'Pending', '/uploads/strict-check.jpg') RETURNING id`,
+        [sid, shiftDay(phToday(), -daysAgo), open]
       )).rows[0].id;
 
-    // A new student: the standard check.
     assert.equal((await challenge()).level, "standard");
+
+    // Rejecting a whole day does not change the check.
+    const past = await log(3);
+    assert.equal((await decide(past, "Rejected", { reason: "Not at work that day." })).response.status, 200);
     assert.equal(await strictNow(), false);
 
-    // Rejected: strict from now on, both head turns and a blink as the spare.
-    const first = await pastLog(3);
-    assert.equal((await decide(first, "Rejected", { reason: "The photo shows someone else." })).response.status, 200);
+    // Rejecting the photo does: both head turns, the light test and a blink as the spare.
+    const today = await log(0, true);
+    const rejected = await jsonRequest(`/api/attendance/${today}/reject-time-in`, jsonBody(supervisor.token, "POST", { reason: "The photo is too dark to see a face." }));
+    assert.equal(rejected.response.status, 200, JSON.stringify(rejected.body));
     assert.equal(await strictNow(), true);
     const hard = await challenge();
     assert.equal(hard.level, "strict");
     assert.deepEqual([...hard.prompts].sort(), ["turn-left", "turn-right"]);
     assert.equal(hard.spare, "blink");
 
-    // On the strict level, an unclear light test without the spare is refused; with it the time-in is kept, marked strict.
-    const timeIn = (ticket, report) => {
-      const form = new FormData();
-      form.set("student_id", sid);
-      form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "attendance.jpg");
-      form.set("liveness_ticket", ticket);
-      form.set("liveness_report", JSON.stringify(report));
-      return jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(mine.token), body: form });
-    };
-    assert.equal((await timeIn(hard.ticket, { completed: hard.prompts, flash: "inconclusive" })).response.status, 400);
-    const kept = await timeIn(hard.ticket, { completed: [...hard.prompts, "blink"], flash: "inconclusive" });
-    assert.equal(kept.response.status, 201, JSON.stringify(kept.body));
-    const stored = (await pool.query(`SELECT liveness_checks FROM attendance WHERE id = $1`, [kept.body.attendance?.id ?? kept.body.id])).rows[0].liveness_checks;
-    assert.equal(stored.level, "strict");
-
-    // Verified: back to the standard check. Withdrawn: strict again, because the rejection is the latest decision.
-    const second = await pastLog(2);
+    // Verified: back to the standard check. Withdrawn: strict again.
+    const second = await log(2);
     assert.equal((await decide(second, "Verified")).response.status, 200);
     assert.equal(await strictNow(), false);
     assert.equal((await challenge()).level, "standard");
     assert.equal((await decide(second, "Pending")).response.status, 200);
     assert.equal(await strictNow(), true);
-    // And the rejection withdrawn too: nothing left to be strict about.
-    assert.equal((await decide(first, "Pending")).response.status, 200);
+
+    // An appeal that overturns the photo rejection takes it away too.
+    const appeal = await jsonRequest("/api/appeals", jsonBody(mine.token, "POST", { attendance_id: today, kind: "time_in_rejection", reason: "The light in the office was off this morning." }));
+    assert.equal(appeal.response.status, 201, JSON.stringify(appeal.body));
+    const overturned = await jsonRequest(`/api/coordinator/appeals/${appeal.body.appeal.id}`, jsonBody(coordinatorToken, "PUT", { decision: "overturned", note: "The photo is dark but the face is visible." }));
+    assert.equal(overturned.response.status, 200, JSON.stringify(overturned.body));
     assert.equal(await strictNow(), false);
   } finally {
-    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Strict Check%'`, [sid]);
-    await pool.query(`DELETE FROM audit_log WHERE entity_id IN (SELECT id::text FROM attendance WHERE student_id = $1)`, [sid]).catch(() => undefined);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE 'Strict Check%' OR message LIKE '%Strict Check%'`, [sid]);
     await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.end();
@@ -9434,5 +9425,318 @@ test("an offline time-in with a photo: every refusal, then accepted once, a repl
     await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.end();
+  }
+});
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 5: rejection modes, the redo window, appeals
+|--------------------------------------------------------------------------
+*/
+
+/** A throwaway student of the demo supervisor, signed in, with a log today and helpers. */
+async function rejectionFixture(label) {
+  require("tsx/cjs");
+  const { phToday } = require("../src/services/phTime.ts");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `${label}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const email = `${sid.toLowerCase()}@rejection.test`;
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, $4, TRUE, $5)`, [sid, email, await bcrypt.hash("Rejection123!", 4), `Check ${label}`, supervisor.supervisor.supervisor_id]);
+  const mine = await login("student", email, "Rejection123!");
+  /** A log `daysAgo` days back (0: today), open or closed, with lunch as given. */
+  const log = async ({ daysAgo = 0, open = true, lunch = "none", photo = true } = {}) =>
+    (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, break_time, break_end_time, time_out, hours, status, image_url)
+       VALUES ($1, $2::date, NOW() - INTERVAL '3 hours',
+               CASE WHEN $3 IN ('open', 'ended') THEN NOW() - INTERVAL '2 hours' END,
+               CASE WHEN $3 = 'ended' THEN NOW() - INTERVAL '90 minutes' END,
+               CASE WHEN $4 THEN NULL ELSE NOW() - INTERVAL '1 minute' END,
+               CASE WHEN $4 THEN NULL ELSE 2.5 END, 'Pending', CASE WHEN $5 THEN '/uploads/rejected-photo.jpg' END)
+       RETURNING id`,
+      [sid, shiftDay(phToday(), -daysAgo), lunch, open, photo]
+    )).rows[0].id;
+  const rejectPhoto = (id, reason = "The face is out of the frame.") =>
+    jsonRequest(`/api/attendance/${id}/reject-time-in`, jsonBody(supervisor.token, "POST", { reason }));
+  const row = async (id) => (await pool.query(`SELECT * FROM attendance WHERE id = $1`, [id])).rows[0];
+  const cleanup = async () => {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE $2`, [sid, `%Check ${label}%`]);
+    await pool.query(`DELETE FROM absences WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  };
+  return { pool, supervisor, sid, mine, log, rejectPhoto, row, cleanup, phToday };
+}
+
+test("the window to retake a rejected photo: at Back from lunch, or 60 minutes once lunch is over", () => {
+  require("tsx/cjs");
+  const { redoWindow, REDO_MINUTES_AFTER_LUNCH } = require("../src/services/photoRedo.ts");
+  assert.equal(REDO_MINUTES_AFTER_LUNCH, 60);
+  assert.deepEqual(redoWindow({ break_time: null, break_end_time: null }), { closes: "back-from-lunch" }, "before lunch");
+  assert.deepEqual(redoWindow({ break_time: "x", break_end_time: null }), { closes: "back-from-lunch" }, "during lunch");
+  assert.deepEqual(redoWindow({ break_time: "x", break_end_time: "y" }), { closes: "minutes", minutes: 60 }, "after lunch");
+});
+
+test("rejecting a time-in photo: today's open log only, a reason, the log stays open, and the student retakes it with the strict check", async (t) => {
+  // Without a token, and for the wrong role.
+  assert.equal((await jsonRequest("/api/attendance/1/reject-time-in", { method: "POST" })).response.status, 401);
+  assert.equal((await jsonRequest("/api/attendance/1/reject-time-in", jsonBody(studentToken, "POST", { reason: "x" }))).response.status, 403);
+  assert.equal((await jsonRequest("/api/attendance/1/photo-redo", { method: "POST", headers: authHeaders(coordinatorToken) })).response.status, 403);
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("REDO");
+  try {
+    const today = await f.log();
+    // A reason is required; only today's open log with a photo.
+    assert.equal((await f.rejectPhoto(today, "bad")).response.status, 400);
+    const yesterday = await f.log({ daysAgo: 1 });
+    assert.equal((await f.rejectPhoto(yesterday)).body.code, "NOT_OPEN_TODAY");
+    const otherStudent = await f.log({ daysAgo: 2, open: false });
+    assert.equal((await f.rejectPhoto(otherStudent)).body.code, "NOT_OPEN_TODAY");
+    await f.pool.query(`UPDATE attendance SET image_url = NULL WHERE id = $1`, [today]);
+    assert.equal((await f.rejectPhoto(today)).body.code, "NO_PHOTO");
+    await f.pool.query(`UPDATE attendance SET image_url = '/uploads/rejected-photo.jpg' WHERE id = $1`, [today]);
+
+    // Before lunch: it closes at Back from lunch. The log stays open and Pending.
+    const rejected = await f.rejectPhoto(today);
+    assert.equal(rejected.response.status, 200, JSON.stringify(rejected.body));
+    assert.equal(rejected.body.closes, "back-from-lunch");
+    let log = await f.row(today);
+    assert.deepEqual([log.status, log.time_out, log.rejection_scope, log.photo_redo_status, log.photo_redo_due_at], ["Pending", null, "time_in", "required", null]);
+    assert.equal((await f.rejectPhoto(today)).body.code, "REDO_ALREADY_REQUIRED");
+    const told = await f.pool.query(`SELECT message FROM notifications WHERE student_id = $1 AND title = 'Time-in photo rejected'`, [f.sid]);
+    assert.match(told.rows[0].message, /before you tap Back from lunch/);
+    assert.match(told.rows[0].message, /your hours still count/);
+
+    // The student's own list says so.
+    const mine = (await jsonRequest(`/api/attendance/${f.sid}`, { headers: authHeaders(f.mine.token) })).body.attendance.find((entry) => entry.id === today);
+    assert.deepEqual([mine.photo_redo_status, mine.photo_rejection_reason], ["required", "The face is out of the frame."]);
+
+    // Retaking it: only on the log that needs it, and only with the strict check.
+    const redo = (id, ticket, report) => {
+      const form = new FormData();
+      form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "redo.jpg");
+      form.set("liveness_ticket", ticket);
+      form.set("liveness_report", JSON.stringify(report));
+      return jsonRequest(`/api/attendance/${id}/photo-redo`, { method: "POST", headers: authHeaders(f.mine.token), body: form });
+    };
+    const challenge = async () => (await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(f.mine.token) })).body;
+    assert.equal((await redo(yesterday, "x", {})).body.code, "REDO_NOT_REQUIRED");
+    await f.pool.query(`UPDATE students SET liveness_strict = FALSE WHERE student_id = $1`, [f.sid]);
+    const easy = await challenge();
+    assert.equal((await redo(today, easy.ticket, { completed: easy.prompts, flash: "skipped" })).body.code, "STRICT_CHECK_REQUIRED");
+    await f.pool.query(`UPDATE students SET liveness_strict = TRUE WHERE student_id = $1`, [f.sid]);
+    const hard = await challenge();
+    assert.equal(hard.level, "strict");
+    assert.equal((await redo(today, hard.ticket, { completed: hard.prompts, flash: "inconclusive" })).response.status, 400, "the spare is due when the light test is unclear");
+    const done = await redo(today, hard.ticket, { completed: hard.prompts, flash: "passed" });
+    assert.equal(done.response.status, 200, JSON.stringify(done.body));
+    log = await f.row(today);
+    assert.equal(log.photo_redo_status, "submitted");
+    assert.equal(log.rejected_photo_path, "/uploads/rejected-photo.jpg", "the rejected photo is kept for the record");
+    assert.notEqual(log.image_url, "/uploads/rejected-photo.jpg");
+    assert.equal(log.liveness_checks.level, "strict");
+    assert.equal((await redo(today, hard.ticket, { completed: hard.prompts, flash: "passed" })).body.code, "REDO_NOT_REQUIRED");
+    const supervisorTold = await f.pool.query(`SELECT 1 FROM notifications WHERE supervisor_id = $1 AND title = 'Time-in photo retaken' AND message LIKE $2`, [f.supervisor.supervisor.supervisor_id, `%Check REDO%`]);
+    assert.equal(supervisorTold.rows.length, 1);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a photo not retaken in time closes the day as absent; the supervisor may still verify it, which is audited", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { closeMissedRedos, REDO_MISSED_REASON } = require("../src/services/photoRedo.ts");
+  const told = [];
+  const notify = async (notification) => told.push(notification);
+  const f = await rejectionFixture("MISS");
+  const g = await rejectionFixture("LATE");
+  const h = await rejectionFixture("OUT");
+  try {
+    // 1. Back from lunch closes it.
+    const lunch = await f.log({ lunch: "open" });
+    assert.equal((await f.rejectPhoto(lunch)).body.closes, "back-from-lunch");
+    const back = await jsonRequest(`/api/attendance/${lunch}/break-end`, jsonBody(f.mine.token, "PUT", {}));
+    assert.equal(back.response.status, 200, JSON.stringify(back.body));
+    assert.ok((await f.row(lunch)).photo_redo_due_at, "the window closed at Back from lunch");
+
+    // 2. After lunch: 60 minutes from the rejection.
+    const after = await g.log({ lunch: "ended" });
+    const late = await g.rejectPhoto(after);
+    assert.equal(late.body.closes, "minutes");
+    const due = (await g.pool.query(`SELECT EXTRACT(EPOCH FROM photo_redo_due_at - NOW())::int AS seconds FROM attendance WHERE id = $1`, [after])).rows[0].seconds;
+    assert.ok(due > 3500 && due <= 3600, `${due} seconds`);
+    await g.pool.query(`UPDATE attendance SET photo_redo_due_at = NOW() - INTERVAL '1 minute' WHERE id = $1`, [after]);
+
+    // 3. Never after time-out.
+    const out = await h.log();
+    await h.rejectPhoto(out);
+    await h.pool.query(`UPDATE attendance SET time_out = NOW(), hours = 3 WHERE id = $1`, [out]);
+
+    // The minute job closes all three, once.
+    const pool = localTestPool();
+    try {
+      assert.ok((await closeMissedRedos(pool, notify)) >= 3);
+      assert.equal((await closeMissedRedos(pool, notify)), 0, "nothing is closed twice");
+    } finally {
+      await pool.end();
+    }
+    for (const [fixture, id] of [[f, lunch], [g, after], [h, out]]) {
+      const log = await fixture.row(id);
+      assert.deepEqual([log.status, log.photo_redo_status, log.review_notes, log.verifier_role], ["Rejected", "missed", REDO_MISSED_REASON, "system"]);
+      const absence = (await fixture.pool.query(`SELECT status FROM absences WHERE student_id = $1`, [fixture.sid])).rows;
+      assert.deepEqual(absence.map((row) => row.status), ["Unexcused"]);
+      assert.ok(told.some((n) => n.studentId === fixture.sid && n.title === "Day marked absent"));
+      assert.ok(told.some((n) => n.supervisorId && n.message.includes(`Check ${fixture === f ? "MISS" : fixture === g ? "LATE" : "OUT"}`)));
+    }
+
+    // The supervisor verifies one after all: the absence goes, and the audit says it came after a missed redo.
+    const verified = await jsonRequest(`/api/attendance/${out}/status`, jsonBody(h.supervisor.token, "PATCH", { status: "Verified" }));
+    assert.equal(verified.response.status, 200, JSON.stringify(verified.body));
+    assert.equal((await h.pool.query(`SELECT COUNT(*)::int AS n FROM absences WHERE student_id = $1`, [h.sid])).rows[0].n, 0);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const audit = await h.pool.query(`SELECT action, details FROM audit_log WHERE entity_type = 'attendance' AND entity_id = $1 ORDER BY id DESC LIMIT 1`, [String(out)]);
+    assert.equal(audit.rows[0].action, "attendance.approve");
+    assert.equal(audit.rows[0].details.after_missed_photo_redo, true);
+  } finally {
+    await f.cleanup();
+    await g.cleanup();
+    await h.cleanup();
+  }
+});
+
+test("a time correction tells the student the times before and after, and keeps them for an appeal", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("TIMES");
+  try {
+    const id = await f.log({ daysAgo: 1, open: false });
+    await f.pool.query(`UPDATE attendance SET time_in = date + TIME '08:00', break_time = NULL, break_end_time = NULL, time_out = date + TIME '17:00', hours = 9 WHERE id = $1`, [id]);
+    const corrected = await jsonRequest(`/api/attendance/${id}/times`, jsonBody(f.supervisor.token, "PATCH", { time_in: "08:30", break_time: "12:00", break_end_time: "13:00", time_out: "17:00", reason: "Arrived late and took lunch." }));
+    assert.equal(corrected.response.status, 200, JSON.stringify(corrected.body));
+    const note = (await f.pool.query(`SELECT message FROM notifications WHERE student_id = $1 AND title = 'Attendance times corrected'`, [f.sid])).rows[0].message;
+    assert.match(note, /time in 8:00 AM → 8:30 AM/);
+    assert.match(note, /out for lunch none → 12:00 PM/);
+    assert.doesNotMatch(note, /time out/, "an unchanged time is not listed");
+    assert.match(note, /appeal to the OJT coordinator within 7 days/);
+    assert.deepEqual((await f.row(id)).times_before_correction, { time_in: "08:00", break_time: null, break_end_time: null, time_out: "17:00", hours: 9 });
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("appeals: within 7 days, one open per log, withdrawn by the student, upheld or overturned by the coordinator with a note, all audited", async (t) => {
+  assert.equal((await jsonRequest("/api/appeals", jsonBody(coordinatorToken, "POST", {}))).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/appeals", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/appeals?status=nonsense", { headers: authHeaders(coordinatorToken) })).response.status, 400);
+  assert.equal((await jsonRequest("/api/coordinator/appeals/1", jsonBody(coordinatorToken, "PUT", { decision: "maybe", note: "Looks fine." }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/appeals/abc/withdraw", jsonBody(studentToken, "POST", {}))).response.status, 404);
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("APPEAL");
+  const appeal = (id, kind, reason = "This was not what happened that day.") =>
+    jsonRequest("/api/appeals", jsonBody(f.mine.token, "POST", { attendance_id: id, kind, reason }));
+  const decide = (appealId, decision, note = "Checked with the company.") =>
+    jsonRequest(`/api/coordinator/appeals/${appealId}`, jsonBody(coordinatorToken, "PUT", { decision, note }));
+  try {
+    // Validation.
+    const plain = await f.log({ daysAgo: 1, open: false });
+    assert.equal((await appeal(plain, "time_correction")).body.code, "NOTHING_TO_APPEAL");
+    assert.equal((await appeal(plain, "attendance_rejection", "short")).response.status, 400);
+    assert.equal((await appeal(plain, "something_else")).response.status, 400);
+
+    // A rejected day: filed, refused twice, withdrawn, filed again, overturned: verified by the coordinator.
+    await f.pool.query(`UPDATE attendance SET status = 'Rejected', rejection_scope = 'attendance', review_notes = 'Not at work.', verified_at = NOW() WHERE id = $1`, [plain]);
+    const first = await appeal(plain, "attendance_rejection");
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    assert.equal((await appeal(plain, "attendance_rejection")).body.code, "APPEAL_OPEN");
+    assert.equal((await jsonRequest(`/api/appeals/${first.body.appeal.id}/withdraw`, jsonBody(f.mine.token, "POST", {}))).response.status, 200);
+    assert.equal((await jsonRequest(`/api/appeals/${first.body.appeal.id}/withdraw`, jsonBody(f.mine.token, "POST", {}))).response.status, 404);
+    const second = await appeal(plain, "attendance_rejection");
+    assert.equal(second.response.status, 201);
+    const listed = await jsonRequest("/api/coordinator/appeals", { headers: authHeaders(coordinatorToken) });
+    const seen = listed.body.appeals.find((entry) => entry.id === second.body.appeal.id);
+    assert.deepEqual([seen.kind, seen.review_notes, seen.student_name], ["attendance_rejection", "Not at work.", "Check APPEAL"]);
+    assert.equal((await decide(second.body.appeal.id, "overturned", "x")).response.status, 400, "a note is required");
+    const overturned = await decide(second.body.appeal.id, "overturned");
+    assert.equal(overturned.response.status, 200, JSON.stringify(overturned.body));
+    let log = await f.row(plain);
+    assert.deepEqual([log.status, log.verifier_role], ["Verified", "coordinator"]);
+    assert.match(log.review_notes, /Rejection overturned by the OJT coordinator: Checked with the company\./);
+    assert.equal((await decide(second.body.appeal.id, "upheld")).response.status, 404, "decided once");
+
+    // Too late: a correction made eight days ago.
+    const old = await f.log({ daysAgo: 8, open: false });
+    await f.pool.query(`UPDATE attendance SET time_corrected_at = NOW() - INTERVAL '8 days', time_correction_reason = 'Old' WHERE id = $1`, [old]);
+    assert.equal((await appeal(old, "time_correction")).body.code, "APPEAL_TOO_LATE");
+
+    // A time correction overturned: the times before it come back, with the hours.
+    const corrected = await f.log({ daysAgo: 2, open: false });
+    await f.pool.query(
+      `UPDATE attendance SET time_in = date + TIME '09:00', break_time = NULL, break_end_time = NULL, time_out = date + TIME '17:00', hours = 8,
+              time_corrected_at = NOW(), time_correction_reason = 'Late',
+              times_before_correction = '{"time_in":"08:00","break_time":null,"break_end_time":null,"time_out":"17:00"}'
+       WHERE id = $1`,
+      [corrected]
+    );
+    const correction = await appeal(corrected, "time_correction");
+    assert.equal((await decide(correction.body.appeal.id, "overturned")).response.status, 200);
+    log = (await f.pool.query(`SELECT TO_CHAR(time_in, 'HH24:MI') AS time_in, hours, times_before_correction, time_correction_reason FROM attendance WHERE id = $1`, [corrected])).rows[0];
+    assert.deepEqual([log.time_in, Number(log.hours), log.times_before_correction], ["08:00", 9, null]);
+    assert.match(log.time_correction_reason, /Original times restored by the OJT coordinator/);
+
+    // A correction made before appeals kept no earlier times: it can only be upheld.
+    const legacy = await f.log({ daysAgo: 3, open: false });
+    await f.pool.query(`UPDATE attendance SET time_corrected_at = NOW(), time_correction_reason = 'Old style' WHERE id = $1`, [legacy]);
+    const legacyAppeal = await appeal(legacy, "time_correction");
+    assert.equal((await decide(legacyAppeal.body.appeal.id, "overturned")).body.code, "LOG_CHANGED");
+    assert.equal((await decide(legacyAppeal.body.appeal.id, "upheld")).response.status, 200);
+
+    // A missed photo redo overturned: the day is open for review again, the absence gone.
+    const missed = await f.log({ daysAgo: 4, open: false });
+    const missedDate = (await f.pool.query(`SELECT TO_CHAR(date, 'YYYY-MM-DD') AS d FROM attendance WHERE id = $1`, [missed])).rows[0].d;
+    await f.pool.query(
+      `UPDATE attendance SET status = 'Rejected', rejection_scope = 'time_in', photo_rejection_reason = 'Dark', photo_rejected_at = NOW(),
+              photo_redo_status = 'missed', review_notes = 'Photo not retaken in time', verifier_role = 'system', verified_at = NOW()
+       WHERE id = $1`,
+      [missed]
+    );
+    require("tsx/cjs");
+    const { REDO_MISSED_ABSENCE_REASON } = require("../src/services/photoRedo.ts");
+    await f.pool.query(`INSERT INTO absences (student_id, date, reason, status) VALUES ($1, $2, $3, 'Unexcused')`, [f.sid, missedDate, REDO_MISSED_ABSENCE_REASON]);
+    const redoAppeal = await appeal(missed, "time_in_rejection");
+    assert.equal((await decide(redoAppeal.body.appeal.id, "overturned")).response.status, 200);
+    log = await f.row(missed);
+    assert.deepEqual([log.status, log.photo_redo_status, log.review_notes], ["Pending", null, null]);
+    assert.equal((await f.pool.query(`SELECT COUNT(*)::int AS n FROM absences WHERE student_id = $1`, [f.sid])).rows[0].n, 0);
+
+    // Both are told; every step is in the audit log.
+    const studentTold = await f.pool.query(`SELECT title FROM notifications WHERE student_id = $1 AND title IN ('Appeal accepted', 'Appeal not accepted')`, [f.sid]);
+    assert.ok(studentTold.rows.length >= 4);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const actions = (await f.pool.query(
+      `SELECT action FROM audit_log WHERE (entity_type = 'appeal' AND entity_id = ANY($1::text[])) OR (entity_type = 'attendance' AND entity_id = $2 AND action LIKE 'appeal.%')`,
+      [[first.body.appeal.id, second.body.appeal.id, legacyAppeal.body.appeal.id].map(String), String(plain)]
+    )).rows.map((row) => row.action);
+    for (const action of ["appeal.file", "appeal.withdraw", "appeal.overturn", "appeal.uphold"]) assert.ok(actions.includes(action), `${action} in ${actions}`);
+  } finally {
+    await f.pool.query(`DELETE FROM attendance_appeals WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("the coordinator's student record shows a rejected time-in photo in the log's reviewer note, unhighlighted", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("RECORD");
+  try {
+    const today = await f.log();
+    assert.equal((await f.rejectPhoto(today, "The photo shows the ceiling.")).response.status, 200);
+    const overview = await jsonRequest(`/api/coordinator/students/${f.sid}/overview`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(overview.response.status, 200);
+    const entry = overview.body.attendance.find((row) => row.id === today);
+    assert.equal(entry.status, "Pending");
+    assert.equal(entry.review_notes, "Time-in photo rejected: The photo shows the ceiling. A new photo is due.");
+  } finally {
+    await f.cleanup();
   }
 });

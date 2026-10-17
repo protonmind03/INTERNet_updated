@@ -14,6 +14,7 @@ import { signOut as endSession, useAccount } from "../lib/session";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import TimeInFab from "../pages/student/TimeInFab";
 import TimeInProvider from "../pages/student/TimeInProvider";
+import { PhotoRedoBanner } from "../pages/student/PhotoRedo";
 
 /*
 |--------------------------------------------------------------------------
@@ -262,6 +263,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
               {actions && <div className="flex flex-wrap gap-2">{actions}</div>}
             </div>
             <SavedDataNotice />
+            <PhotoRedoBanner />
             {children}
           </div>
         </main>

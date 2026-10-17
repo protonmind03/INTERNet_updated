@@ -149,14 +149,16 @@ export default function DtrSheet({
         weekday: "short",
       });
       const log = byDate.get(key);
-      // A day with a log is not an absence, whatever was filed. A holiday
-      // someone worked keeps its log and is still named.
+      // A day with a log is not an absence, whatever was filed, unless the
+      // log was rejected: a day closed as absent because a rejected time-in
+      // photo was not retaken keeps its log and has an Unexcused absence. A
+      // holiday someone worked keeps its log and is still named.
       return {
         key,
         day,
         weekday,
         log,
-        absence: log ? undefined : absentOn.get(key),
+        absence: log && log.status !== "Rejected" ? undefined : absentOn.get(key),
         holiday: holidayOn.get(key),
       };
     });
@@ -171,7 +173,7 @@ export default function DtrSheet({
       sum + (row.log && row.log.status !== "Verified" ? Number(row.log.hours) || 0 : 0),
     0
   );
-  const daysPresent = rows.filter((row) => row.log).length;
+  const daysPresent = rows.filter((row) => row.log && !row.absence).length;
   const excused = rows.filter((row) => row.absence === "Excused").length;
   const unexcused = rows.filter((row) => row.absence === "Unexcused").length;
   const holidayCount = rows.filter((row) => row.holiday).length;
@@ -309,7 +311,7 @@ export default function DtrSheet({
                     {row.holiday && (
                       <span className="block text-slate-600">Holiday: {row.holiday}</span>
                     )}
-                    {row.log?.status ||
+                    {(row.log && row.absence === "Unexcused" ? "Rejected, absent (unexcused)" : row.log?.status) ||
                       (row.holiday
                         ? ""
                         : row.absence === "Excused"

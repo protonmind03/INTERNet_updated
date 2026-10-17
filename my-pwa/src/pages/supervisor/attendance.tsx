@@ -51,7 +51,7 @@ const awaitsReview = (entry: AttendanceEntry) =>
  * from the phone's clock while it was offline. The detail says more.
  */
 function LogMarks({ entry }: { entry: AttendanceEntry }) {
-  if (!entry.capture_method && !entry.recorded_offline && !entry.offline_time_in) return null;
+  if (!entry.capture_method && !entry.recorded_offline && !entry.offline_time_in && !entry.photo_redo_status) return null;
   const mark = "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium";
   return (
     <span className="mt-1 flex flex-wrap gap-1">
@@ -59,6 +59,18 @@ function LogMarks({ entry }: { entry: AttendanceEntry }) {
         <span className={`${mark} bg-slate-100 text-slate-700`}>
           <Icon name="camera" size={12} />
           Camera check
+        </span>
+      )}
+      {entry.photo_redo_status === "required" && (
+        <span className={`${mark} bg-amber-50 text-amber-900`}>
+          <Icon name="camera" size={12} />
+          New photo due
+        </span>
+      )}
+      {entry.photo_redo_status === "missed" && (
+        <span className={`${mark} bg-slate-100 text-slate-700`}>
+          <Icon name="camera" size={12} />
+          Photo not retaken
         </span>
       )}
       {entry.capture_method === "supervisor" && (
