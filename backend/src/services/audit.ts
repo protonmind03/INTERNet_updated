@@ -582,6 +582,15 @@ export const AUDIT_RULES: Rule[] = [
     keep: ["name", "company", "department"],
   },
   {
+    // Someone else's contact details (migration 060): which fields, never their values.
+    method: "PUT",
+    path: "/api/coordinator/people/:role/:id/details",
+    action: "account.details_edit",
+    entityType: (source) => String(source.params.role || "account"),
+    entityId: param("id"),
+    from: (source) => ({ changed: Array.isArray(source.result.changed) ? source.result.changed.join(", ") : undefined }),
+  },
+  {
     method: "PATCH",
     path: "/api/coordinator/supervisors/:supervisorId/status",
     action: (source) => (source.body.is_active ? "account.activate" : "account.deactivate"),
@@ -660,7 +669,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "company.edit",
     entityType: "company",
     entityId: param("id"),
-    keep: ["name", "moa_start", "moa_expiry", "slots"],
+    keep: ["name", "moa_start", "moa_expiry", "slots", "industry", "website"],
   },
   {
     method: "PATCH",

@@ -4,6 +4,7 @@ import InstallApp from "../../components/InstallApp";
 import CueSettingsCard from "../../components/CueSettingsCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
 import PasswordForm from "../../components/PasswordForm";
+import AccountDetailsForm from "../../components/AccountDetailsForm";
 import { Button, Card, ErrorNotice } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
@@ -224,6 +225,12 @@ export default function SupervisorProfilePage() {
               </Button>
             </form>
           </Card>
+
+          <AccountDetailsForm
+            role="supervisor"
+            viewer="supervisor"
+            description="Your interns and the OJT coordinator see your job title, work phone and the hours you can be reached. Your mobile only if you choose to show it."
+          />
 
           {supervisorId && <PasswordForm role="supervisor" accountId={supervisorId} />}
 

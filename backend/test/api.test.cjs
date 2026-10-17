@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -2977,12 +2977,12 @@ test("a student is told who their coordinator is, and nothing private about them
   const { response, body } = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
   assert.equal(response.status, 200);
   assert.ok(body.coordinator, "there is an active coordinator");
-  assert.deepEqual(Object.keys(body.coordinator).sort(), ["coordinator_id", "department", "email", "name"], "the id is what a message is addressed to");
+  assert.deepEqual(Object.keys(body.coordinator).sort(), ["coordinator_id", "department", "email", "mobile", "name", "office_hours", "position"], "the id is what a message is addressed to; the mobile only when they show it");
   assert.equal(typeof body.coordinator.name, "string");
   assert.match(body.coordinator.email, /@/);
   // Their supervisor too, for the Profile card: who they are and how to reach them at work.
   if (body.supervisor) {
-    assert.deepEqual(Object.keys(body.supervisor).sort(), ["company", "department", "email", "name", "supervisor_id"]);
+    assert.deepEqual(Object.keys(body.supervisor).sort(), ["company", "department", "email", "mobile", "name", "office_hours", "position", "supervisor_id"]);
   }
 });
 
@@ -5085,7 +5085,7 @@ test("a supervisor's profile names the coordinator to write to, and nothing else
   assert.ok(mine.body.supervisor.email);
   // The coordinator: a name, an email, a department. No id, no password, no sign-in details.
   assert.ok(mine.body.coordinator, "there is an active coordinator in the test data");
-  assert.deepEqual(Object.keys(mine.body.coordinator).sort(), ["coordinator_id", "department", "email", "name"], "the id is what a message is addressed to");
+  assert.deepEqual(Object.keys(mine.body.coordinator).sort(), ["coordinator_id", "department", "email", "mobile", "name", "office_hours", "position"], "the id is what a message is addressed to; the mobile only when they show it");
   assert.match(mine.body.coordinator.email, /@/);
   // The same person a student with no coordinator of their own is shown.
   const students = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
@@ -9995,7 +9995,7 @@ test("every kind of record the server's notifications name opens a real page in 
   // Older notifications, by their words; and nothing when the words name no page.
   assert.equal(resolve("supervisor", { title: "New document uploaded" }), "/supervisor/documents");
   assert.equal(resolve("student", { title: "Task revision requested" }), "/task");
-  assert.equal(resolve("coordinator", { title: "New concern filed" }), "/coordinator/complaints");
+  assert.equal(resolve("coordinator", { title: "New concern filed" }), "/coordinator/resolution");
   assert.equal(resolve("student", { title: "Hello" }), null);
   assert.equal(resolve("supervisor", { title: "Notice", type: "announcement" }), "/supervisor/announcements");
 });
@@ -10040,4 +10040,149 @@ test("old notifications get a link only where their title names one page", async
     await pool.query(`DELETE FROM notifications WHERE id = ANY($1::int[])`, [rows]);
     await pool.end();
   }
+});
+
+test("account details: one's own through /api/me/profile, each role only its own fields, checked", async (t) => {
+  for (const method of ["GET", "PUT"]) {
+    assert.equal((await jsonRequest("/api/me/profile", { method })).response.status, 401);
+  }
+  // A student keeps only how they prefer to be reached.
+  const mine = await jsonRequest("/api/me/profile", { headers: authHeaders(studentToken) });
+  assert.equal(mine.response.status, 200);
+  assert.deepEqual(Object.keys(mine.body.details).sort(), ["email", "id", "name", "preferred_contact"]);
+  assert.equal((await jsonRequest("/api/me/profile", jsonBody(studentToken, "PUT", { position: "Boss" }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/me/profile", jsonBody(studentToken, "PUT", { preferred_contact: "pigeon" }))).response.status, 400);
+  assert.equal((await jsonRequest("/api/me/profile", jsonBody(studentToken, "PUT", {}))).response.status, 400);
+  if (needsWrites(t)) return;
+
+  const supervisor = await supervisorSession();
+  const before = (await jsonRequest("/api/me/profile", { headers: authHeaders(supervisor.token) })).body.details;
+  try {
+    assert.equal((await jsonRequest("/api/me/profile", jsonBody(supervisor.token, "PUT", { mobile_number: "call me" }))).response.status, 400);
+    assert.equal((await jsonRequest("/api/me/profile", jsonBody(supervisor.token, "PUT", { show_mobile: "yes" }))).response.status, 400);
+    assert.equal((await jsonRequest("/api/me/profile", jsonBody(supervisor.token, "PUT", { employee_number: "1" }))).response.status, 400, "a coordinator's field");
+    const saved = await jsonRequest("/api/me/profile", jsonBody(supervisor.token, "PUT", {
+      position: "  IT Manager ", office_hours: "Mon to Fri, 9 AM to 4 PM", mobile_number: "0917 123 4567", show_mobile: false, preferred_contact: "message",
+    }));
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.equal(saved.body.details.position, "IT Manager");
+
+    // The intern's Profile card: position and hours, and the mobile only once it is shown.
+    const card = async () => (await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) })).body.supervisor;
+    if (sameIdLoose((await card())?.supervisor_id, supervisor.supervisor.supervisor_id)) {
+      assert.equal((await card()).position, "IT Manager");
+      assert.equal((await card()).mobile, null, "not shown until they choose to");
+      await jsonRequest("/api/me/profile", jsonBody(supervisor.token, "PUT", { show_mobile: true }));
+      assert.equal((await card()).mobile, "0917 123 4567");
+    }
+  } finally {
+    const restore = Object.fromEntries(["position", "office_hours", "mobile_number", "show_mobile", "preferred_contact"].map((key) => [key, before[key] ?? (key === "show_mobile" ? false : null)]));
+    await jsonRequest("/api/me/profile", jsonBody(supervisor.token, "PUT", restore));
+  }
+});
+
+function sameIdLoose(a, b) {
+  return a !== undefined && a !== null && String(a) === String(b);
+}
+
+test("the coordinator edits someone else's details; the audit log names the fields, never what they say", async (t) => {
+  const supervisor = await supervisorSession();
+  const path = `/api/coordinator/people/supervisor/${encodeURIComponent(supervisor.supervisor.supervisor_id)}/details`;
+  assert.equal((await jsonRequest(path, { headers: authHeaders(supervisor.token) })).response.status, 403);
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "PUT", { position: "x" }))).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/people/admin/1/details", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/people/supervisor/NOPE-0000/details", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  const read = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(read.response.status, 200);
+  assert.ok("work_phone" in read.body.details);
+  // A coordinator's own form offers the colleges.
+  const coordinatorPath = `/api/coordinator/people/coordinator/${encodeURIComponent(coordinator.coordinator_id)}/details`;
+  assert.ok(Array.isArray((await jsonRequest(coordinatorPath, { headers: authHeaders(coordinatorToken) })).body.colleges));
+  assert.equal((await jsonRequest(coordinatorPath, jsonBody(coordinatorToken, "PUT", { college_id: 99999999 }))).response.status, 400);
+  if (needsWrites(t)) return;
+
+  const pool = localTestPool();
+  const before = read.body.details.work_phone;
+  try {
+    const saved = await jsonRequest(path, jsonBody(coordinatorToken, "PUT", { work_phone: "(075) 522 0000", office_hours: read.body.details.office_hours ?? null }));
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual(saved.body.changed, before === "(075) 522 0000" ? [] : ["work_phone"], "only what changed");
+    const audit = await pool.query(
+      `SELECT action, entity_type, entity_id, details FROM audit_log
+       WHERE action = 'account.details_edit' AND entity_id = $1 ORDER BY id DESC LIMIT 1`,
+      [String(supervisor.supervisor.supervisor_id)]
+    );
+    assert.equal(audit.rows.length, 1);
+    assert.equal(audit.rows[0].entity_type, "supervisor");
+    assert.equal(JSON.stringify(audit.rows[0].details).includes("522 0000"), false, "never the value");
+  } finally {
+    await jsonRequest(path, jsonBody(coordinatorToken, "PUT", { work_phone: before ?? null }));
+    await pool.end();
+  }
+});
+
+test("companies keep industry, website and HR contact; a company's page and a supervisor's page; the Resolution Center count", async (t) => {
+  const count = await jsonRequest("/api/coordinator/resolution/count", { headers: authHeaders(coordinatorToken) });
+  assert.equal(count.response.status, 200);
+  assert.equal(count.body.count, count.body.concerns + count.body.appeals);
+  assert.equal(count.body.older_than_days, 7);
+  assert.equal((await jsonRequest("/api/coordinator/resolution/count", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest("/api/coordinator/company-records/abc/page", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  assert.equal((await jsonRequest("/api/coordinator/supervisors/NOPE-0000/page", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  const supervisor = await supervisorSession();
+  const page = await jsonRequest(`/api/coordinator/supervisors/${encodeURIComponent(supervisor.supervisor.supervisor_id)}/page`, { headers: authHeaders(coordinatorToken) });
+  assert.equal(page.response.status, 200);
+  assert.equal(page.body.supervisor.name, supervisor.supervisor.name);
+  assert.ok(Array.isArray(page.body.interns));
+  if (needsWrites(t)) return;
+
+  const path = "/api/coordinator/company-records";
+  const name = `Page Check ${Date.now()}`;
+  assert.equal((await jsonRequest(path, jsonBody(coordinatorToken, "POST", { name, website: "not a site" }))).response.status, 400);
+  const created = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { name, industry: "Software", website: "https://example.com", hr_contact: "HR Desk" }));
+  assert.equal(created.response.status, 201, JSON.stringify(created.body));
+  const id = created.body.company.id;
+  const pool = localTestPool();
+  try {
+    assert.equal(created.body.company.industry, "Software");
+    // An edit that leaves them out keeps them (an older form does not wipe them).
+    assert.equal((await jsonRequest(`${path}/${id}`, jsonBody(coordinatorToken, "PUT", { name, slots: 3 }))).response.status, 200);
+    const companyPage = await jsonRequest(`${path}/${id}/page`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(companyPage.response.status, 200);
+    assert.deepEqual(
+      [companyPage.body.company.industry, companyPage.body.company.website, companyPage.body.company.hr_contact, companyPage.body.company.slots],
+      ["Software", "https://example.com", "HR Desk", 3]
+    );
+    assert.deepEqual([companyPage.body.supervisors, companyPage.body.visits], [[], []]);
+    // Cleared when sent empty.
+    await jsonRequest(`${path}/${id}`, jsonBody(coordinatorToken, "PUT", { name, industry: "" }));
+    assert.equal((await jsonRequest(`${path}/${id}/page`, { headers: authHeaders(coordinatorToken) })).body.company.industry, null);
+  } finally {
+    await pool.query(`DELETE FROM audit_log WHERE entity_type = 'company' AND entity_id = $1`, [String(id)]);
+    await pool.query(`DELETE FROM companies WHERE id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+test("every page that moved into a hub keeps its address: it redirects to its tab with what it carried", () => {
+  require("tsx/cjs");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { MOVED, HUBS, movedTo, tabOf } = require("../../my-pwa/src/pages/coordinator/hubConfig.ts");
+  const app = fs.readFileSync(path.join(__dirname, "../../my-pwa/src/App.tsx"), "utf8");
+  for (const move of MOVED) {
+    // The old address is still a route, and it is the redirect.
+    assert.match(app, new RegExp(`path="${move.from}"\\s+element=\\{<MovedPage />\\}`), `${move.from} redirects`);
+    const to = movedTo(move.from, "?focus=complaint-4");
+    const url = new URL(to, "http://x");
+    assert.equal(url.pathname, HUBS[move.hub].path);
+    assert.equal(tabOf(move.hub, url.searchParams), move.tab);
+    assert.equal(url.searchParams.get("focus"), "complaint-4", "what the old address carried is kept");
+  }
+  // The examples in the roadmap.
+  assert.equal(movedTo("/coordinator/supervisors", ""), "/coordinator/companies?tab=supervisors");
+  assert.equal(movedTo("/coordinator/audit", "?kind=student"), "/coordinator/profile?kind=student&section=audit");
+  assert.equal(movedTo("/coordinator/dashboard", ""), null);
+  // Every hub is a route.
+  for (const hub of Object.values(HUBS)) assert.match(app, new RegExp(`path="${hub.path}"\\s+element=\\{<CoordinatorHub `), hub.path);
 });

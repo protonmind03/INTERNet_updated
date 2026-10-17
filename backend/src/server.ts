@@ -54,6 +54,7 @@ import { registerConsoleRoutes } from "./routes/console";
 import { registerOfflineTimeInRoutes } from "./routes/offlineTimeIn";
 import { registerAppealRoutes } from "./routes/appeals";
 import { registerMessageRoutes } from "./routes/messages";
+import { registerAccountDetailRoutes } from "./routes/accountDetails";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
@@ -8279,7 +8280,8 @@ app.get(
     // coordinator who has been one longest.
     const coordinator = await pool.query(
       `
-      SELECT c.coordinator_id, c.name, c.email, c.department
+      SELECT c.coordinator_id, c.name, c.email, c.department, c.position, c.office_hours,
+             CASE WHEN c.show_mobile THEN c.mobile_number END AS mobile
       FROM coordinators c
       WHERE c.is_active = TRUE
       ORDER BY (c.coordinator_id::text = (
@@ -8294,7 +8296,9 @@ app.get(
     // The student's supervisor, for the card on their Profile.
     const supervisorCard = result.rows[0].supervisor_id
       ? await pool.query(
-          `SELECT supervisor_id, name, email, company, department FROM supervisors WHERE supervisor_id = $1 AND is_active = TRUE`,
+          `SELECT supervisor_id, name, email, company, department, job_title AS position, contact_hours AS office_hours,
+                  CASE WHEN show_mobile THEN mobile_number END AS mobile
+           FROM supervisors WHERE supervisor_id = $1 AND is_active = TRUE`,
           [result.rows[0].supervisor_id]
         )
       : null;
@@ -8512,7 +8516,8 @@ app.get(
     // longest: the same person a student with no coordinator is shown.
     const coordinator = await pool.query(
       `
-      SELECT c.coordinator_id, c.name, c.email, c.department
+      SELECT c.coordinator_id, c.name, c.email, c.department, c.position, c.office_hours,
+             CASE WHEN c.show_mobile THEN c.mobile_number END AS mobile
       FROM coordinators c
       WHERE c.is_active = TRUE
       ORDER BY c.created_at ASC NULLS LAST, c.coordinator_id ASC
@@ -9929,6 +9934,7 @@ app.get(
 
 registerAppealRoutes(app, { pool, requireRole, createNotification, notifyCoordinators, syncCompletion });
 registerMessageRoutes(app, { pool, requireRole, createNotification });
+registerAccountDetailRoutes(app, { pool, requireRole, requireCoordinator });
 registerOfflineTimeInRoutes(app, {
   pool,
   requireRole,

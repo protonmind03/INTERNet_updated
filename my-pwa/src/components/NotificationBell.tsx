@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { BrandLoader } from "../brand";
 import AnnouncementList from "./AnnouncementList";
+import SentAnnouncements from "./SentAnnouncements";
 import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import { FilterChips } from "./ui";
@@ -22,8 +23,8 @@ type Props = {
   viewAllPath?: string;
   /** When set, clicking a notification also opens the page it is about. */
   resolvePath?: (item: NotificationItem) => string | null;
-  /** When set, the panel has a second tab with this person's announcements. */
-  announcementsFor?: "student" | "supervisor";
+  /** When set, the panel has a second tab with this person's announcements; the coordinator's is what they sent, with New announcement (roadmap 5.7). */
+  announcementsFor?: "student" | "supervisor" | "coordinator";
 };
 
 type Tab = "notifications" | "announcements";
@@ -185,7 +186,7 @@ export default function NotificationBell({
               tabIndex={0}
               className="max-h-[min(24rem,60dvh)] overflow-y-auto"
             >
-              <AnnouncementList role={announcementsFor} compact />
+              {announcementsFor === "coordinator" ? <SentAnnouncements /> : <AnnouncementList role={announcementsFor} compact />}
             </div>
           )}
 

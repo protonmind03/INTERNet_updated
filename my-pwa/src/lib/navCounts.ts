@@ -79,10 +79,14 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
     return { "/supervisor/dashboard": Number(summary.waiting) || 0 };
   }
 
-  const summary = await getJson(role, "/api/coordinator/dashboard");
+  const [summary, resolution] = await Promise.all([
+    getJson(role, "/api/coordinator/dashboard"),
+    // The Resolution Center's icon: concerns and appeals waiting more than a week.
+    getJson(role, "/api/coordinator/resolution/count").catch(() => ({ count: 0 })),
+  ]);
   return {
-    "/coordinator/complaints": Number(summary.pendingComplaints) || 0,
     "/coordinator/monitoring": Number(summary.flaggedAttendance) || 0,
+    "/coordinator/resolution": Number(resolution.count) || 0,
   };
 }
 

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
@@ -77,8 +78,9 @@ export default function CoordinatorDocuments() {
   const [status, setStatus] = useState<StatusFilter>("all");
   // Requirement progress as a list of students, or as College > Program > Block > Student.
   const [layout, setLayout] = useState<"students" | "groups">("students");
-  // One requirement's files, or every requirement's.
-  const [docType, setDocType] = useState("");
+  // One requirement's files, or every requirement's. A requirement's Submissions link names it (?doc_type=).
+  const [searchParams] = useSearchParams();
+  const [docType, setDocType] = useState(() => searchParams.get("doc_type") || "");
   const [zipping, setZipping] = useState(false);
   // A deliverable of the coordinator's being rejected: a reason is asked for first.
   const [rejecting, setRejecting] = useState<SubmittedDocument | null>(null);

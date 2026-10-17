@@ -1696,6 +1696,10 @@ export function registerExtensionRoutes(
     moa_start: string | null;
     moa_expiry: string | null;
     slots: number | null;
+    /** Migration 060. Undefined when the request leaves them out: they are then kept as they are. */
+    industry?: string | null;
+    website?: string | null;
+    hr_contact?: string | null;
   };
 
   /** Reads and checks a company from a request; returns the reason it is refused, if it is. */
@@ -1721,6 +1725,11 @@ export function registerExtensionRoutes(
     if (moaStart && moaExpiry && moaExpiry < moaStart) {
       return { problem: "The agreement cannot end before it starts." };
     }
+    const given = (key: string) => Object.prototype.hasOwnProperty.call(input, key);
+    const website = given("website") ? optional(input.website, 200) : undefined;
+    if (website && !/^https?:\/\/[^\s/$.?#][^\s]*$/i.test(website)) {
+      return { problem: "Write the website as a full address, starting with https://." };
+    }
     let slots: number | null = null;
     if (input.slots !== undefined && input.slots !== null && input.slots !== "") {
       slots = Number(input.slots);
@@ -1738,6 +1747,9 @@ export function registerExtensionRoutes(
         moa_start: moaStart,
         moa_expiry: moaExpiry,
         slots,
+        industry: given("industry") ? optional(input.industry, 120) : undefined,
+        website,
+        hr_contact: given("hr_contact") ? optional(input.hr_contact, 150) : undefined,
       },
     };
   }
@@ -1746,7 +1758,7 @@ export function registerExtensionRoutes(
     c.id, c.name, c.address, c.contact_person, c.contact_email, c.contact_phone,
     TO_CHAR(c.moa_start, 'YYYY-MM-DD') AS moa_start,
     TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
-    c.slots, c.is_active, c.created_at, c.updated_at
+    c.slots, c.industry, c.website, c.hr_contact, c.is_active, c.created_at, c.updated_at
   `;
 
   app.get("/api/coordinator/company-records", requireCoordinator, async (_req, res) => {
@@ -1823,13 +1835,15 @@ export function registerExtensionRoutes(
       const saved = await client.query(
         `
         INSERT INTO companies
-          (name, address, contact_person, contact_email, contact_phone, moa_start, moa_expiry, slots)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          (name, address, contact_person, contact_email, contact_phone, moa_start, moa_expiry, slots,
+           industry, website, hr_contact)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id
         `,
         [
           company.name, company.address, company.contact_person, company.contact_email,
           company.contact_phone, company.moa_start, company.moa_expiry, company.slots,
+          company.industry ?? null, company.website ?? null, company.hr_contact ?? null,
         ]
       );
       // Accounts that already carry this name become its people.
@@ -1881,12 +1895,19 @@ export function registerExtensionRoutes(
         `
         UPDATE companies SET
           name = $2, address = $3, contact_person = $4, contact_email = $5,
-          contact_phone = $6, moa_start = $7, moa_expiry = $8, slots = $9, updated_at = NOW()
+          contact_phone = $6, moa_start = $7, moa_expiry = $8, slots = $9,
+          industry = CASE WHEN $10::boolean THEN $11 ELSE industry END,
+          website = CASE WHEN $12::boolean THEN $13 ELSE website END,
+          hr_contact = CASE WHEN $14::boolean THEN $15 ELSE hr_contact END,
+          updated_at = NOW()
         WHERE id = $1
         `,
         [
           id, company.name, company.address, company.contact_person, company.contact_email,
           company.contact_phone, company.moa_start, company.moa_expiry, company.slots,
+          company.industry !== undefined, company.industry ?? null,
+          company.website !== undefined, company.website ?? null,
+          company.hr_contact !== undefined, company.hr_contact ?? null,
         ]
       );
       // A renamed company takes its people with it: the name typed on each of

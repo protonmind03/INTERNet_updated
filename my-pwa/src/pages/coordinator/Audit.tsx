@@ -620,7 +620,16 @@ export default function CoordinatorAudit() {
                   onClick={() => {
                     setPersonText("");
                     setRecordText("");
-                    setParams({}, { replace: true });
+                    // Every filter goes; Profile settings' section stays.
+                    setParams(
+                      (current) => {
+                        const kept = new URLSearchParams();
+                        const section = current.get("section");
+                        if (section) kept.set("section", section);
+                        return kept;
+                      },
+                      { replace: true }
+                    );
                   }}
                   className="font-semibold text-psu-700 hover:underline"
                 >

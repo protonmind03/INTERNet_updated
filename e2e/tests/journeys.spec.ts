@@ -312,11 +312,15 @@ test.describe("the supervisor's menu, and one word for a concern", () => {
     await expect(page).toHaveTitle(/^Announcements/);
   });
 
-  test("the coordinator's page and sidebar say Concerns, at the same address", async ({ page }) => {
+  test("the coordinator's page says Concerns, as the Resolution Center's first tab", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, "coordinator");
-    await page.getByRole("link", { name: /^Concerns/ }).first().click();
-    await expect(page).toHaveURL(/\/coordinator\/complaints$/);
+    // Iteration 8: concerns moved from the sidebar to the Resolution Center, the icon left of the bell.
+    await page.getByRole("link", { name: /^Resolution Center/ }).click();
+    await expect(page).toHaveURL(/\/coordinator\/resolution$/);
+    await expect(
+      page.getByRole("navigation", { name: "Resolution Center sections" }).getByRole("link", { name: "Concerns" })
+    ).toHaveAttribute("aria-current", "page");
     await expect(page.getByRole("heading", { level: 1, name: "Concerns" })).toBeVisible();
     await expect(page.getByText(/complaint/i)).toHaveCount(0);
   });
@@ -370,7 +374,8 @@ test.describe("the coordinator's console", () => {
     await expect(page.getByLabel("When")).toHaveValue("week");
 
     await page.getByRole("button", { name: "Clear filters" }).click();
-    await expect(page).toHaveURL(/\/coordinator\/audit$/);
+    // The audit log is a section of Profile settings now (Iteration 8): clearing keeps only that.
+    await expect(page).toHaveURL(/\/coordinator\/profile\?section=audit$/);
     await page.getByLabel("When").selectOption({ label: "Custom dates" });
     await expect(page.getByLabel("From")).toBeVisible();
 

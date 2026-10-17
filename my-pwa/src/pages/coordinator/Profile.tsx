@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import AccountDetailsForm from "../../components/AccountDetailsForm";
 import InstallApp from "../../components/InstallApp";
 import CueSettingsCard from "../../components/CueSettingsCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
@@ -9,7 +10,6 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { updateStoredAccount, useAccount, type CoordinatorAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
-import SystemStatus from "./SystemStatus";
 
 export default function CoordinatorProfilePage() {
   const account = useAccount("coordinator");
@@ -82,7 +82,7 @@ export default function CoordinatorProfilePage() {
   };
 
   return (
-    <CoordinatorLayout title="Profile" subtitle="Your account details, password and test accounts.">
+    <CoordinatorLayout title="Account" subtitle="Your account details, how people reach you, and your password.">
       <div className="max-w-3xl space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
@@ -145,13 +145,17 @@ export default function CoordinatorProfilePage() {
           </form>
         </Card>
 
+        <AccountDetailsForm
+          role="coordinator"
+          viewer="coordinator"
+          description="Students and supervisors see your position, office hours and email. Your mobile only if you choose to show it."
+        />
+
         {coordinatorId && <PasswordForm role="coordinator" accountId={coordinatorId} />}
 
         <NotificationPreferences role="coordinator" />
 
         <CueSettingsCard attention />
-
-        <SystemStatus />
 
         <InstallApp />
       </div>

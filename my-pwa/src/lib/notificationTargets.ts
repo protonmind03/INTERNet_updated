@@ -84,7 +84,7 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
     task: () => "/coordinator/monitoring",
     document: () => "/coordinator/documents",
     journal: () => "/coordinator/monitoring",
-    complaint: (id) => focus("/coordinator/complaints", "complaint", id),
+    complaint: (id) => `/coordinator/resolution?focus=complaint-${encodeURIComponent(id)}`,
     student: (id) => `/coordinator/students/${encodeURIComponent(id)}`,
     message: (id) => `${HOME.coordinator}?thread=${encodeURIComponent(id)}`,
   },
@@ -144,9 +144,9 @@ function fromWording(role: NotificationRole, item: ResolvableNotification): Noti
     return null;
   }
 
-  if (concern) return { icon: "flag", path: "/coordinator/complaints" };
-  if (title.includes("appeal")) return { icon: "flag", path: "/coordinator/appeals" };
-  if (title.includes("feedback") || title.includes("evaluation")) return { icon: "star", path: "/coordinator/evaluations" };
+  if (concern) return { icon: "flag", path: "/coordinator/resolution" };
+  if (title.includes("appeal")) return { icon: "flag", path: "/coordinator/resolution?tab=appeals" };
+  if (title.includes("feedback") || title.includes("evaluation")) return { icon: "star", path: "/coordinator/resolution?tab=evaluations" };
   if (kind === "attendance" || title.includes("attendance")) return { icon: "activity", path: "/coordinator/monitoring" };
   if (kind === "document" || title.includes("document")) return { icon: "document", path: "/coordinator/documents" };
   return null;

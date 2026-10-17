@@ -49,7 +49,8 @@ export default function SiteVisits() {
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [editing, setEditing] = useState<Visit | "new" | null>(null);
+  // ?log=1 (Log visit on a company's page) opens the form straight away.
+  const [editing, setEditing] = useState<Visit | "new" | null>(() => (params.get("log") === "1" ? "new" : null));
   const [removing, setRemoving] = useState<Visit | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -113,7 +114,14 @@ export default function SiteVisits() {
           <select
             value={companyId ?? ""}
             onChange={(event) =>
-              setParams(event.target.value ? { company: event.target.value } : {})
+              // Only the company changes: the hub's tab stays in the address.
+              setParams((current) => {
+                const next = new URLSearchParams(current);
+                if (event.target.value) next.set("company", event.target.value);
+                else next.delete("company");
+                next.delete("log");
+                return next;
+              })
             }
             className="field"
           >

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import AccountDetailsForm from "../../components/AccountDetailsForm";
 import Icon from "../../components/Icon";
 import InstallApp from "../../components/InstallApp";
 import CueSettingsCard from "../../components/CueSettingsCard";
@@ -218,6 +219,8 @@ export default function StudentProfilePage() {
               }
             />
           )}
+
+          <AccountDetailsForm role="student" viewer="student" title="How you prefer to be reached" />
 
           <SupervisorCard supervisor={supervisor} />
 

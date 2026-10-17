@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ChangePassword from "./pages/ChangePassword";
 import Go from "./pages/Go";
+import CoordinatorHub, { MovedPage } from "./pages/coordinator/CoordinatorHub";
 
 /*
 |--------------------------------------------------------------------------
@@ -173,6 +174,9 @@ const CoordinatorPrograms = page("coordinator", () => import("./pages/coordinato
 const CoordinatorHolidays = page("coordinator", () => import("./pages/coordinator/Holidays"));
 const CoordinatorAccounts = page("coordinator", () => import("./pages/coordinator/Coordinators"));
 const CoordinatorSiteVisits = page("coordinator", () => import("./pages/coordinator/SiteVisits"));
+const CoordinatorSystemStatus = page("coordinator", () => import("./pages/coordinator/SystemStatusPage"));
+const CoordinatorCompanyPage = page("coordinator", () => import("./pages/coordinator/CompanyPage"));
+const CoordinatorSupervisorPage = page("coordinator", () => import("./pages/coordinator/SupervisorPage"));
 
 // The brand kit preview only exists in development builds.
 const BrandPreview = import.meta.env.DEV ? lazy(() => import("./brand/BrandPreview")) : null;
@@ -379,7 +383,7 @@ function App() {
 
         <Route
           path="/coordinator/students"
-          element={<CoordinatorStudents />}
+          element={<CoordinatorHub hub="students" pages={{ students: CoordinatorStudents, terms: CoordinatorTerms }} />}
         />
 
         <Route
@@ -389,7 +393,7 @@ function App() {
 
         <Route
           path="/coordinator/supervisors"
-          element={<CoordinatorSupervisors />}
+          element={<MovedPage />}
         />
 
         <Route
@@ -399,17 +403,17 @@ function App() {
 
         <Route
           path="/coordinator/complaints"
-          element={<CoordinatorComplaints />}
+          element={<MovedPage />}
         />
 
         <Route
           path="/coordinator/appeals"
-          element={<CoordinatorAppeals />}
+          element={<MovedPage />}
         />
 
         <Route
           path="/coordinator/evaluations"
-          element={<CoordinatorEvaluations />}
+          element={<MovedPage />}
         />
 
         <Route
@@ -418,18 +422,33 @@ function App() {
         />
 
         <Route
+          path="/coordinator/resolution"
+          element={<CoordinatorHub hub="resolution" pages={{ concerns: CoordinatorComplaints, evaluations: CoordinatorEvaluations, appeals: CoordinatorAppeals }} />}
+        />
+
+        <Route
+          path="/coordinator/companies/:companyId"
+          element={<CoordinatorCompanyPage />}
+        />
+
+        <Route
+          path="/coordinator/supervisors/:supervisorId"
+          element={<CoordinatorSupervisorPage />}
+        />
+
+        <Route
           path="/coordinator/profile"
-          element={<CoordinatorProfile />}
+          element={<CoordinatorHub hub="settings" pages={{ account: CoordinatorProfile, coordinators: CoordinatorAccounts, audit: CoordinatorAudit, status: CoordinatorSystemStatus }} />}
         />
 
         <Route
           path="/coordinator/requirements"
-          element={<CoordinatorRequirements />}
+          element={<MovedPage />}
         />
 
         <Route
           path="/coordinator/documents"
-          element={<CoordinatorDocuments />}
+          element={<CoordinatorHub hub="documents" pages={{ submissions: CoordinatorDocuments, requirements: CoordinatorRequirements }} />}
         />
 
         <Route
@@ -444,17 +463,17 @@ function App() {
 
         <Route
           path="/coordinator/audit"
-          element={<CoordinatorAudit />}
+          element={<MovedPage />}
         />
 
         <Route
           path="/coordinator/companies"
-          element={<CoordinatorCompanies />}
+          element={<CoordinatorHub hub="companies" pages={{ companies: CoordinatorCompanies, supervisors: CoordinatorSupervisors, "site-visits": CoordinatorSiteVisits }} />}
         />
 
         <Route
           path="/coordinator/terms"
-          element={<CoordinatorTerms />}
+          element={<MovedPage />}
         />
 
         <Route
@@ -469,12 +488,12 @@ function App() {
 
         <Route
           path="/coordinator/coordinators"
-          element={<CoordinatorAccounts />}
+          element={<MovedPage />}
         />
 
         <Route
           path="/coordinator/site-visits"
-          element={<CoordinatorSiteVisits />}
+          element={<MovedPage />}
         />
 
         {BrandPreview && (

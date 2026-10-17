@@ -10,7 +10,16 @@ export type Contact = {
   emergency_contact_phone: string | null;
 };
 
-export type Coordinator = { coordinator_id: number | string; name: string; email: string; department: string | null };
+export type Coordinator = {
+  coordinator_id: number | string;
+  name: string;
+  email: string;
+  department: string | null;
+  /** Migration 060. Missing from an older server; the mobile only when they chose to show it. */
+  position?: string | null;
+  office_hours?: string | null;
+  mobile?: string | null;
+};
 
 export type Supervisor = {
   supervisor_id: number | string;
@@ -18,7 +27,24 @@ export type Supervisor = {
   email: string | null;
   company: string | null;
   department: string | null;
+  position?: string | null;
+  office_hours?: string | null;
+  mobile?: string | null;
 };
+
+/** Position, office hours and a mobile the person chose to show: what the cards add (roadmap 5.3). */
+function ReachLines({ person }: { person: { position?: string | null; office_hours?: string | null; mobile?: string | null } }) {
+  return (
+    <>
+      {person.office_hours && <p className="mt-1 text-sm text-slate-600">Available {person.office_hours}</p>}
+      {person.mobile && (
+        <a href={`tel:${person.mobile.replace(/[^0-9+]/g, "")}`} className="mt-1 block text-sm font-semibold text-psu-700 hover:underline">
+          {person.mobile}
+        </a>
+      )}
+    </>
+  );
+}
 
 const PHONE = /^[0-9+() .-]{7,20}$/;
 
@@ -147,6 +173,7 @@ export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | nu
     <Card className="p-5">
       <h2 className="text-sm font-semibold text-slate-900">Your OJT coordinator</h2>
       <p className="mt-2 text-sm font-medium text-slate-900">{coordinator.name}</p>
+      {coordinator.position && <p className="text-sm text-slate-600">{coordinator.position}</p>}
       {coordinator.department && <p className="text-sm text-slate-600">{coordinator.department}</p>}
       <a
         href={`mailto:${coordinator.email}`}
@@ -154,6 +181,7 @@ export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | nu
       >
         {coordinator.email}
       </a>
+      <ReachLines person={coordinator} />
       <p className="mt-2 text-xs text-slate-500">
         For questions about requirements, your hours, or a problem at your company. To report a
         concern in confidence, use Report.
@@ -181,6 +209,7 @@ export function SupervisorCard({ supervisor }: { supervisor: Supervisor | null }
     <Card className="p-5">
       <h2 className="text-sm font-semibold text-slate-900">Your supervisor</h2>
       <p className="mt-2 text-sm font-medium text-slate-900">{supervisor.name}</p>
+      {supervisor.position && <p className="text-sm text-slate-600">{supervisor.position}</p>}
       {(supervisor.company || supervisor.department) && (
         <p className="text-sm text-slate-600">
           {[supervisor.department, supervisor.company].filter(Boolean).join(", ")}
@@ -194,6 +223,7 @@ export function SupervisorCard({ supervisor }: { supervisor: Supervisor | null }
           {supervisor.email}
         </a>
       )}
+      <ReachLines person={supervisor} />
       <p className="mt-2 text-xs text-slate-500">For your schedule, tasks and attendance at the company.</p>
       <Button variant="secondary" icon="mail" className="mt-3" onClick={() => setWriting(true)}>
         Message {supervisor.name.split(" ")[0]}

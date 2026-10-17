@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import Pagination from "../../components/Pagination";
 import {
   Button,
@@ -43,6 +43,10 @@ type Company = {
   moa_start: string | null;
   moa_expiry: string | null;
   slots: number | null;
+  /** Migration 060. Missing from an older server. */
+  industry?: string | null;
+  website?: string | null;
+  hr_contact?: string | null;
   is_active: boolean;
   active_students: number;
   students: number;
@@ -147,7 +151,7 @@ export default function CoordinatorCompanies() {
     {
       label: company.visits ? `Site visits (${company.visits})` : "Site visits",
       icon: "building" as const,
-      onSelect: () => navigate(`/coordinator/site-visits?company=${company.id}`),
+      onSelect: () => navigate(`/coordinator/companies?tab=site-visits&company=${company.id}`),
     },
     company.is_active
       ? {
@@ -247,7 +251,9 @@ export default function CoordinatorCompanies() {
                 {pager.pageItems.map((company) => (
                   <li key={company.id} className="flex items-start justify-between gap-3 px-4 py-4">
                     <div className="min-w-0">
-                      <p className="truncate text-sm font-semibold text-slate-900">{company.name}</p>
+                      <Link to={`/coordinator/companies/${company.id}`} className="block truncate text-sm font-semibold text-psu-800 hover:underline">
+                        {company.name}
+                      </Link>
                       <p className="truncate text-xs text-slate-500">
                         {company.contact_person || "No contact"} · {places(company)}
                         {company.last_visit ? ` · visited ${formatDate(company.last_visit)}` : ""}
@@ -280,7 +286,9 @@ export default function CoordinatorCompanies() {
                     {pager.pageItems.map((company) => (
                       <tr key={company.id} className="hover:bg-slate-50">
                         <td className="px-5 py-3">
-                          <p className="font-medium text-slate-900">{company.name}</p>
+                          <Link to={`/coordinator/companies/${company.id}`} className="font-medium text-psu-800 hover:underline">
+                            {company.name}
+                          </Link>
                           <p className="text-xs text-slate-500">{company.address || "No address"}</p>
                         </td>
                         <td className="px-3 py-3 text-slate-700">
@@ -352,6 +360,9 @@ function CompanyDialog({
     moa_start: existing?.moa_start || "",
     moa_expiry: existing?.moa_expiry || "",
     slots: existing?.slots === null || existing?.slots === undefined ? "" : String(existing.slots),
+    industry: existing?.industry || "",
+    website: existing?.website || "",
+    hr_contact: existing?.hr_contact || "",
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -455,6 +466,38 @@ function CompanyDialog({
             />
           </FormField>
         </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="Industry" htmlFor="company-industry" optional>
+            <input
+              id="company-industry"
+              type="text"
+              maxLength={120}
+              value={form.industry}
+              onChange={(event) => set("industry")(event.target.value)}
+              className="field"
+            />
+          </FormField>
+          <FormField label="Website" htmlFor="company-website" optional hint="Starting with https://">
+            <input
+              id="company-website"
+              type="url"
+              maxLength={200}
+              value={form.website}
+              onChange={(event) => set("website")(event.target.value)}
+              className="field"
+            />
+          </FormField>
+        </div>
+        <FormField label="HR contact" htmlFor="company-hr" optional hint="Who handles interns' papers: name, email or phone">
+          <input
+            id="company-hr"
+            type="text"
+            maxLength={150}
+            value={form.hr_contact}
+            onChange={(event) => set("hr_contact")(event.target.value)}
+            className="field"
+          />
+        </FormField>
         <FormField label="Contact email" htmlFor="company-email" optional>
           <input
             id="company-email"

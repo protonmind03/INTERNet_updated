@@ -5,11 +5,14 @@ import Icon, { type IconName } from "../components/Icon";
 import ComposeMessage from "../components/ComposeMessage";
 import MessageThreadHost from "../components/MessageThreadHost";
 import NotificationBell from "../components/NotificationBell";
+import Tooltip from "../components/Tooltip";
 import { Button, ConfirmDialog, CountBadge } from "../components/ui";
 import { API_URL, withCoordinatorAuth } from "../lib/api";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { HUBS, useHub } from "../pages/coordinator/hubConfig";
+import HubNav from "../pages/coordinator/HubNav";
 
 /*
 |--------------------------------------------------------------------------
@@ -20,6 +23,13 @@ import { signOut as endSession, useAccount } from "../lib/session";
 | many records. So this portal is a console: a light sidebar that groups
 | every area, and a search box that jumps straight to a student,
 | supervisor or complaint from anywhere (Ctrl K).
+|
+| The side navigation holds the daily jobs (roadmap 5.1). Pages about one
+| subject are tabs of one hub (pages/coordinator/hubConfig.ts); concerns,
+| evaluations and appeals are the Resolution Center, an icon left of the
+| bell; announcements are written from the bell; the coordinators, the
+| audit log and what is switched on are in Profile settings, from the
+| avatar.
 |
 */
 
@@ -38,31 +48,20 @@ const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
     label: "People",
     items: [
       { label: "Students", path: "/coordinator/students", icon: "users" },
-      { label: "Supervisors", path: "/coordinator/supervisors", icon: "briefcase" },
       { label: "Companies", path: "/coordinator/companies", icon: "building" },
-      { label: "Coordinators", path: "/coordinator/coordinators", icon: "user" },
     ],
   },
   {
     label: "Programme",
     items: [
-      { label: "Terms", path: "/coordinator/terms", icon: "calendar" },
       { label: "Programs", path: "/coordinator/programs", icon: "building" },
       { label: "Holidays", path: "/coordinator/holidays", icon: "calendar" },
-      { label: "Site visits", path: "/coordinator/site-visits", icon: "building" },
-      { label: "Requirements", path: "/coordinator/requirements", icon: "clipboard" },
       { label: "Documents", path: "/coordinator/documents", icon: "document" },
-      { label: "Evaluations", path: "/coordinator/evaluations", icon: "star" },
-      { label: "Concerns", path: "/coordinator/complaints", icon: "flag" },
-      { label: "Appeals", path: "/coordinator/appeals", icon: "flag" },
-      { label: "Announcements", path: "/coordinator/announcements", icon: "megaphone" },
     ],
   },
-  {
-    label: "Records",
-    items: [{ label: "Audit log", path: "/coordinator/audit", icon: "note" }],
-  },
 ];
+
+const RESOLUTION_PATH = HUBS.resolution.path;
 
 
 type SearchResult = {
@@ -95,6 +94,7 @@ export default function CoordinatorLayout({
   const { pathname } = useLocation();
   const coordinator = useAccount("coordinator");
   const counts = useNavCounts("coordinator");
+  const hub = useHub();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // With this many pages, the title also says which area of the console it
@@ -102,7 +102,7 @@ export default function CoordinatorLayout({
   const area =
     NAV_GROUPS.find((group) =>
       group.items.some((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))
-    )?.label ?? (pathname.startsWith("/coordinator/profile") ? "Account" : "");
+    )?.label ?? (hub ? HUBS[hub.hub].title : pathname.startsWith("/coordinator/profile") ? "Account" : "");
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const [writing, setWriting] = useState(false);
   // A student's record draws its own heading; its Message action is added here,
@@ -258,11 +258,13 @@ export default function CoordinatorLayout({
             </p>
           </div>
           <GlobalSearch />
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-1">
+            <ResolutionButton count={counts[RESOLUTION_PATH] ?? 0} />
             <NotificationBell
               role="coordinator"
               viewAllPath="/coordinator/notifications"
-              buttonClassName="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
+              announcementsFor="coordinator"
+              buttonClassName="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
             />
           </div>
         </header>
@@ -285,6 +287,7 @@ export default function CoordinatorLayout({
               )}
             </div>
             )}
+            {hub && HUBS[hub.hub].kind === "tabs" && <HubNav hub={hub.hub} tab={hub.tab} />}
             {recordStudentId && (
               <div className="mb-3 flex justify-end print:hidden">
                 <Button variant="secondary" icon="mail" onClick={() => setWriting(true)}>
@@ -292,7 +295,15 @@ export default function CoordinatorLayout({
                 </Button>
               </div>
             )}
-            {children}
+            {hub && HUBS[hub.hub].kind === "sections" ? (
+              // Profile settings: its sections down the left, the chosen one beside them.
+              <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-8">
+                <HubNav hub={hub.hub} tab={hub.tab} />
+                <div className="min-w-0">{children}</div>
+              </div>
+            ) : (
+              children
+            )}
             <MessageThreadHost role="coordinator" />
             {writing && recordStudentId && (
               <ComposeMessage
@@ -504,5 +515,39 @@ function GlobalSearch() {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * The Resolution Center as an icon left of the bell: concerns, evaluations
+ * and appeals. Its badge counts open concerns and appeals older than the
+ * dashboard's rule for concerns (7 days), so it asks for attention only
+ * when something has waited too long.
+ */
+function ResolutionButton({ count }: { count: number }) {
+  const label = HUBS.resolution.title;
+  const shown = count > 99 ? "99+" : String(count);
+  return (
+    <Tooltip label={label} side="left">
+      <NavLink
+        to={RESOLUTION_PATH}
+        aria-label={count > 0 ? `${label}, ${count === 1 ? "1 item" : `${count} items`} waiting more than a week` : label}
+        className={({ isActive }) =>
+          `relative flex h-11 w-11 items-center justify-center rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-psu-500 ${
+            isActive ? "bg-psu-50 text-psu-800" : "text-slate-600 hover:bg-slate-100"
+          }`
+        }
+      >
+        <Icon name="flag" />
+        {count > 0 && (
+          <span
+            aria-hidden="true"
+            className="tabular absolute -right-1 -top-1 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[11px] font-semibold leading-none text-white ring-2 ring-white"
+          >
+            {shown}
+          </span>
+        )}
+      </NavLink>
+    </Tooltip>
   );
 }

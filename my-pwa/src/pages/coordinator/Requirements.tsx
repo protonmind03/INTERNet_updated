@@ -234,6 +234,13 @@ function RequiredDocuments() {
                     )}
                   </div>
                   <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                    {/* Roadmap 5.5: straight to the files submitted for it. */}
+                    <Link
+                      to={`/coordinator/documents?doc_type=${encodeURIComponent(item.name)}`}
+                      className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                    >
+                      Submissions<span className="sr-only"> for {item.name}</span>
+                    </Link>
                     <button
                       type="button"
                       onClick={() => setSettingUp(item)}
