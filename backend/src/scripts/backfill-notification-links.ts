@@ -63,7 +63,7 @@ async function backfill() {
     console.log(`  ${String(kept).padStart(5)}  left without a link (the title names no one page)`);
 
     if (!confirmed) {
-      console.log("\nDry run: nothing was changed. Run again with --confirm to write these links.");
+      console.log("\nDry run: nothing was changed. Run again with confirm (or --confirm) after the port to write these links.");
       return;
     }
     await client.query("BEGIN");

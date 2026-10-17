@@ -407,7 +407,8 @@ Unset, `SW_KILLSWITCH` does nothing.
 ## Running a data script on the hosted database (run by you)
 
 The data scripts (`db:backfill-companies`, `db:backfill-programs`,
-`db:fk-orphans`, `db:fk-validate`, `privacy:purge-photos`) reach the
+`db:backfill-notification-links`, `db:fk-orphans`, `db:fk-validate`,
+`privacy:purge-photos`) reach the
 hosted database the
 way the backup does: through a tunnel, with the Railway CLI supplying the
 database's settings, so nothing is typed in and no password is shown.
