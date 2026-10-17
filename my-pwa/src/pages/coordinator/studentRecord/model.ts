@@ -82,6 +82,8 @@ export type Doc = {
   status: "Pending" | "Approved" | "Rejected";
   review_notes: string | null;
   uploaded_at: string;
+  /** Sent back with a decision (migration 062). Missing from an older server. */
+  version?: number;
 };
 
 export type Evaluation = {
@@ -100,6 +102,8 @@ export type Absence = {
   reason: string;
   status: "Pending" | "Excused" | "Unexcused";
   review_notes: string | null;
+  /** Sent back with a decision (migration 062). Missing from an older server. */
+  version?: number;
 };
 
 export type ScheduleDay = {

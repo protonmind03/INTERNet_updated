@@ -1508,7 +1508,7 @@ export function registerExtensionRoutes(
           ),
           pool.query(
             `SELECT id, doc_type, original_filename, size_bytes, status, review_notes,
-                    uploaded_at, reviewed_at
+                    uploaded_at, reviewed_at, version
              FROM documents WHERE student_id = $1 ORDER BY uploaded_at DESC, id DESC`,
             [id]
           ),

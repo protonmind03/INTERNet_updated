@@ -12,7 +12,7 @@ import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
 import { useHolidays } from "../../lib/useHolidays";
 import { useOnline } from "../../lib/useOnline";
 import { fetchStudentPerformance, type PerformanceRules, type PerformanceStudent } from "./performance";
-import { coordinatorRequest } from "./request";
+import { changedByOthers, coordinatorRequest } from "./request";
 import {
   GROUPS,
   TABS,
@@ -164,13 +164,21 @@ export default function StudentRecord() {
   };
 
   const decide = async (item: Pending, approve: boolean, note = "") => {
-    await coordinatorRequest(item.kind === "document" ? `/api/documents/${item.id}/review` : `/api/absences/${item.id}/review`, {
-      method: "PATCH",
-      body:
-        item.kind === "document"
-          ? { status: approve ? "Approved" : "Rejected", review_notes: note }
-          : { status: approve ? "Excused" : "Unexcused", notes: note },
-    });
+    // Iteration 12: the version this record was loaded with; refused (409) if someone decided it meanwhile.
+    const expected_version = (item.kind === "document" ? data?.documents : data?.absences)?.find((entry) => entry.id === item.id)?.version;
+    try {
+      await coordinatorRequest(item.kind === "document" ? `/api/documents/${item.id}/review` : `/api/absences/${item.id}/review`, {
+        method: "PATCH",
+        body:
+          item.kind === "document"
+            ? { status: approve ? "Approved" : "Rejected", review_notes: note, expected_version }
+            : { status: approve ? "Excused" : "Unexcused", notes: note, expected_version },
+      });
+    } catch (decisionError) {
+      // Changed by someone else first: show the record as it is now, then say why.
+      if (changedByOthers(decisionError)) await load(true);
+      throw decisionError;
+    }
     toast.success(
       `${item.label} ${item.kind === "document" ? (approve ? "approved" : "rejected") : approve ? "excused" : "marked unexcused"}. ${student?.name || "The student"} has been notified.`
     );

@@ -10474,6 +10474,11 @@ test("versions: a real change moves it, an update that changes nothing does not;
     try {
       const documents = await jsonRequest("/api/documents/supervisor", { headers: authHeaders(f.supervisor.token) });
       assert.equal(Number(documents.body.documents.find((row) => row.id === doc).version), 1);
+      // The coordinator's record of the student too: its document and absence decisions send it back.
+      const record = await jsonRequest(`/api/coordinator/students/${encodeURIComponent(f.sid)}/overview`, { headers: authHeaders(coordinatorToken) });
+      assert.equal(record.response.status, 200);
+      assert.equal(Number(record.body.documents.find((row) => row.id === doc).version), 1);
+      assert.equal(Number(record.body.absences.find((row) => row.id === filed.body.absence.id).version), 1);
     } finally {
       await f.pool.query(`DELETE FROM documents WHERE id = $1`, [doc]);
     }

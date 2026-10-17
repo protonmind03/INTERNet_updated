@@ -16,6 +16,7 @@ import TimeInFab from "../pages/student/TimeInFab";
 import TimeInProvider from "../pages/student/TimeInProvider";
 import { PhotoRedoBanner } from "../pages/student/PhotoRedo";
 import WaitingToSend from "../pages/student/WaitingToSend";
+import { useWaitingCount } from "../lib/useWaitingCount";
 import { useStudentProgress } from "../pages/student/useStudentProgress";
 
 /*
@@ -88,6 +89,8 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
   const progress = useStudentProgress(student?.student_id);
 
   const [menuOpen, setMenuOpen] = useState(false);
+  // Steps recorded offline still on this phone: a badge on the account button.
+  const waitingCount = useWaitingCount();
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   // Steps recorded offline and not sent yet. Signing out erases them, so
   // the question says how many there are.
@@ -164,10 +167,19 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
                   type="button"
                   aria-expanded={menuOpen}
                   onClick={() => setMenuOpen((open) => !open)}
-                  className="flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10"
+                  className="relative flex h-11 w-11 items-center justify-center rounded-lg hover:bg-white/10"
                 >
                   <Avatar name={student.name} />
                   <span className="sr-only">Account menu for {student.name}</span>
+                  {waitingCount > 0 && (
+                    <span
+                      data-testid="waiting-badge"
+                      className="absolute -right-0.5 -top-0.5 grid h-5 min-w-5 place-items-center rounded-full bg-gold-400 px-1 text-[11px] font-bold leading-none text-psu-950 ring-2 ring-psu-800"
+                    >
+                      {waitingCount}
+                      <span className="sr-only">{waitingCount === 1 ? " step" : " steps"} waiting to send</span>
+                    </span>
+                  )}
                 </button>
                 {menuOpen && (
                   <div className="absolute right-0 top-full z-40 mt-2 w-60 origin-top-right animate-pop-in overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">

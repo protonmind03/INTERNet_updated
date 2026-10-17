@@ -76,6 +76,8 @@ test("waiting steps: held while the server does not answer, shown with age, expi
   await expect(lunch).toContainText("Too old to be added: the limit is 12 hours.");
   // Nothing was sent while the server did not answer.
   expect(await waiting(page)).toBe(2);
+  // The account button says so too, for when the panel is scrolled away.
+  await expect(page.getByTestId("waiting-badge")).toHaveText(/^2\s*steps waiting to send$/);
 
   // Discard asks first; Cancel keeps it.
   await lunch.getByRole("button", { name: /^Discard out for lunch/ }).click();
@@ -87,12 +89,14 @@ test("waiting steps: held while the server does not answer, shown with age, expi
   await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(panel.getByRole("heading", { name: "Waiting to send (1)" })).toBeVisible();
   expect(await waiting(page)).toBe(1);
+  await expect(page.getByTestId("waiting-badge")).toHaveText(/^1\s*step waiting to send$/);
 
   // The server answers again: Retry sends it (and the server refuses this made-up one).
   healthy = true;
   await panel.getByRole("button", { name: "Retry now" }).click();
   await expect(page.getByText(/Your time-out recorded offline was not added/)).toBeVisible({ timeout: 20_000 });
   await expect(panel).toHaveCount(0);
+  await expect(page.getByTestId("waiting-badge")).toHaveCount(0);
   expect(await waiting(page)).toBe(0);
 });
 
