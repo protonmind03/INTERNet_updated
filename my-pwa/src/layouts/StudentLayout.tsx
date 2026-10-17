@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { PortalBrand, PortalHeader } from "../brand";
+import { PortalBrand, PortalHeader, SIDEBAR } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import MessageThreadHost from "../components/MessageThreadHost";
 import NotificationBell from "../components/NotificationBell";
@@ -13,6 +13,7 @@ import { waitingSteps } from "../lib/offlineQueue";
 import { useReportedHeight } from "../lib/layers";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import { useScrollPane } from "../lib/useScrollPane";
 import TimeInFab from "../pages/student/TimeInFab";
 import TimeInProvider from "../pages/student/TimeInProvider";
 import { PhotoRedoBanner } from "../pages/student/PhotoRedo";
@@ -80,6 +81,7 @@ export default function StudentLayout(props: LayoutProps) {
 function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
+  const scrollPane = useScrollPane<HTMLElement>();
   const student = useAccount("student");
   const counts = useNavCounts("student");
   const desktop = useMediaQuery("(min-width: 768px)");
@@ -131,45 +133,36 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
   return (
     <div className="flex h-[calc(100dvh-var(--inb-top-inset))] bg-slate-50 print:block print:h-auto print:bg-white">
       {/* SIDEBAR (desktop) */}
-      <aside className="surface-brand hidden w-64 shrink-0 flex-col md:flex print:hidden">
-        <div className="border-b border-white/10 px-5 py-5">
+      <aside className={`${SIDEBAR.surface} hidden w-64 shrink-0 flex-col md:flex print:hidden`}>
+        <div className={SIDEBAR.brandBlock}>
           <PortalBrand role="student" showTag />
         </div>
 
-        <nav aria-label="Main" className="flex-1 overflow-y-auto px-3 pb-4 pt-4">
-          <p className="mb-1.5 px-3 text-xs font-semibold uppercase tracking-wider text-psu-300">
-            Every day
-          </p>
+        {/* Only the list scrolls; the brand block and the account footer stay put. */}
+        <nav ref={scrollPane} aria-label="Main" className={`inb-scroll-pane flex-1 ${SIDEBAR.nav}`}>
+          <p className={SIDEBAR.groupLabel}>Every day</p>
           <SidebarGroup items={PRIMARY_NAV} counts={counts} />
-          <p className="mb-1.5 mt-6 px-3 text-xs font-semibold uppercase tracking-wider text-psu-300">
-            More
-          </p>
+          <p className={`${SIDEBAR.groupLabel} ${SIDEBAR.groupGap}`}>More</p>
           <SidebarGroup items={SECONDARY_NAV} counts={counts} />
         </nav>
 
-        <div className="border-t border-white/10 p-3">
+        <div className={SIDEBAR.footer}>
           <NavLink
             to={ACCOUNT_NAV.path}
             className={({ isActive }) =>
-              `flex items-center gap-3 rounded-lg px-3 py-2.5 transition-colors ${
-                isActive ? "bg-white/10" : "hover:bg-white/5"
-              }`
+              `${SIDEBAR.accountLink} ${isActive ? SIDEBAR.accountActive : SIDEBAR.accountIdle}`
             }
           >
             <Avatar name={student.name} />
             <span className="min-w-0 leading-tight">
-              <span className="block truncate text-sm font-semibold text-white">
-                {student.name}
-              </span>
-              <span className="block truncate text-xs text-psu-200">
-                {student.student_id}
-              </span>
+              <span className={SIDEBAR.accountName}>{student.name}</span>
+              <span className={SIDEBAR.accountDetail}>{student.student_id}</span>
             </span>
           </NavLink>
           <button
             type="button"
             onClick={() => setConfirmSignOut(true)}
-            className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-psu-100 transition-colors hover:bg-white/5 hover:text-white"
+            className={SIDEBAR.signOut}
           >
             <Icon name="logout" />
             Sign out
@@ -394,27 +387,19 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
 
 function SidebarGroup({ items, counts }: { items: NavItem[]; counts: NavCounts }) {
   return (
-    <div className="space-y-0.5">
+    <div className={SIDEBAR.groupItems}>
       {items.map((item) => (
         <NavLink
           key={item.path}
           to={item.path}
-          className={({ isActive }) =>
-            `relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors ${
-              isActive
-                ? "bg-linear-to-r from-white/15 to-white/5 text-white ring-1 ring-inset ring-white/10"
-                : "text-psu-100 hover:bg-white/5 hover:text-white"
-            }`
-          }
+          className={({ isActive }) => `${SIDEBAR.item} ${isActive ? SIDEBAR.itemActive : SIDEBAR.itemIdle}`}
         >
           {({ isActive }) => (
             <>
-              {isActive && (
-                <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-gold-400" />
-              )}
-              <Icon name={item.icon} className={isActive ? "text-gold-300" : ""} />
+              {isActive && <span className={SIDEBAR.activeBar} />}
+              <Icon name={item.icon} className={isActive ? SIDEBAR.activeIcon : ""} />
               <span className="flex-1">{item.label}</span>
-              <CountBadge count={counts[item.path]} tone="dark" />
+              <CountBadge count={counts[item.path]} tone={SIDEBAR.badgeTone} />
             </>
           )}
         </NavLink>

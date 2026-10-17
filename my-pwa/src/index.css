@@ -334,12 +334,6 @@ body {
     background-repeat: no-repeat;
   }
 
-  /* The light sidebar of the coordinator console. */
-  .surface-console {
-    background-color: white;
-    background-image: linear-gradient(180deg, white 0%, white 40%, rgb(238 242 255 / 0.7) 100%);
-  }
-
   /* Column headings of a data table. */
   .table-head th {
     background: color-mix(in srgb, var(--color-psu-50) 55%, white);
@@ -347,11 +341,93 @@ body {
     letter-spacing: 0.01em;
   }
 
+  /*
+  | THE SCROLL PANE (roadmap 5.8)
+  |
+  | One class for the menus of all three portals, so a scrollbar stops
+  | competing with the menu. Thin and quiet: a 6-pixel rounded thumb in a
+  | low-contrast colour on a clear track, at full contrast only on hover,
+  | while something inside has focus, or while it scrolls. Stable: room is
+  | kept for the bar so nothing shifts when it appears, and scrolling to the
+  | end does not scroll the page behind. Instead of a heavy bar, a soft
+  | fade at an edge says there is more that way, and only then.
+  | lib/useScrollPane.ts sets data-more-above / -below and data-scrolling.
+  | data-axis="x" makes it a sideways row.
+  */
+  .inb-scroll-pane {
+    --inb-scroll-thumb: rgb(100 116 139 / 0.28);
+    --inb-scroll-thumb-strong: rgb(71 85 105 / 0.75);
+    --inb-scroll-fade: 1.5rem;
+    --inb-fade-start: 0px;
+    --inb-fade-end: 0px;
+    min-height: 0;
+    overflow-y: auto;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+    mask-image: linear-gradient(
+      to bottom,
+      transparent 0,
+      #000 var(--inb-fade-start),
+      #000 calc(100% - var(--inb-fade-end)),
+      transparent 100%
+    );
+  }
+  .inb-scroll-pane[data-axis="x"] {
+    overflow-x: auto;
+    overflow-y: hidden;
+    mask-image: linear-gradient(
+      to right,
+      transparent 0,
+      #000 var(--inb-fade-start),
+      #000 calc(100% - var(--inb-fade-end)),
+      transparent 100%
+    );
+  }
+  .inb-scroll-pane[data-more-above] {
+    --inb-fade-start: var(--inb-scroll-fade);
+  }
+  .inb-scroll-pane[data-more-below] {
+    --inb-fade-end: var(--inb-scroll-fade);
+  }
+  /* On the navy sidebars and bars: light on dark, just as quiet. */
+  .surface-brand .inb-scroll-pane,
+  .surface-brand-bar .inb-scroll-pane {
+    --inb-scroll-thumb: rgb(255 255 255 / 0.16);
+    --inb-scroll-thumb-strong: rgb(255 255 255 / 0.6);
+  }
+  .inb-scroll-pane::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .inb-scroll-pane::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .inb-scroll-pane::-webkit-scrollbar-thumb {
+    border-radius: 9999px;
+    background: var(--inb-scroll-thumb);
+  }
+  .inb-scroll-pane:hover::-webkit-scrollbar-thumb,
+  .inb-scroll-pane:focus-within::-webkit-scrollbar-thumb,
+  .inb-scroll-pane[data-scrolling]::-webkit-scrollbar-thumb {
+    background: var(--inb-scroll-thumb-strong);
+  }
+  /* Firefox draws its own thin bar; the colours follow the same rule. */
+  @supports not selector(::-webkit-scrollbar) {
+    .inb-scroll-pane {
+      scrollbar-width: thin;
+      scrollbar-color: var(--inb-scroll-thumb) transparent;
+    }
+    .inb-scroll-pane:hover,
+    .inb-scroll-pane:focus-within,
+    .inb-scroll-pane[data-scrolling] {
+      scrollbar-color: var(--inb-scroll-thumb-strong) transparent;
+    }
+  }
+
   @media print {
     .surface-brand,
     .surface-brand-bar,
-    .app-canvas,
-    .surface-console {
+    .app-canvas {
       background: none;
     }
 

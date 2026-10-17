@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
-import { PortalBrand, ROLE_THEMES } from "../brand";
+import { PortalBrand } from "../brand";
 import ComposeMessage from "../components/ComposeMessage";
 import Icon from "../components/Icon";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -10,6 +10,7 @@ import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { useScrollPane } from "../lib/useScrollPane";
 import { useCoordinatorContact, type CoordinatorContact } from "../pages/supervisor/useCoordinatorContact";
 
 /*
@@ -85,6 +86,7 @@ export default function SupervisorLayout({
 
   // On a phone the links scroll sideways; bring the current page into view.
   const phoneNav = useRef<HTMLElement | null>(null);
+  const phonePane = useScrollPane<HTMLElement>();
   useEffect(() => {
     const current = phoneNav.current?.querySelector<HTMLElement>('[aria-current="page"]');
     const nav = phoneNav.current;
@@ -223,23 +225,20 @@ export default function SupervisorLayout({
 
         {/* Below large screens the same links sit in a scrollable second row. */}
         <div className="relative border-t border-white/10 lg:hidden">
+          {/* The shared scroll pane, sideways: a fade at an edge says more pages lie that way. */}
           <nav
-            ref={phoneNav}
+            ref={(element) => {
+              phoneNav.current = element;
+              phonePane(element);
+            }}
             aria-label="Main"
-            className="flex h-11 items-stretch gap-1 overflow-x-auto px-2 pr-8"
+            data-axis="x"
+            className="inb-scroll-pane flex h-11 items-stretch gap-1 px-2"
           >
             {NAV.map((item) => (
               <TopLink key={item.path} {...item} count={counts[item.path]} />
             ))}
           </nav>
-          {/* A fading edge shows that the row scrolls to more pages. */}
-          <span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 right-0 w-10"
-            style={{
-              background: `linear-gradient(to left, ${ROLE_THEMES.supervisor.colors.surface}, transparent)`,
-            }}
-          />
         </div>
       </header>
 

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
-import { BrandIcon, BrandLoader, LOGO_SIZES, PortalBrand, ROLE_THEMES } from "../brand";
+import { BrandIcon, BrandLoader, LOGO_SIZES, PortalBrand, ROLE_THEMES, SIDEBAR } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
 import ComposeMessage from "../components/ComposeMessage";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -11,6 +11,7 @@ import { API_URL, withCoordinatorAuth } from "../lib/api";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { useScrollPane } from "../lib/useScrollPane";
 import { HUBS, useHub } from "../pages/coordinator/hubConfig";
 import HubNav from "../pages/coordinator/HubNav";
 
@@ -20,8 +21,8 @@ import HubNav from "../pages/coordinator/HubNav";
 |--------------------------------------------------------------------------
 |
 | The coordinator runs the whole programme from a desk, moving between
-| many records. So this portal is a console: a light sidebar that groups
-| every area, and a search box that jumps straight to a student,
+| many records. So this portal is a console: a sidebar in the student
+| portal's style (brand/tokens.ts, SIDEBAR) that groups every area, and a search box that jumps straight to a student,
 | supervisor or complaint from anywhere (Ctrl K).
 |
 | The side navigation holds the daily jobs (roadmap 5.1). Pages about one
@@ -95,6 +96,9 @@ export default function CoordinatorLayout({
   const coordinator = useAccount("coordinator");
   const counts = useNavCounts("coordinator");
   const hub = useHub();
+  // One scroll pane each: the sidebar on a wide screen, and the same list in the phone drawer.
+  const deskPane = useScrollPane<HTMLElement>();
+  const drawerPane = useScrollPane<HTMLElement>();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // With this many pages, the title also says which area of the console it
@@ -121,43 +125,30 @@ export default function CoordinatorLayout({
     navigate("/", { replace: true });
   };
 
-  const sidebar = (
+  const sidebar = (pane: (element: HTMLElement | null) => void) => (
     <>
-      <div className="border-b border-slate-200/70 px-5 py-5">
-        <PortalBrand role="coordinator" />
+      <div className={SIDEBAR.brandBlock}>
+        <PortalBrand role="coordinator" onDark />
       </div>
-      <nav aria-label="Main" className="flex-1 space-y-5 overflow-y-auto px-3 pb-4 pt-4">
-        {NAV_GROUPS.map((group) => (
+      {/* Only the list scrolls; the brand block and the account footer stay put. */}
+      <nav ref={pane} aria-label="Main" className={`inb-scroll-pane flex-1 ${SIDEBAR.nav}`}>
+        {NAV_GROUPS.map((group, index) => (
           <div key={group.label}>
-            <p className="mb-1.5 flex items-center gap-2 px-3 text-xs font-semibold uppercase tracking-wider text-slate-500">
-              {group.label}
-              <span aria-hidden="true" className="h-px flex-1 bg-slate-200/80" />
-            </p>
-            <div className="space-y-0.5">
+            <p className={`${SIDEBAR.groupLabel} ${index > 0 ? SIDEBAR.groupGap : ""}`}>{group.label}</p>
+            <div className={SIDEBAR.groupItems}>
               {group.items.map((item) => (
                 <NavLink
                   key={item.path}
                   to={item.path}
                   onClick={() => setDrawerOpen(false)}
-                  className={({ isActive }) =>
-                    `relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
-                      isActive
-                        ? "bg-linear-to-r from-psu-100 to-psu-50 text-psu-900 ring-1 ring-inset ring-psu-600/10"
-                        : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                    }`
-                  }
+                  className={({ isActive }) => `${SIDEBAR.item} ${isActive ? SIDEBAR.itemActive : SIDEBAR.itemIdle}`}
                 >
                   {({ isActive }) => (
                     <>
-                      {isActive && (
-                        <span className="absolute inset-y-2 left-0 w-[3px] rounded-r bg-psu-600" />
-                      )}
-                      <Icon
-                        name={item.icon}
-                        className={isActive ? "text-psu-700" : "text-slate-500"}
-                      />
+                      {isActive && <span className={SIDEBAR.activeBar} />}
+                      <Icon name={item.icon} className={isActive ? SIDEBAR.activeIcon : ""} />
                       <span className="flex-1">{item.label}</span>
-                      <CountBadge count={counts[item.path]} />
+                      <CountBadge count={counts[item.path]} tone={SIDEBAR.badgeTone} />
                     </>
                   )}
                 </NavLink>
@@ -166,26 +157,19 @@ export default function CoordinatorLayout({
           </div>
         ))}
       </nav>
-      <div className="border-t border-slate-200 p-3">
+      <div className={SIDEBAR.footer}>
         <NavLink
           to="/coordinator/profile"
           onClick={() => setDrawerOpen(false)}
-          className={({ isActive }) =>
-            `flex items-center gap-3 rounded-lg px-3 py-2.5 ${
-              isActive ? "bg-psu-50" : "hover:bg-slate-100"
-            }`
-          }
+          className={({ isActive }) => `${SIDEBAR.accountLink} ${isActive ? SIDEBAR.accountActive : SIDEBAR.accountIdle}`}
         >
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-psu-600 to-psu-800 text-xs font-bold text-white">
+          {/* The coordinator's own mark: their indigo, not the student's gold. */}
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-psu-500 to-psu-700 text-xs font-bold text-white ring-1 ring-white/20">
             {getInitials(coordinator.name, "OC")}
           </span>
           <span className="min-w-0 leading-tight">
-            <span className="block truncate text-sm font-semibold text-slate-900">
-              {coordinator.name}
-            </span>
-            <span className="block truncate text-xs text-slate-600">
-              {coordinator.department || "OJT Coordinator"}
-            </span>
+            <span className={SIDEBAR.accountName}>{coordinator.name}</span>
+            <span className={SIDEBAR.accountDetail}>{coordinator.department || "OJT Coordinator"}</span>
           </span>
         </NavLink>
         <button
@@ -194,9 +178,9 @@ export default function CoordinatorLayout({
             setDrawerOpen(false);
             setConfirmSignOut(true);
           }}
-          className="mt-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          className={SIDEBAR.signOut}
         >
-          <Icon name="logout" className="text-slate-400" />
+          <Icon name="logout" />
           Sign out
         </button>
       </div>
@@ -205,8 +189,8 @@ export default function CoordinatorLayout({
 
   return (
     <div className="flex h-[calc(100dvh-var(--inb-top-inset))] bg-slate-50 print:block print:h-auto print:bg-white">
-      <aside className="surface-console hidden w-64 shrink-0 flex-col border-r border-slate-200 lg:flex print:hidden">
-        {sidebar}
+      <aside className={`${SIDEBAR.surface} hidden w-64 shrink-0 flex-col lg:flex print:hidden`}>
+        {sidebar(deskPane)}
       </aside>
 
       {/* The same sidebar as a drawer on smaller screens. */}
@@ -216,16 +200,16 @@ export default function CoordinatorLayout({
             className="absolute inset-0 animate-fade-in bg-psu-950/50"
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="surface-console relative flex w-72 max-w-[85vw] animate-drawer-in flex-col shadow-2xl">
+          <aside className={`${SIDEBAR.surface} relative flex w-72 max-w-[85vw] animate-drawer-in flex-col shadow-2xl`}>
             <button
               type="button"
               aria-label="Close menu"
               onClick={() => setDrawerOpen(false)}
-              className="absolute right-3 top-4 rounded-lg p-1.5 text-slate-500 hover:bg-slate-100"
+              className="absolute right-3 top-4 rounded-lg p-1.5 text-psu-100 hover:bg-white/10 hover:text-white"
             >
               <Icon name="close" />
             </button>
-            {sidebar}
+            {sidebar(drawerPane)}
           </aside>
         </div>
       )}

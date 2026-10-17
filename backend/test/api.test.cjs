@@ -10186,3 +10186,25 @@ test("every page that moved into a hub keeps its address: it redirects to its ta
   // Every hub is a route.
   for (const hub of Object.values(HUBS)) assert.match(app, new RegExp(`path="${hub.path}"\\s+element=\\{<CoordinatorHub `), hub.path);
 });
+
+test("the coordinator's sidebar wears the student's style: both layouts draw it from the SIDEBAR tokens", () => {
+  require("tsx/cjs");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  // tokens.ts has no imports, so it loads without the app's packages (as on CI).
+  const { SIDEBAR } = require("../../my-pwa/src/brand/tokens.ts");
+  for (const key of ["surface", "groupLabel", "item", "itemIdle", "itemActive", "activeBar", "activeIcon", "footer", "accountLink", "signOut"]) {
+    assert.equal(typeof SIDEBAR[key], "string", key);
+  }
+  assert.match(SIDEBAR.activeBar, /bg-gold-400/, "the gold edge on the current page");
+  const read = (file) => fs.readFileSync(path.join(__dirname, "../../my-pwa/src/layouts", file), "utf8");
+  for (const file of ["StudentLayout.tsx", "CoordinatorLayout.tsx"]) {
+    const source = read(file);
+    for (const key of ["surface", "groupLabel", "item", "itemActive", "itemIdle", "activeBar", "footer", "signOut"]) {
+      assert.ok(source.includes(`SIDEBAR.${key}`), `${file} uses SIDEBAR.${key}`);
+    }
+    assert.ok(source.includes("inb-scroll-pane"), `${file} has the shared scroll pane`);
+  }
+  assert.ok(read("SupervisorLayout.tsx").includes("inb-scroll-pane"), "the supervisor's too");
+  assert.equal(read("CoordinatorLayout.tsx").includes("surface-console"), false, "the light console sidebar is gone");
+});
