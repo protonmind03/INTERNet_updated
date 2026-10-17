@@ -10,7 +10,6 @@ import { API_URL, withCoordinatorAuth } from "../lib/api";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
-import { coordinatorNotificationTarget } from "../pages/coordinator/notificationTargets";
 
 /*
 |--------------------------------------------------------------------------
@@ -263,7 +262,6 @@ export default function CoordinatorLayout({
             <NotificationBell
               role="coordinator"
               viewAllPath="/coordinator/notifications"
-              resolvePath={(item) => coordinatorNotificationTarget(item).path}
               buttonClassName="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-lg text-slate-600 hover:bg-slate-100"
             />
           </div>

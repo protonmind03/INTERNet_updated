@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { API_URL } from "../lib/api";
 import { cue } from "../lib/cues";
+import { resolveNotificationTarget } from "../lib/notificationTargets";
 import { toast } from "../lib/toast";
 
 type Role = "coordinator" | "student" | "supervisor";
@@ -13,6 +14,9 @@ type LiveNotification = {
   type: string;
   /** The page it is about, stored by the server. */
   link?: string | null;
+  /** The record it is about. */
+  entity_type?: string | null;
+  entity_id?: string | number | null;
 };
 
 /** The full notification list for each portal: where "View" leads. */
@@ -123,7 +127,11 @@ export default function RealtimeNotificationBridge() {
               label: "View",
               // Straight to what it is about; anything without a page opens
               // the full list.
-              onClick: () => navigateRef.current(payload.link || NOTIFICATION_PAGE[role]),
+              onClick: () => {
+                const { path } = resolveNotificationTarget(role, payload);
+                navigateRef.current(path ?? NOTIFICATION_PAGE[role]);
+                if (!path) toast.info("That notification has no page of its own, so here is the full list.");
+              },
             });
             window.dispatchEvent(
               new CustomEvent("internet-notification", { detail: payload })

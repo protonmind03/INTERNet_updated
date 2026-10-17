@@ -146,6 +146,18 @@ export function withRecord(
 }
 
 /**
+ * The link for a notification written before links were stored (migration
+ * 018), when its title and type name one page: the same rule as for a new
+ * one. Null when the rule would only give the notifications list, or for a
+ * "New message", which needs its thread.
+ */
+export function backfillLink(role: NotificationRole, type: string | null | undefined, title: string): string | null {
+  if (title.trim().toLowerCase() === "new message") return null;
+  const link = notificationLink(role, type ?? undefined, title);
+  return link === NOTIFICATION_PAGE[role] ? null : link;
+}
+
+/**
  * A link given by a caller, if it is safe to store: a path inside the app,
  * never an address somewhere else.
  */

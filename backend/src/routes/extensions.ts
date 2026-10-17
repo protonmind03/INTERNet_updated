@@ -209,6 +209,7 @@ export function registerExtensionRoutes(
             title: "Absence filed for review",
             message: `${owner.rows[0].name} filed an absence for ${date}.`,
             type: "attendance",
+            entity: { type: "absence", id: result.rows[0]?.id },
           });
         }
       });
@@ -395,6 +396,7 @@ export function registerExtensionRoutes(
         await quietly("ABSENCE REVIEW NOTIFICATION ERROR", () =>
           createNotification({
             studentId: absence.student_id,
+            entity: { type: "absence", id: absence.id },
             title:
               status === "Pending" ? "Absence back under review" : `Absence ${status.toLowerCase()}`,
             message:
@@ -995,6 +997,7 @@ export function registerExtensionRoutes(
               title: "New intern assigned",
               message: `${name} has been assigned to you by the OJT coordinator.`,
               type: "info",
+              entity: { type: "student", id: studentId },
             });
           }
         });

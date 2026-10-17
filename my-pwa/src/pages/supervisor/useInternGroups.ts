@@ -84,7 +84,16 @@ export function useInternGroups() {
   /** True for an intern of the chosen group, and for everyone when none is chosen. */
   const has = useCallback((studentId: string) => !members || members.has(String(studentId)), [members]);
 
-  return { group: applied, setGroup, groups, has };
+  /** An intern's block (or program, before they are placed in one), for panel headers. */
+  const blockOf = useCallback(
+    (studentId: string) => {
+      const intern = interns.find((item) => String(item.student_id) === String(studentId));
+      return intern ? groupOf(intern) : null;
+    },
+    [interns]
+  );
+
+  return { group: applied, setGroup, groups, has, blockOf };
 }
 
 export type InternGroupState = ReturnType<typeof useInternGroups>;

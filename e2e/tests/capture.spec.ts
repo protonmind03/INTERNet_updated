@@ -216,7 +216,8 @@ test.describe("a time-in with no connection", () => {
       const supervisorPage = await supervisorContext.newPage();
       await signIn(supervisorPage, "supervisor");
       await supervisorPage.goto("/supervisor/attendance");
-      await expect(supervisorPage.getByText("Offline · attested").locator("visible=true").first()).toBeVisible();
+      // The mark on the log itself, not the filter chip of the same name.
+      await expect(supervisorPage.locator("tbody").getByText("Offline · attested").locator("visible=true").first()).toBeVisible();
       await supervisorContext.close();
     } finally {
       await api(coordinator.token, "PATCH", `/api/coordinator/students/${id}/status`, { is_active: false });

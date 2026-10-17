@@ -1,4 +1,8 @@
+import type { ReactNode } from "react";
+import InternPanels from "../../components/InternPanels";
 import { ProgressBar, StatusBadge } from "../../components/ui";
+import { sameId } from "../../lib/ids";
+import { panelsByIntern } from "../../lib/internPanels";
 
 /*
 | Requirement progress by group: College, then Program, then Block, then
@@ -7,7 +11,16 @@ import { ProgressBar, StatusBadge } from "../../components/ui";
 | their account; one with no block is under "No block". Every student is
 | in the tree once. The files themselves are not arranged this way in
 | storage: this is only how the page reads.
+|
+| Inside a block each student is a panel, as on the supervisor's pages:
+| who they are, how many files wait for a decision and since when, then
+| their progress and their files. Students with files waiting come first.
 */
+
+/** The few fields of a submitted file the panels need. */
+type FileRow = { id: number; student_id: string; status: string; uploaded_at: string };
+
+type Files<F extends FileRow> = { documents: F[]; renderFiles: (items: F[]) => ReactNode };
 
 export type GroupedStudent = {
   student_id: string;
@@ -68,42 +81,86 @@ function Summary({ node, total, level }: { node: Node; total: number; level: num
   );
 }
 
-function Branch({ node, total, level }: { node: Node; total: number; level: number }) {
+function Branch<F extends FileRow>({ node, total, level, files }: { node: Node; total: number; level: number; files: Files<F> }) {
   return (
     <details className={level === 0 ? "border-b border-slate-100 last:border-b-0" : "border-t border-slate-100"} open={level === 0}>
       <Summary node={node} total={total} level={level} />
       <div className={level < 2 ? "ml-3 border-l-2 border-slate-200 sm:ml-5" : ""}>
         {node.children.length > 0 ? (
-          node.children.map((child) => <Branch key={child.name} node={child} total={total} level={level + 1} />)
+          node.children.map((child) => <Branch key={child.name} node={child} total={total} level={level + 1} files={files} />)
         ) : (
-          <ul className="divide-y divide-slate-100 border-t border-slate-100">
-            {node.students.map((student) => (
-              <li key={student.student_id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 py-2.5 pl-6 pr-4 text-sm sm:pl-8 sm:pr-5">
-                <span className="min-w-0 font-medium text-slate-900">{student.name}</span>
-                <span className="flex items-center gap-3">
-                  <span className="tabular text-slate-700">
-                    {student.approved}/{student.required ?? total}
-                  </span>
-                  {student.missing.length === 0 ? (
-                    <StatusBadge status="Complete" tone="good" />
-                  ) : (
-                    <span className="text-slate-600">Needs {student.missing.join(", ")}</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <StudentPanels students={node.students} block={node.name} total={total} files={files} />
         )}
       </div>
     </details>
   );
 }
 
-export default function DocumentGroups({ students, total }: { students: GroupedStudent[]; total: number }) {
+/** A block's students, one panel each, with their progress above their files. */
+function StudentPanels<F extends FileRow>({
+  students,
+  block,
+  total,
+  files,
+}: {
+  students: GroupedStudent[];
+  block: string;
+  total: number;
+  files: Files<F>;
+}) {
+  const theirs = files.documents.filter((item) => students.some((student) => sameId(student.student_id, item.student_id)));
+  const names = new Map(students.map((student) => [String(student.student_id), student.name]));
+  const panels = panelsByIntern(
+    theirs,
+    {
+      student: (item) => ({ id: String(item.student_id), name: names.get(String(item.student_id)) ?? String(item.student_id) }),
+      waitingSince: (item) => (item.status === "Pending" ? item.uploaded_at : null),
+      block: () => block,
+    },
+    students.map((student) => ({ id: String(student.student_id), name: student.name }))
+  ).map((panel) => {
+    const student = students.find((row) => sameId(row.student_id, panel.id))!;
+    return {
+      ...panel,
+      summary: (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-2 text-sm">
+          <span className="tabular text-slate-700">
+            {student.approved}/{student.required ?? total} approved
+          </span>
+          {student.missing.length === 0 ? (
+            <StatusBadge status="Complete" tone="good" />
+          ) : (
+            <span className="text-slate-600">Needs {student.missing.join(", ")}</span>
+          )}
+        </p>
+      ),
+    };
+  });
+  return (
+    <InternPanels
+      className="border-t border-slate-100"
+      panels={panels}
+      waitingLabel="waiting"
+      renderItems={(items) =>
+        items.length > 0 ? files.renderFiles(items) : <p className="px-4 pb-3 text-sm text-slate-500 sm:px-5">No files yet.</p>
+      }
+    />
+  );
+}
+
+export default function DocumentGroups<F extends FileRow>({
+  students,
+  total,
+  documents,
+  renderFiles,
+}: {
+  students: GroupedStudent[];
+  total: number;
+} & Files<F>) {
   return (
     <div>
       {tree(students).map((node) => (
-        <Branch key={node.name} node={node} total={total} level={0} />
+        <Branch key={node.name} node={node} total={total} level={0} files={{ documents, renderFiles }} />
       ))}
     </div>
   );

@@ -1,46 +1,7 @@
-import NotificationFeed, { type NotificationTarget } from "../../components/NotificationFeed";
+import NotificationFeed from "../../components/NotificationFeed";
 import { Button } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
-import {
-  notificationPath,
-  useNotifications,
-  type NotificationItem,
-} from "../../lib/useNotifications";
-
-/** Where a notification leads in the student portal, and how it is drawn. */
-const KINDS: Record<string, NotificationTarget> = {
-  attendance: { icon: "clock", path: "/daily-log" },
-  task: { icon: "tasks", path: "/task" },
-  document: { icon: "document", path: "/documents" },
-  evaluation: { icon: "star", path: "/student/resolution?tab=evaluations" },
-  comment: { icon: "note", path: "/task" },
-};
-
-/** The stored page when there is one; the icon still comes from the wording. */
-function resolve(item: NotificationItem): NotificationTarget {
-  const guess = fromWording(item);
-  return { icon: guess.icon, path: notificationPath(item, guess.path) };
-}
-
-function fromWording(item: NotificationItem): NotificationTarget {
-  if (item.type === "announcement") return { icon: "megaphone", path: "" };
-  if (item.title.toLowerCase().includes("absence")) {
-    return { icon: "calendar", path: "/daily-log" };
-  }
-  if (KINDS[item.type]) return KINDS[item.type];
-  // Most notifications are stored with a generic type; infer from the title.
-  const title = item.title.toLowerCase();
-  if (title.includes("complaint") || title.includes("concern")) return { icon: "flag", path: "/student/resolution?tab=concerns" };
-  if (title.includes("supervisor assigned") || title.includes("schedule")) {
-    return { icon: "calendar", path: "/schedule" };
-  }
-  if (title.includes("welcome")) return { icon: "home", path: "/student/dashboard" };
-  if (title.includes("evaluation")) return KINDS.evaluation;
-  if (title.includes("task") || title.includes("revision")) return KINDS.task;
-  if (title.includes("document")) return KINDS.document;
-  if (title.includes("attendance") || title.includes("log")) return KINDS.attendance;
-  return { icon: "bell", path: "" };
-}
+import { useNotifications } from "../../lib/useNotifications";
 
 export default function Notifications() {
   const { notifications, unreadCount, loading, error, markRead, markAllRead } =
@@ -64,7 +25,7 @@ export default function Notifications() {
         loading={loading}
         error={error}
         onRead={(id) => void markRead(id)}
-        resolve={resolve}
+        role="student"
         emptyDescription="You will be told here when a log is verified, a task is assigned or reviewed, or a document is checked."
       />
     </StudentLayout>

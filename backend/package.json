@@ -16,6 +16,7 @@
     "db:backup-production": "tsx src/scripts/backup-production.ts",
     "db:backfill-companies": "tsx src/scripts/backfill-companies.ts",
     "db:backfill-programs": "tsx src/scripts/backfill-programs.ts",
+    "db:backfill-notification-links": "tsx src/scripts/backfill-notification-links.ts",
     "uploads:copy-to-bucket": "tsx src/scripts/copy-uploads-to-bucket.ts",
     "db:fk-orphans": "tsx src/scripts/fk-orphans.ts",
     "db:fk-validate": "tsx src/scripts/fk-validate.ts",

@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import Icon from "../../components/Icon";
-import Pagination from "../../components/Pagination";
+import InternPanels from "../../components/InternPanels";
+import { panelsByIntern } from "../../lib/internPanels";
 import {
   Card,
   EmptyState,
@@ -14,7 +15,7 @@ import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { formatFileSize } from "../../lib/files";
 import { formatDate } from "../../lib/format";
 import { useAccount } from "../../lib/session";
-import { usePagination } from "../../lib/usePagination";
+import { recordId, useFocusRecord } from "../../lib/useFocusRecord";
 import { errorText, toast } from "../../lib/toast";
 import ReviewDetail from "./ReviewDetail";
 import { downloadDocument, useSupervisorWork, type DocumentEntry } from "./useSupervisorWork";
@@ -59,7 +60,18 @@ export default function SupervisorDocuments() {
     [scoped, filter]
   );
 
-  const pager = usePagination(visible, 15);
+  // A notification about one file opens its intern's panel and points at it.
+  const focus = useFocusRecord(!loading);
+  const focusedFile = focus?.startsWith("document-") ? documents.find((item) => String(item.id) === focus.slice(9)) : undefined;
+  const panels = useMemo(
+    () =>
+      panelsByIntern(visible, {
+        student: (item) => ({ id: item.student_id, name: item.student_name }),
+        waitingSince: (item) => (item.status === "Pending" ? item.uploaded_at : null),
+        block: grouping.blockOf,
+      }),
+    [visible, grouping.blockOf]
+  );
   const reviewing = documents.find((item) => item.id === reviewId && item.status === "Pending");
 
   const download = async (item: DocumentEntry) => {
@@ -126,68 +138,72 @@ export default function SupervisorDocuments() {
               }
             />
           ) : (
-            <>
-            <ul className="divide-y divide-slate-100">
-              {pager.pageItems.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5"
-                >
-                  <div className="flex min-w-0 flex-1 items-start gap-3">
-                    <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
-                      <Icon name="document" size={17} />
-                    </span>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
-                        <p className="text-sm font-semibold text-slate-900">{item.doc_type}</p>
-                        <StatusBadge
-                          status={item.status === "Pending" ? "To review" : item.status}
-                          tone={item.status === "Pending" ? "waiting" : undefined}
-                        />
-                      </div>
-                      <p className="mt-0.5 text-sm text-slate-600">{item.student_name}</p>
-                      <p className="truncate text-xs text-slate-500">
-                        {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
-                        {formatDate(item.uploaded_at)}
-                      </p>
-                      {item.review_notes && (
-                        <p
-                          className={`mt-2 rounded-md px-2.5 py-1.5 text-sm ${
-                            item.status === "Rejected"
-                              ? "bg-red-50 text-red-800"
-                              : "bg-slate-100 text-slate-700"
-                          }`}
-                        >
-                          <span className="font-semibold">Your note:</span> {item.review_notes}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => void download(item)}
-                      aria-label={`Download ${item.original_filename}`}
-                      className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+            <InternPanels
+              panels={panels}
+              waitingLabel="to review"
+              focusStudentId={focusedFile?.student_id}
+              renderItems={(items) => (
+                <ul className="divide-y divide-slate-100">
+                  {items.map((item) => (
+                    <li
+                      key={item.id}
+                      id={recordId("document", item.id)}
+                      className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5"
                     >
-                      <Icon name="download" size={16} />
-                      Download
-                    </button>
-                    {item.status === "Pending" && (
-                      <button
-                        type="button"
-                        onClick={() => setReviewId(item.id)}
-                        className="inline-flex h-10 items-center rounded-lg bg-psu-700 px-4 text-sm font-semibold text-white hover:bg-psu-800"
-                      >
-                        Review
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-            <Pagination state={pager} noun="document" />
-            </>
+                      <div className="flex min-w-0 flex-1 items-start gap-3">
+                        <span className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+                          <Icon name="document" size={17} />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+                            <p className="text-sm font-semibold text-slate-900">{item.doc_type}</p>
+                            <StatusBadge
+                              status={item.status === "Pending" ? "To review" : item.status}
+                              tone={item.status === "Pending" ? "waiting" : undefined}
+                            />
+                          </div>
+                          <p className="truncate text-xs text-slate-500">
+                            {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
+                            {formatDate(item.uploaded_at)}
+                          </p>
+                          {item.review_notes && (
+                            <p
+                              className={`mt-2 rounded-md px-2.5 py-1.5 text-sm ${
+                                item.status === "Rejected"
+                                  ? "bg-red-50 text-red-800"
+                                  : "bg-slate-100 text-slate-700"
+                              }`}
+                            >
+                              <span className="font-semibold">Your note:</span> {item.review_notes}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex shrink-0 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void download(item)}
+                          aria-label={`Download ${item.original_filename}`}
+                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        >
+                          <Icon name="download" size={16} />
+                          Download
+                        </button>
+                        {item.status === "Pending" && (
+                          <button
+                            type="button"
+                            onClick={() => setReviewId(item.id)}
+                            className="inline-flex h-10 items-center rounded-lg bg-psu-700 px-4 text-sm font-semibold text-white hover:bg-psu-800"
+                          >
+                            Review
+                          </button>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
           )}
         </Card>
       </div>

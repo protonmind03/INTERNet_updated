@@ -49,6 +49,7 @@ type Dependencies = {
     message: string;
     type: string;
     link?: string;
+    entity?: { type: string; id: string | number };
   }) => Promise<void>;
 };
 
@@ -128,6 +129,7 @@ export function registerMessageRoutes(app: express.Express, deps: Dependencies):
         message: `${from.name} (${ROLE_NAME[from.role]}) wrote to you: "${subject}". Open it to read and reply.`,
         type: "message",
         link,
+        entity: { type: "message", id: threadId },
       });
     } catch (error) {
       console.error("MESSAGE NOTIFICATION ERROR:", error);

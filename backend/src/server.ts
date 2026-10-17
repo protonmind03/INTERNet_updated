@@ -2681,6 +2681,7 @@ app.post(
             title: "Attendance log awaiting verification",
             message: `${owner.rows[0].name} timed in on ${result.rows[0].date}. Review the attendance photo and confirm the log.`,
             type: "attendance",
+            entity: { type: "attendance", id: result.rows[0].id },
           });
         }
       } catch (notifyError) {
@@ -3259,6 +3260,7 @@ app.put(
             title: "Attendance verified",
             message: `Your attendance for ${result.rows[0].date} was verified. Your supervisor recorded your time-in in person.`,
             type: "attendance",
+            entity: { type: "attendance", id: result.rows[0].id },
           });
         } catch (notifyError) {
           console.error("TIME-OUT AUTO-VERIFY FOLLOW-UP ERROR:", notifyError);
@@ -4792,6 +4794,7 @@ app.patch(
 
       await createNotification({
         studentId: result.rows[0].student_id,
+        entity: { type: "attendance", id: result.rows[0].id },
         title:
           status === "Verified"
             ? "Attendance verified"
@@ -6043,6 +6046,7 @@ async function notifySupervisorAssignment(
         title: "New intern assigned",
         message: `${studentName} has been assigned to you by the OJT coordinator.`,
         type: "info",
+        entity: { type: "student", id: studentId },
       });
       await createNotification({
         studentId,
@@ -7268,6 +7272,7 @@ app.patch(
       if (complaint.student_id) {
         await createNotification({
           studentId: complaint.student_id,
+          entity: { type: "complaint", id: complaint.id },
           title: `Concern ${status.toLowerCase()}`,
           message: `Your concern (${complaint.category}) is now ${status.toLowerCase()}.`,
           type: status === "Resolved" ? "success" : "info",
@@ -7277,6 +7282,7 @@ app.patch(
       if (complaint.filed_by_supervisor_id) {
         await createNotification({
           supervisorId: complaint.filed_by_supervisor_id,
+          entity: { type: "complaint", id: complaint.id },
           title: `Concern ${status.toLowerCase()}`,
           message: `Your concern (${complaint.category}) is now ${status.toLowerCase()}.`,
           type: status === "Resolved" ? "success" : "info",
@@ -7718,6 +7724,7 @@ app.post("/api/tasks", requireRole("supervisor"), upload.single("attachment"), u
         title: "New task assigned",
         message: `"${title.trim()}" was assigned to you, due ${due_date}.`,
         type: "info",
+        entity: { type: "task", id: result.rows[0]?.id },
       });
     }
 
@@ -7949,6 +7956,7 @@ app.patch(
 
       await createNotification({
         studentId: task.student_id,
+        entity: { type: "task", id: task.id },
         title:
           status === "Reviewed" ? "Task reviewed" : "Revisions requested",
         message:
@@ -9403,6 +9411,7 @@ app.post(
           title: "Document submitted for review",
           message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}), which the coordinator reviews.`,
           type: "document",
+          entity: { type: "document", id: result.rows[0].id },
           link: "/coordinator/documents",
         });
       } else {
@@ -9411,6 +9420,7 @@ app.post(
           title: "Document submitted for review",
           message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}) for review.`,
           type: "document",
+          entity: { type: "document", id: result.rows[0].id },
         });
       }
 

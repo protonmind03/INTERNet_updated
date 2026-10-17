@@ -9,12 +9,15 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import EntryPictures from "../../components/EntryPictures";
+import InternPanels from "../../components/InternPanels";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { formatDate, formatDateTime } from "../../lib/format";
 import { errorText } from "../../lib/toast";
+import { panelsByIntern } from "../../lib/internPanels";
 import { useAccount } from "../../lib/session";
+import { recordId, useFocusRecord } from "../../lib/useFocusRecord";
 import { useSupervisorWork, type JournalEntry } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
@@ -97,6 +100,15 @@ export default function SupervisorJournals() {
     .slice()
     .sort((a, b) => (a.week_start < b.week_start ? 1 : a.week_start > b.week_start ? -1 : 0));
 
+  // One panel per intern; a notification about one report opens its intern's panel.
+  const focus = useFocusRecord(!loading);
+  const focusedReport = focus?.startsWith("journal-") ? journals.find((item) => String(item.id) === focus.slice(8)) : undefined;
+  const panels = panelsByIntern(visible, {
+    student: (item) => ({ id: item.student_id, name: item.student_name }),
+    waitingSince: (item) => (item.status === "Submitted" ? item.submitted_at : null),
+    block: grouping.blockOf,
+  });
+
   return (
     <SupervisorLayout
       title="Weekly reports"
@@ -153,48 +165,54 @@ export default function SupervisorJournals() {
               }
             />
           ) : (
-            <ul className="divide-y divide-slate-100">
-              {visible.map((journal) => (
-                <li key={journal.id} className="space-y-2.5 px-4 py-4 sm:px-5">
-                  <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                    <div className="min-w-0">
-                      <p className="text-sm font-semibold text-slate-900">{journal.student_name}</p>
-                      <p className="text-xs text-slate-500">
-                        Week of {formatDate(journal.week_start)} to{" "}
-                        {formatDate(weekEnd(journal.week_start))} · sent{" "}
-                        {formatDateTime(journal.submitted_at)}
-                      </p>
-                    </div>
-                    <StatusBadge
-                      status={STATE[journal.status].label}
-                      tone={STATE[journal.status].tone}
-                    />
-                  </div>
-                  <ReportParts report={journal} />
-                  <EntryPictures role="supervisor" owner="journal" ownerId={journal.id} count={journal.pictures} className="" />
-                  <DailyAccomplishments
-                    weekStart={journal.week_start}
-                    logs={attendance.filter((log) => sameId(log.student_id, journal.student_id))}
-                  />
-                  {journal.review_notes && (
-                    <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
-                      <span className="font-semibold">
-                        {journal.status === "Submitted" ? "You asked earlier:" : "Your note:"}
-                      </span>{" "}
-                      {journal.review_notes}
-                    </p>
-                  )}
-                  {journal.status === "Submitted" && (
-                    <Link
-                      to="/supervisor/dashboard"
-                      className="inline-block text-sm font-semibold text-psu-700 hover:underline"
-                    >
-                      Decide it in the Review queue
-                    </Link>
-                  )}
-                </li>
-              ))}
-            </ul>
+            <InternPanels
+              panels={panels}
+              waitingLabel="waiting"
+              focusStudentId={focusedReport?.student_id}
+              renderItems={(items) => (
+                <ul className="divide-y divide-slate-100">
+                  {items.map((journal) => (
+                    <li key={journal.id} id={recordId("journal", journal.id)} className="space-y-2.5 px-4 py-4 sm:px-5">
+                      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-slate-900">
+                            Week of {formatDate(journal.week_start)} to{" "}
+                            {formatDate(weekEnd(journal.week_start))} · sent{" "}
+                            {formatDateTime(journal.submitted_at)}
+                          </p>
+                        </div>
+                        <StatusBadge
+                          status={STATE[journal.status].label}
+                          tone={STATE[journal.status].tone}
+                        />
+                      </div>
+                      <ReportParts report={journal} />
+                      <EntryPictures role="supervisor" owner="journal" ownerId={journal.id} count={journal.pictures} className="" />
+                      <DailyAccomplishments
+                        weekStart={journal.week_start}
+                        logs={attendance.filter((log) => sameId(log.student_id, journal.student_id))}
+                      />
+                      {journal.review_notes && (
+                        <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
+                          <span className="font-semibold">
+                            {journal.status === "Submitted" ? "You asked earlier:" : "Your note:"}
+                          </span>{" "}
+                          {journal.review_notes}
+                        </p>
+                      )}
+                      {journal.status === "Submitted" && (
+                        <Link
+                          to="/supervisor/dashboard"
+                          className="inline-block text-sm font-semibold text-psu-700 hover:underline"
+                        >
+                          Decide it in the Review queue
+                        </Link>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            />
           )}
         </Card>
       </div>

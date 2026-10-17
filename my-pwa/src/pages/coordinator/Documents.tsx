@@ -208,6 +208,73 @@ export default function CoordinatorDocuments() {
     }
   };
 
+  /** Files as a list: the "Submitted files" card, and each student's panel in the grouped view. */
+  const fileList = (items: SubmittedDocument[]) => (
+    <ul className="divide-y divide-slate-100">
+      {items.map((item) => (
+        <li
+          key={item.id}
+          className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5"
+        >
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-900">
+              {item.doc_type}
+              <span className="font-normal text-slate-500">
+                {" "}
+                · {item.student_name || item.student_id}
+              </span>
+            </p>
+            <p className="truncate text-xs text-slate-500">
+              {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
+              {formatDate(item.uploaded_at)} · Supervisor:{" "}
+              {item.supervisor_name || "unassigned"}
+            </p>
+            {item.review_notes && (
+              <p className="mt-1 text-sm text-slate-600">
+                <span className="font-medium">
+                  {item.reviewer_role === "coordinator" ? "Reviewer's note:" : "Supervisor's note:"}
+                </span>{" "}
+                {item.review_notes}
+              </p>
+            )}
+          </div>
+          <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
+            <StatusBadge
+              status={
+                item.status !== "Pending"
+                  ? item.status
+                  : item.reviewer_role === "coordinator"
+                    ? "Waiting for you"
+                    : "With supervisor"
+              }
+              tone={item.status === "Pending" ? "waiting" : undefined}
+            />
+            {/* A deliverable the coordinator reviews is decided here. */}
+            {item.status === "Pending" && item.reviewer_role === "coordinator" && (
+              <>
+                <Button size="sm" busy={deciding === item.id} onClick={() => void decide(item, true)}>
+                  Approve<span className="sr-only"> {item.doc_type} from {item.student_name || item.student_id}</span>
+                </Button>
+                <Button size="sm" variant="secondary" disabled={deciding === item.id} onClick={() => setRejecting(item)}>
+                  Reject<span className="sr-only"> {item.doc_type} from {item.student_name || item.student_id}</span>
+                </Button>
+              </>
+            )}
+            <button
+              type="button"
+              onClick={() => void download(item)}
+              aria-label={`Download ${item.original_filename}`}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
+            >
+              <Icon name="download" size={15} />
+              Download
+            </button>
+          </div>
+        </li>
+      ))}
+    </ul>
+  );
+
   return (
     <CoordinatorLayout
       title="Documents"
@@ -260,7 +327,12 @@ export default function CoordinatorDocuments() {
               title={students.length === 0 ? "No active students" : "No students match"}
             />
           ) : layout === "groups" ? (
-            <DocumentGroups students={visibleStudents} total={total} />
+            <DocumentGroups
+              students={visibleStudents}
+              total={total}
+              documents={documents}
+              renderFiles={fileList}
+            />
           ) : (
             <>
             <ul className="divide-y divide-slate-100">
@@ -373,69 +445,7 @@ export default function CoordinatorDocuments() {
             />
           ) : (
             <>
-            <ul className="divide-y divide-slate-100">
-              {filePager.pageItems.map((item) => (
-                <li
-                  key={item.id}
-                  className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-center sm:px-5"
-                >
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium text-slate-900">
-                      {item.doc_type}
-                      <span className="font-normal text-slate-500">
-                        {" "}
-                        · {item.student_name || item.student_id}
-                      </span>
-                    </p>
-                    <p className="truncate text-xs text-slate-500">
-                      {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
-                      {formatDate(item.uploaded_at)} · Supervisor:{" "}
-                      {item.supervisor_name || "unassigned"}
-                    </p>
-                    {item.review_notes && (
-                      <p className="mt-1 text-sm text-slate-600">
-                        <span className="font-medium">
-                          {item.reviewer_role === "coordinator" ? "Reviewer's note:" : "Supervisor's note:"}
-                        </span>{" "}
-                        {item.review_notes}
-                      </p>
-                    )}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
-                    <StatusBadge
-                      status={
-                        item.status !== "Pending"
-                          ? item.status
-                          : item.reviewer_role === "coordinator"
-                            ? "Waiting for you"
-                            : "With supervisor"
-                      }
-                      tone={item.status === "Pending" ? "waiting" : undefined}
-                    />
-                    {/* A deliverable the coordinator reviews is decided here. */}
-                    {item.status === "Pending" && item.reviewer_role === "coordinator" && (
-                      <>
-                        <Button size="sm" busy={deciding === item.id} onClick={() => void decide(item, true)}>
-                          Approve<span className="sr-only"> {item.doc_type} from {item.student_name || item.student_id}</span>
-                        </Button>
-                        <Button size="sm" variant="secondary" disabled={deciding === item.id} onClick={() => setRejecting(item)}>
-                          Reject<span className="sr-only"> {item.doc_type} from {item.student_name || item.student_id}</span>
-                        </Button>
-                      </>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => void download(item)}
-                      aria-label={`Download ${item.original_filename}`}
-                      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
-                    >
-                      <Icon name="download" size={15} />
-                      Download
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
+            {fileList(filePager.pageItems)}
             <Pagination state={filePager} noun="file" />
             </>
           )}

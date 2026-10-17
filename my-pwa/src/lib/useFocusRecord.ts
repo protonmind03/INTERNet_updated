@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { toast } from "./toast";
 
 /**
  * The record a link asks the page to show: `?focus=task-12` gives
@@ -20,8 +21,8 @@ export function focusId(focus: string | null, kind: string): string | null {
 /**
  * Brings the focused record into view and outlines it for a few seconds.
  * The page marks each row with `id={recordId("task", task.id)}`. `ready`
- * is true once the rows are on the page; nothing happens if the record is
- * not among them (it may have been removed since).
+ * is true once the rows are on the page. If the record is not among them
+ * (filtered out, or removed since), a toast says so.
  */
 export function useFocusRecord(ready: boolean): string | null {
   const focus = useFocus();
@@ -31,7 +32,10 @@ export function useFocusRecord(ready: boolean): string | null {
     // After this render's rows are in the page.
     const frame = window.requestAnimationFrame(() => {
       const row = document.getElementById(`record-${focus}`);
-      if (!row) return;
+      if (!row) {
+        toast.info("That item is not shown here. It may be hidden by a filter, or it was removed.");
+        return;
+      }
       const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       row.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
       row.classList.add("record-focus");

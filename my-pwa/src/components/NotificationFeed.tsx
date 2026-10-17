@@ -1,19 +1,18 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import Icon, { type IconName } from "./Icon";
+import Icon from "./Icon";
 import { Card, EmptyState, ErrorNotice, FilterChips, SkeletonRows } from "./ui";
 import { formatDateTime, formatLongDate, phDateKey } from "../lib/format";
+import { resolveNotificationTarget, type NotificationRole } from "../lib/notificationTargets";
+import { toast } from "../lib/toast";
 import type { NotificationItem } from "../lib/useNotifications";
 
 type Filter = "all" | "unread";
 
-export type NotificationTarget = { icon: IconName; path: string };
-
 /**
  * The full notification list for a portal: grouped by day, filterable to
- * unread, and each row opens the page it is about. The caller supplies the
- * data (from `useNotifications`) and says where each kind of notification
- * leads in its portal.
+ * unread, and each row opens the page it is about (lib/notificationTargets.ts).
+ * The caller supplies the data, from `useNotifications`.
  */
 export default function NotificationFeed({
   notifications,
@@ -21,7 +20,7 @@ export default function NotificationFeed({
   loading,
   error,
   onRead,
-  resolve,
+  role,
   emptyDescription,
 }: {
   notifications: NotificationItem[];
@@ -29,7 +28,7 @@ export default function NotificationFeed({
   loading: boolean;
   error: string;
   onRead: (id: number) => void;
-  resolve: (item: NotificationItem) => NotificationTarget;
+  role: NotificationRole;
   emptyDescription: string;
 }) {
   const navigate = useNavigate();
@@ -53,8 +52,9 @@ export default function NotificationFeed({
 
   const open = (item: NotificationItem) => {
     if (!item.is_read) onRead(item.id);
-    const { path } = resolve(item);
+    const { path } = resolveNotificationTarget(role, item);
     if (path) navigate(path);
+    else toast.info("This notification has no page of its own. It is marked as read.");
   };
 
   return (
@@ -107,7 +107,7 @@ export default function NotificationFeed({
                             : "bg-psu-100 text-psu-700"
                         }`}
                       >
-                        <Icon name={resolve(item).icon} size={17} />
+                        <Icon name={resolveNotificationTarget(role, item).icon} size={17} />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span

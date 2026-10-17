@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import Icon, { type IconName } from "../../components/Icon";
 import {
@@ -29,6 +29,7 @@ import { useFocus } from "../../lib/useFocusRecord";
 import { finalEvaluationPath, useFinalDue, type FinalDue } from "./finalDue";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
+import { awaitsReview, bulkSkipReason } from "./attendanceView";
 import TodayStrip from "./TodayStrip";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
@@ -74,6 +75,14 @@ const KIND_ICON: Record<ReviewItem["kind"], IconName> = {
   absence: "calendar",
   journal: "note",
   final: "star",
+};
+
+/** Where a decided item of each kind can still be seen, with ?focus= on it. */
+const DECIDED_PAGE: Record<string, string> = {
+  attendance: "/supervisor/attendance",
+  absence: "/supervisor/attendance",
+  document: "/supervisor/documents",
+  journal: "/supervisor/journals",
 };
 
 /** How long an item has been waiting, in plain words. */
@@ -149,6 +158,21 @@ export default function SupervisorDashboard() {
   // A notification about one item opens the queue on it (its key is "task-12").
   const focus = useFocus();
   const [selectedKey, setSelectedKey] = useState<string | null>(focus);
+  // An item no longer waiting (decided since the notification) opens on its own page instead, once.
+  const forwarded = useRef<string | null>(null);
+  useEffect(() => {
+    if (loading || !focus || forwarded.current === focus || queue.some((item) => item.key === focus)) return;
+    forwarded.current = focus;
+    const kind = focus.slice(0, focus.indexOf("-"));
+    const page = DECIDED_PAGE[kind];
+    if (page) {
+      navigate(`${page}?focus=${focus}`, { replace: true });
+      toast.info("That one is already decided. Here it is with the rest.");
+    } else {
+      navigate("/supervisor/dashboard", { replace: true });
+      toast.info("That one is no longer waiting for you.");
+    }
+  }, [loading, focus, queue, navigate]);
   const [confirmBulk, setConfirmBulk] = useState<BulkKind | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [recording, setRecording] = useState(false);
@@ -210,8 +234,8 @@ export default function SupervisorDashboard() {
     () =>
       scoped.filter(
         (item): item is Extract<QueueItem, { kind: "attendance" }> =>
-          // A time-in with no photo is confirmed by itself, never in a batch.
-          item.kind === "attendance" && Boolean(item.entry.time_out) && !item.entry.offline_time_in
+          // The same rule the Attendance page marks logs with (attendanceView.ts).
+          item.kind === "attendance" && awaitsReview(item.entry) && bulkSkipReason(item.entry) === null
       ),
     [scoped]
   );

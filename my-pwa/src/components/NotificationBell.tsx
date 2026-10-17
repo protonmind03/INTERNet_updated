@@ -6,9 +6,10 @@ import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import { FilterChips } from "./ui";
 import { useNotificationFeed, type NotificationFilter } from "../lib/useNotificationFeed";
+import { NOTIFICATIONS_PAGE, resolveNotificationTarget } from "../lib/notificationTargets";
+import { toast } from "../lib/toast";
 import {
   formatNotificationTime,
-  notificationPath,
   type NotificationItem,
   type NotificationRole,
 } from "../lib/useNotifications";
@@ -20,7 +21,7 @@ type Props = {
   /** When set, the panel shows a link to the full notification page. */
   viewAllPath?: string;
   /** When set, clicking a notification also opens the page it is about. */
-  resolvePath?: (item: NotificationItem) => string;
+  resolvePath?: (item: NotificationItem) => string | null;
   /** When set, the panel has a second tab with this person's announcements. */
   announcementsFor?: "student" | "supervisor";
 };
@@ -219,12 +220,15 @@ export default function NotificationBell({
                   type="button"
                   onClick={() => {
                     if (!item.is_read) void markRead(item.id);
-                    // The portal's own rule if it gave one; otherwise the page
-                    // the server stored with the notification.
-                    const path = resolvePath ? resolvePath(item) : notificationPath(item, "");
+                    // The portal's own rule if it gave one; otherwise the shared one
+                    // (lib/notificationTargets.ts). With nothing to open, the full list.
+                    const path = resolvePath ? resolvePath(item) : resolveNotificationTarget(role, item).path;
+                    setOpen(false);
                     if (path) {
-                      setOpen(false);
                       navigate(path);
+                    } else {
+                      navigate(viewAllPath ?? NOTIFICATIONS_PAGE[role]);
+                      toast.info("That notification has no page of its own, so here is the full list.");
                     }
                   }}
                   className={`flex w-full gap-3 border-b border-slate-100 px-4 py-3 text-left last:border-b-0 hover:bg-slate-50 ${

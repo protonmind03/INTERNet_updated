@@ -23,15 +23,6 @@ export type NotificationItem = {
 };
 
 /**
- * The page a notification opens. The server stores it with each new
- * notification; `fromTitle` is what a portal worked out from the wording,
- * kept for notifications written before links were stored.
- */
-export function notificationPath(item: NotificationItem, fromTitle: string): string {
-  return item.link || fromTitle;
-}
-
-/**
  * Loads the signed-in account's notifications, keeps them current when a
  * live notification arrives, and exposes read actions.
  */

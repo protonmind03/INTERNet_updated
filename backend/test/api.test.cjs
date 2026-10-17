@@ -9939,3 +9939,105 @@ test("a message email comes from SMTP_FROM with Reply-To set to the sender, as r
   const source = require("node:fs").readFileSync(require("node:path").join(__dirname, "../src/routes/messages.ts"), "utf8");
   assert.match(source, /kind: "routine"/);
 });
+
+test("every kind of record the server's notifications name opens a real page in every portal (contract)", () => {
+  require("tsx/cjs");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const { resolveNotificationTarget, portalOf, NOTIFICATIONS_PAGE } = require("../../my-pwa/src/lib/notificationTargets.ts");
+
+  // What the server emits: every `entity: { type: "…" }` in its source.
+  const emitted = new Set();
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.ts$/.test(entry.name)) {
+        for (const match of fs.readFileSync(full, "utf8").matchAll(/entity: \{ type: "([a-z_]+)"/g)) emitted.add(match[1]);
+      }
+    }
+  };
+  walk(path.join(__dirname, "../src"));
+  for (const kind of ["attendance", "absence", "task", "document", "journal", "complaint", "student", "message"]) {
+    assert.ok(emitted.has(kind), `the server still emits ${kind}`);
+  }
+
+  // The app's pages, from its routes ("/supervisor/interns/:studentId" matches any one segment there).
+  const app = fs.readFileSync(path.join(__dirname, "../../my-pwa/src/App.tsx"), "utf8");
+  const routes = [...app.matchAll(/path="(\/[^"]*)"/g)].map((match) =>
+    new RegExp(`^${match[1].replace(/:[A-Za-z]+/g, "[^/]+")}$`)
+  );
+  const isPage = (link) => routes.some((route) => route.test(link.split("?")[0]));
+
+  for (const role of ["student", "supervisor", "coordinator"]) {
+    for (const kind of emitted) {
+      const { path: opened, icon } = resolveNotificationTarget(role, { title: "Something happened", type: "general", link: null, entity_type: kind, entity_id: "42" });
+      assert.ok(opened, `${role} has a page for ${kind}`);
+      assert.equal(portalOf(opened), role, `${role}: ${kind} opens ${opened}, a page of this portal`);
+      assert.ok(isPage(opened), `${role}: ${kind} opens ${opened}, which is a route of the app`);
+      assert.notEqual(opened, NOTIFICATIONS_PAGE[role]);
+      assert.equal(typeof icon, "string");
+    }
+  }
+
+  // The stored link is used only when it is a page of this portal.
+  const resolve = (role, item) => resolveNotificationTarget(role, { title: "x", type: "general", ...item }).path;
+  assert.equal(resolve("supervisor", { link: "/supervisor/dashboard?focus=task-9", entity_type: "task", entity_id: "9" }), "/supervisor/dashboard?focus=task-9");
+  assert.equal(resolve("supervisor", { link: "/daily-log", entity_type: "attendance", entity_id: "5" }), "/supervisor/attendance?focus=attendance-5", "a student page is not followed by a supervisor");
+  assert.equal(resolve("student", { link: "/coordinator/students/1" }), null, "nor a coordinator page by a student");
+  assert.equal(resolve("coordinator", { link: "//evil.example/x" }), null);
+  assert.equal(resolve("student", { link: "/notifications" }), null, "the list itself is not a destination");
+  // Records: the page shows the one meant.
+  assert.equal(resolve("student", { entity_type: "attendance", entity_id: "7" }), "/daily-log?focus=attendance-7");
+  assert.equal(resolve("supervisor", { entity_type: "student", entity_id: "2021-0001" }), "/supervisor/interns/2021-0001");
+  assert.equal(resolve("coordinator", { entity_type: "message", entity_id: "3" }), "/coordinator/dashboard?thread=3");
+  assert.equal(resolve("supervisor", { entity_type: "attendance", entity_id: "1; drop" }), null, "an id that is not an id is not used");
+  // Older notifications, by their words; and nothing when the words name no page.
+  assert.equal(resolve("supervisor", { title: "New document uploaded" }), "/supervisor/documents");
+  assert.equal(resolve("student", { title: "Task revision requested" }), "/task");
+  assert.equal(resolve("coordinator", { title: "New concern filed" }), "/coordinator/complaints");
+  assert.equal(resolve("student", { title: "Hello" }), null);
+  assert.equal(resolve("supervisor", { title: "Notice", type: "announcement" }), "/supervisor/announcements");
+});
+
+test("old notifications get a link only where their title names one page", async (t) => {
+  require("tsx/cjs");
+  const { backfillLink } = require("../src/services/notificationLinks.ts");
+  assert.equal(backfillLink("supervisor", "info", "New document uploaded"), "/supervisor/documents");
+  assert.equal(backfillLink("student", "attendance", "Attendance verified"), "/daily-log");
+  assert.equal(backfillLink("coordinator", "info", "New concern filed"), "/coordinator/complaints");
+  assert.equal(backfillLink("student", "info", "Hello there"), null, "the list is not a link worth storing");
+  assert.equal(backfillLink("supervisor", "message", "New message"), null, "a message needs its thread");
+  if (needsWrites(t)) return;
+
+  const { execFileSync } = require("node:child_process");
+  const path = require("node:path");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const supervisorId = String(supervisor.supervisor.supervisor_id);
+  const rows = (await pool.query(
+    `INSERT INTO notifications (supervisor_id, title, message, type, is_read)
+     VALUES ($1, 'New document uploaded', 'Backfill check A', 'info', TRUE),
+            ($1, 'Hello there', 'Backfill check B', 'info', TRUE)
+     RETURNING id`,
+    [supervisorId]
+  )).rows.map((row) => row.id);
+  const run = (...args) =>
+    execFileSync(process.execPath, [path.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), path.join(__dirname, "../src/scripts/backfill-notification-links.ts"), ...args], {
+      cwd: path.join(__dirname, ".."),
+      env: process.env,
+      encoding: "utf8",
+    });
+  const links = async () => (await pool.query(`SELECT link FROM notifications WHERE id = ANY($1::int[]) ORDER BY id`, [rows])).rows.map((row) => row.link);
+  try {
+    const dry = run();
+    assert.match(dry, /Dry run: nothing was changed/);
+    assert.deepEqual(await links(), [null, null], "a dry run writes nothing");
+    const written = run("--confirm");
+    assert.match(written, /links written/);
+    assert.deepEqual(await links(), ["/supervisor/documents", null]);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE id = ANY($1::int[])`, [rows]);
+    await pool.end();
+  }
+});
