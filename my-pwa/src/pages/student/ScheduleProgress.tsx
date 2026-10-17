@@ -11,6 +11,8 @@ import {
   weeklyHours,
   type CalendarHoliday,
   type CalendarShift,
+  type ShiftPattern,
+  weeklyShiftHours,
 } from "../../lib/studentCalendar";
 import { useProjections } from "../../lib/useProjections";
 import { useTimeIn } from "./timeInContext";
@@ -71,10 +73,13 @@ function Figure({
 
 export default function ScheduleProgress({
   shifts,
+  pattern,
   holidays,
   termStart,
 }: {
   shifts: CalendarShift[];
+  /** How the schedule repeats (Iteration 11); one week when missing. */
+  pattern?: ShiftPattern | null;
   holidays: CalendarHoliday[];
   termStart: string | null;
 }) {
@@ -86,14 +91,14 @@ export default function ScheduleProgress({
 
   const figures = useMemo(() => {
     const since = countedFrom(logs, termStart);
-    const sources = { shifts, holidays, logs };
+    const sources = { shifts, pattern, holidays, logs };
     return {
       since,
       weeks: weeklyHours(today, since, sources),
       attended: attendanceOnScheduledDays(today, since, sources),
       punctual: punctuality(sources),
     };
-  }, [logs, termStart, shifts, holidays, today]);
+  }, [logs, termStart, shifts, pattern, holidays, today]);
 
   const required = Number(student?.required_hours) || 0;
   const verified = Math.round(logs.reduce((sum, log) => sum + (log.status === "Verified" ? Number(log.hours) || 0 : 0), 0) * 100) / 100;
@@ -101,7 +106,8 @@ export default function ScheduleProgress({
   const waiting = Math.round(
     logs.reduce((sum, log) => sum + (log.status === "Pending" && log.time_out ? Number(log.hours) || 0 : 0), 0) * 100
   ) / 100;
-  const weeklyScheduled = shifts.reduce((sum, shift) => sum + (Number(shift.hours) || 0), 0);
+  // A two-week pattern's hours are an average week.
+  const weeklyScheduled = weeklyShiftHours(shifts, pattern);
 
   const { attended, punctual, weeks } = figures;
   const rate = attended.scheduled > 0 ? Math.round((attended.attended / attended.scheduled) * 100) : null;

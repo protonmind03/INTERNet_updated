@@ -13,7 +13,7 @@
 |
 */
 
-import { LATE_AFTER_MINUTES, weekdayOf, type CalendarShift } from "./studentCalendar";
+import { LATE_AFTER_MINUTES, shiftOn, type CalendarShift } from "./studentCalendar";
 import { PH_TIME_ZONE } from "./phTime";
 
 /**
@@ -75,14 +75,14 @@ export type LateDay = { date: string; minutes: number };
  */
 export function lateDays(
   logs: { date: string; time_in: string | null }[],
-  shifts: Pick<CalendarShift, "day" | "start_time">[],
+  shifts: Pick<CalendarShift, "day" | "start_time" | "hours" | "week" | "pattern_weeks" | "pattern_anchor">[],
   timeZone?: string
 ): LateDay[] {
-  const startOn = new Map(shifts.map((shift) => [shift.day, clockMinutes(shift.start_time)]));
   const late: LateDay[] = [];
   for (const log of logs) {
     const date = String(log.date).slice(0, 10);
-    const start = startOn.get(weekdayOf(date));
+    // The shift of that date's week, when the schedule repeats every two weeks.
+    const start = clockMinutes(shiftOn(shifts, date)?.start_time);
     const arrived = log.time_in ? minuteOfDay(log.time_in, timeZone) : null;
     if (start === null || start === undefined || arrived === null) continue;
     if (arrived - start > LATE_AFTER_MINUTES) late.push({ date, minutes: arrived - start });

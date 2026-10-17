@@ -82,12 +82,14 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
     try {
       const auth = (req as Authed).auth!;
       const result = await pool.query(
+        // Every row with its week, and each intern's pattern, so a date reads the week in force (Iteration 11).
         `SELECT o.student_id, INITCAP(TRIM(o.day)) AS day, o.start_time, o.end_time,
-                COALESCE(o.hours, 0)::float AS hours, o.focus
+                COALESCE(o.hours, 0)::float AS hours, o.focus, COALESCE(o.week, 1)::int AS week,
+                COALESCE(s.schedule_weeks, 1)::int AS pattern_weeks, TO_CHAR(s.schedule_anchor, 'YYYY-MM-DD') AS pattern_anchor
          FROM ojt_schedule o
          JOIN students s ON s.student_id = o.student_id
          WHERE ${sqlSameId("s.supervisor_id", "$1")} AND s.is_active = TRUE AND o.is_active = TRUE
-         ORDER BY o.student_id, o.start_time`,
+         ORDER BY o.student_id, COALESCE(o.week, 1), o.start_time`,
         [auth.id]
       );
       return res.json({ schedules: result.rows });

@@ -3,17 +3,18 @@ import { Button, FormError, SkeletonRows } from "../../components/ui";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
-import ScheduleDays from "./ScheduleDays";
-import { badDayOf, weeklyHoursOf, type ScheduleRow } from "./scheduleRows";
+import SchedulePatternFields from "./SchedulePatternFields";
+import { patternBody, patternHoursOf, patternProblem, type PatternForm, type ScheduleRow } from "./scheduleRows";
 
 /*
 |--------------------------------------------------------------------------
 | ONE STUDENT'S WEEKLY SCHEDULE, EDITABLE
 |--------------------------------------------------------------------------
 |
-| The days and hours a student reports for OJT. The student sees it on
-| their Schedule page, and the projections and attendance figures are
-| worked out from it. It is edited on the Schedule tab of the student's
+| The days and hours a student reports for OJT, repeating every week or
+| every two weeks (Iteration 11). The student sees it on their Schedule
+| page, and the expected end date and attendance figures are worked out
+| from it. It is edited on the Schedule tab of the student's
 | record. A whole block is given one schedule from the Programs or
 | Students page (BlockScheduleDialog.tsx), with the same rows.
 |
@@ -36,7 +37,7 @@ export default function ScheduleEditor({
   /** Called after a save, for a page that shows the schedule elsewhere too. */
   onSaved?: () => void;
 }) {
-  const [schedule, setSchedule] = useState<ScheduleRow[]>([]);
+  const [form, setForm] = useState<PatternForm>({ weeks: 1, anchor: "", week1: [], week2: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
@@ -56,17 +57,21 @@ export default function ScheduleEditor({
     setLoading(true);
     try {
       const data = await coordinatorRequest<{
-        schedule: { day: string; start_time: string; end_time: string; focus: string | null }[];
+        schedule: { week?: number; day: string; start_time: string; end_time: string; focus: string | null }[];
+        pattern?: { weeks: 1 | 2; anchor: string | null };
       }>(`/api/coordinator/students/${encodeURIComponent(studentId)}/schedule`);
-      setSchedule(
-        (data.schedule || []).map((row) => ({
-          day: row.day,
-          // The database returns "08:00:00"; a time input wants "08:00".
-          start_time: (row.start_time || "").slice(0, 5),
-          end_time: (row.end_time || "").slice(0, 5),
-          focus: row.focus || "",
-        }))
-      );
+      const rows = (week: number): ScheduleRow[] =>
+        (data.schedule || [])
+          .filter((row) => (row.week ?? 1) === week)
+          .map((row) => ({
+            day: row.day,
+            // The database returns "08:00:00"; a time input wants "08:00".
+            start_time: (row.start_time || "").slice(0, 5),
+            end_time: (row.end_time || "").slice(0, 5),
+            focus: row.focus || "",
+          }));
+      const two = data.pattern?.weeks === 2;
+      setForm({ weeks: two ? 2 : 1, anchor: two ? data.pattern?.anchor || "" : "", week1: rows(1), week2: two ? rows(2) : [] });
     } catch (loadError) {
       setError(errorText(loadError, "Could not load the schedule."));
     } finally {
@@ -78,12 +83,12 @@ export default function ScheduleEditor({
     void Promise.resolve().then(load);
   }, [load]);
 
-  const weeklyHours = weeklyHoursOf(schedule);
-  const badRow = badDayOf(schedule);
+  const weeklyHours = patternHoursOf(form);
 
   const save = async () => {
-    if (badRow) {
-      setError(`${badRow.day}: the end time must be after the start time.`);
+    const problem = patternProblem(form);
+    if (problem) {
+      setError(problem);
       return;
     }
     setSaving(true);
@@ -91,7 +96,7 @@ export default function ScheduleEditor({
     try {
       await coordinatorRequest(
         `/api/coordinator/students/${encodeURIComponent(studentId)}/schedule`,
-        { method: "PUT", body: { schedule } }
+        { method: "PUT", body: patternBody(form) }
       );
       toast.success(`Schedule saved. ${studentName || "The student"} has been notified.`);
       setDirty(false);
@@ -109,17 +114,17 @@ export default function ScheduleEditor({
     <div className="space-y-4">
       {requiredHours !== undefined && (
         <p className="rounded-lg bg-psu-50 px-3 py-2.5 text-sm text-psu-900">
-          <span className="font-semibold">{formatHours(weeklyHours)}</span> a week planned
+          <span className="font-semibold">{formatHours(weeklyHours)}</span> a week planned{form.weeks === 2 ? " on average" : ""}
           {weeklyHours > 0 &&
             `, so about ${Math.ceil(requiredHours / weeklyHours)} weeks to finish ${formatHours(requiredHours)}.`}
           {weeklyHours === 0 && `. ${formatHours(requiredHours)} are required.`}
         </p>
       )}
 
-      <ScheduleDays
-        rows={schedule}
-        onChange={(rows) => {
-          setSchedule(rows);
+      <SchedulePatternFields
+        value={form}
+        onChange={(next) => {
+          setForm(next);
           setDirty(true);
         }}
       />

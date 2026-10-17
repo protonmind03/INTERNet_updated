@@ -15,6 +15,7 @@ import {
   type CalendarHoliday,
   type CalendarLog,
   type CalendarShift,
+  type ShiftPattern,
   type CalendarTask,
   type DayFacts,
 } from "../lib/studentCalendar";
@@ -97,6 +98,7 @@ function monthName(month: string): string {
 
 export default function MonthCalendar({
   shifts,
+  pattern,
   holidays,
   logs,
   absences,
@@ -106,6 +108,8 @@ export default function MonthCalendar({
   dayFooter,
 }: {
   shifts: CalendarShift[];
+  /** How the schedule repeats (Iteration 11); one week when missing. */
+  pattern?: ShiftPattern | null;
   holidays: CalendarHoliday[];
   logs: CalendarLog[];
   absences: CalendarAbsence[];
@@ -125,8 +129,8 @@ export default function MonthCalendar({
   const moved = useRef(false);
 
   const dayOf = useMemo(
-    () => calendarIndex({ shifts, holidays, logs, absences, tasks }),
-    [shifts, holidays, logs, absences, tasks]
+    () => calendarIndex({ shifts, pattern, holidays, logs, absences, tasks }),
+    [shifts, pattern, holidays, logs, absences, tasks]
   );
   const since = useMemo(() => countedFrom(logs, termStart), [logs, termStart]);
   const weeks = useMemo(() => monthWeeks(month), [month]);

@@ -6,6 +6,7 @@ import type {
   CalendarHoliday,
   CalendarShift,
   CalendarTask,
+  ShiftPattern,
 } from "../../lib/studentCalendar";
 import { useTimeIn } from "./timeInContext";
 
@@ -17,6 +18,8 @@ import { useTimeIn } from "./timeInContext";
  */
 export default function ScheduleMonth(props: {
   shifts: CalendarShift[];
+  /** How the schedule repeats (Iteration 11). */
+  pattern?: ShiftPattern | null;
   holidays: CalendarHoliday[];
   absences: CalendarAbsence[];
   tasks: CalendarTask[];

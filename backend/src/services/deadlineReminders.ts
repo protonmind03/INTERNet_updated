@@ -1,4 +1,5 @@
 import type { Pool } from "pg";
+import { recomputeStale } from "./projection";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
@@ -36,6 +37,13 @@ export function startDeadlineReminderScheduler(
         await closeMissedRedos(pool, createNotification);
       } catch (error) {
         console.error("PHOTO REDO DEADLINE ERROR:", error);
+      }
+      // The expected end dates, worked out again for anyone whose value is
+      // from an earlier day: nightly, and catching up after a quiet night.
+      try {
+        await recomputeStale(pool);
+      } catch (error) {
+        console.error("NIGHTLY PROJECTION ERROR:", error);
       }
       // Tasks whose release day has come are announced first, once each.
       try {

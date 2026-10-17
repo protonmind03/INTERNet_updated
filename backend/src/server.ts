@@ -38,7 +38,8 @@ import { auditMiddleware } from "./services/audit";
 import { registerAcademicRoutes } from "./routes/academics";
 import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
 import { registerProgrammeRoutes } from "./routes/programme";
-import { readSchedule } from "./services/schedules";
+import { readPattern } from "./services/schedules";
+import { projectionsChanged } from "./services/projection";
 import { readRange } from "./services/analyticsRange";
 import { registerDeliverableRoutes } from "./routes/deliverables";
 import {
@@ -55,6 +56,7 @@ import { registerOfflineTimeInRoutes } from "./routes/offlineTimeIn";
 import { registerAppealRoutes } from "./routes/appeals";
 import { registerMessageRoutes } from "./routes/messages";
 import { registerAccountDetailRoutes } from "./routes/accountDetails";
+import { registerProjectionRoutes } from "./routes/projections";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
@@ -1391,6 +1393,8 @@ async function syncCompletion(studentId: string): Promise<void> {
     // Bookkeeping must never undo the attendance decision that triggered it.
     console.error("SYNC COMPLETION ERROR:", error);
   }
+  // The verified hours changed, so the expected end date may have (Iteration 11).
+  projectionsChanged(pool, [studentId], "log");
 }
 
 /**
@@ -5776,6 +5780,7 @@ app.get(
           SELECT
             id,
             student_id,
+            COALESCE(week, 1)::int AS week,
             day,
             start_time,
             end_time,
@@ -5789,6 +5794,7 @@ app.get(
           AND is_active = TRUE
 
           ORDER BY
+            COALESCE(week, 1),
             CASE day
               WHEN 'Monday' THEN 1
               WHEN 'Tuesday' THEN 2
@@ -5806,6 +5812,8 @@ app.get(
       return res.json({
         schedule:
           result.rows,
+        // One week, or two taking turns from the anchor Monday (Iteration 11).
+        pattern: await schedulePatternOf(String(studentId)),
       });
     } catch (error) {
       console.error(
@@ -9228,6 +9236,17 @@ app.put(
 |
 */
 
+/** A student's schedule pattern: one week, or two taking turns from the anchor Monday (migration 061). */
+async function schedulePatternOf(studentId: string): Promise<{ weeks: 1 | 2; anchor: string | null }> {
+  const found = await pool.query<{ weeks: number; anchor: string | null }>(
+    `SELECT COALESCE(schedule_weeks, 1)::int AS weeks, TO_CHAR(schedule_anchor, 'YYYY-MM-DD') AS anchor
+     FROM students WHERE student_id = $1`,
+    [studentId]
+  );
+  const row = found.rows[0];
+  return row && Number(row.weeks) === 2 && row.anchor ? { weeks: 2, anchor: row.anchor } : { weeks: 1, anchor: null };
+}
+
 const SCHEDULE_DAYS = [
   "Monday",
   "Tuesday",
@@ -9245,17 +9264,17 @@ app.get(
     try {
       const result = await pool.query(
         `
-        SELECT id, student_id, day,
+        SELECT id, student_id, COALESCE(week, 1)::int AS week, day,
                TO_CHAR(start_time, 'HH24:MI') AS start_time,
                TO_CHAR(end_time, 'HH24:MI') AS end_time,
                focus, hours, is_active
         FROM ojt_schedule
         WHERE student_id = $1 AND is_active = TRUE
-        ORDER BY array_position($2::text[], day::text), start_time
+        ORDER BY COALESCE(week, 1), array_position($2::text[], day::text), start_time
         `,
         [req.params.studentId, SCHEDULE_DAYS]
       );
-      return res.json({ schedule: result.rows });
+      return res.json({ schedule: result.rows, pattern: await schedulePatternOf(String(req.params.studentId)) });
     } catch (error) {
       console.error("COORDINATOR GET SCHEDULE ERROR:", error);
       return res.status(500).json({ message: "Failed to load schedule." });
@@ -9268,8 +9287,9 @@ app.put(
   requireCoordinator,
   async (req, res) => {
     const { studentId } = req.params;
-    // The same checks as a schedule set for a whole block (services/schedules.ts).
-    const read = readSchedule(req.body?.schedule);
+    // The same checks as a schedule set for a whole block (services/schedules.ts):
+    // one week, or two taking turns from an anchor Monday.
+    const read = readPattern(req.body);
     if ("problem" in read) return res.status(400).json({ message: read.problem });
     const clean = read.days;
 
@@ -9288,16 +9308,21 @@ app.put(
         `UPDATE ojt_schedule SET is_active = FALSE WHERE student_id = $1 AND is_active = TRUE`,
         [studentId]
       );
+      await client.query(
+        `UPDATE students SET schedule_weeks = $2, schedule_anchor = $3 WHERE student_id = $1`,
+        [studentId, read.weeks, read.anchor]
+      );
       for (const item of clean) {
         await client.query(
           `
-          INSERT INTO ojt_schedule (student_id, day, start_time, end_time, focus, hours, is_active)
-          VALUES ($1, $2, $3, $4, $5, $6, TRUE)
+          INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, focus, hours, is_active)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
           `,
-          [studentId, item.day, item.start, item.end, item.focus, item.hours]
+          [studentId, item.week, item.day, item.start, item.end, item.focus, item.hours]
         );
       }
       await client.query("COMMIT");
+      projectionsChanged(pool, [String(studentId)], "schedule");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);
       console.error("COORDINATOR SAVE SCHEDULE ERROR:", error);
@@ -9310,7 +9335,10 @@ app.put(
       await createNotification({
         studentId: String(studentId),
         title: "OJT schedule updated",
-        message: `Your coordinator updated your OJT schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
+        message:
+          read.weeks === 2
+            ? `Your coordinator updated your OJT schedule. It now repeats every two weeks (${clean.length} working days in each two).`
+            : `Your coordinator updated your OJT schedule (${clean.length} day${clean.length === 1 ? "" : "s"} per week).`,
         type: "schedule",
       });
       const owner = await pool.query<{ name: string; supervisor_id: string | null }>(
@@ -9935,6 +9963,7 @@ app.get(
 registerAppealRoutes(app, { pool, requireRole, createNotification, notifyCoordinators, syncCompletion });
 registerMessageRoutes(app, { pool, requireRole, createNotification });
 registerAccountDetailRoutes(app, { pool, requireRole, requireCoordinator });
+registerProjectionRoutes(app, { pool, requireRole });
 registerOfflineTimeInRoutes(app, {
   pool,
   requireRole,

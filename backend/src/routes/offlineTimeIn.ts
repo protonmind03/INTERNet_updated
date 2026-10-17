@@ -187,8 +187,10 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
          FROM generate_series(${phSql.today}, ${phSql.today} + $2::int, INTERVAL '1 day') AS d
          WHERE EXISTS (
                  SELECT 1 FROM ojt_schedule o
+                 JOIN students st ON st.student_id = o.student_id
                  WHERE o.student_id = $1 AND o.is_active = TRUE
                    AND INITCAP(TRIM(o.day)) = TRIM(TO_CHAR(d, 'Day'))
+                   AND COALESCE(o.week, 1) = ojt_pattern_week(st.schedule_anchor, st.schedule_weeks, d::date)
                )
            AND NOT EXISTS (SELECT 1 FROM holidays h WHERE h.holiday_date = d::date)
            AND NOT EXISTS (SELECT 1 FROM attendance a WHERE a.student_id = $1 AND a.date = d::date)

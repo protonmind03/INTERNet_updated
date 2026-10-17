@@ -29,8 +29,8 @@ import { clockSetting, sendOnce, type DigestDeps } from "./digests";
 import { phClock, phSql } from "./phTime";
 import { bindFilters, filterConditions, type StudentFilters } from "./studentScope";
 import { performanceFigures, withStatus, type Performance } from "./performance";
+import { asPattern, onDate, weeklyHours, type SchedulePattern } from "./schedulePattern";
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /** Days a supervisor may leave something waiting before the coordinator is told. */
 export const SLOW_REVIEW_DAYS = 3;
@@ -47,7 +47,20 @@ function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
+/** A schedule as the projection reads it: a pattern, or the old weekday map (one week). */
+type Schedule = SchedulePattern<number> | Record<string, number>;
+
+/** How an end date was worked out (Iteration 11): what the walk counted and skipped. */
+export type ProjectionWalk = {
+  /** The first day walked: the day after today. */
+  start: string;
+  pattern_weeks: 1 | 2;
+  /** Scheduled days counted until the hours were covered. */
+  working_days: number;
+  /** Scheduled days skipped for a holiday, and for an approved (excused) absence. */
+  holidays_skipped: string[];
+  absences_skipped: string[];
+};
 
 export type Projection = {
   remaining_hours: number;
@@ -57,22 +70,31 @@ export type Projection = {
   at_risk: boolean;
   /** Why, in a few words; empty when not at risk. */
   risk_reason: string;
+  /** How the date was worked out. Missing when nothing was walked (no hours left, or no schedule). */
+  walk?: ProjectionWalk;
 };
 
 /**
- * When a student finishes at their scheduled pace.
- * `schedule` is hours per weekday name; `holidays` are "YYYY-MM-DD".
+ * When a student finishes at their scheduled pace: remaining = required −
+ * verified, then the pattern is walked from the next day, skipping holidays
+ * and approved absences still to come, until the remaining hours are
+ * covered. `schedule` is a one- or two-week pattern (or hours per weekday
+ * name, which is a one-week pattern); dates are "YYYY-MM-DD".
  */
 export function projectFinish(input: {
   today: string;
   requiredHours: number;
   verifiedHours: number;
-  schedule: Record<string, number>;
+  schedule: Schedule;
   holidays: Set<string>;
+  /** Approved (excused) absences on days still to come. */
+  absences?: Set<string>;
   termEnd?: string | null;
 }): Projection {
+  const pattern = asPattern(input.schedule);
+  const absences = input.absences ?? new Set<string>();
   const remaining = Math.max(0, Math.round((input.requiredHours - input.verifiedHours) * 100) / 100);
-  const weekly = Math.round(Object.values(input.schedule).reduce((sum, hours) => sum + (hours > 0 ? hours : 0), 0) * 100) / 100;
+  const weekly = weeklyHours(pattern);
   if (remaining === 0) {
     return { remaining_hours: 0, weekly_hours: weekly, projected_finish: null, at_risk: false, risk_reason: "" };
   }
@@ -87,10 +109,28 @@ export function projectFinish(input: {
   }
   let left = remaining;
   let finish: string | null = null;
+  const walk: ProjectionWalk = {
+    start: addDays(input.today, 1),
+    pattern_weeks: pattern.weeks,
+    working_days: 0,
+    holidays_skipped: [],
+    absences_skipped: [],
+  };
   for (let offset = 1; offset <= PROJECTION_LIMIT_DAYS; offset += 1) {
     const day = addDays(input.today, offset);
-    if (input.holidays.has(day)) continue;
-    left -= input.schedule[weekdayOf(day)] || 0;
+    const hours = onDate(pattern, day) || 0;
+    if (hours <= 0) continue;
+    // A scheduled day that will not be worked: say which, and why.
+    if (input.holidays.has(day)) {
+      walk.holidays_skipped.push(day);
+      continue;
+    }
+    if (absences.has(day)) {
+      walk.absences_skipped.push(day);
+      continue;
+    }
+    walk.working_days += 1;
+    left -= hours;
     if (left <= 0.0001) {
       finish = day;
       break;
@@ -103,6 +143,7 @@ export function projectFinish(input: {
       projected_finish: null,
       at_risk: true,
       risk_reason: "At the scheduled hours this would take more than two years.",
+      walk,
     };
   }
   const late = Boolean(input.termEnd) && finish > String(input.termEnd);
@@ -112,6 +153,7 @@ export function projectFinish(input: {
     projected_finish: finish,
     at_risk: late,
     risk_reason: late ? `Projected to finish after the term ends on ${input.termEnd}.` : "",
+    walk,
   };
 }
 
@@ -123,7 +165,7 @@ export function projectFinish(input: {
 export function missedScheduledDays(input: {
   today: string;
   since: string;
-  schedule: Record<string, number>;
+  schedule: Schedule;
   holidays: Set<string>;
   /** Dates with a log or a filed absence. */
   accounted: Set<string>;
@@ -132,7 +174,7 @@ export function missedScheduledDays(input: {
   for (let offset = 1; offset <= 60; offset += 1) {
     const day = addDays(input.today, -offset);
     if (day < input.since) break;
-    if (input.holidays.has(day) || !((input.schedule[weekdayOf(day)] || 0) > 0)) continue;
+    if (input.holidays.has(day) || !((onDate(input.schedule, day) || 0) > 0)) continue;
     if (input.accounted.has(day)) break;
     missed += 1;
   }
@@ -141,6 +183,8 @@ export function missedScheduledDays(input: {
 
 type StudentFacts = {
   student_id: string;
+  schedule_weeks: number;
+  schedule_anchor: string | null;
   name: string;
   company: string | null;
   supervisor_id: string | null;
@@ -160,6 +204,7 @@ export async function loadStudents(
   const bound = bindFilters(
     `
     SELECT s.student_id, s.name, s.company, s.supervisor_id, s.required_hours,
+      COALESCE(s.schedule_weeks, 1)::int AS schedule_weeks, TO_CHAR(s.schedule_anchor, 'YYYY-MM-DD') AS schedule_anchor,
       (SELECT COALESCE(SUM(a.hours), 0)::float FROM attendance a
         WHERE a.student_id = s.student_id AND a.status = 'Verified') AS verified_hours,
       TO_CHAR(t.end_date, 'YYYY-MM-DD') AS term_end,
@@ -177,22 +222,45 @@ export async function loadStudents(
   );
   const students = await pool.query<StudentFacts>(bound.text, bound.values);
   const ids = students.rows.map((row) => row.student_id);
-  const [schedules, holidays] = await Promise.all([
-    pool.query<{ student_id: string; day: string; hours: number }>(
-      `SELECT student_id, INITCAP(TRIM(day)) AS day, COALESCE(SUM(hours), 0)::float AS hours
+  const [schedules, holidays, absences] = await Promise.all([
+    pool.query<{ student_id: string; week: number; day: string; hours: number }>(
+      `SELECT student_id, COALESCE(week, 1)::int AS week, INITCAP(TRIM(day)) AS day, COALESCE(SUM(hours), 0)::float AS hours
        FROM ojt_schedule WHERE is_active = TRUE AND student_id = ANY($1::text[])
-       GROUP BY student_id, INITCAP(TRIM(day))`,
+       GROUP BY student_id, COALESCE(week, 1), INITCAP(TRIM(day))`,
       [ids]
     ),
     pool.query<{ date: string }>(`SELECT TO_CHAR(holiday_date, 'YYYY-MM-DD') AS date FROM holidays`),
+    // Approved absences still to come: the projection does not count those days.
+    pool.query<{ student_id: string; date: string }>(
+      `SELECT student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM absences
+       WHERE student_id = ANY($1::text[]) AND status = 'Excused' AND date > ${phSql.today}`,
+      [ids]
+    ),
   ]);
-  const scheduleOf = new Map<string, Record<string, number>>();
+  // Each student's pattern: one week, or two counted from the anchor Monday.
+  const scheduleOf = new Map<string, SchedulePattern<number>>();
+  for (const student of students.rows) {
+    const weeks = Number(student.schedule_weeks) === 2 && student.schedule_anchor ? 2 : 1;
+    scheduleOf.set(student.student_id, { weeks, anchor: weeks === 2 ? student.schedule_anchor : null, byWeek: { 1: {}, ...(weeks === 2 ? { 2: {} } : {}) } });
+  }
   for (const row of schedules.rows) {
-    scheduleOf.set(row.student_id, { ...(scheduleOf.get(row.student_id) || {}), [row.day]: Number(row.hours) });
+    const pattern = scheduleOf.get(row.student_id);
+    if (!pattern) continue;
+    // A week 2 row of a student back on a one-week pattern is not part of it.
+    const week = Number(row.week) === 2 ? 2 : 1;
+    if (week === 2 && pattern.weeks !== 2) continue;
+    const days = (pattern.byWeek[week] ??= {});
+    days[row.day] = Number(row.hours);
+  }
+  const absencesOf = new Map<string, Set<string>>();
+  for (const row of absences.rows) {
+    if (!absencesOf.has(row.student_id)) absencesOf.set(row.student_id, new Set());
+    absencesOf.get(row.student_id)!.add(row.date);
   }
   return {
     students: students.rows,
     scheduleOf,
+    absencesOf,
     holidays: new Set(holidays.rows.map((row) => row.date)),
   };
 }
@@ -208,7 +276,7 @@ export type StudentProjection = Projection & {
 type Loaded = Awaited<ReturnType<typeof loadStudents>>;
 
 /** The projection of each student already loaded. */
-function projectLoaded({ students, scheduleOf, holidays }: Loaded, today: string): StudentProjection[] {
+export function projectLoaded({ students, scheduleOf, absencesOf, holidays }: Loaded, today: string): StudentProjection[] {
   return students.map((row) => ({
     student_id: row.student_id,
     name: row.name,
@@ -221,6 +289,7 @@ function projectLoaded({ students, scheduleOf, holidays }: Loaded, today: string
       verifiedHours: Number(row.verified_hours) || 0,
       schedule: scheduleOf.get(row.student_id) || {},
       holidays,
+      absences: absencesOf.get(row.student_id),
       termEnd: row.term_end,
     }),
   }));
@@ -388,6 +457,7 @@ export async function coordinatorAlerts(
       verifiedHours: Number(row.verified_hours) || 0,
       schedule,
       holidays: facts.holidays,
+      absences: facts.absencesOf.get(row.student_id),
       termEnd: row.term_end,
     });
     if (projection.at_risk) risky.push({ label: row.name, detail: projection.risk_reason, link: record });

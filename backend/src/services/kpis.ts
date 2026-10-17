@@ -22,6 +22,7 @@
 import type { Pool } from "pg";
 import { phClock } from "./phTime";
 import { loadStudents, projectFinish } from "./insights";
+import { onDate, type SchedulePattern } from "./schedulePattern";
 import { bindFilters, filterConditions, hasFilters, type StudentFilters } from "./studentScope";
 import {
   AGREEMENT_WITHIN_DAYS,
@@ -37,7 +38,6 @@ import {
   type KpiTargets,
 } from "./kpiDefinitions";
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export function addDays(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00Z`);
@@ -45,7 +45,6 @@ export function addDays(date: string, days: number): string {
   return value.toISOString().slice(0, 10);
 }
 
-const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
 const round1 = (value: number) => Math.round(value * 10) / 10;
 const percent = (part: number, whole: number) => round1((part / whole) * 100);
 
@@ -58,7 +57,8 @@ const NOTHING = (basis: string): Figure => ({ value: null, basis });
 export type KpiStudent = {
   required_hours: number;
   /** Hours per weekday name, as scheduled now. */
-  schedule: Record<string, number>;
+  /** A one- or two-week pattern (or the old weekday map). */
+  schedule: SchedulePattern<number> | Record<string, number>;
   term_end: string | null;
   /** Nothing is expected before this: the first log, or the term's start. */
   since: string | null;
@@ -102,7 +102,7 @@ export function attendanceRateAt(asOf: string, students: KpiStudent[], holidays:
     for (let back = 1; back <= KPI_WINDOW_DAYS; back += 1) {
       const day = addDays(asOf, -back);
       if (day < student.since) break;
-      if (holidays.has(day) || !((student.schedule[weekdayOf(day)] || 0) > 0)) continue;
+      if (holidays.has(day) || !((onDate(student.schedule, day) || 0) > 0)) continue;
       scheduled += 1;
       if (student.logged.has(day)) attended += 1;
     }

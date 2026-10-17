@@ -5,7 +5,7 @@ import { Card } from "../../components/ui";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { daysUntil, dueLabel, formatHours, formatLongDate, phDateKey } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
-import { weekdayOf } from "../../lib/studentCalendar";
+import { shiftOn } from "../../lib/studentCalendar";
 import {
   WAITING_TOO_LONG_DAYS,
   daysWaiting,
@@ -121,10 +121,10 @@ export default function TodayStrip({
     const absentToday = new Set(
       work.absences.filter((entry) => String(entry.date).slice(0, 10) === today).map((entry) => entry.student_id)
     );
-    const weekday = weekdayOf(today);
     return interns.map((intern) => {
       const log = logToday.get(intern.student_id) ?? null;
-      const shift = schedules?.get(intern.student_id)?.find((item) => item.day === weekday) ?? null;
+      // Today's shift, in the week of a two-week pattern that today falls in.
+      const shift = shiftOn(schedules?.get(intern.student_id) ?? [], today) ?? null;
       // Without the schedules, only what has happened can be said.
       const state: TodayState | null =
         schedules === null && !log && !absentToday.has(intern.student_id)

@@ -3,8 +3,8 @@ import { Button, FormError, Modal } from "../../components/ui";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
-import ScheduleDays from "./ScheduleDays";
-import { badDayOf, weeklyHoursOf, type ScheduleRow } from "./scheduleRows";
+import SchedulePatternFields from "./SchedulePatternFields";
+import { patternBody, patternHoursOf, patternProblem, type PatternForm, type ScheduleRow } from "./scheduleRows";
 
 /*
 |--------------------------------------------------------------------------
@@ -49,22 +49,23 @@ export default function BlockScheduleDialog({
   onClose: () => void;
   onDone?: () => void;
 }) {
-  const [rows, setRows] = useState<ScheduleRow[]>(WEEKDAYS);
+  const [form, setForm] = useState<PatternForm>({ weeks: 1, anchor: "", week1: WEEKDAYS, week2: [] });
   const [preview, setPreview] = useState<Preview | null>(null);
   const [existing, setExisting] = useState<"skip" | "overwrite">("skip");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const path = `/api/coordinator/blocks/${blockId}/schedule`;
-  const weekly = weeklyHoursOf(rows);
+  const weekly = patternHoursOf(form);
 
   const check = async () => {
-    const bad = badDayOf(rows);
-    if (rows.length === 0) return setError("Add at least one working day.");
-    if (bad) return setError(`${bad.day}: the end time must be after the start time.`);
+    const working = form.week1.length + (form.weeks === 2 ? form.week2.length : 0);
+    if (working === 0) return setError("Add at least one working day.");
+    const problem = patternProblem(form);
+    if (problem) return setError(problem);
     setBusy(true);
     setError("");
     try {
-      setPreview(await coordinatorRequest<Preview>(`${path}/preview`, { method: "POST", body: { schedule: rows } }));
+      setPreview(await coordinatorRequest<Preview>(`${path}/preview`, { method: "POST", body: patternBody(form) }));
       setExisting("skip");
     } catch (checkError) {
       setError(errorText(checkError, "The block could not be checked."));
@@ -79,7 +80,7 @@ export default function BlockScheduleDialog({
     try {
       const done = await coordinatorRequest<{ message: string }>(path, {
         method: "PUT",
-        body: { schedule: rows, existing },
+        body: { ...patternBody(form), existing },
       });
       toast.success(done.message);
       onDone?.();
@@ -133,9 +134,9 @@ export default function BlockScheduleDialog({
       {!preview ? (
         <div className="space-y-4">
           <p className="rounded-lg bg-psu-50 px-3 py-2.5 text-sm text-psu-900">
-            <span className="font-semibold">{formatHours(weekly)}</span> a week.
+            <span className="font-semibold">{formatHours(weekly)}</span> a week{form.weeks === 2 ? " on average" : ""}.
           </p>
-          <ScheduleDays rows={rows} onChange={setRows} disabled={busy} />
+          <SchedulePatternFields value={form} onChange={setForm} disabled={busy} />
           <FormError message={error} />
         </div>
       ) : (

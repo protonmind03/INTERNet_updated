@@ -362,7 +362,14 @@ function Overview({ intern, work, onReview }: Reviewable) {
       </Card>
 
       <Card>
-        <CardHeader title="Weekly schedule" description="Set by the OJT coordinator." />
+        <CardHeader
+          title="Weekly schedule"
+          description={
+            shifts?.[0]?.pattern_weeks === 2
+              ? "Set by the OJT coordinator. Repeats every two weeks: week 1 and week 2 take turns."
+              : "Set by the OJT coordinator."
+          }
+        />
         {schedules === null ? (
           <SkeletonRows rows={3} />
         ) : !shifts || shifts.length === 0 ? (
@@ -373,10 +380,11 @@ function Overview({ intern, work, onReview }: Reviewable) {
           <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
             {shifts.map((shift) => (
               <li
-                key={shift.day}
+                key={`${shift.week ?? 1}-${shift.day}`}
                 className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm sm:px-5"
               >
                 <span className="min-w-0">
+                  {shift.pattern_weeks === 2 && <span className="text-slate-600">Week {shift.week ?? 1} · </span>}
                   <span className="font-medium text-slate-900">{shift.day}</span>
                   {shift.focus && <span className="text-slate-600"> · {shift.focus}</span>}
                 </span>

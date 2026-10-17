@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -10211,4 +10211,195 @@ test("the coordinator's sidebar wears the student's style from the SIDEBAR token
   assert.equal(/from ["'][^"']*studentRecord/.test(folder), false, "FolderShell does not import the record's files");
   assert.ok(read("SupervisorLayout.tsx").includes("inb-scroll-pane"), "the supervisor's too");
   assert.equal(read("CoordinatorLayout.tsx").includes("surface-console"), false, "the light console sidebar is gone");
+});
+
+test("a schedule pattern's week: the server, the app and the database agree, and old weekday maps read as one week", async (t) => {
+  require("tsx/cjs");
+  const server = require("../src/services/schedulePattern.ts");
+  const app = require("../../my-pwa/src/lib/schedulePattern.ts");
+  const anchor = "2026-10-05"; // a Monday
+  const days = [];
+  for (let offset = -40; offset <= 40; offset += 3) {
+    const date = new Date(Date.UTC(2026, 9, 5 + offset)).toISOString().slice(0, 10);
+    days.push(date);
+    assert.equal(server.patternWeek(anchor, 2, date), app.patternWeek(anchor, 2, date), date);
+  }
+  assert.equal(server.patternWeek(anchor, 2, "2026-10-05"), 1);
+  assert.equal(server.patternWeek(anchor, 2, "2026-10-11"), 1, "Sunday of week 1");
+  assert.equal(server.patternWeek(anchor, 2, "2026-10-12"), 2);
+  assert.equal(server.patternWeek(anchor, 2, "2026-09-28"), 2, "the week before the anchor is week 2");
+  assert.equal(server.patternWeek(anchor, 1, "2026-10-12"), 1, "one week: always week 1");
+  assert.equal(server.patternWeek(null, 2, "2026-10-12"), 1, "no anchor: one week");
+  // The old shape still works, as a one-week pattern.
+  assert.equal(server.onDate({ Monday: 8 }, "2026-10-12"), 8);
+  assert.equal(server.weeklyHours({ weeks: 2, anchor, byWeek: { 1: { Monday: 8, Tuesday: 8 }, 2: { Monday: 8 } } }), 12);
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  try {
+    const db = await pool.query(
+      `SELECT d::text AS date, ojt_pattern_week($1::date, 2, d::date) AS week FROM UNNEST($2::date[]) AS d`,
+      [anchor, days]
+    );
+    for (const row of db.rows) assert.equal(row.week, server.patternWeek(anchor, 2, row.date), `database, ${row.date}`);
+    assert.equal((await pool.query(`SELECT ojt_pattern_week(NULL, 1, '2026-10-12') AS w`)).rows[0].w, 1);
+  } finally {
+    await pool.end();
+  }
+});
+
+test("the expected end walks a two-week pattern from the next day, skipping holidays and approved absences", () => {
+  require("tsx/cjs");
+  const { projectFinish } = require("../src/services/insights.ts");
+  // Week 1: Mon to Fri, 8 h. Week 2: Mon and Wed, 8 h. Today is the Sunday before a week 1.
+  const schedule = {
+    weeks: 2,
+    anchor: "2026-10-05",
+    byWeek: { 1: { Monday: 8, Tuesday: 8, Wednesday: 8, Thursday: 8, Friday: 8 }, 2: { Monday: 8, Wednesday: 8 } },
+  };
+  const plain = projectFinish({ today: "2026-10-18", requiredHours: 100, verifiedHours: 44, schedule, holidays: new Set() });
+  // 56 h left = 7 days: Mon 19 (w1)... 19,20,21,22,23 (5 days, 40 h), then week 2: Mon 26, Wed 28.
+  assert.equal(plain.remaining_hours, 56);
+  assert.equal(plain.weekly_hours, 28, "(40 + 16) / 2");
+  assert.equal(plain.projected_finish, "2026-10-28");
+  assert.equal(plain.walk.start, "2026-10-19");
+  assert.equal(plain.walk.working_days, 7);
+  assert.equal(plain.walk.pattern_weeks, 2);
+  const skipped = projectFinish({
+    today: "2026-10-18",
+    requiredHours: 100,
+    verifiedHours: 44,
+    schedule,
+    holidays: new Set(["2026-10-21"]),
+    absences: new Set(["2026-10-26"]),
+  });
+  // Two working days lost, so two more: week 1 again from Nov 2.
+  assert.deepEqual(skipped.walk.holidays_skipped, ["2026-10-21"]);
+  assert.deepEqual(skipped.walk.absences_skipped, ["2026-10-26"]);
+  assert.equal(skipped.walk.working_days, 7);
+  assert.equal(skipped.projected_finish, "2026-11-03");
+  // The old weekday map still works the way it did.
+  const old = projectFinish({ today: "2026-10-18", requiredHours: 16, verifiedHours: 0, schedule: { Monday: 8, Tuesday: 8 }, holidays: new Set() });
+  assert.equal(old.projected_finish, "2026-10-20");
+});
+
+test("a schedule pattern from a request: one week as before, or two from a Monday", () => {
+  require("tsx/cjs");
+  const { readPattern, patternKey } = require("../src/services/schedules.ts");
+  const day = (name) => ({ day: name, start_time: "08:00", end_time: "17:00" });
+  const one = readPattern({ schedule: [day("Monday")] });
+  assert.equal(one.weeks, 1);
+  assert.equal(one.days[0].week, 1);
+  assert.match(readPattern({ schedule: [day("Monday")], pattern: { weeks: 3 } }).problem, /every week or every two weeks/);
+  assert.match(readPattern({ schedule: [day("Monday")], pattern: { weeks: 2 } }).problem, /Monday that week 1 starts on/);
+  assert.match(readPattern({ schedule: [day("Monday")], pattern: { weeks: 2, anchor: "2026-10-06" } }).problem, /start on a Monday/);
+  assert.match(readPattern({ schedule: [day("Monday")], pattern: { weeks: 2, anchor: "2026-10-05" }, schedule_week2: [{ day: "Funday" }] }).problem, /^Week 2:/);
+  const two = readPattern({ schedule: [day("Monday")], pattern: { weeks: 2, anchor: "2026-10-05" }, schedule_week2: [day("Tuesday")] });
+  assert.deepEqual(two.days.map((item) => [item.week, item.day]), [[1, "Monday"], [2, "Tuesday"]]);
+  assert.match(patternKey(two), /Every two weeks from 2026-10-05. Week 1: Monday 08:00-17:00. Week 2: Tuesday 08:00-17:00/);
+});
+
+test("expected end: the pattern saved, the projection's route, and every recompute (schedule, absence, holiday, log, nightly)", async (t) => {
+  assert.equal((await jsonRequest("/api/students/x/projection")).response.status, 401);
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { phToday } = require("../src/services/phTime.ts");
+  const { mondayOf } = require("../src/services/schedulePattern.ts");
+  const f = await rejectionFixture("PROJ");
+  const pool = f.pool;
+  const path = `/api/coordinator/students/${encodeURIComponent(f.sid)}/schedule`;
+  const shift = (name) => ({ day: name, start_time: "08:00", end_time: "16:00" });
+  const kept = async () => (await pool.query(`SELECT * FROM student_projections WHERE student_id = $1`, [f.sid])).rows[0];
+  // Recomputes run after the answer; wait for the one a change causes.
+  const waitFor = async (check, label) => {
+    for (let i = 0; i < 50; i += 1) {
+      const row = await kept();
+      if (row && check(row)) return row;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.fail(`no recompute: ${label}`);
+  };
+  let holidayId = null;
+  try {
+    await pool.query(`UPDATE students SET required_hours = 160 WHERE student_id = $1`, [f.sid]);
+    // The old shape still saves a one-week schedule.
+    assert.equal((await jsonRequest(path, jsonBody(coordinatorToken, "PUT", { schedule: [shift("Monday")] }))).response.status, 200);
+    let read = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(read.body.pattern, { weeks: 1, anchor: null });
+
+    // Two weeks from this week's Monday.
+    const anchor = mondayOf(phToday());
+    const saved = await jsonRequest(path, jsonBody(coordinatorToken, "PUT", {
+      schedule: ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"].map(shift),
+      pattern: { weeks: 2, anchor },
+      schedule_week2: [shift("Monday"), shift("Wednesday")],
+    }));
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    read = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(read.body.pattern, { weeks: 2, anchor });
+    assert.equal(read.body.schedule.filter((row) => row.week === 2).length, 2);
+    // The student sees the same, with the pattern.
+    const mine = await jsonRequest(`/api/ojt-schedule/${encodeURIComponent(f.sid)}`, { headers: authHeaders(f.mine.token) });
+    assert.deepEqual(mine.body.pattern, { weeks: 2, anchor });
+    let row = await waitFor((found) => found.cause === "schedule" && found.pattern_weeks === 2, "schedule");
+    assert.equal(Number(row.weekly_hours), 28);
+
+    // The route: the student, their supervisor and the coordinator; nobody else.
+    const projection = `/api/students/${encodeURIComponent(f.sid)}/projection`;
+    for (const token of [f.mine.token, f.supervisor.token, coordinatorToken]) {
+      const answer = await jsonRequest(projection, { headers: authHeaders(token) });
+      assert.equal(answer.response.status, 200, JSON.stringify(answer.body));
+      assert.equal(answer.body.projection.how.pattern_weeks, 2);
+      assert.match(answer.body.projection.how.steps.join(" "), /repeats every two weeks/);
+    }
+    assert.equal((await jsonRequest(projection, { headers: authHeaders(studentToken) })).response.status, 403);
+    const before = (await jsonRequest(projection, { headers: authHeaders(coordinatorToken) })).body.projection;
+    assert.ok(before.projected_end_date, "a date");
+    const snapshot = await pool.query(`SELECT * FROM student_projection_snapshots WHERE student_id = $1 AND snapshot_date = $2::date`, [f.sid, phToday()]);
+    assert.equal(snapshot.rows.length, 1, "today's snapshot");
+
+    // An approved absence on the first working day still to come is skipped.
+    const firstDay = before.how.walk_start;
+    let absenceDay = firstDay;
+    for (let i = 0; i < 14; i += 1) {
+      const probe = new Date(`${absenceDay}T00:00:00Z`).getUTCDay();
+      if (probe >= 1 && probe <= 5 && (await pool.query(`SELECT ojt_pattern_week($1::date, 2, $2::date) = 1 AS ok`, [anchor, absenceDay])).rows[0].ok) break;
+      absenceDay = new Date(Date.parse(`${absenceDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    }
+    const filed = await jsonRequest("/api/absences", jsonBody(f.mine.token, "POST", { date: absenceDay, reason: "Family errand, planned." }));
+    assert.equal(filed.response.status, 201, JSON.stringify(filed.body));
+    const excused = await jsonRequest(`/api/absences/${filed.body.absence.id}/review`, jsonBody(f.supervisor.token, "PATCH", { status: "Excused", notes: "Fine." }));
+    assert.equal(excused.response.status, 200, JSON.stringify(excused.body));
+    row = await waitFor((found) => found.cause === "absence", "absence");
+    assert.deepEqual(row.absences_skipped, [absenceDay]);
+
+    // A holiday in the walk is skipped, for everyone.
+    const holidayDay = before.how.walk_start === absenceDay
+      ? new Date(Date.parse(`${absenceDay}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10)
+      : before.how.walk_start;
+    await pool.query(`DELETE FROM holidays WHERE holiday_date = $1::date`, [holidayDay]);
+    const holiday = await jsonRequest("/api/coordinator/holidays", jsonBody(coordinatorToken, "POST", { date: holidayDay, name: "Projection check day" }));
+    assert.equal(holiday.response.status, 201, JSON.stringify(holiday.body));
+    holidayId = holiday.body.holiday.id;
+    row = await waitFor((found) => found.cause === "holiday", "holiday");
+
+    // A log verified lowers what is left.
+    const log = await f.log({ daysAgo: 1, open: false });
+    const verified = await jsonRequest(`/api/attendance/${log}/status`, jsonBody(f.supervisor.token, "PATCH", { status: "Verified", expected_status: "Pending" }));
+    assert.equal(verified.response.status, 200, JSON.stringify(verified.body));
+    row = await waitFor((found) => found.cause === "log", "log");
+    assert.equal(Number(row.verified_hours), 2.5);
+    assert.equal(Number(row.remaining_hours), 157.5);
+
+    // Nightly: a value from an earlier day is worked out again.
+    await pool.query(`UPDATE student_projections SET computed_at = NOW() - INTERVAL '2 days', cause = 'old' WHERE student_id = $1`, [f.sid]);
+    const { recomputeStale } = require("../src/services/projection.ts");
+    await recomputeStale(pool);
+    assert.equal((await kept()).cause, "nightly");
+  } finally {
+    if (holidayId) await jsonRequest(`/api/coordinator/holidays/${holidayId}`, { method: "DELETE", headers: authHeaders(coordinatorToken) });
+    await pool.query(`DELETE FROM ojt_schedule WHERE student_id = $1`, [f.sid]);
+    await pool.query(`DELETE FROM student_projection_snapshots WHERE student_id = $1`, [f.sid]);
+    await pool.query(`DELETE FROM student_projections WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
 });

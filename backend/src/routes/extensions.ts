@@ -9,7 +9,8 @@ import { readReleaseDay, released, scheduledLater } from "../services/taskReleas
 import { deleteKeeping } from "../services/removedRecords";
 import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverables";
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
-import { coordinatorAlerts, programmeReport, projectionsFor } from "../services/insights";
+import { coordinatorAlerts, programmeReport } from "../services/insights";
+import { keptProjectionsFor, projectionsChanged } from "../services/projection";
 import { uploadQuota } from "../services/uploadQuota";
 import { sameId, sqlSameId } from "../services/ids";
 
@@ -285,6 +286,7 @@ export function registerExtensionRoutes(
           });
         }
       });
+      projectionsChanged(pool, [String(auth.id)], "absence");
       return res.json({ message: "Absence withdrawn." });
     } catch (error) {
       console.error("WITHDRAW ABSENCE ERROR:", error);
@@ -393,6 +395,7 @@ export function registerExtensionRoutes(
         }
 
         const absence = result.rows[0];
+        projectionsChanged(pool, [String(absence.student_id)], "absence");
         await quietly("ABSENCE REVIEW NOTIFICATION ERROR", () =>
           createNotification({
             studentId: absence.student_id,
@@ -728,10 +731,10 @@ export function registerExtensionRoutes(
         }
         const result = await pool.query(
           `
-          SELECT id, day, start_time, end_time, focus, hours
+          SELECT id, COALESCE(week, 1)::int AS week, day, start_time, end_time, focus, hours
           FROM ojt_schedule
           WHERE student_id = $1 AND is_active = TRUE
-          ORDER BY CASE day
+          ORDER BY COALESCE(week, 1), CASE day
             WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
             WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
             WHEN 'Sunday' THEN 7 ELSE 8 END
@@ -1447,6 +1450,7 @@ export function registerExtensionRoutes(
         const student = await pool.query(
           `
           SELECT s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
+                 COALESCE(s.schedule_weeks, 1)::int AS schedule_weeks, TO_CHAR(s.schedule_anchor, 'YYYY-MM-DD') AS schedule_anchor,
                  s.is_active, s.completed_at, s.completion_requested_at, s.supervisor_id,
                  s.phone, s.emergency_contact_name, s.emergency_contact_phone,
                  sup.name AS supervisor_name,
@@ -1514,10 +1518,14 @@ export function registerExtensionRoutes(
             [id]
           ),
           pool.query(
-            `SELECT id, day, TO_CHAR(start_time, 'HH24:MI') AS start_time,
-                    TO_CHAR(end_time, 'HH24:MI') AS end_time, focus, hours
-             FROM ojt_schedule WHERE student_id = $1 AND is_active = TRUE
-             ORDER BY CASE day
+            // The week in force today of a two-week pattern: the record reads its schedule as one
+            // week (its Schedule tab edits the whole pattern, from its own route).
+            `SELECT o.id, COALESCE(o.week, 1)::int AS week, o.day, TO_CHAR(o.start_time, 'HH24:MI') AS start_time,
+                    TO_CHAR(o.end_time, 'HH24:MI') AS end_time, o.focus, o.hours
+             FROM ojt_schedule o JOIN students st ON st.student_id = o.student_id
+             WHERE o.student_id = $1 AND o.is_active = TRUE
+               AND COALESCE(o.week, 1) = ojt_pattern_week(st.schedule_anchor, st.schedule_weeks, ${phSql.today})
+             ORDER BY CASE o.day
                WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
                WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
                WHEN 'Sunday' THEN 7 ELSE 8 END`,
@@ -2631,6 +2639,7 @@ export function registerExtensionRoutes(
       if (result.rows.length === 0) {
         return res.status(409).json({ message: "There is already a holiday on that date." });
       }
+      projectionsChanged(pool, "all", "holiday");
       return res.status(201).json({ message: "Holiday added.", holiday: result.rows[0] });
     } catch (error) {
       console.error("CREATE HOLIDAY ERROR:", error);
@@ -2658,6 +2667,7 @@ export function registerExtensionRoutes(
         [Number(req.params.id), read.holiday.date, read.holiday.name]
       );
       if (result.rows.length === 0) return res.status(404).json({ message: "Holiday not found." });
+      projectionsChanged(pool, "all", "holiday");
       return res.json({ message: "Holiday updated.", holiday: result.rows[0] });
     } catch (error) {
       console.error("UPDATE HOLIDAY ERROR:", error);
@@ -2682,6 +2692,7 @@ export function registerExtensionRoutes(
         [Number(req.params.id), auth.role, auth.id]
       );
       if (result.rows.length === 0) return res.status(404).json({ message: "Holiday not found." });
+      projectionsChanged(pool, "all", "holiday");
       return res.json({ message: "Holiday removed.", holiday: result.rows[0] });
     } catch (error) {
       console.error("DELETE HOLIDAY ERROR:", error);
@@ -4122,7 +4133,8 @@ export function registerExtensionRoutes(
           if ("problem" in read) return res.status(400).json({ message: read.problem });
           filters = read.filters;
         }
-        const projections = await projectionsFor(pool, {
+        // The kept value (services/projection.ts), worked out first where it is missing or old.
+        const projections = await keptProjectionsFor(pool, {
           studentId: auth.role === "student" ? auth.id : undefined,
           supervisorId: auth.role === "supervisor" ? auth.id : undefined,
           filters,

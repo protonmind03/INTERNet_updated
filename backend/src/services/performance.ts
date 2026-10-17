@@ -25,6 +25,7 @@ import type { Pool } from "pg";
 import type { Projection } from "./insights";
 import { released } from "./taskRelease";
 import { appliesTo, oneOff } from "./deliverables";
+import { onDate, type SchedulePattern } from "./schedulePattern";
 
 /** A time-in more than this many minutes after the shift starts is late. */
 export const LATE_AFTER_MINUTES = 15;
@@ -133,13 +134,14 @@ export function performanceSentence(
   return parts.join(" ");
 }
 
-const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-const weekdayOf = (date: string) => WEEKDAYS[new Date(`${date}T00:00:00Z`).getUTCDay()];
 function addDays(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
 }
+/** A scheduled day: its hours and when it starts ("HH:MM"). */
+type Shift = { hours: number; start: string | null };
+
 const minutes = (clock: string | null | undefined): number | null => {
   const match = /^(\d{1,2}):(\d{2})/.exec(clock || "");
   return match ? Number(match[1]) * 60 + Number(match[2]) : null;
@@ -147,15 +149,15 @@ const minutes = (clock: string | null | undefined): number | null => {
 
 /**
  * Attendance on scheduled days and late time-ins, from one student's logs.
- * `shifts` is the weekly schedule: hours and start ("HH:MM") by weekday
- * name. Days are counted from `since` (the first log, else the term's
+ * `shifts` is the schedule pattern (one or two weeks; or the old map):
+ * hours and start ("HH:MM") by weekday name, read by date. Days are counted from `since` (the first log, else the term's
  * start) to yesterday; a holiday is not a scheduled day. Lateness is
  * measured against the schedule as it is now.
  */
 export function attendanceFigures(input: {
   today: string;
   since: string | null;
-  shifts: Record<string, { hours: number; start: string | null }>;
+  shifts: SchedulePattern<Shift> | Record<string, Shift>;
   holidays: Set<string>;
   /** Each log's date and the clock time of its time-in ("HH:MM"). */
   logs: { date: string; time_in: string | null }[];
@@ -166,14 +168,14 @@ export function attendanceFigures(input: {
   if (input.since) {
     // A year is more than any OJT; it only stops a bad date from looping.
     for (let day = input.since, guard = 0; day < input.today && guard < 370; day = addDays(day, 1), guard += 1) {
-      if (input.holidays.has(day) || !((input.shifts[weekdayOf(day)]?.hours || 0) > 0)) continue;
+      if (input.holidays.has(day) || !((onDate(input.shifts, day)?.hours || 0) > 0)) continue;
       scheduled += 1;
       if (logged.has(day)) attended += 1;
     }
   }
   let late = 0;
   for (const log of input.logs) {
-    const start = minutes(input.shifts[weekdayOf(log.date)]?.start);
+    const start = minutes(onDate(input.shifts, log.date)?.start);
     const arrived = minutes(log.time_in);
     if (start !== null && arrived !== null && arrived - start > LATE_AFTER_MINUTES) late += 1;
   }
@@ -250,20 +252,28 @@ export async function performanceFigures(
        FROM attendance WHERE student_id = ANY($1::text[])`,
       [ids]
     ),
-    pool.query<{ student_id: string; day: string; hours: number; start: string | null }>(
-      `SELECT student_id, INITCAP(TRIM(day)) AS day, COALESCE(SUM(hours), 0)::float AS hours,
-              TO_CHAR(MIN(start_time), 'HH24:MI') AS start
-       FROM ojt_schedule WHERE is_active = TRUE AND student_id = ANY($1::text[])
-       GROUP BY student_id, INITCAP(TRIM(day))`,
+    pool.query<{ student_id: string; week: number; day: string; hours: number; start: string | null; weeks: number; anchor: string | null }>(
+      `SELECT o.student_id, COALESCE(o.week, 1)::int AS week, INITCAP(TRIM(o.day)) AS day, COALESCE(SUM(o.hours), 0)::float AS hours,
+              TO_CHAR(MIN(o.start_time), 'HH24:MI') AS start,
+              COALESCE(s.schedule_weeks, 1)::int AS weeks, TO_CHAR(s.schedule_anchor, 'YYYY-MM-DD') AS anchor
+       FROM ojt_schedule o JOIN students s ON s.student_id = o.student_id
+       WHERE o.is_active = TRUE AND o.student_id = ANY($1::text[])
+       GROUP BY o.student_id, COALESCE(o.week, 1), INITCAP(TRIM(o.day)), s.schedule_weeks, s.schedule_anchor`,
       [ids]
     ),
   ]);
 
   const logsOf = new Map<string, { date: string; time_in: string | null }[]>();
   for (const row of logs.rows) logsOf.set(row.student_id, [...(logsOf.get(row.student_id) ?? []), row]);
-  const shiftsOf = new Map<string, Record<string, { hours: number; start: string | null }>>();
+  // Each student's pattern (Iteration 11): one week, or two counted from the anchor Monday.
+  const shiftsOf = new Map<string, SchedulePattern<Shift>>();
   for (const row of shifts.rows) {
-    shiftsOf.set(row.student_id, { ...(shiftsOf.get(row.student_id) ?? {}), [row.day]: { hours: Number(row.hours), start: row.start } });
+    const two = Number(row.weeks) === 2 && Boolean(row.anchor);
+    const pattern = shiftsOf.get(row.student_id) ?? { weeks: two ? 2 : 1, anchor: two ? row.anchor : null, byWeek: { 1: {} } };
+    shiftsOf.set(row.student_id, pattern);
+    const week = Number(row.week) === 2 ? 2 : 1;
+    if (week === 2 && pattern.weeks !== 2) continue;
+    (pattern.byWeek[week] ??= {})[row.day] = { hours: Number(row.hours), start: row.start };
   }
   const countsOf = new Map(counts.rows.map((row) => [row.student_id, row]));
 

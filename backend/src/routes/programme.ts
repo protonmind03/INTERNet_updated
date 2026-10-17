@@ -7,6 +7,7 @@ import { phClock } from "../services/phTime";
 import { zipNames, zipProblem } from "../services/documentZip";
 import { readPrivateFile } from "../services/privateFileStore";
 import { programmeReport, studentPerformance } from "../services/insights";
+import { keptProjectionsFor, projectionsChanged, storedProjection } from "../services/projection";
 import {
   BEHIND_AFTER_SCHEDULED_DAYS,
   BEHIND_ATTENDANCE_PERCENT,
@@ -18,7 +19,7 @@ import { bindFilters, filterConditions, readStudentFilters } from "../services/s
 import { BLOCK_NAME_SQL } from "../services/academics";
 import { KPI_DEFINITIONS, readTarget, type KpiDefinition } from "../services/kpiDefinitions";
 import { loadKpiTargets } from "../services/kpis";
-import { compareSchedule, readSchedule, scheduleKey, type ScheduleDay } from "../services/schedules";
+import { compareSchedule, patternKey, readPattern, scheduleKey, type PatternDay, type ReadPattern } from "../services/schedules";
 import { termSetup } from "../services/termSetup";
 import { sameId } from "../services/ids";
 
@@ -79,7 +80,15 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       const read = readStudentFilters(req.query as Record<string, unknown>);
       if ("problem" in read) return res.status(400).json({ message: read.problem });
       const report = await programmeReport(pool, read.filters, new Date(), { performance: true });
-      return res.json({ students: report.students, ...explained });
+      // Each finish date as kept (Iteration 11), the same one every view shows.
+      const kept = new Map((await keptProjectionsFor(pool, { filters: read.filters })).map((row) => [row.student_id, row]));
+      const students = report.students.map((row: { student_id: string }) => {
+        const own = kept.get(row.student_id);
+        return own
+          ? { ...row, projected_finish: own.projected_finish, remaining_hours: own.remaining_hours, at_risk: own.at_risk, risk_reason: own.risk_reason }
+          : row;
+      });
+      return res.json({ students, ...explained });
     } catch (error) {
       console.error("GET PERFORMANCE ERROR:", error);
       return res.status(500).json({ message: "Failed to work out the students' performance." });
@@ -91,7 +100,12 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
   app.get("/api/coordinator/students/:studentId/performance", requireCoordinator, async (req, res) => {
     try {
       const found = await studentPerformance(pool, String(req.params.studentId));
-      return res.json({ student: found, ...explained });
+      // The finish date as kept (Iteration 11): the one the student and their supervisor see.
+      const kept = found ? await storedProjection(pool, String(req.params.studentId)) : null;
+      const student = found && kept
+        ? { ...found, projected_finish: kept.projected_end_date, remaining_hours: kept.remaining_hours, at_risk: kept.at_risk, risk_reason: kept.risk_reason ?? "" }
+        : found;
+      return res.json({ student, ...explained });
     } catch (error) {
       console.error("GET STUDENT PERFORMANCE ERROR:", error);
       return res.status(500).json({ message: "Failed to work out this student's performance." });
@@ -365,13 +379,17 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
 
   type Standing = { student_id: string; name: string; state: "none" | "same" | "different"; current: string };
 
+  /** How a student's pattern stands against the one about to be applied (weeks, anchor and every week's days). */
+  const comparePattern = (current: ReadPattern, wanted: ReadPattern): Standing["state"] =>
+    current.days.length === 0 ? "none" : patternKey(current) === patternKey(wanted) ? "same" : "different";
+
   // `db` is the pool for a look, or the transaction's own connection when
   // the answer decides what is written. With `lock`, the block's students
   // are held until that transaction ends, so two coordinators setting the
   // same block at once take turns instead of both writing.
   async function blockSchedules(
     blockId: number,
-    wanted: ScheduleDay[],
+    wanted: ReadPattern,
     db: Pick<Pool, "query"> = pool,
     lock = false
   ) {
@@ -380,18 +398,26 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       [blockId]
     );
     if (block.rows.length === 0) return null;
-    const students = await db.query<{ student_id: string; name: string }>(
-      `SELECT student_id, name FROM students WHERE block_id = $1 AND is_active = TRUE ORDER BY name${lock ? " FOR UPDATE" : ""}`,
+    const students = await db.query<{ student_id: string; name: string; weeks: number; anchor: string | null }>(
+      `SELECT student_id, name, COALESCE(schedule_weeks, 1)::int AS weeks, TO_CHAR(schedule_anchor, 'YYYY-MM-DD') AS anchor
+       FROM students WHERE block_id = $1 AND is_active = TRUE ORDER BY name${lock ? " FOR UPDATE" : ""}`,
       [blockId]
     );
-    const rows = await db.query<{ student_id: string; day: string; start: string; end: string }>(
-      `SELECT student_id, INITCAP(TRIM(day)) AS day, TO_CHAR(start_time, 'HH24:MI') AS start, TO_CHAR(end_time, 'HH24:MI') AS "end"
+    const rows = await db.query<{ student_id: string; week: number; day: string; start: string; end: string }>(
+      `SELECT student_id, COALESCE(week, 1)::int AS week, INITCAP(TRIM(day)) AS day, TO_CHAR(start_time, 'HH24:MI') AS start, TO_CHAR(end_time, 'HH24:MI') AS "end"
        FROM ojt_schedule WHERE is_active = TRUE AND student_id = ANY($1::text[])`,
       [students.rows.map((row) => row.student_id)]
     );
     const standing: Standing[] = students.rows.map((student) => {
-      const current = rows.rows.filter((row) => sameId(row.student_id, student.student_id));
-      return { ...student, state: compareSchedule(current, wanted), current: scheduleKey(current) };
+      const two = Number(student.weeks) === 2 && Boolean(student.anchor);
+      const current: ReadPattern = {
+        weeks: two ? 2 : 1,
+        anchor: two ? student.anchor : null,
+        days: rows.rows
+          .filter((row) => sameId(row.student_id, student.student_id))
+          .map((row) => ({ ...row, week: Number(row.week) === 2 ? 2 : 1, focus: null, hours: 0 }) as PatternDay),
+      };
+      return { student_id: student.student_id, name: student.name, state: comparePattern(current, wanted), current: current.days.length ? patternKey(current) : "" };
     });
     return { block: block.rows[0].name, students: standing };
   }
@@ -401,14 +427,14 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
   app.post("/api/coordinator/blocks/:id/schedule/preview", requireCoordinator, async (req, res) => {
     try {
       if (!/^[0-9]{1,9}$/.test(String(req.params.id))) return res.status(404).json({ message: "Block not found." });
-      const read = readSchedule(req.body?.schedule);
+      const read = readPattern(req.body);
       if ("problem" in read) return res.status(400).json({ message: read.problem });
       if (read.days.length === 0) return res.status(400).json({ message: "Choose at least one working day." });
-      const found = await blockSchedules(Number(req.params.id), read.days);
+      const found = await blockSchedules(Number(req.params.id), read);
       if (!found) return res.status(404).json({ message: "Block not found." });
       return res.json({
         ...found,
-        schedule: scheduleKey(read.days),
+        schedule: patternKey(read),
         none: count(found.students, "none"),
         same: count(found.students, "same"),
         different: count(found.students, "different"),
@@ -421,7 +447,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
 
   app.put("/api/coordinator/blocks/:id/schedule", requireCoordinator, async (req, res) => {
     if (!/^[0-9]{1,9}$/.test(String(req.params.id))) return res.status(404).json({ message: "Block not found." });
-    const read = readSchedule(req.body?.schedule);
+    const read = readPattern(req.body);
     if ("problem" in read) return res.status(400).json({ message: read.problem });
     if (read.days.length === 0) return res.status(400).json({ message: "Choose at least one working day." });
     const existing = req.body?.existing;
@@ -433,7 +459,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       // Who is in the block, and what each has now, is read inside the
       // transaction that writes, on the same connection.
       await client.query("BEGIN");
-      const found = await blockSchedules(Number(req.params.id), read.days, client, true);
+      const found = await blockSchedules(Number(req.params.id), read, client, true);
       if (!found || found.students.length === 0) {
         await client.query("ROLLBACK");
         return found
@@ -444,22 +470,31 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       const ids = targets.map((row) => row.student_id);
       if (ids.length > 0) {
         await client.query(`UPDATE ojt_schedule SET is_active = FALSE WHERE is_active = TRUE AND student_id = ANY($1::text[])`, [ids]);
+        // The block's pattern goes with its days: one week, or two from the anchor Monday.
+        await client.query(
+          `UPDATE students SET schedule_weeks = $2, schedule_anchor = $3 WHERE student_id = ANY($1::text[])`,
+          [ids, read.weeks, read.anchor]
+        );
         for (const day of read.days) {
           await client.query(
-            `INSERT INTO ojt_schedule (student_id, day, start_time, end_time, focus, hours, is_active)
-             SELECT student, $2, $3, $4, $5, $6, TRUE FROM UNNEST($1::text[]) AS student`,
-            [ids, day.day, day.start, day.end, day.focus, day.hours]
+            `INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, focus, hours, is_active)
+             SELECT student, $2, $3, $4, $5, $6, $7, TRUE FROM UNNEST($1::text[]) AS student`,
+            [ids, day.week, day.day, day.start, day.end, day.focus, day.hours]
           );
         }
       }
       await client.query("COMMIT");
+      if (ids.length > 0) projectionsChanged(pool, ids, "schedule");
 
       for (const studentId of ids) {
         try {
           await deps.createNotification({
             studentId,
             title: "OJT schedule updated",
-            message: `Your coordinator updated your OJT schedule (${read.days.length} day${read.days.length === 1 ? "" : "s"} per week).`,
+            message:
+              read.weeks === 2
+                ? `Your coordinator updated your OJT schedule. It now repeats every two weeks (${read.days.length} working days in each two).`
+                : `Your coordinator updated your OJT schedule (${read.days.length} day${read.days.length === 1 ? "" : "s"} per week).`,
             type: "schedule",
           });
         } catch (error) {
@@ -478,7 +513,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
         applied: ids.length,
         skipped,
         unchanged,
-        schedule: scheduleKey(read.days),
+        schedule: patternKey(read),
       });
     } catch (error) {
       await client.query("ROLLBACK").catch(() => undefined);

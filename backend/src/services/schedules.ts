@@ -58,3 +58,47 @@ export function compareSchedule(
   if (current.length === 0) return "none";
   return scheduleKey(current) === scheduleKey(wanted) ? "same" : "different";
 }
+
+/*
+| Iteration 11: a schedule is a pattern of one week, or of two weeks taking
+| turns from an anchor Monday (services/schedulePattern.ts). A request sends
+| week 1 as `schedule` (as before), and, for two weeks, `pattern: { weeks: 2,
+| anchor: "YYYY-MM-DD" }` and week 2 as `schedule_week2`. A request that
+| sends only `schedule` is a one-week pattern, as every schedule was.
+*/
+
+export type PatternDay = ScheduleDay & { week: 1 | 2 };
+export type ReadPattern = { weeks: 1 | 2; anchor: string | null; days: PatternDay[] };
+
+const DATE = /^\d{4}-\d{2}-\d{2}$/;
+
+/** A one- or two-week schedule from a request body, or what is wrong with it. */
+export function readPattern(body: unknown): { problem: string } | ReadPattern {
+  const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  const pattern = (input.pattern && typeof input.pattern === "object" ? input.pattern : {}) as Record<string, unknown>;
+  const weeks = pattern.weeks === undefined || pattern.weeks === null ? 1 : Number(pattern.weeks);
+  if (weeks !== 1 && weeks !== 2) return { problem: "A schedule repeats every week or every two weeks." };
+  const first = readSchedule(input.schedule);
+  if ("problem" in first) return first;
+  if (weeks === 1) return { weeks: 1, anchor: null, days: first.days.map((day) => ({ ...day, week: 1 as const })) };
+
+  const anchor = typeof pattern.anchor === "string" ? pattern.anchor.slice(0, 10) : "";
+  if (!DATE.test(anchor) || Number.isNaN(Date.parse(`${anchor}T00:00:00Z`))) {
+    return { problem: "Choose the Monday that week 1 starts on." };
+  }
+  if (new Date(`${anchor}T00:00:00Z`).getUTCDay() !== 1) return { problem: "Week 1 has to start on a Monday." };
+  const second = readSchedule(input.schedule_week2);
+  if ("problem" in second) return { problem: `Week 2: ${second.problem}` };
+  if (first.days.length + second.days.length === 0) return { problem: "Choose at least one working day." };
+  return {
+    weeks: 2,
+    anchor,
+    days: [...first.days.map((day) => ({ ...day, week: 1 as const })), ...second.days.map((day) => ({ ...day, week: 2 as const }))],
+  };
+}
+
+/** A pattern as one comparable line: its weeks, its anchor, and each week's days and times. */
+export function patternKey(pattern: { weeks: number; anchor: string | null; days: { week?: number; day: string; start: string; end: string }[] }): string {
+  const week = (n: number) => scheduleKey(pattern.days.filter((day) => (day.week ?? 1) === n));
+  return pattern.weeks === 2 ? `Every two weeks from ${pattern.anchor}. Week 1: ${week(1)}. Week 2: ${week(2)}` : week(1);
+}

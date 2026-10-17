@@ -16,6 +16,7 @@
 */
 
 import { PH_TIME_ZONE } from "./phTime";
+import { patternWeek } from "./schedulePattern";
 
 export type CalendarShift = {
   /** The weekday's name: "Monday". */
@@ -24,7 +25,41 @@ export type CalendarShift = {
   end_time: string | null;
   hours: number | string | null;
   focus?: string | null;
+  /** Which week of a two-week pattern the row is in (Iteration 11); 1 when missing. */
+  week?: number | null;
+  /** The pattern, when the row carries it (the supervisor's list does). */
+  pattern_weeks?: number | null;
+  pattern_anchor?: string | null;
 };
+
+/** How a schedule repeats: every week, or two weeks taking turns from the anchor Monday. */
+export type ShiftPattern = { weeks: number; anchor: string | null };
+
+/**
+ * The shift a date has: the row for its weekday, in the week of the pattern
+ * in force that day. The pattern is the one given, else the one the rows
+ * carry, else one week.
+ */
+export function shiftOn<T extends Pick<CalendarShift, "day" | "start_time" | "hours" | "week" | "pattern_weeks" | "pattern_anchor">>(
+  shifts: T[],
+  date: string,
+  pattern?: ShiftPattern | null
+): T | undefined {
+  const weeks = pattern?.weeks ?? shifts[0]?.pattern_weeks ?? 1;
+  const anchor = pattern?.anchor ?? shifts[0]?.pattern_anchor ?? null;
+  const week = patternWeek(anchor, weeks, date);
+  const weekday = weekdayOf(date);
+  return shifts.find(
+    (shift) => shift.day === weekday && (Number(shift.week) || 1) === week && ((Number(shift.hours) || 0) > 0 || shift.start_time)
+  );
+}
+
+/** Hours a week on average: a two-week pattern's total over two. */
+export function weeklyShiftHours(shifts: Pick<CalendarShift, "hours" | "week">[], pattern?: ShiftPattern | null): number {
+  const total = shifts.reduce((sum, shift) => sum + (Number(shift.hours) || 0), 0);
+  const two = (pattern?.weeks ?? 1) === 2 || shifts.some((shift) => Number(shift.week) === 2);
+  return Math.round((two ? total / 2 : total) * 100) / 100;
+}
 
 export type CalendarLog = {
   date: string;
@@ -110,6 +145,8 @@ export function countedFrom(logs: CalendarLog[], termStart: string | null): stri
 
 export type CalendarSources = {
   shifts: CalendarShift[];
+  /** How the schedule repeats; one week when missing. */
+  pattern?: ShiftPattern | null;
   holidays: CalendarHoliday[];
   logs: CalendarLog[];
   absences: CalendarAbsence[];
@@ -131,9 +168,6 @@ export type DayFacts = {
 
 /** Looks the lists up by date once, then answers for any day. */
 export function calendarIndex(sources: CalendarSources): (date: string) => DayFacts {
-  const shiftOn = new Map(
-    sources.shifts.filter((shift) => (Number(shift.hours) || 0) > 0 || shift.start_time).map((shift) => [shift.day, shift])
-  );
   const holidayOn = new Map(sources.holidays.map((holiday) => [key(holiday.date), holiday.name]));
   const logOn = new Map(sources.logs.map((log) => [key(log.date), log]));
   const absenceOn = new Map(sources.absences.map((absence) => [key(absence.date), absence]));
@@ -148,7 +182,7 @@ export function calendarIndex(sources: CalendarSources): (date: string) => DayFa
     return {
       date,
       weekday: weekdayOf(date),
-      shift: shiftOn.get(weekdayOf(date)) ?? null,
+      shift: shiftOn(sources.shifts, date, sources.pattern) ?? null,
       holiday: holidayOn.get(date) ?? null,
       log,
       // A day that was worked is not an absence, whatever was filed.
@@ -176,7 +210,7 @@ export type WeekHours = { week_start: string; scheduled: number; verified: numbe
 export function weeklyHours(
   today: string,
   since: string | null,
-  sources: Pick<CalendarSources, "shifts" | "holidays" | "logs">,
+  sources: Pick<CalendarSources, "shifts" | "holidays" | "logs" | "pattern">,
   weeks = 8
 ): WeekHours[] {
   const day = calendarIndex({ ...sources, absences: [], tasks: [] });
@@ -209,7 +243,7 @@ export function weeklyHours(
 export function attendanceOnScheduledDays(
   today: string,
   since: string | null,
-  sources: Pick<CalendarSources, "shifts" | "holidays" | "logs">
+  sources: Pick<CalendarSources, "shifts" | "holidays" | "logs" | "pattern">
 ): { scheduled: number; attended: number } {
   if (!since) return { scheduled: 0, attended: 0 };
   const day = calendarIndex({ ...sources, absences: [], tasks: [] });
@@ -254,15 +288,14 @@ function clockMinutes(time: string | null): number | null {
  * LATE_AFTER_MINUTES after the start.
  */
 export function punctuality(
-  sources: Pick<CalendarSources, "shifts" | "logs">,
+  sources: Pick<CalendarSources, "shifts" | "logs" | "pattern">,
   timeZone?: string
 ): { days: number; average: number; late: number } {
-  const startOn = new Map(sources.shifts.map((shift) => [shift.day, clockMinutes(shift.start_time)]));
   let days = 0;
   let total = 0;
   let late = 0;
   for (const log of sources.logs) {
-    const start = startOn.get(weekdayOf(key(log.date)));
+    const start = clockMinutes(shiftOn(sources.shifts, key(log.date), sources.pattern)?.start_time ?? null);
     const arrived = log.time_in ? minuteOfDay(log.time_in, timeZone) : null;
     if (start === null || start === undefined || arrived === null) continue;
     days += 1;

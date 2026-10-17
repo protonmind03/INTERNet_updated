@@ -64,6 +64,7 @@ export async function sendTimeOutReminders(
       WHERE s.student_id = a.student_id
         AND s.is_active = TRUE
         AND LOWER(TRIM(s.day)) = LOWER(TRIM(TO_CHAR(a.date, 'Day')))
+        AND COALESCE(s.week, 1) = ojt_pattern_week(st.schedule_anchor, st.schedule_weeks, a.date)
     ) shift ON shift.end_time IS NOT NULL
     WHERE a.time_in IS NOT NULL
       AND a.time_out IS NULL

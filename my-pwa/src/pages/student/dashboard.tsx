@@ -34,6 +34,7 @@ import DayStatus, { NextStepButton } from "./DayStatus";
 import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
+import { weeklyShiftHours } from "../../lib/studentCalendar";
 import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 
 type DashboardData = {
@@ -57,7 +58,7 @@ type Task = {
   assigned_by: string | null;
 };
 
-type ScheduleDay = { day: string; hours: number | string | null };
+type ScheduleDay = { day: string; hours: number | string | null; week?: number | null };
 
 const OPEN_TASK_STATUSES = ["Pending", "In Progress"];
 
@@ -100,10 +101,9 @@ function DashboardPage() {
         setTasks(Array.isArray(list) ? (list as Task[]) : []);
       }
       if (scheduleResponse.ok) {
-        const data = (await scheduleResponse.json()) as { schedule?: ScheduleDay[] };
-        setWeeklyScheduleHours(
-          (data.schedule || []).reduce((sum, day) => sum + (Number(day.hours) || 0), 0)
-        );
+        const data = (await scheduleResponse.json()) as { schedule?: ScheduleDay[]; pattern?: { weeks: number; anchor: string | null } };
+        // A two-week pattern's hours are an average week (Iteration 11).
+        setWeeklyScheduleHours(weeklyShiftHours(data.schedule || [], data.pattern));
       }
       setError("");
     } catch (loadError) {

@@ -16,12 +16,15 @@
 */
 
 import { PH_TIME_ZONE } from "./phTime";
+import { patternWeek } from "./schedulePattern";
 
 export type CalendarShift = {
   day: string;
   start_time: string | null;
   end_time: string | null;
   focus: string | null;
+  /** Which week of a two-week pattern (Iteration 11); 1 when missing. */
+  week?: number | null;
 };
 
 const BYDAY: Record<string, string> = {
@@ -70,6 +73,8 @@ function fold(line: string): string {
  */
 export function scheduleCalendar(input: {
   shifts: CalendarShift[];
+  /** Every two weeks taking turns from the anchor Monday (Iteration 11); every week when missing. */
+  pattern?: { weeks: number; anchor: string | null } | null;
   holidays: { date: string; name: string }[];
   company: string;
   today: string;
@@ -100,21 +105,29 @@ export function scheduleCalendar(input: {
   for (const shift of input.shifts) {
     const code = BYDAY[shift.day];
     if (!code || !shift.start_time || !shift.end_time) continue;
-    // The first of that weekday from today on.
+    // The first of that weekday from today on, in a week the row belongs to.
+    const two = input.pattern?.weeks === 2 && Boolean(input.pattern.anchor);
+    const rowWeek = Number(shift.week) || 1;
     let first = input.today;
-    while (weekdayOf(first) !== shift.day) first = addDays(first, 1);
+    while (weekdayOf(first) !== shift.day || (two && patternWeek(input.pattern!.anchor, 2, first) !== rowWeek)) first = addDays(first, 1);
     if (first > input.until) continue;
     const skipped = input.holidays
-      .filter((holiday) => holiday.date >= first && holiday.date <= input.until && weekdayOf(holiday.date) === shift.day)
+      .filter(
+        (holiday) =>
+          holiday.date >= first &&
+          holiday.date <= input.until &&
+          weekdayOf(holiday.date) === shift.day &&
+          (!two || patternWeek(input.pattern!.anchor, 2, holiday.date) === rowWeek)
+      )
       .map((holiday) => `${compact(holiday.date)}T${clock(shift.start_time!)}`);
     lines.push(
       "BEGIN:VEVENT",
-      `UID:ojt-${code.toLowerCase()}-${compact(first)}@internet-ojt`,
+      `UID:ojt-${code.toLowerCase()}${two ? `-w${rowWeek}` : ""}-${compact(first)}@internet-ojt`,
       `DTSTAMP:${input.stamp}`,
       `DTSTART;TZID=${PH_TIME_ZONE}:${compact(first)}T${clock(shift.start_time)}`,
       `DTEND;TZID=${PH_TIME_ZONE}:${compact(first)}T${clock(shift.end_time)}`,
       // The end of the last day in the Philippines is 15:59:59 UTC.
-      `RRULE:FREQ=WEEKLY;BYDAY=${code};UNTIL=${compact(input.until)}T155959Z`,
+      `RRULE:FREQ=WEEKLY;${two ? "INTERVAL=2;" : ""}BYDAY=${code};UNTIL=${compact(input.until)}T155959Z`,
       ...(skipped.length > 0 ? [`EXDATE;TZID=${PH_TIME_ZONE}:${skipped.join(",")}`] : []),
       `SUMMARY:${text(place ? `OJT at ${place}` : "OJT")}`,
       ...(shift.focus ? [`DESCRIPTION:${text(shift.focus)}`] : []),

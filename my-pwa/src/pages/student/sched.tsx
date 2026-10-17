@@ -30,6 +30,8 @@ import ScheduleMonth from "./ScheduleMonth";
 import { deliverablesForCalendar, useDeliverables } from "./useDeliverables";
 import ScheduleProgress from "./ScheduleProgress";
 import { formatPh } from "../../lib/phTime";
+import { patternWeek } from "../../lib/schedulePattern";
+import { weeklyShiftHours, type ShiftPattern } from "../../lib/studentCalendar";
 
 /** The page's three views. The one shown is in the address, so Back returns to it. */
 type View = "week" | "month" | "progress";
@@ -43,6 +45,8 @@ type Absence = { date: string; status: string; reason?: string | null };
 
 type ScheduleDay = {
   id: number;
+  /** Which week of a two-week pattern (Iteration 11); 1 when missing. */
+  week?: number | null;
   day: string;
   start_time: string | null;
   end_time: string | null;
@@ -75,9 +79,9 @@ const WEEK = [
 ] as const;
 
 /** This week's date for each weekday, Monday first, as "YYYY-MM-DD". */
-function thisWeekDates(now: Date): Map<string, string> {
+function thisWeekDates(now: Date, weeksAhead = 0): Map<string, string> {
   const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7) + weeksAhead * 7);
   return new Map(
     WEEK.map((day, offset) => {
       const date = new Date(monday);
@@ -101,6 +105,8 @@ export default function OjtSchedule() {
   const studentId = student?.student_id;
 
   const [schedule, setSchedule] = useState<ScheduleDay[]>([]);
+  // How the schedule repeats: every week, or two weeks taking turns (Iteration 11).
+  const [pattern, setPattern] = useState<ShiftPattern>({ weeks: 1, anchor: null });
   const [company, setCompany] = useState<Company | null>(null);
   const [coordinator, setCoordinator] = useState<{ name: string; email: string } | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -133,6 +139,7 @@ export default function OjtSchedule() {
       if (!scheduleResponse.ok) throw new Error("Could not load your schedule.");
       const scheduleData = await scheduleResponse.json();
       setSchedule(Array.isArray(scheduleData.schedule) ? scheduleData.schedule : []);
+      setPattern(scheduleData.pattern?.weeks === 2 ? { weeks: 2, anchor: scheduleData.pattern.anchor } : { weeks: 1, anchor: null });
 
       if (companyResponse.ok) {
         const companyData = await companyResponse.json();
@@ -169,18 +176,33 @@ export default function OjtSchedule() {
 
   // The schedule names its days in English ("Monday").
   const today = formatPh(new Date(), { weekday: "long" }, "en-US");
-  const byDay = useMemo(() => new Map(schedule.map((item) => [item.day, item])), [schedule]);
-  const weeklyHours = schedule.reduce((sum, item) => sum + (Number(item.hours) || 0), 0);
+  const todayKey = phDateKey(new Date());
+  // With two weeks taking turns, this week is one of them and next week the other.
+  const thisWeek = patternWeek(pattern.anchor, pattern.weeks, todayKey);
+  const daysOf = useCallback(
+    (week: number) => new Map(schedule.filter((item) => (Number(item.week) || 1) === week).map((item) => [item.day, item])),
+    [schedule]
+  );
+  const byDay = useMemo(() => daysOf(thisWeek), [daysOf, thisWeek]);
+  const weeklyHours = weeklyShiftHours(schedule, pattern);
   const todayShift = byDay.get(today);
+  const workingDays = byDay.size;
 
   // The weekly list is any week; holidays are dates. So each weekday is
   // matched to its date this week, and a holiday on it is named there.
-  const todayKey = phDateKey(new Date());
   const holidayOn = useMemo(
     () => new Map(holidays.map((holiday) => [holiday.date, holiday.name])),
     [holidays]
   );
   const weekDates = useMemo(() => thisWeekDates(new Date(`${todayKey}T00:00:00`)), [todayKey]);
+  const nextWeekDates = useMemo(() => thisWeekDates(new Date(`${todayKey}T00:00:00`), 1), [todayKey]);
+  // The weeks the list shows: this one, and for a two-week pattern the next as well.
+  const weeksShown = pattern.weeks === 2
+    ? [
+        { label: `This week, week ${thisWeek} of 2`, days: byDay, dates: weekDates, current: true },
+        { label: `Next week, week ${thisWeek === 1 ? 2 : 1} of 2`, days: daysOf(thisWeek === 1 ? 2 : 1), dates: nextWeekDates, current: false },
+      ]
+    : [{ label: "", days: byDay, dates: weekDates, current: true }];
   const todayHoliday = holidayOn.get(todayKey);
   const upcomingHolidays = holidays.filter((holiday) => holiday.date >= todayKey).slice(0, 5);
 
@@ -195,6 +217,7 @@ export default function OjtSchedule() {
       "internet-ojt-schedule.ics",
       scheduleCalendar({
         shifts: schedule,
+        pattern,
         holidays,
         company: company?.name || student?.company || "",
         today: todayKey,
@@ -234,6 +257,7 @@ export default function OjtSchedule() {
         {view === "month" && (
           <ScheduleMonth
             shifts={schedule}
+            pattern={pattern}
             holidays={holidays}
             absences={absences}
             tasks={dueOnCalendar}
@@ -241,7 +265,7 @@ export default function OjtSchedule() {
           />
         )}
         {view === "progress" && (
-          <ScheduleProgress shifts={schedule} holidays={holidays} termStart={termStart} />
+          <ScheduleProgress shifts={schedule} pattern={pattern} holidays={holidays} termStart={termStart} />
         )}
 
         {view === "week" && (
@@ -266,7 +290,9 @@ export default function OjtSchedule() {
                 loading
                   ? undefined
                   : schedule.length > 0
-                    ? `${schedule.length} working ${schedule.length === 1 ? "day" : "days"} · ${formatHours(weeklyHours)} a week`
+                    ? pattern.weeks === 2
+                      ? `Repeats every two weeks · ${formatHours(weeklyHours)} a week on average`
+                      : `${workingDays} working ${workingDays === 1 ? "day" : "days"} · ${formatHours(weeklyHours)} a week`
                     : undefined
               }
             />
@@ -280,66 +306,77 @@ export default function OjtSchedule() {
                   description="Your OJT coordinator will assign your working days and hours."
                 />
               ) : (
-                <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                  {WEEK.map((day) => {
-                    const shift = byDay.get(day);
-                    const isToday = day === today;
-                    const holiday = holidayOn.get(weekDates.get(day) || "");
-                    return (
-                      <li
-                        key={day}
-                        className={`flex items-center gap-4 px-4 py-3.5 sm:px-5 ${
-                          isToday ? "bg-psu-50" : ""
-                        }`}
-                      >
-                        <div className="w-24 shrink-0">
-                          <p
-                            className={`text-sm font-semibold ${
-                              shift || holiday ? "text-slate-900" : "text-slate-600"
-                            }`}
-                          >
-                            {day}
-                          </p>
-                          {isToday && (
-                            <p className="text-xs font-semibold text-psu-700">Today</p>
-                          )}
-                        </div>
-                        {holiday ? (
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-medium text-slate-800">
-                              Holiday this week: {holiday}
+                <div>
+                  {weeksShown.map((shown) => (
+                    <section key={shown.label || "week"} aria-label={shown.label || undefined}>
+                      {shown.label && (
+                        <h3 className="border-t border-slate-100 bg-slate-50 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-slate-600 sm:px-5">
+                          {shown.label}
+                        </h3>
+                      )}
+                  <ul className="divide-y divide-slate-100 border-t border-slate-100">
+                    {WEEK.map((day) => {
+                      const shift = shown.days.get(day);
+                      const isToday = shown.current && day === today;
+                      const holiday = holidayOn.get(shown.dates.get(day) || "");
+                      return (
+                        <li
+                          key={day}
+                          className={`flex items-center gap-4 px-4 py-3.5 sm:px-5 ${
+                            isToday ? "bg-psu-50" : ""
+                          }`}
+                        >
+                          <div className="w-24 shrink-0">
+                            <p
+                              className={`text-sm font-semibold ${
+                                shift || holiday ? "text-slate-900" : "text-slate-600"
+                              }`}
+                            >
+                              {day}
                             </p>
-                            {shift && (
-                              <p className="tabular text-sm text-slate-500">
-                                Usually {formatClockTime(shift.start_time)} –{" "}
-                                {formatClockTime(shift.end_time)}
-                              </p>
+                            {isToday && (
+                              <p className="text-xs font-semibold text-psu-700">Today</p>
                             )}
                           </div>
-                        ) : shift ? (
-                          <>
+                          {holiday ? (
                             <div className="min-w-0 flex-1">
-                              <p className="tabular text-sm text-slate-800">
-                                {formatClockTime(shift.start_time)} –{" "}
-                                {formatClockTime(shift.end_time)}
+                              <p className="text-sm font-medium text-slate-800">
+                                Holiday {shown.current ? "this week" : "next week"}: {holiday}
                               </p>
-                              {shift.focus && (
-                                <p className="truncate text-sm text-slate-600">
-                                  {shift.focus}
+                              {shift && (
+                                <p className="tabular text-sm text-slate-500">
+                                  Usually {formatClockTime(shift.start_time)} –{" "}
+                                  {formatClockTime(shift.end_time)}
                                 </p>
                               )}
                             </div>
-                            <p className="tabular shrink-0 text-sm font-medium text-slate-700">
-                              {formatHours(shift.hours)}
-                            </p>
-                          </>
-                        ) : (
-                          <p className="flex-1 text-sm text-slate-600">Day off</p>
-                        )}
-                      </li>
-                    );
-                  })}
-                </ul>
+                          ) : shift ? (
+                            <>
+                              <div className="min-w-0 flex-1">
+                                <p className="tabular text-sm text-slate-800">
+                                  {formatClockTime(shift.start_time)} –{" "}
+                                  {formatClockTime(shift.end_time)}
+                                </p>
+                                {shift.focus && (
+                                  <p className="truncate text-sm text-slate-600">
+                                    {shift.focus}
+                                  </p>
+                                )}
+                              </div>
+                              <p className="tabular shrink-0 text-sm font-medium text-slate-700">
+                                {formatHours(shift.hours)}
+                              </p>
+                            </>
+                          ) : (
+                            <p className="flex-1 text-sm text-slate-600">Day off</p>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                    </section>
+                  ))}
+                </div>
               )}
             </div>
           </Card>
