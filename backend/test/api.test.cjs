@@ -10168,7 +10168,7 @@ test("every page that moved into a hub keeps its address: it redirects to its ta
   require("tsx/cjs");
   const fs = require("node:fs");
   const path = require("node:path");
-  const { MOVED, HUBS, movedTo, tabOf } = require("../../my-pwa/src/pages/coordinator/hubConfig.ts");
+  const { MOVED, HUBS, movedTo, tabOf } = require("../../my-pwa/src/pages/coordinator/hubs.ts");
   const app = fs.readFileSync(path.join(__dirname, "../../my-pwa/src/App.tsx"), "utf8");
   for (const move of MOVED) {
     // The old address is still a route, and it is the redirect.
