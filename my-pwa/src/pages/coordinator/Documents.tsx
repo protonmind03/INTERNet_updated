@@ -23,7 +23,7 @@ import { formatDate, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import FilterBar from "./FilterBar";
-import { coordinatorRequest, downloadDocumentsZip, downloadSubmittedDocument } from "./request";
+import { changedByOthers, coordinatorRequest, downloadDocumentsZip, downloadSubmittedDocument } from "./request";
 import DocumentGroups from "./DocumentGroups";
 import { useStudentFilters } from "./useStudentFilters";
 
@@ -43,6 +43,8 @@ type SubmittedDocument = {
   uploaded_at: string;
   /** Who reviews this file: the supervisor unless its requirement says the coordinator. Missing from an older server. */
   reviewer_role?: "supervisor" | "coordinator";
+  /** Sent back with a decision (migration 062). Missing from an older server. */
+  version?: number;
 };
 
 type StudentProgress = {
@@ -92,7 +94,7 @@ export default function CoordinatorDocuments() {
     try {
       await coordinatorRequest(`/api/documents/${item.id}/review`, {
         method: "PATCH",
-        body: { status: approve ? "Approved" : "Rejected", review_notes: note },
+        body: { status: approve ? "Approved" : "Rejected", review_notes: note, expected_version: item.version },
       });
       toast.success(`${item.doc_type} ${approve ? "approved" : "rejected"}. ${item.student_name || "The student"} has been told.`);
       setRejecting(null);
@@ -100,6 +102,11 @@ export default function CoordinatorDocuments() {
       await load();
     } catch (decideError) {
       toast.error(errorText(decideError, "The decision could not be saved."));
+      // Changed by someone else first: show it as it is now.
+      if (changedByOthers(decideError)) {
+        setRejecting(null);
+        await load();
+      }
     } finally {
       setDeciding(null);
     }

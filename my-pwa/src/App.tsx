@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ChangePassword from "./pages/ChangePassword";
 import Go from "./pages/Go";
+import Help from "./pages/Help";
 import CoordinatorHub, { MovedPage } from "./pages/coordinator/CoordinatorHub";
 
 /*
@@ -216,6 +217,11 @@ function App() {
         <Route
           path="/change-password"
           element={<ChangePassword />}
+        />
+        {/* What works with no connection, for every role (Iteration 12). */}
+        <Route
+          path="/help"
+          element={<Help />}
         />
         {/* The installed app's shortcuts: /go/today, /go/tasks, /go/notifications. */}
         <Route

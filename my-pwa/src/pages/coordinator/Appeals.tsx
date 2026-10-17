@@ -4,7 +4,7 @@ import { Button, Card, EmptyState, ErrorNotice, FormError, SkeletonRows } from "
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDateTime, formatLongDate, formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
-import { coordinatorRequest } from "./request";
+import { changedByOthers, coordinatorRequest } from "./request";
 
 /*
 |--------------------------------------------------------------------------
@@ -45,6 +45,8 @@ type Appeal = {
   times_before_correction: Record<string, string | null> | null;
   image_url: string | null;
   rejected_photo_path: string | null;
+  /** Sent back with the decision (migration 062). Missing from an older server. */
+  version?: number;
 };
 
 const KIND_TITLE: Record<Kind, string> = {
@@ -147,11 +149,17 @@ function AppealCard({ appeal, onDecided }: { appeal: Appeal; onDecided: () => vo
     try {
       const result = await coordinatorRequest<{ message: string }>(`/api/coordinator/appeals/${appeal.id}`, {
         method: "PUT",
-        body: { decision, note: note.trim() },
+        body: { decision, note: note.trim(), expected_version: appeal.version },
       });
       toast.success(result.message);
       onDecided();
     } catch (decideError) {
+      // Decided by someone else first: say so and show the list as it is now.
+      if (changedByOthers(decideError)) {
+        toast.error(errorText(decideError, "This appeal changed while you had it open."));
+        onDecided();
+        return;
+      }
       setError(errorText(decideError, "The decision could not be saved."));
     } finally {
       setBusy(null);

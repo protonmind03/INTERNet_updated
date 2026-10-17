@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type express from "express";
 import jwt from "jsonwebtoken";
 import type { Pool, PoolClient } from "pg";
-import { readClockSkew, readOfflineStamp } from "../services/offlineActions";
+import { offlineLimits, offlineMaxAgeHoursFor, readClockSkew, readOfflineStamp } from "../services/offlineActions";
 import {
   attestationMessage,
   clockCheck,
@@ -109,6 +109,15 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
   | new one past that retires the oldest. A retired key stays retired.
   |
   */
+
+  /**
+   * How old each kind of step recorded offline may be when it arrives (Iteration 12),
+   * so the phone's "Waiting to send" panel can say until when each one can still go.
+   */
+  app.get("/api/offline/limits", requireRole("student"), (_req, res) => {
+    const hours = offlineLimits();
+    return res.json({ hours: { time_in: hours["time-in"], lunch: hours.lunch, time_out: hours["time-out"] } });
+  });
 
   app.post("/api/attendance/device-key", requireRole("student"), async (req, res) => {
     try {
@@ -399,7 +408,8 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
     let client: PoolClient | null = null;
     try {
       const auth = (req as Authed).auth!;
-      const stamp = readOfflineStamp(req.body, "break", null);
+      // A time-in has its own age limit (OFFLINE_MAX_AGE_HOURS_TIME_IN, Iteration 12).
+      const stamp = readOfflineStamp(req.body, "break", null, new Date(), offlineMaxAgeHoursFor("time-in"));
       if (stamp.kind === "live") {
         return res.status(400).json({
           message: "A time-in recorded offline needs the time it happened and its request id.",

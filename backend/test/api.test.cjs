@@ -10403,3 +10403,198 @@ test("expected end: the pattern saved, the projection's route, and every recompu
     await f.cleanup();
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| ITERATION 12: OFFLINE LIMITS AND DECIDED-FIRST VERSIONS
+|--------------------------------------------------------------------------
+*/
+
+test("offline age limits: one per kind of step, the old variable as the fallback, then 12/12/24", () => {
+  require("tsx/cjs");
+  const { offlineMaxAgeHoursFor, offlineLimits, readOfflineStamp } = require("../src/services/offlineActions.ts");
+  assert.deepEqual(offlineLimits({}), { "time-in": 12, lunch: 12, "time-out": 24 });
+  // The old variable fills in for any that is not set.
+  assert.deepEqual(offlineLimits({ OFFLINE_ACTION_MAX_AGE_HOURS: "6" }), { "time-in": 6, lunch: 6, "time-out": 6 });
+  // Each of its own wins; out of range or not a number is ignored.
+  const env = { OFFLINE_ACTION_MAX_AGE_HOURS: "6", OFFLINE_MAX_AGE_HOURS_TIME_OUT: "48", OFFLINE_MAX_AGE_HOURS_LUNCH: "0", OFFLINE_MAX_AGE_HOURS_TIME_IN: "abc" };
+  assert.deepEqual(offlineLimits(env), { "time-in": 6, lunch: 6, "time-out": 48 });
+  assert.equal(offlineMaxAgeHoursFor("time-out", { OFFLINE_MAX_AGE_HOURS_TIME_OUT: "73" }), 24);
+  assert.equal(offlineMaxAgeHoursFor("lunch", { OFFLINE_MAX_AGE_HOURS_LUNCH: "72" }), 72);
+  // The stamp reads the limit for its kind.
+  const now = new Date("2026-10-18T12:00:00Z");
+  const body = (hoursAgo) => ({ occurred_at: new Date(now.getTime() - hoursAgo * 3_600_000).toISOString(), client_request_id: "abcdefgh-1234" });
+  assert.equal(readOfflineStamp(body(20), "time-out", null, now, offlineMaxAgeHoursFor("time-out", {})).kind, "offline");
+  assert.equal(readOfflineStamp(body(20), "break", null, now, offlineMaxAgeHoursFor("lunch", {})).kind, "invalid");
+});
+
+test("GET /api/offline/limits: the student's phone reads the three limits", async () => {
+  assert.equal((await jsonRequest("/api/offline/limits")).response.status, 401);
+  assert.equal((await jsonRequest("/api/offline/limits", { headers: authHeaders(coordinatorToken) })).response.status, 403);
+  const { response, body } = await jsonRequest("/api/offline/limits", { headers: authHeaders(studentToken) });
+  assert.equal(response.status, 200);
+  for (const key of ["time_in", "lunch", "time_out"]) {
+    assert.ok(Number.isFinite(body.hours[key]) && body.hours[key] >= 1 && body.hours[key] <= 72, key);
+  }
+});
+
+test("expected_version: whole positive numbers only; nothing sent means decided as before", () => {
+  require("tsx/cjs");
+  const { expectedVersion } = require("../src/services/versions.ts");
+  assert.equal(expectedVersion({}), undefined);
+  assert.equal(expectedVersion(null), undefined);
+  assert.equal(expectedVersion({ expected_version: "" }), undefined);
+  assert.equal(expectedVersion({ expected_version: 0 }), undefined);
+  assert.equal(expectedVersion({ expected_version: 1.5 }), undefined);
+  assert.equal(expectedVersion({ expected_version: "3" }), 3);
+  assert.equal(expectedVersion({ expected_version: 7 }), 7);
+});
+
+test("versions: a real change moves it, an update that changes nothing does not; the lists return it", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("VER");
+  try {
+    const id = await f.log({ daysAgo: 1, open: false });
+    const version = async () => Number((await f.row(id)).version);
+    assert.equal(await version(), 1);
+    await f.pool.query(`UPDATE attendance SET note = note WHERE id = $1`, [id]);
+    assert.equal(await version(), 1, "nothing changed");
+    await f.pool.query(`UPDATE attendance SET note = 'changed' WHERE id = $1`, [id]);
+    assert.equal(await version(), 2);
+    // The lists reviewers decide from carry it.
+    const filed = await jsonRequest("/api/absences", jsonBody(f.mine.token, "POST", { date: shiftDay(f.phToday(), 3), reason: "A planned errand." }));
+    assert.equal(filed.response.status, 201, JSON.stringify(filed.body));
+    const absences = await jsonRequest("/api/absences/supervisor", { headers: authHeaders(f.supervisor.token) });
+    assert.equal(Number(absences.body.absences.find((row) => row.id === filed.body.absence.id).version), 1);
+    const doc = (await f.pool.query(
+      `INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status)
+       VALUES ($1, 'Version check file', 'file.pdf', '/uploads/version-check.pdf', 'application/pdf', 10, 'Pending') RETURNING id`,
+      [f.sid]
+    )).rows[0].id;
+    try {
+      const documents = await jsonRequest("/api/documents/supervisor", { headers: authHeaders(f.supervisor.token) });
+      assert.equal(Number(documents.body.documents.find((row) => row.id === doc).version), 1);
+    } finally {
+      await f.pool.query(`DELETE FROM documents WHERE id = $1`, [doc]);
+    }
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("every review decision sent with an old version gets 409 and the record as it is now; with the current one it goes ahead", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("STALE");
+  const pool = f.pool;
+  const made = { tasks: [], documents: [], journals: [] };
+  try {
+    const stale = async (path, method, token, body, label) => {
+      const answer = await jsonRequest(path, jsonBody(token, method, { ...body, expected_version: 1 }));
+      assert.equal(answer.response.status, 409, `${label}: ${JSON.stringify(answer.body)}`);
+      assert.equal(answer.body.code, "STALE", label);
+      assert.equal(answer.body.current.version, 2, label);
+      assert.match(answer.body.message, /changed while you had it open/, label);
+      return answer;
+    };
+
+    // Attendance: a decision, and only the photo rejected.
+    const closed = await f.log({ daysAgo: 1, open: false });
+    await pool.query(`UPDATE attendance SET note = 'edited by the student' WHERE id = $1`, [closed]);
+    await stale(`/api/attendance/${closed}/status`, "PATCH", f.supervisor.token, { status: "Verified", expected_status: "Pending" }, "attendance");
+    assert.equal((await f.row(closed)).status, "Pending", "nothing written");
+    const fine = await jsonRequest(`/api/attendance/${closed}/status`, jsonBody(f.supervisor.token, "PATCH", { status: "Verified", expected_status: "Pending", expected_version: 2 }));
+    assert.equal(fine.response.status, 200, JSON.stringify(fine.body));
+    const open = await f.log();
+    await pool.query(`UPDATE attendance SET note = 'edited' WHERE id = $1`, [open]);
+    await stale(`/api/attendance/${open}/reject-time-in`, "POST", f.supervisor.token, { reason: "The face is out of the frame." }, "photo");
+    assert.equal((await f.row(open)).photo_redo_status, null, "the photo was not rejected");
+
+    // A task.
+    const task = (await pool.query(`INSERT INTO tasks (student_id, title, status, due_date) VALUES ($1, 'Stale check', 'Submitted', CURRENT_DATE + 3) RETURNING id`, [f.sid])).rows[0].id;
+    made.tasks.push(task);
+    await pool.query(`UPDATE tasks SET submission_notes = 'resubmitted' WHERE id = $1`, [task]);
+    await stale(`/api/tasks/${task}/review`, "PATCH", f.supervisor.token, { status: "Reviewed", review_notes: "Good." }, "task");
+    const taskFine = await jsonRequest(`/api/tasks/${task}/review`, jsonBody(f.supervisor.token, "PATCH", { status: "Reviewed", review_notes: "Good.", expected_version: 2 }));
+    assert.equal(taskFine.response.status, 200, JSON.stringify(taskFine.body));
+
+    // A document: the supervisor and the coordinator are both checked.
+    const doc = (await pool.query(
+      `INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status)
+       VALUES ($1, 'Stale check file', 'file.pdf', '/uploads/stale-check.pdf', 'application/pdf', 10, 'Pending') RETURNING id`,
+      [f.sid]
+    )).rows[0].id;
+    made.documents.push(doc);
+    await pool.query(`UPDATE documents SET original_filename = 'file-2.pdf' WHERE id = $1`, [doc]);
+    await stale(`/api/documents/${doc}/review`, "PATCH", f.supervisor.token, { status: "Approved", review_notes: "" }, "document");
+    await stale(`/api/documents/${doc}/review`, "PATCH", coordinatorToken, { status: "Approved", review_notes: "" }, "document, coordinator");
+    assert.equal((await pool.query(`SELECT status FROM documents WHERE id = $1`, [doc])).rows[0].status, "Pending");
+    const docFine = await jsonRequest(`/api/documents/${doc}/review`, jsonBody(f.supervisor.token, "PATCH", { status: "Approved", review_notes: "", expected_version: 2 }));
+    assert.equal(docFine.response.status, 200, JSON.stringify(docFine.body));
+
+    // An absence.
+    const filed = await jsonRequest("/api/absences", jsonBody(f.mine.token, "POST", { date: shiftDay(f.phToday(), 4), reason: "A planned errand." }));
+    assert.equal(filed.response.status, 201, JSON.stringify(filed.body));
+    const absence = filed.body.absence.id;
+    await pool.query(`UPDATE absences SET reason = 'A planned errand, changed.' WHERE id = $1`, [absence]);
+    await stale(`/api/absences/${absence}/review`, "PATCH", f.supervisor.token, { status: "Excused", notes: "" }, "absence");
+    const absenceFine = await jsonRequest(`/api/absences/${absence}/review`, jsonBody(f.supervisor.token, "PATCH", { status: "Excused", notes: "", expected_version: 2 }));
+    assert.equal(absenceFine.response.status, 200, JSON.stringify(absenceFine.body));
+
+    // A weekly report.
+    const journal = (await pool.query(`INSERT INTO journals (student_id, week_start, activities, learnings) VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::date - 14, 'Did things.', 'Learned things.') RETURNING id`, [f.sid])).rows[0].id;
+    made.journals.push(journal);
+    await pool.query(`UPDATE journals SET activities = 'Did more things.' WHERE id = $1`, [journal]);
+    await stale(`/api/journals/${journal}/review`, "PATCH", f.supervisor.token, { status: "Reviewed", notes: "" }, "journal");
+    const journalFine = await jsonRequest(`/api/journals/${journal}/review`, jsonBody(f.supervisor.token, "PATCH", { status: "Reviewed", notes: "", expected_version: 2 }));
+    assert.equal(journalFine.response.status, 200, JSON.stringify(journalFine.body));
+
+    // An appeal, decided by the coordinator.
+    const appealed = await f.log({ daysAgo: 2, open: false });
+    const appeal = (await pool.query(
+      `INSERT INTO attendance_appeals (attendance_id, student_id, kind, reason) VALUES ($1, $2, 'attendance_rejection', 'It was right.') RETURNING id`,
+      [appealed, f.sid]
+    )).rows[0].id;
+    await pool.query(`UPDATE attendance_appeals SET reason = 'It was right, really.' WHERE id = $1`, [appeal]);
+    await stale(`/api/coordinator/appeals/${appeal}`, "PUT", coordinatorToken, { decision: "upheld", note: "The decision stands." }, "appeal");
+    assert.equal((await pool.query(`SELECT status FROM attendance_appeals WHERE id = $1`, [appeal])).rows[0].status, "open");
+    const appeals = await jsonRequest("/api/coordinator/appeals?status=open", { headers: authHeaders(coordinatorToken) });
+    assert.equal(Number(appeals.body.appeals.find((row) => row.id === appeal).version), 2);
+
+    // No version sent: decided as before (an older copy of the app).
+    const older = await f.log({ daysAgo: 3, open: false });
+    await pool.query(`UPDATE attendance SET note = 'edited' WHERE id = $1`, [older]);
+    const asBefore = await jsonRequest(`/api/attendance/${older}/status`, jsonBody(f.supervisor.token, "PATCH", { status: "Verified", expected_status: "Pending" }));
+    assert.equal(asBefore.response.status, 200, JSON.stringify(asBefore.body));
+  } finally {
+    await pool.query(`DELETE FROM attendance_appeals WHERE student_id = $1`, [f.sid]);
+    if (made.tasks.length) await pool.query(`DELETE FROM tasks WHERE id = ANY($1::int[])`, [made.tasks]);
+    if (made.documents.length) await pool.query(`DELETE FROM documents WHERE id = ANY($1::int[])`, [made.documents]);
+    if (made.journals.length) await pool.query(`DELETE FROM journals WHERE id = ANY($1::int[])`, [made.journals]);
+    await f.cleanup();
+  }
+});
+
+test("a stale version on another supervisor's record says nothing about it: the route refuses it as before", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("LEAK");
+  const pool = f.pool;
+  const other = `${f.sid}-X`;
+  try {
+    // An intern who is not this supervisor's.
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, 'x', 'Not yours', TRUE, NULL)`, [other, `${other.toLowerCase()}@rejection.test`]);
+    const log = (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 1, NOW() - INTERVAL '5 hours', NOW() - INTERVAL '1 hour', 4, 'Pending') RETURNING id`,
+      [other]
+    )).rows[0].id;
+    await pool.query(`UPDATE attendance SET note = 'edited' WHERE id = $1`, [log]);
+    const answer = await jsonRequest(`/api/attendance/${log}/status`, jsonBody(f.supervisor.token, "PATCH", { status: "Verified", expected_status: "Pending", expected_version: 1 }));
+    assert.notEqual(answer.response.status, 409, JSON.stringify(answer.body));
+    assert.notEqual(answer.body.code, "STALE");
+    assert.equal(answer.body.current, undefined);
+    assert.equal((await pool.query(`SELECT status FROM attendance WHERE id = $1`, [log])).rows[0].status, "Pending");
+  } finally {
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [other]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [other]);
+    await f.cleanup();
+  }
+});

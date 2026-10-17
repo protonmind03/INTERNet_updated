@@ -56,9 +56,14 @@ Optional, each can be added later:
   slash. Needed when the site answers on more than one address (for
   example an old Vercel address kept beside a new one); `FRONTEND_URL` is
   always allowed and is the address used in password-reset links.
-- `OFFLINE_ACTION_MAX_AGE_HOURS` (default 12, allowed 1 to 72): how old a
-  break, back-to-work or time-out recorded while a phone was offline may be
-  when it arrives. Older ones are refused.
+- `OFFLINE_MAX_AGE_HOURS_TIME_IN` (default 12), `OFFLINE_MAX_AGE_HOURS_LUNCH`
+  (default 12, out for lunch and back from lunch) and
+  `OFFLINE_MAX_AGE_HOURS_TIME_OUT` (default 24), each allowed 1 to 72: how old
+  a step recorded while a phone was offline may be when it arrives. Older
+  ones are refused. The phone shows the same limits in its "Waiting to
+  send" panel (GET /api/offline/limits).
+- `OFFLINE_ACTION_MAX_AGE_HOURS` (older, allowed 1 to 72): used for any of
+  the three above that is not set. Leave it unset to get the defaults.
 - `SUPERVISOR_DIGEST_TIME` (default `07:30`, Philippine time): when the
   supervisors' daily summary email goes out. Needs the email settings.
 - `COORDINATOR_DIGEST_DAY` (default `MON`) and `COORDINATOR_DIGEST_TIME`

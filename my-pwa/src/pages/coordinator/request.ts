@@ -25,13 +25,20 @@ export async function coordinatorRequest<T = Record<string, unknown>>(
   );
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(
+    const failure: Error & { code?: string } = new Error(
       typeof data.message === "string" && data.message
         ? data.message
         : "The request could not be completed."
     );
+    if (typeof data.code === "string") failure.code = data.code;
+    throw failure;
   }
   return data as T;
+}
+
+/** True when a decision was refused because someone else changed the record first (409 STALE). */
+export function changedByOthers(error: unknown): boolean {
+  return error instanceof Error && (error as Error & { code?: string }).code === "STALE";
 }
 
 /** Downloads a submitted document through the coordinator's session. */

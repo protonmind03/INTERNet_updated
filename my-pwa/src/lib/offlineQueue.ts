@@ -1,6 +1,7 @@
 import { API_URL, withStudentAuth } from "./api";
 import { notifyDataChanged } from "./navCounts";
 import { dequeue, enqueue, queued, requeue } from "./offlineStore";
+import { checkReachable, markUnreachable, REACHABILITY_CHANGED, watchReachability } from "./reachability";
 import { cue } from "./cues";
 import { toast } from "./toast";
 
@@ -28,8 +29,10 @@ import { toast } from "./toast";
 | a log (the supervisor recorded the time-in in person meanwhile), the
 | waiting steps go to that log instead.
 |
-| The queue is sent when the app starts, when the phone reports that it is
-| online again, and when the app is brought back to the front. If an
+| The queue is sent when the app starts, when the server can be reached
+| again (lib/reachability.ts: the phone's "online" is only a hint, the
+| server's /api/health has the last word), and when the app is brought back
+| to the front. Nothing is sent while the server cannot be reached. If an
 | attempt cannot get through it is repeated (after 3 seconds, then 6, 12,
 | and so on up to once a minute) for as long as steps are waiting. Background
 | Sync is not used: it would run in the service worker, which cannot read
@@ -55,10 +58,19 @@ export type QueuedStep = {
   extra?: Record<string, unknown>;
   /** A time-in's photo, when the camera check ran offline; sent as a form with `extra`. */
   photo?: Blob;
+  /** How many times sending it has been tried and has not got through. */
+  attempts?: number;
+  /** When it was last tried, ISO. */
+  lastTriedAt?: string;
+  /** Why the last try did not get through, in words for the student. */
+  lastError?: string;
 };
 
 /** Sent to the pages that show attendance, so they reload after a step is sent. */
 export const QUEUE_CHANGED = "internet-offline-queue";
+
+/** Sent when a try did not get through, so the "Waiting to send" panel can show why. Nothing on the server changed. */
+export const QUEUE_TRIED = "internet-offline-queue-tried";
 
 const STEP_NAMES: Record<QueuedPath, string> = {
   "time-in": "time-in",
@@ -122,6 +134,52 @@ export async function waitingSteps(): Promise<QueuedStep[]> {
   }
 }
 
+/** The same, with the id each is kept under, for the "Waiting to send" panel. */
+export async function waitingRows(): Promise<{ id: number; step: QueuedStep }[]> {
+  try {
+    return (await queued<QueuedStep>("student")).map((row) => ({ id: row.id, step: row.data }));
+  } catch {
+    return [];
+  }
+}
+
+/** Tries again now, with the waits started over. */
+export function retryWaitingSteps(): Promise<void> {
+  window.clearTimeout(retryTimer);
+  retryDelay = 0;
+  return sendWaitingSteps();
+}
+
+/**
+ * Throws away one waiting step, after the student has confirmed it. A
+ * time-in takes the steps waiting behind it with it: without it they have
+ * no log to go on. Returns how many were thrown away.
+ */
+export async function discardWaitingStep(id: number): Promise<number> {
+  const rows = await waitingRows();
+  const row = rows.find((candidate) => candidate.id === id);
+  if (!row) return 0;
+  const going = [row];
+  if (row.step.path === "time-in") {
+    going.push(...rows.filter((other) => other.id !== id && other.step.logId === LOCAL_LOG_ID));
+  }
+  for (const each of going) await dequeue(each.id).catch(() => {});
+  window.dispatchEvent(new Event(QUEUE_CHANGED));
+  notifyDataChanged();
+  return going.length;
+}
+
+/** Writes down a try that did not get through, so the panel can say why. */
+async function noteFailure(row: { id: number; data: QueuedStep }, lastError: string): Promise<void> {
+  await requeue(row.id, {
+    ...row.data,
+    attempts: (row.data.attempts ?? 0) + 1,
+    lastTriedAt: new Date().toISOString(),
+    lastError,
+  }).catch(() => {});
+  window.dispatchEvent(new Event(QUEUE_TRIED));
+}
+
 let sending: Promise<void> | null = null;
 let retryTimer = 0;
 let retryDelay = 0;
@@ -167,8 +225,11 @@ async function send(): Promise<"done" | "waiting"> {
     return "done";
   }
   if (rows.length === 0) return "done";
-  // The phone's own "offline" is believed; its "online" is tested by trying.
-  if (!navigator.onLine) return "waiting";
+  // Sent only when the server answers; the phone's "online" is only a hint.
+  if (!(await checkReachable())) {
+    await noteFailure(rows[0], navigator.onLine ? "The server could not be reached." : "This phone has no connection.");
+    return "waiting";
+  }
 
   let stillWaiting = false;
   let sent = 0;
@@ -222,11 +283,14 @@ async function send(): Promise<"done" | "waiting"> {
       );
     } catch {
       // No connection yet: keep this step and everything after it, and try again.
+      markUnreachable();
+      await noteFailure(row, "The connection dropped while sending.");
       stillWaiting = true;
       break;
     }
     // The server is having trouble: try again.
     if (response.status >= 500) {
+      await noteFailure(row, `The server had a problem (error ${response.status}). It will try again.`);
       stillWaiting = true;
       break;
     }
@@ -238,6 +302,9 @@ async function send(): Promise<"done" | "waiting"> {
         toast.info(
           "Your time-in is still waiting on this phone. Agree to the privacy notice in your Profile and it will be sent."
         );
+        await noteFailure(row, "Agree to the privacy notice in your Profile first.");
+      } else {
+        await noteFailure(row, "Your session has ended. Sign in again and it will be sent.");
       }
       break;
     }
@@ -307,5 +374,13 @@ export function watchOfflineQueue(): void {
   });
   // Signed in again: send what waited while the session was over.
   window.addEventListener("internet-auth-changed", attempt);
+  // The server answers again: send at once, with the waits started over.
+  window.addEventListener(REACHABILITY_CHANGED, (event) => {
+    if ((event as CustomEvent<boolean | null>).detail === true) {
+      retryDelay = 0;
+      attempt();
+    }
+  });
+  watchReachability();
   attempt();
 }

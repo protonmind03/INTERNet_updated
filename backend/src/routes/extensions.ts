@@ -11,6 +11,7 @@ import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverable
 import { bindFilters, filterConditions, hasFilters, readStudentFilters, type StudentFilters } from "../services/studentScope";
 import { coordinatorAlerts, programmeReport } from "../services/insights";
 import { keptProjectionsFor, projectionsChanged } from "../services/projection";
+import { staleDecision } from "../services/versions";
 import { uploadQuota } from "../services/uploadQuota";
 import { sameId, sqlSameId } from "../services/ids";
 
@@ -82,7 +83,7 @@ const JOURNAL_MAX = 3000;
 const JOURNAL_COLUMNS = `
   j.id, j.student_id, TO_CHAR(j.week_start, 'YYYY-MM-DD') AS week_start,
   j.activities, j.learnings, j.challenges, j.solutions, j.status, j.review_notes,
-  j.submitted_at, j.updated_at, j.reviewed_at,
+  j.submitted_at, j.updated_at, j.reviewed_at, j.version,
   (SELECT COUNT(*)::int FROM attachments px WHERE px.owner_type = 'journal' AND px.owner_id = j.id AND px.removed_at IS NULL) AS pictures
 `;
 
@@ -158,7 +159,7 @@ export function registerExtensionRoutes(
 
   const ABSENCE_COLUMNS = `
     a.id, a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date, a.reason,
-    a.status, a.review_notes, a.reviewed_at, a.created_at
+    a.status, a.review_notes, a.reviewed_at, a.created_at, a.version
   `;
 
   app.post("/api/absences", requireRole("student"), async (req, res) => {
@@ -347,6 +348,9 @@ export function registerExtensionRoutes(
         if (!/^\d+$/.test(String(req.params.id))) {
           return res.status(404).json({ message: "Absence not found." });
         }
+        // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+        const stale = await staleDecision(pool, "absence", String(req.params.id), req.body, auth);
+        if (stale) return res.status(409).json(stale);
 
         // "Pending" withdraws a decision made by mistake.
         if (status !== "Excused" && status !== "Unexcused" && status !== "Pending") {
@@ -2922,6 +2926,9 @@ export function registerExtensionRoutes(
       if (!/^\d{1,9}$/.test(String(req.params.id))) {
         return res.status(404).json({ message: "Weekly report not found." });
       }
+      // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+      const stale = await staleDecision(pool, "journal", String(req.params.id), req.body, auth);
+      if (stale) return res.status(409).json(stale);
       // "Submitted" withdraws a decision made by mistake.
       if (status !== "Reviewed" && status !== "Returned" && status !== "Submitted") {
         return res.status(400).json({ message: "Status must be Reviewed, Returned, or Submitted." });

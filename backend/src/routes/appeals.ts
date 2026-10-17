@@ -1,4 +1,5 @@
 import type express from "express";
+import { staleDecision } from "../services/versions";
 import type { Pool, PoolClient } from "pg";
 import { syncLivenessStrict } from "../services/liveness";
 import { removeMissedRedoAbsence } from "../services/photoRedo";
@@ -174,7 +175,7 @@ export function registerAppealRoutes(app: express.Express, deps: Dependencies): 
       const status = String(req.query.status ?? "open");
       if (!["open", "decided", "all"].includes(status)) return res.status(400).json({ message: "Show open, decided or all appeals." });
       const result = await pool.query(
-        `SELECT p.id, p.kind, p.reason, p.status, p.decision_note, p.created_at, p.decided_at, p.withdrawn_at,
+        `SELECT p.id, p.kind, p.reason, p.status, p.decision_note, p.created_at, p.decided_at, p.withdrawn_at, p.version,
                 p.attendance_id, p.student_id, s.name AS student_name, sup.name AS supervisor_name,
                 TO_CHAR(a.date, 'YYYY-MM-DD') AS date, a.status AS log_status, a.time_in, a.break_time,
                 a.break_end_time, a.time_out, a.hours, a.review_notes, a.photo_rejection_reason,
@@ -201,6 +202,9 @@ export function registerAppealRoutes(app: express.Express, deps: Dependencies): 
     try {
       const auth = (req as Authed).auth!;
       if (!/^\d{1,9}$/.test(String(req.params.id))) return res.status(404).json({ message: "Appeal not found." });
+      // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+      const stale = await staleDecision(pool, "appeal", String(req.params.id), req.body, auth);
+      if (stale) return res.status(409).json(stale);
       const decision = req.body?.decision;
       const note = typeof req.body?.note === "string" ? req.body.note.trim() : "";
       if (decision !== "upheld" && decision !== "overturned") return res.status(400).json({ message: "Uphold or overturn the decision." });

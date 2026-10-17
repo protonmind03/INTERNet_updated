@@ -27,6 +27,46 @@ export function offlineMaxAgeHours(raw: string | undefined = process.env.OFFLINE
   return Number.isFinite(value) && value >= 1 && value <= 72 ? value : DEFAULT_MAX_AGE_HOURS;
 }
 
+/*
+| Iteration 12: each kind of step has its own limit. A time-in or a lunch
+| step is about today and goes stale quickly; a time-out recorded at the end
+| of a shift may only get a signal the next morning.
+|
+|   OFFLINE_MAX_AGE_HOURS_TIME_IN    default 12
+|   OFFLINE_MAX_AGE_HOURS_LUNCH      default 12 (out for lunch, back from lunch)
+|   OFFLINE_MAX_AGE_HOURS_TIME_OUT   default 24
+|
+| Each falls back to the old OFFLINE_ACTION_MAX_AGE_HOURS when it is not
+| set, and to its default when neither is. Allowed: 1 to 72.
+*/
+export type OfflineStepKind = "time-in" | "lunch" | "time-out";
+
+const STEP_DEFAULTS: Record<OfflineStepKind, number> = { "time-in": 12, lunch: 12, "time-out": 24 };
+const STEP_VARIABLES: Record<OfflineStepKind, string> = {
+  "time-in": "OFFLINE_MAX_AGE_HOURS_TIME_IN",
+  lunch: "OFFLINE_MAX_AGE_HOURS_LUNCH",
+  "time-out": "OFFLINE_MAX_AGE_HOURS_TIME_OUT",
+};
+
+const allowedHours = (raw: string | undefined): number | null => {
+  const value = Number(raw);
+  return raw !== undefined && raw !== "" && Number.isFinite(value) && value >= 1 && value <= 72 ? value : null;
+};
+
+/** How old an offline step of this kind may be when it arrives. */
+export function offlineMaxAgeHoursFor(kind: OfflineStepKind, env: Record<string, string | undefined> = process.env): number {
+  return allowedHours(env[STEP_VARIABLES[kind]]) ?? allowedHours(env.OFFLINE_ACTION_MAX_AGE_HOURS) ?? STEP_DEFAULTS[kind];
+}
+
+/** All three, for the phone's "Waiting to send" panel (GET /api/offline/limits). */
+export function offlineLimits(env: Record<string, string | undefined> = process.env): Record<OfflineStepKind, number> {
+  return {
+    "time-in": offlineMaxAgeHoursFor("time-in", env),
+    lunch: offlineMaxAgeHoursFor("lunch", env),
+    "time-out": offlineMaxAgeHoursFor("time-out", env),
+  };
+}
+
 export type OfflineStamp =
   | { kind: "live" }
   | { kind: "invalid"; status: 400 | 409; message: string }
@@ -50,7 +90,7 @@ export function readOfflineStamp(
   action: OfflineAction,
   log: LogTimes | null,
   now: Date = new Date(),
-  maxAgeHours: number = offlineMaxAgeHours()
+  maxAgeHours: number = offlineMaxAgeHoursFor(action === "time-out" ? "time-out" : "lunch")
 ): OfflineStamp {
   const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   const rawTime = input.occurred_at;

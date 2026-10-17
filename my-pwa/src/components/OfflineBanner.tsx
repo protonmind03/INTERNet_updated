@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import Icon from "./Icon";
 import { useReportedHeight } from "../lib/layers";
 
@@ -32,6 +33,9 @@ export default function OfflineBanner() {
     >
       <Icon name="alert" size={16} className="shrink-0 text-gold-300" />
       You're offline. Most changes can't be saved until your connection is back.
+      <Link to="/help#offline" className="shrink-0 rounded underline underline-offset-2 hover:text-gold-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold-300">
+        What still works
+      </Link>
     </div>
   );
 }

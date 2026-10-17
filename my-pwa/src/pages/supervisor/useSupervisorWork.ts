@@ -51,6 +51,8 @@ export type AttendanceEntry = {
   hours: number | string | null;
   note: string | null;
   status: "Pending" | "Verified" | "Rejected" | "Flagged";
+  /** Moves on every change (migration 062); sent back with a decision. Missing from an older server. */
+  version?: number;
   image_url: string | null;
   review_notes: string | null;
   verified_at: string | null;
@@ -120,6 +122,8 @@ export type TaskEntry = {
   description: string | null;
   priority: "High" | "Medium" | "Low" | null;
   status: TaskStatus;
+  /** Moves on every change (migration 062); sent back with a decision. Missing from an older server. */
+  version?: number;
   due_date: string | null;
   created_at: string;
   submission_notes: string | null;
@@ -150,6 +154,8 @@ export type DocumentEntry = {
   mime_type: string | null;
   size_bytes: number | string;
   status: "Pending" | "Approved" | "Rejected";
+  /** Moves on every change (migration 062); sent back with a decision. Missing from an older server. */
+  version?: number;
   review_notes: string | null;
   uploaded_at: string;
   reviewed_at: string | null;
@@ -162,6 +168,8 @@ export type AbsenceEntry = {
   date: string;
   reason: string;
   status: "Pending" | "Excused" | "Unexcused";
+  /** Moves on every change (migration 062); sent back with a decision. Missing from an older server. */
+  version?: number;
   review_notes: string | null;
   created_at: string;
 };
@@ -181,6 +189,8 @@ export type JournalEntry = {
   /** Missing on a report written before the field existed. */
   solutions?: string | null;
   status: "Submitted" | "Reviewed" | "Returned";
+  /** Moves on every change (migration 062); sent back with a decision. Missing from an older server. */
+  version?: number;
   /** What the supervisor wrote; on a resubmitted journal, what they asked for. */
   review_notes: string | null;
   submitted_at: string;
@@ -384,6 +394,22 @@ export function useSupervisorWork(
     );
   }, [attendance, tasks, documents, absences, journals]);
 
+  /*
+  | Iteration 12: each decision sends the version of the record as this
+  | screen last loaded it (expected_version). If someone else changed it in
+  | between, the server refuses with 409 and says how it is now; the message
+  | is shown and the reload below brings the screen up to date.
+  */
+  const seen = useRef({ attendance, tasks, documents, absences, journals });
+  useEffect(() => {
+    seen.current = { attendance, tasks, documents, absences, journals };
+  }, [attendance, tasks, documents, absences, journals]);
+  const versionOf = useCallback(
+    (list: "attendance" | "tasks" | "documents" | "absences" | "journals", id: number): number | undefined =>
+      (seen.current[list] as { id: number; version?: number }[]).find((item) => item.id === id)?.version,
+    []
+  );
+
   /**
    * Runs one change, then reloads. The reload also happens when the change
    * is refused, because a refusal usually means the item was changed by
@@ -423,12 +449,13 @@ export function useSupervisorWork(
             status,
             reason: reason?.trim() || undefined,
             expected_status: expected,
+            expected_version: versionOf("attendance", id),
             confirm_offline_time_in: confirmOfflineTimeIn || undefined,
           },
           "The attendance log could not be updated."
         )
       ),
-    [change]
+    [change, versionOf]
   );
 
   /**
@@ -438,9 +465,14 @@ export function useSupervisorWork(
   const rejectTimeIn = useCallback(
     (id: number, reason: string) =>
       change(() =>
-        sendJson("POST", `/api/attendance/${id}/reject-time-in`, { reason: reason.trim() }, "The time-in photo could not be rejected.")
+        sendJson(
+          "POST",
+          `/api/attendance/${id}/reject-time-in`,
+          { reason: reason.trim(), expected_version: versionOf("attendance", id) },
+          "The time-in photo could not be rejected."
+        )
       ),
-    [change]
+    [change, versionOf]
   );
 
   /** Takes back a photo rejection made in the last 15 minutes, while no new photo has been taken. */
@@ -512,7 +544,7 @@ export function useSupervisorWork(
           await sendJson(
             "PATCH",
             `/api/attendance/${id}/status`,
-            { status: "Verified", expected_status: "Pending" },
+            { status: "Verified", expected_status: "Pending", expected_version: versionOf("attendance", id) },
             "A log could not be saved."
           );
           done += 1;
@@ -525,7 +557,7 @@ export function useSupervisorWork(
       notifyDataChanged();
       return { done, failure };
     },
-    [load]
+    [load, versionOf]
   );
 
   /**
@@ -546,13 +578,13 @@ export function useSupervisorWork(
             ? sendJson(
                 "PATCH",
                 `/api/documents/${id}/review`,
-                { status: "Approved", review_notes: "" },
+                { status: "Approved", review_notes: "", expected_version: versionOf("documents", id) },
                 "A document could not be saved."
               )
             : sendJson(
                 "PATCH",
                 `/api/absences/${id}/review`,
-                { status: "Excused", notes: "" },
+                { status: "Excused", notes: "", expected_version: versionOf("absences", id) },
                 "An absence could not be saved."
               ));
           done += 1;
@@ -565,7 +597,7 @@ export function useSupervisorWork(
       notifyDataChanged();
       return { done, failure };
     },
-    [load]
+    [load, versionOf]
   );
 
   const decideTask = useCallback(
@@ -574,11 +606,11 @@ export function useSupervisorWork(
         sendJson(
           "PATCH",
           `/api/tasks/${id}/review`,
-          { status, review_notes: notes.trim(), review_rating: rating || null },
+          { status, review_notes: notes.trim(), review_rating: rating || null, expected_version: versionOf("tasks", id) },
           "The task review could not be saved."
         )
       ),
-    [change]
+    [change, versionOf]
   );
 
   const undoTask = useCallback(
@@ -595,11 +627,11 @@ export function useSupervisorWork(
         sendJson(
           "PATCH",
           `/api/documents/${id}/review`,
-          { status, review_notes: notes.trim() },
+          { status, review_notes: notes.trim(), expected_version: versionOf("documents", id) },
           "The document review could not be saved."
         )
       ),
-    [change]
+    [change, versionOf]
   );
 
   const undoDocument = useCallback(
@@ -622,11 +654,11 @@ export function useSupervisorWork(
         sendJson(
           "PATCH",
           `/api/absences/${id}/review`,
-          { status, notes: notes.trim() },
+          { status, notes: notes.trim(), expected_version: versionOf("absences", id) },
           "The absence could not be reviewed."
         )
       ),
-    [change]
+    [change, versionOf]
   );
 
   const decideJournal = useCallback(
@@ -636,11 +668,11 @@ export function useSupervisorWork(
         sendJson(
           "PATCH",
           `/api/journals/${id}/review`,
-          { status, notes: notes.trim() },
+          { status, notes: notes.trim(), expected_version: versionOf("journals", id) },
           "The weekly report could not be reviewed."
         )
       ),
-    [change]
+    [change, versionOf]
   );
 
   return {

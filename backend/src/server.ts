@@ -40,6 +40,7 @@ import { registerSupervisorDeskRoutes } from "./routes/supervisorDesk";
 import { registerProgrammeRoutes } from "./routes/programme";
 import { readPattern } from "./services/schedules";
 import { projectionsChanged } from "./services/projection";
+import { staleDecision } from "./services/versions";
 import { readRange } from "./services/analyticsRange";
 import { registerDeliverableRoutes } from "./routes/deliverables";
 import {
@@ -3647,6 +3648,9 @@ app.post(
       const auth = (req as AuthedRequest).auth!;
       const id = String(req.params.id);
       if (!/^\d{1,15}$/.test(id)) return res.status(404).json({ message: "Attendance record not found." });
+      // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+      const stale = await staleDecision(pool, "attendance", id, req.body, auth);
+      if (stale) return res.status(409).json(stale);
       const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
       if (reason.length < 5) {
         return res.status(400).json({ message: "Say what is wrong with the photo. The intern will see it." });
@@ -3959,6 +3963,7 @@ app.get(
             a.offline_attestation,
             a.rejection_scope,
             a.photo_rejection_reason,
+            a.version,
             a.photo_redo_status,
             a.photo_redo_due_at,
             a.rejected_photo_path,
@@ -4589,6 +4594,9 @@ app.patch(
       if (!/^\d{1,15}$/.test(String(id))) {
         return res.status(404).json({ message: "Attendance record not found." });
       }
+      // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+      const stale = await staleDecision(pool, "attendance", String(id), req.body, auth!);
+      if (stale) return res.status(409).json(stale);
 
       // The status the reviewer was looking at. When it is sent, the decision
       // is saved only if the log is still in that state, so two reviewers
@@ -7911,6 +7919,9 @@ app.patch(
       }
       const { id } = req.params;
       const { status, review_notes, review_rating } = req.body;
+      // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+      const stale = await staleDecision(pool, "task", String(id), req.body, auth);
+      if (stale) return res.status(409).json(stale);
 
       if (!["Reviewed", "In Progress"].includes(status)) {
         return res.status(400).json({
@@ -9527,7 +9538,7 @@ app.get(
         `
         SELECT d.id, d.student_id, s.name AS student_name, d.doc_type,
                d.original_filename, d.mime_type, d.size_bytes, d.status,
-               d.review_notes, d.uploaded_at, d.reviewed_at
+               d.review_notes, d.uploaded_at, d.reviewed_at, d.version
         FROM documents d
         INNER JOIN students s ON s.student_id = d.student_id
         WHERE s.supervisor_id = $1
@@ -9566,7 +9577,7 @@ app.get(
           SELECT d.id, d.student_id, s.name AS student_name, s.program,
                  s.company, sup.name AS supervisor_name, d.doc_type,
                  d.original_filename, d.mime_type, d.size_bytes, d.status,
-                 d.review_notes, d.uploaded_at, d.reviewed_at,
+                 d.review_notes, d.uploaded_at, d.reviewed_at, d.version,
                  CASE WHEN ${coordinatorReviews("d")} THEN 'coordinator' ELSE 'supervisor' END AS reviewer_role
           FROM documents d
           LEFT JOIN students s ON s.student_id = d.student_id
@@ -9688,6 +9699,9 @@ app.patch(
     }
 
     try {
+      // Iteration 12: decided by someone else since it was opened? Say so, with how it is now.
+      const stale = await staleDecision(pool, "document", documentId, req.body, auth);
+      if (stale) return res.status(409).json(stale);
       const result = await pool.query(
         `
         UPDATE documents d

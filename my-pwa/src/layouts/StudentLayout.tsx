@@ -15,6 +15,7 @@ import { signOut as endSession, useAccount } from "../lib/session";
 import TimeInFab from "../pages/student/TimeInFab";
 import TimeInProvider from "../pages/student/TimeInProvider";
 import { PhotoRedoBanner } from "../pages/student/PhotoRedo";
+import WaitingToSend from "../pages/student/WaitingToSend";
 import { useStudentProgress } from "../pages/student/useStudentProgress";
 
 /*
@@ -243,6 +244,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
             </div>
             <SavedDataNotice />
             <PhotoRedoBanner />
+            <WaitingToSend />
             {children}
           </FolderShell>
           <MessageThreadHost role="student" />
