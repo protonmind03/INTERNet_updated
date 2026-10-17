@@ -563,7 +563,7 @@ export function JournalsSection({
 export function ScheduleSection({ data, onSaved }: { data: Overview; onSaved: () => void }) {
   return (
     <>
-      <SectionHead title="Weekly schedule" description="The days and hours this student reports for OJT. They see it on their Schedule page, and their projected finish is worked out from it." />
+      <SectionHead title="Schedule" description="The days and hours this student reports for OJT, every week or every two weeks. They see it on their Schedule page, and their expected end date is worked out from it." />
       <Card>
         <div className="px-4 py-4 sm:px-5">
           <ScheduleEditor

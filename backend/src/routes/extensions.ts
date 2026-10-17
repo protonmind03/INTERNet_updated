@@ -1518,14 +1518,12 @@ export function registerExtensionRoutes(
             [id]
           ),
           pool.query(
-            // The week in force today of a two-week pattern: the record reads its schedule as one
-            // week (its Schedule tab edits the whole pattern, from its own route).
+            // Every row with its week; the record reads the pattern (student.schedule_weeks/anchor).
             `SELECT o.id, COALESCE(o.week, 1)::int AS week, o.day, TO_CHAR(o.start_time, 'HH24:MI') AS start_time,
                     TO_CHAR(o.end_time, 'HH24:MI') AS end_time, o.focus, o.hours
-             FROM ojt_schedule o JOIN students st ON st.student_id = o.student_id
+             FROM ojt_schedule o
              WHERE o.student_id = $1 AND o.is_active = TRUE
-               AND COALESCE(o.week, 1) = ojt_pattern_week(st.schedule_anchor, st.schedule_weeks, ${phSql.today})
-             ORDER BY CASE o.day
+             ORDER BY COALESCE(o.week, 1), CASE o.day
                WHEN 'Monday' THEN 1 WHEN 'Tuesday' THEN 2 WHEN 'Wednesday' THEN 3
                WHEN 'Thursday' THEN 4 WHEN 'Friday' THEN 5 WHEN 'Saturday' THEN 6
                WHEN 'Sunday' THEN 7 ELSE 8 END`,

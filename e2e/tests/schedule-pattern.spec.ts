@@ -62,7 +62,22 @@ test("a two-week pattern from the record's Schedule tab, read by the student, th
     await expect(sp.getByText(/Repeats every two weeks/)).toBeVisible();
     await expect(sp.getByRole("heading", { name: /^This week, week [12] of 2$/ })).toBeVisible();
     await expect(sp.getByRole("heading", { name: /^Next week, week [12] of 2$/ })).toBeVisible();
+    // The finish date says how it was worked out.
+    await sp.goto("/schedule?view=progress");
+    await sp.getByText("How this was worked out").click();
+    await expect(sp.getByText(/The schedule repeats every two weeks/)).toBeVisible();
     await studentContext.close();
+
+    // The coordinator's record reads the pattern too: its overview and its Schedule tab.
+    const recordContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+    const rp = await recordContext.newPage();
+    await signIn(rp, "coordinator");
+    await rp.goto(`/coordinator/students/${encodeURIComponent(id)}`);
+    await expect(rp.getByRole("heading", { level: 1, name })).toBeVisible({ timeout: 20_000 });
+    await rp.goto(`/coordinator/students/${encodeURIComponent(id)}?tab=schedule`);
+    await expect(rp.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible();
+    await expect(rp.getByRole("radio", { name: "Every two weeks" })).toBeChecked();
+    await recordContext.close();
 
     // The supervisor's intern page says how it repeats.
     const supervisorContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });

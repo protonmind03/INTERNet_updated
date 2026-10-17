@@ -2,6 +2,7 @@ import type { IconName } from "../../../components/Icon";
 import { phDateKey } from "../../../lib/format";
 import { hoursBetween } from "../scheduleRows";
 import { formatPhDay } from "../../../lib/phTime";
+import { patternWeek } from "../../../lib/schedulePattern";
 
 /*
 |--------------------------------------------------------------------------
@@ -24,6 +25,9 @@ export type Student = {
   program: string | null;
   company: string | null;
   required_hours: number;
+  /** How the schedule repeats (migration 061); one week when missing. */
+  schedule_weeks?: number | null;
+  schedule_anchor?: string | null;
   is_active: boolean;
   completed_at: string | null;
   /** When the student asked for a completion review, if they have. */
@@ -100,6 +104,8 @@ export type Absence = {
 
 export type ScheduleDay = {
   id: number;
+  /** Which week of a two-week pattern (Iteration 11); 1 when missing. */
+  week?: number | null;
   day: string;
   start_time: string;
   end_time: string;
@@ -262,10 +268,11 @@ export const plural = (count: number, one: string, many: string) => `${count} ${
 
 export type Shift = { start: string; end: string; hours: number; focus: string | null };
 
-/** The weekly schedule by weekday name. */
-export function shiftsOf(schedule: ScheduleDay[]): Record<string, Shift> {
+/** The weekly schedule by weekday name (one week of the pattern: `week`, 1 when not given). */
+export function shiftsOf(schedule: ScheduleDay[], week = 1): Record<string, Shift> {
   const shifts: Record<string, Shift> = {};
   for (const row of schedule) {
+    if ((Number(row.week) || 1) !== week) continue;
     const start = String(row.start_time).slice(0, 5);
     const end = String(row.end_time).slice(0, 5);
     const given = Number(row.hours);
@@ -301,7 +308,11 @@ export type DayInfo = {
 export type RecordContext = {
   today: string;
   lateAfter: number;
+  /** Week 1's shifts by weekday: the whole schedule for a one-week pattern. */
   shifts: Record<string, Shift>;
+  /** Week 2's, for a schedule that repeats every two weeks (Iteration 11). */
+  shiftsWeek2: Record<string, Shift>;
+  pattern: { weeks: number; anchor: string | null };
   logs: Map<string, Log>;
   absences: Map<string, Absence>;
   holidays: Map<string, { date: string; name: string }>;
@@ -321,7 +332,9 @@ export function recordContext(
   return {
     today,
     lateAfter,
-    shifts: shiftsOf(data.schedule),
+    shifts: shiftsOf(data.schedule, 1),
+    shiftsWeek2: shiftsOf(data.schedule, 2),
+    pattern: { weeks: Number(data.student.schedule_weeks) || 1, anchor: data.student.schedule_anchor ?? null },
     logs,
     absences: new Map(data.absences.map((item) => [dateKey(item.date), item])),
     holidays: new Map(holidays.map((item) => [dateKey(item.date), item])),
@@ -330,9 +343,15 @@ export function recordContext(
   };
 }
 
+/** The shift of a date: its weekday, in the week of the pattern that date falls in. */
+export function shiftOn(ctx: RecordContext, date: string): Shift | undefined {
+  const week = patternWeek(ctx.pattern.anchor, ctx.pattern.weeks, date);
+  return (week === 2 ? ctx.shiftsWeek2 : ctx.shifts)[WEEKDAYS[weekdayOf(date)]];
+}
+
 /** Minutes late for a log, against the schedule as it is now (the server's rule). */
 export function lateMinutesOf(ctx: RecordContext, log: Log): number {
-  const shift = ctx.shifts[WEEKDAYS[weekdayOf(dateKey(log.date))]];
+  const shift = shiftOn(ctx, dateKey(log.date));
   const arrived = minutesOf(log.time_in);
   if (!shift || arrived === null) return 0;
   const late = arrived - clockMinutes(shift.start);
@@ -344,7 +363,7 @@ export function dayInfo(ctx: RecordContext, date: string): DayInfo {
   const absence = ctx.absences.get(date);
   const holiday = ctx.holidays.get(date);
   const weekday = weekdayOf(date);
-  const shift = holiday ? undefined : ctx.shifts[WEEKDAYS[weekday]];
+  const shift = holiday ? undefined : shiftOn(ctx, date);
   let kind: DayKind;
   if (log) kind = isOpenLog(log) ? "open" : log.status === "Verified" ? "verified" : log.status === "Rejected" ? "rejected" : "pending";
   else if (absence) kind = absence.status === "Unexcused" ? "unexcused" : "absent";
@@ -412,7 +431,7 @@ export function buildWeeks(ctx: RecordContext, data: Overview, projectedFinish: 
     const holidays = [...ctx.holidays.values()].filter((item) => within(item.date) && weekdayOf(dateKey(item.date)) % 6 !== 0);
     const planned = Array.from({ length: 7 }, (_, day) => addDays(start, day))
       .filter((date) => !ctx.holidays.has(date))
-      .reduce((sum, date) => sum + (ctx.shifts[WEEKDAYS[weekdayOf(date)]]?.hours || 0), 0);
+      .reduce((sum, date) => sum + (shiftOn(ctx, date)?.hours || 0), 0);
     const verified = logs.filter((log) => log.status === "Verified").reduce((sum, log) => sum + logHours(log), 0);
     const absences = data.absences.filter((item) => within(item.date));
     if (!future) {

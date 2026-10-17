@@ -396,7 +396,7 @@ test.describe("the coordinator's console", () => {
     await signIn(page, "coordinator");
     await page.goto(`/coordinator/students/${encodeURIComponent(student.id)}?tab=schedule`);
     await expect(page.getByRole("tab", { name: "Schedule" })).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("heading", { name: "Weekly schedule" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Schedule", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save schedule" })).toBeDisabled();
     await expect(page.getByRole("button", { name: "Add a day" })).toBeVisible();
 

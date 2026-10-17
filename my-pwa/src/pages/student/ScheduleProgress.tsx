@@ -16,6 +16,7 @@ import {
 } from "../../lib/studentCalendar";
 import { useProjections } from "../../lib/useProjections";
 import { useTimeIn } from "./timeInContext";
+import ProjectionHow from "../../components/ProjectionHow";
 
 /*
 |--------------------------------------------------------------------------
@@ -213,10 +214,11 @@ export default function ScheduleProgress({
             </p>
             <p className="mt-1 text-sm text-slate-700">
               At your schedule of {formatHours(projection.weekly_hours)} a week, with{" "}
-              {formatHours(projection.remaining_hours)} still to verify. Holidays are already left
-              out. It is an estimate from your schedule: working more or fewer hours than scheduled
-              moves it.
+              {formatHours(projection.remaining_hours)} still to verify. Holidays and approved absences
+              are already left out. It is an estimate from your schedule: working more or fewer hours
+              than scheduled moves it.
             </p>
+            {student?.student_id && <ProjectionHow role="student" studentId={student.student_id} />}
             {projection.at_risk && (
               <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
                 {projection.risk_reason} Talk to your supervisor or OJT coordinator about your
