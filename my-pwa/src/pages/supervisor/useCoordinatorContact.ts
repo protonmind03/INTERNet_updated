@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 
-export type CoordinatorContact = { name: string; email: string; department?: string | null };
+export type CoordinatorContact = { coordinator_id: number | string; name: string; email: string; department?: string | null };
 
 // Asked for once per sign-in, however many pages are opened.
 const known = new Map<string, CoordinatorContact | null>();

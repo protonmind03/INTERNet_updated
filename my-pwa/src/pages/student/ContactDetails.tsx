@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ComposeMessage from "../../components/ComposeMessage";
 import { Button, Card, FormError, FormField } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { errorText, toast } from "../../lib/toast";
@@ -9,7 +10,15 @@ export type Contact = {
   emergency_contact_phone: string | null;
 };
 
-export type Coordinator = { name: string; email: string; department: string | null };
+export type Coordinator = { coordinator_id: number | string; name: string; email: string; department: string | null };
+
+export type Supervisor = {
+  supervisor_id: number | string;
+  name: string;
+  email: string | null;
+  company: string | null;
+  department: string | null;
+};
 
 const PHONE = /^[0-9+() .-]{7,20}$/;
 
@@ -132,6 +141,7 @@ export default function ContactDetails({
 
 /** Who runs the OJT programme for this student, and how to reach them. */
 export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | null }) {
+  const [writing, setWriting] = useState(false);
   if (!coordinator) return null;
   return (
     <Card className="p-5">
@@ -148,6 +158,54 @@ export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | nu
         For questions about requirements, your hours, or a problem at your company. To report a
         concern in confidence, use Report.
       </p>
+      <Button variant="secondary" icon="mail" className="mt-3" onClick={() => setWriting(true)}>
+        Message {coordinator.name.split(" ")[0]}
+      </Button>
+      {writing && (
+        <ComposeMessage
+          role="student"
+          to={{ role: "coordinator", id: coordinator.coordinator_id, name: coordinator.name, email: coordinator.email }}
+          subject="A question about my OJT"
+          onClose={() => setWriting(false)}
+        />
+      )}
+    </Card>
+  );
+}
+
+/** The supervisor at the company, with a way to write to them in INTERNet. */
+export function SupervisorCard({ supervisor }: { supervisor: Supervisor | null }) {
+  const [writing, setWriting] = useState(false);
+  if (!supervisor) return null;
+  return (
+    <Card className="p-5">
+      <h2 className="text-sm font-semibold text-slate-900">Your supervisor</h2>
+      <p className="mt-2 text-sm font-medium text-slate-900">{supervisor.name}</p>
+      {(supervisor.company || supervisor.department) && (
+        <p className="text-sm text-slate-600">
+          {[supervisor.department, supervisor.company].filter(Boolean).join(", ")}
+        </p>
+      )}
+      {supervisor.email && (
+        <a
+          href={`mailto:${supervisor.email}`}
+          className="mt-1 inline-block break-all text-sm font-semibold text-psu-700 hover:underline"
+        >
+          {supervisor.email}
+        </a>
+      )}
+      <p className="mt-2 text-xs text-slate-500">For your schedule, tasks and attendance at the company.</p>
+      <Button variant="secondary" icon="mail" className="mt-3" onClick={() => setWriting(true)}>
+        Message {supervisor.name.split(" ")[0]}
+      </Button>
+      {writing && (
+        <ComposeMessage
+          role="student"
+          to={{ role: "supervisor", id: supervisor.supervisor_id, name: supervisor.name, email: supervisor.email }}
+          subject="A question about my OJT"
+          onClose={() => setWriting(false)}
+        />
+      )}
     </Card>
   );
 }

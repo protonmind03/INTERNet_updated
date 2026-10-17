@@ -33,6 +33,8 @@ export function useDraft(
       if (!active) return;
       // Only into an empty field: never over something already typed.
       if (text && !latest.current.value) latest.current.setValue(text);
+      // What was typed while the draft was being read (its save was skipped) is kept now.
+      else if (latest.current.value) void saveDraft(role, name, latest.current.value);
       ready.current = name;
     });
     return () => {
@@ -40,15 +42,30 @@ export function useDraft(
     };
   }, [role, name]);
 
+  // True while a change waits for its save.
+  const pending = useRef(false);
   useEffect(() => {
     if (!name) return;
+    if (ready.current === name) pending.current = true;
     const timer = window.setTimeout(() => {
+      pending.current = false;
       if (ready.current === name) void saveDraft(role, name, value);
     }, 400);
     return () => window.clearTimeout(timer);
   }, [role, name, value]);
 
+  // Closed (or switched to another field) within the wait: the last words are saved now.
+  useEffect(() => {
+    if (!name) return;
+    return () => {
+      if (pending.current && ready.current === name) void saveDraft(role, name, latest.current.value);
+      pending.current = false;
+    };
+  }, [role, name]);
+
   return useCallback(() => {
+    // Sent: nothing waiting is saved after this.
+    pending.current = false;
     if (name) void clearDraft(role, name);
   }, [role, name]);
 }

@@ -38,6 +38,12 @@ export type Email = {
    * allowance runs low.
    */
   kind?: EmailKind;
+  /**
+   * Where a reply goes: the person who wrote a message (routes/messages.ts).
+   * The email itself always comes from SMTP_FROM, the programme's verified
+   * address; a provider refuses mail "from" someone else's Gmail.
+   */
+  replyTo?: string;
 };
 
 type Budget = {
@@ -66,6 +72,7 @@ const PROVIDERS: Record<string, Provider> = {
       subject: email.subject,
       text: email.text,
       ...(email.html ? { html: email.html } : {}),
+      ...(email.replyTo ? { reply_to: email.replyTo } : {}),
     },
   }),
 };
@@ -192,6 +199,7 @@ async function sendThroughSmtp(email: Email): Promise<void> {
     subject: email.subject,
     text: email.text,
     html: email.html,
+    ...(email.replyTo ? { replyTo: email.replyTo } : {}),
   });
 }
 

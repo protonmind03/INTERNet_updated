@@ -53,6 +53,7 @@ import { readReleaseDay, released, scheduledLater } from "./services/taskRelease
 import { registerConsoleRoutes } from "./routes/console";
 import { registerOfflineTimeInRoutes } from "./routes/offlineTimeIn";
 import { registerAppealRoutes } from "./routes/appeals";
+import { registerMessageRoutes } from "./routes/messages";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
@@ -8270,7 +8271,7 @@ app.get(
     // coordinator who has been one longest.
     const coordinator = await pool.query(
       `
-      SELECT c.name, c.email, c.department
+      SELECT c.coordinator_id, c.name, c.email, c.department
       FROM coordinators c
       WHERE c.is_active = TRUE
       ORDER BY (c.coordinator_id::text = (
@@ -8281,6 +8282,14 @@ app.get(
       `,
       [studentId]
     );
+
+    // The student's supervisor, for the card on their Profile.
+    const supervisorCard = result.rows[0].supervisor_id
+      ? await pool.query(
+          `SELECT supervisor_id, name, email, company, department FROM supervisors WHERE supervisor_id = $1 AND is_active = TRUE`,
+          [result.rows[0].supervisor_id]
+        )
+      : null;
 
     // The term the student is in, for counting the weeks of their OJT from
     // its start when they have no log yet.
@@ -8295,6 +8304,7 @@ app.get(
     return res.json({
       student: result.rows[0],
       coordinator: coordinator.rows[0] ?? null,
+      supervisor: supervisorCard?.rows[0] ?? null,
       term: term.rows[0] ?? null,
     });
   } catch (error) {
@@ -8494,7 +8504,7 @@ app.get(
     // longest: the same person a student with no coordinator is shown.
     const coordinator = await pool.query(
       `
-      SELECT c.name, c.email, c.department
+      SELECT c.coordinator_id, c.name, c.email, c.department
       FROM coordinators c
       WHERE c.is_active = TRUE
       ORDER BY c.created_at ASC NULLS LAST, c.coordinator_id ASC
@@ -9908,6 +9918,7 @@ app.get(
 */
 
 registerAppealRoutes(app, { pool, requireRole, createNotification, notifyCoordinators, syncCompletion });
+registerMessageRoutes(app, { pool, requireRole, createNotification });
 registerOfflineTimeInRoutes(app, {
   pool,
   requireRole,

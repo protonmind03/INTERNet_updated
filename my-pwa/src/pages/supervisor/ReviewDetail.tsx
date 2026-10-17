@@ -1,5 +1,6 @@
 import { useEffect, useState, type ReactNode } from "react";
 import AttendancePhoto from "../../components/AttendancePhoto";
+import ComposeMessage from "../../components/ComposeMessage";
 import Icon from "../../components/Icon";
 import EntryPictures from "../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
@@ -103,6 +104,9 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
   const [correcting, setCorrecting] = useState(false);
   const decided = entry.status !== "Pending";
   const rejected = entry.status === "Rejected" || entry.status === "Flagged";
+  // Something the intern may want explained: a rejection, a rejected photo, corrected times, or their own correction.
+  const worthAMessage =
+    rejected || Boolean(entry.photo_rejection_reason || entry.time_correction_reason || entry.correction_note);
   // Only the photo of today's open log can be rejected on its own.
   const photoRejectable =
     open && entry.status === "Pending" && Boolean(entry.image_url) && entry.date.slice(0, 10) === phToday() &&
@@ -139,14 +143,17 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
       </dl>
 
       <div>
-        <button
-          type="button"
-          onClick={() => setCorrecting(true)}
-          className="inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
-        >
-          <Icon name="edit" size={15} />
-          Correct the times
-        </button>
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
+          <button
+            type="button"
+            onClick={() => setCorrecting(true)}
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
+          >
+            <Icon name="edit" size={15} />
+            Correct the times
+          </button>
+          {worthAMessage && <MessageIntern entry={entry} />}
+        </div>
         {entry.time_correction_reason && (
           <p className="mt-2 rounded-lg bg-slate-100 px-3 py-2.5 text-sm text-slate-700">
             <span className="font-semibold">
@@ -386,7 +393,7 @@ export function CorrectTimesDialog({
         <FormField
           label="Reason"
           htmlFor="correct-reason"
-          hint="The intern sees this. The hours are worked out again from the new times."
+          hint="The intern sees this. The hours are worked out again from the new times. To explain more, message them."
         >
           <textarea
             id="correct-reason"
@@ -398,8 +405,35 @@ export function CorrectTimesDialog({
           />
         </FormField>
         <FormError message={error} />
+        <MessageIntern entry={entry} />
       </form>
     </Modal>
+  );
+}
+
+/** Writes to the intern about this log; the message carries the log as its context. */
+function MessageIntern({ entry }: { entry: AttendanceEntry }) {
+  const [writing, setWriting] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={() => setWriting(true)}
+        className="inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
+      >
+        <Icon name="mail" size={15} />
+        Message {entry.student_name.split(" ")[0]}
+      </button>
+      {writing && (
+        <ComposeMessage
+          role="supervisor"
+          to={{ role: "student", id: entry.student_id, name: entry.student_name }}
+          subject={`Your attendance on ${formatDate(entry.date)}`}
+          context={{ type: "attendance", id: entry.id, label: `Attendance log, ${formatLongDate(entry.date)}` }}
+          onClose={() => setWriting(false)}
+        />
+      )}
+    </>
   );
 }
 

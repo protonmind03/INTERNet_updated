@@ -13,7 +13,7 @@ import { getInitials } from "../../lib/format";
 import { updateStoredAccount, useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import CompletionChecklist from "./CompletionChecklist";
-import ContactDetails, { CoordinatorCard, type Contact, type Coordinator } from "./ContactDetails";
+import ContactDetails, { CoordinatorCard, SupervisorCard, type Contact, type Coordinator, type Supervisor } from "./ContactDetails";
 import { PrivacyCard } from "./Privacy";
 import OfflineReadyCard from "./OfflineReadyCard";
 import { resolutionPath } from "./resolutionTabs";
@@ -33,6 +33,7 @@ export default function StudentProfilePage() {
 
   const [profile, setProfile] = useState<StudentProfile | null>(null);
   const [coordinator, setCoordinator] = useState<Coordinator | null>(null);
+  const [supervisor, setSupervisor] = useState<Supervisor | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -53,6 +54,7 @@ export default function StudentProfilePage() {
       if (!response.ok) throw new Error(data.message || "Could not load your profile.");
       setProfile(data.student);
       setCoordinator(data.coordinator ?? null);
+      setSupervisor(data.supervisor ?? null);
       setName(data.student.name);
       setEmail(data.student.email);
       setError("");
@@ -216,6 +218,8 @@ export default function StudentProfilePage() {
               }
             />
           )}
+
+          <SupervisorCard supervisor={supervisor} />
 
           <CoordinatorCard coordinator={coordinator} />
 

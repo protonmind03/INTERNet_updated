@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import ComposeMessage from "../../components/ComposeMessage";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
@@ -344,6 +345,7 @@ function RowActions({
   onToggle: () => void;
   onMove: () => void;
 }) {
+  const [writing, setWriting] = useState(false);
   const base =
     "inline-flex h-8 items-center gap-1.5 rounded-md px-2 text-sm font-medium hover:bg-slate-100";
   return (
@@ -352,6 +354,26 @@ function RowActions({
         <Icon name="edit" size={15} />
         Edit
       </button>
+      {supervisor.is_active && (
+        <button
+          type="button"
+          onClick={() => setWriting(true)}
+          aria-label={`Message ${supervisor.name}`}
+          className={`${base} text-psu-700`}
+        >
+          <Icon name="mail" size={15} />
+          Message
+        </button>
+      )}
+      {writing && (
+        <ComposeMessage
+          role="coordinator"
+          to={{ role: "supervisor", id: supervisor.supervisor_id, name: supervisor.name, email: supervisor.email }}
+          subject="About your interns"
+          context={{ type: "supervisor", id: supervisor.supervisor_id, label: [supervisor.name, supervisor.company].filter(Boolean).join(", ") }}
+          onClose={() => setWriting(false)}
+        />
+      )}
       <RowMenu
         label={`More actions for ${supervisor.name}`}
         items={[

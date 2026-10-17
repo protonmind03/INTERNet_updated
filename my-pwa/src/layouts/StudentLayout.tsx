@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PortalBrand, PortalHeader } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
+import MessageThreadHost from "../components/MessageThreadHost";
 import NotificationBell from "../components/NotificationBell";
 import SavedDataNotice from "../components/SavedDataNotice";
 import Tooltip from "../components/Tooltip";
@@ -265,6 +266,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
             <SavedDataNotice />
             <PhotoRedoBanner />
             {children}
+            <MessageThreadHost role="student" />
           </div>
         </main>
 

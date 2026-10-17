@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -2977,9 +2977,13 @@ test("a student is told who their coordinator is, and nothing private about them
   const { response, body } = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
   assert.equal(response.status, 200);
   assert.ok(body.coordinator, "there is an active coordinator");
-  assert.deepEqual(Object.keys(body.coordinator).sort(), ["department", "email", "name"]);
+  assert.deepEqual(Object.keys(body.coordinator).sort(), ["coordinator_id", "department", "email", "name"], "the id is what a message is addressed to");
   assert.equal(typeof body.coordinator.name, "string");
   assert.match(body.coordinator.email, /@/);
+  // Their supervisor too, for the Profile card: who they are and how to reach them at work.
+  if (body.supervisor) {
+    assert.deepEqual(Object.keys(body.supervisor).sort(), ["company", "department", "email", "name", "supervisor_id"]);
+  }
 });
 
 test("students and supervisors can list the announcements meant for them", async () => {
@@ -5081,7 +5085,7 @@ test("a supervisor's profile names the coordinator to write to, and nothing else
   assert.ok(mine.body.supervisor.email);
   // The coordinator: a name, an email, a department. No id, no password, no sign-in details.
   assert.ok(mine.body.coordinator, "there is an active coordinator in the test data");
-  assert.deepEqual(Object.keys(mine.body.coordinator).sort(), ["department", "email", "name"]);
+  assert.deepEqual(Object.keys(mine.body.coordinator).sort(), ["coordinator_id", "department", "email", "name"], "the id is what a message is addressed to");
   assert.match(mine.body.coordinator.email, /@/);
   // The same person a student with no coordinator of their own is shown.
   const students = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
@@ -9809,4 +9813,129 @@ test("the student is reminded once, 15 minutes before a set redo deadline", asyn
     await g.cleanup();
     await h.cleanup();
   }
+});
+
+test("messages: who may write to whom, the To line, a thread opened from its notification, replies and read marks", async (t) => {
+  for (const [method, path] of [["POST", "/api/messages"], ["GET", "/api/messages/threads/1"], ["POST", "/api/messages/threads/1"], ["GET", "/api/messages/recipient/student/x"]]) {
+    assert.equal((await jsonRequest(path, { method })).response.status, 401, `${method} ${path}`);
+  }
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("MSG");
+  const bcrypt = require("bcryptjs");
+  const stranger = `MSG-STRANGER-${Date.now()}`;
+  const strangerEmail = `${stranger.toLowerCase()}@rejection.test`;
+  await f.pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Stranger Intern', TRUE)`, [stranger, strangerEmail, await bcrypt.hash("Rejection123!", 4)]);
+  const strangerLogin = await login("student", strangerEmail, "Rejection123!");
+  const supervisorId = String(f.supervisor.supervisor.supervisor_id);
+  const send = (token, payload) => jsonRequest("/api/messages", jsonBody(token, "POST", payload));
+  const toSupervisor = { to_role: "supervisor", to_id: supervisorId, subject: "A question about my OJT", body: "Can I start at nine tomorrow?" };
+  try {
+    // The To line: their own supervisor and the coordinator, not another intern, not themselves.
+    const line = await jsonRequest(`/api/messages/recipient/supervisor/${supervisorId}`, { headers: authHeaders(f.mine.token) });
+    assert.equal(line.response.status, 200);
+    assert.equal(line.body.recipient.name, f.supervisor.supervisor.name);
+    assert.equal((await jsonRequest(`/api/messages/recipient/coordinator/${coordinator.coordinator_id}`, { headers: authHeaders(f.mine.token) })).response.status, 200);
+    assert.equal((await jsonRequest(`/api/messages/recipient/student/${stranger}`, { headers: authHeaders(f.mine.token) })).response.status, 403);
+    assert.equal((await jsonRequest(`/api/messages/recipient/student/${f.sid}`, { headers: authHeaders(f.mine.token) })).response.status, 403, "not to oneself");
+    assert.equal((await jsonRequest(`/api/messages/recipient/admin/1`, { headers: authHeaders(f.mine.token) })).response.status, 404);
+
+    // Refusals: another supervisor's intern, an empty or too long body, no subject, an unreadable context.
+    assert.equal((await send(strangerLogin.token, toSupervisor)).response.status, 403, "a student writes only to their own supervisor");
+    assert.equal((await send(f.supervisor.token, { ...toSupervisor, to_role: "student", to_id: stranger })).response.status, 403, "a supervisor writes only to their own interns");
+    assert.equal((await send(f.mine.token, { ...toSupervisor, body: " " })).response.status, 400);
+    assert.equal((await send(f.mine.token, { ...toSupervisor, body: "x".repeat(4001) })).response.status, 400);
+    assert.equal((await send(f.mine.token, { ...toSupervisor, subject: "" })).response.status, 400);
+    assert.equal((await send(f.mine.token, { ...toSupervisor, context_type: "payroll", context_id: "1" })).response.status, 400);
+
+    // Sent: stored, and the supervisor is notified with a link that opens it to reply. Email is off here.
+    const sent = await send(f.mine.token, { ...toSupervisor, body: "x".repeat(4000), context_type: "attendance", context_id: "12", context_label: "Attendance log, today" });
+    assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+    assert.equal(sent.body.email_status, "off");
+    assert.equal(sent.body.message, "Delivered in INTERNet. Email is not switched on.");
+    const threadId = sent.body.thread_id;
+    const note = await f.pool.query(`SELECT title, message FROM notifications WHERE supervisor_id = $1 AND link = $2`, [supervisorId, `/supervisor/dashboard?thread=${threadId}`]);
+    assert.equal(note.rows.length, 1);
+    assert.equal(note.rows[0].title, "New message");
+    assert.equal(note.rows[0].message.includes("x".repeat(200)), false, "the notification does not carry the whole message");
+
+    // Only the two people in it can open it; opening it marks it read.
+    assert.equal((await jsonRequest(`/api/messages/threads/${threadId}`, { headers: authHeaders(strangerLogin.token) })).response.status, 404);
+    assert.equal((await jsonRequest(`/api/messages/threads/${threadId}`, jsonBody(strangerLogin.token, "POST", { body: "Me too." }))).response.status, 404);
+    const opened = await jsonRequest(`/api/messages/threads/${threadId}`, { headers: authHeaders(f.supervisor.token) });
+    assert.equal(opened.response.status, 200);
+    assert.equal(opened.body.thread.context_label, "Attendance log, today");
+    assert.equal(opened.body.with.id, f.sid);
+    assert.equal(opened.body.messages.length, 1);
+    assert.equal(opened.body.messages[0].mine, false);
+    assert.equal(opened.body.messages[0].delivery, undefined, "how it was emailed is the sender's to see");
+    const read = await f.pool.query(`SELECT read_at FROM messages WHERE thread_id = $1`, [threadId]);
+    assert.notEqual(read.rows[0].read_at, null);
+
+    // A reply goes back to the student, whose notification opens the same thread.
+    const reply = await jsonRequest(`/api/messages/threads/${threadId}`, jsonBody(f.supervisor.token, "POST", { body: "Yes, nine is fine." }));
+    assert.equal(reply.response.status, 201);
+    assert.equal((await f.pool.query(`SELECT COUNT(*)::int AS n FROM notifications WHERE student_id = $1 AND link = $2`, [f.sid, `/student/dashboard?thread=${threadId}`])).rows[0].n, 1);
+    const mine = await jsonRequest(`/api/messages/threads/${threadId}`, { headers: authHeaders(f.mine.token) });
+    assert.deepEqual(mine.body.messages.map((m) => m.mine), [true, false]);
+    assert.equal(mine.body.messages[0].delivery, "Delivered in INTERNet. Email is not switched on.");
+
+    // The coordinator may write to any student; replies follow a change of supervisor.
+    const fromCoordinator = await send(coordinatorToken, { to_role: "student", to_id: stranger, subject: "About your OJT", body: "Please see me on Monday." });
+    assert.equal(fromCoordinator.response.status, 201);
+    assert.equal((await jsonRequest(`/api/messages/threads/${fromCoordinator.body.thread_id}`, jsonBody(strangerLogin.token, "POST", { body: "I will." }))).response.status, 201);
+    await f.pool.query(`UPDATE students SET supervisor_id = NULL WHERE student_id = $1`, [f.sid]);
+    assert.equal((await jsonRequest(`/api/messages/threads/${threadId}`, jsonBody(f.supervisor.token, "POST", { body: "One more thing." }))).response.status, 403);
+  } finally {
+    await f.pool.query(`DELETE FROM notifications WHERE link LIKE '%?thread=%' AND (supervisor_id = $1 OR student_id IN ($2, $3) OR coordinator_id = $4)`, [supervisorId, f.sid, stranger, coordinator.coordinator_id]);
+    await f.pool.query(`DELETE FROM message_threads WHERE $1 IN (party_a_id, party_b_id) OR $2 IN (party_a_id, party_b_id)`, [f.sid, stranger]);
+    await f.pool.query(`DELETE FROM students WHERE student_id = $1`, [stranger]);
+    await f.cleanup();
+  }
+});
+
+test("messages: ten a day for each sender, new messages and replies alike", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("MSGLIMIT");
+  const supervisorId = String(f.supervisor.supervisor.supervisor_id);
+  try {
+    const first = await jsonRequest("/api/messages", jsonBody(f.mine.token, "POST", { to_role: "supervisor", to_id: supervisorId, subject: "One", body: "The first of the day." }));
+    assert.equal(first.response.status, 201);
+    // Nine more already sent today.
+    await f.pool.query(
+      `INSERT INTO messages (thread_id, sender_role, sender_id, recipient_role, recipient_id, body)
+       SELECT $1, 'student', $2, 'supervisor', $3, 'Earlier today' FROM generate_series(1, 9)`,
+      [first.body.thread_id, f.sid, supervisorId]
+    );
+    const eleventh = await jsonRequest("/api/messages", jsonBody(f.mine.token, "POST", { to_role: "supervisor", to_id: supervisorId, subject: "Eleven", body: "One too many." }));
+    assert.equal(eleventh.response.status, 429);
+    assert.equal(eleventh.body.code, "MESSAGE_LIMIT");
+    assert.equal((await jsonRequest(`/api/messages/threads/${first.body.thread_id}`, jsonBody(f.mine.token, "POST", { body: "And a reply." }))).response.status, 429);
+    // Yesterday's do not count.
+    await f.pool.query(`UPDATE messages SET created_at = created_at - INTERVAL '1 day' WHERE sender_id = $1`, [f.sid]);
+    assert.equal((await jsonRequest(`/api/messages/threads/${first.body.thread_id}`, jsonBody(f.mine.token, "POST", { body: "A new day." }))).response.status, 201);
+    // The supervisor's allowance is their own.
+    assert.equal((await jsonRequest(`/api/messages/threads/${first.body.thread_id}`, jsonBody(f.supervisor.token, "POST", { body: "Noted." }))).response.status, 201);
+  } finally {
+    await f.pool.query(`DELETE FROM notifications WHERE link LIKE '%?thread=%' AND (supervisor_id = $1 OR student_id = $2)`, [supervisorId, f.sid]);
+    await f.pool.query(`DELETE FROM message_threads WHERE $1 IN (party_a_id, party_b_id)`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("a message email comes from SMTP_FROM with Reply-To set to the sender, as routine mail below password resets", async () => {
+  require("tsx/cjs");
+  const { sendThroughApi } = require("../src/services/mailer.ts");
+  const env = { EMAIL_PROVIDER: "resend", EMAIL_API_KEY: "re_key", SMTP_FROM: "INTERNet <no-reply@example.com>" };
+  const calls = [];
+  const fetcher = async (url, init) => {
+    calls.push(JSON.parse(init.body));
+    return { ok: true, status: 200, json: async () => ({}) };
+  };
+  await sendThroughApi({ to: "sup@example.com", subject: "[INTERNet] A question", text: "Hi", replyTo: "intern@example.com" }, { env, fetcher });
+  await sendThroughApi({ to: "sup@example.com", subject: "Reset", text: "Hi" }, { env, fetcher });
+  assert.equal(calls[0].from, env.SMTP_FROM);
+  assert.equal(calls[0].reply_to, "intern@example.com");
+  assert.equal("reply_to" in calls[1], false, "only when there is someone to reply to");
+  const source = require("node:fs").readFileSync(require("node:path").join(__dirname, "../src/routes/messages.ts"), "utf8");
+  assert.match(source, /kind: "routine"/);
 });

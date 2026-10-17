@@ -2,8 +2,10 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { BrandIcon, BrandLoader, LOGO_SIZES, PortalBrand, ROLE_THEMES } from "../brand";
 import Icon, { type IconName } from "../components/Icon";
+import ComposeMessage from "../components/ComposeMessage";
+import MessageThreadHost from "../components/MessageThreadHost";
 import NotificationBell from "../components/NotificationBell";
-import { ConfirmDialog, CountBadge } from "../components/ui";
+import { Button, ConfirmDialog, CountBadge } from "../components/ui";
 import { API_URL, withCoordinatorAuth } from "../lib/api";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
@@ -103,6 +105,11 @@ export default function CoordinatorLayout({
       group.items.some((item) => pathname === item.path || pathname.startsWith(`${item.path}/`))
     )?.label ?? (pathname.startsWith("/coordinator/profile") ? "Account" : "");
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const [writing, setWriting] = useState(false);
+  // A student's record draws its own heading; its Message action is added here,
+  // above it, so the record page itself is not changed.
+  const recordOf = hideHeading ? /^\/coordinator\/students\/([^/]+)\/?$/.exec(pathname)?.[1] : undefined;
+  const recordStudentId = recordOf ? decodeURIComponent(recordOf) : undefined;
 
   useEffect(() => {
     document.title = `${title} · INTERNet`;
@@ -280,7 +287,24 @@ export default function CoordinatorLayout({
               )}
             </div>
             )}
+            {recordStudentId && (
+              <div className="mb-3 flex justify-end print:hidden">
+                <Button variant="secondary" icon="mail" onClick={() => setWriting(true)}>
+                  Message {title.split(" ")[0]}
+                </Button>
+              </div>
+            )}
             {children}
+            <MessageThreadHost role="coordinator" />
+            {writing && recordStudentId && (
+              <ComposeMessage
+                role="coordinator"
+                to={{ role: "student", id: recordStudentId }}
+                subject="About your OJT"
+                context={{ type: "student", id: recordStudentId, label: `Student record, ${title}` }}
+                onClose={() => setWriting(false)}
+              />
+            )}
           </div>
         </main>
       </div>

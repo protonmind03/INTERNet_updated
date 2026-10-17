@@ -1,14 +1,16 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
 import { PortalBrand, ROLE_THEMES } from "../brand";
+import ComposeMessage from "../components/ComposeMessage";
 import Icon from "../components/Icon";
+import MessageThreadHost from "../components/MessageThreadHost";
 import NotificationBell from "../components/NotificationBell";
 import SavedDataNotice from "../components/SavedDataNotice";
 import { ConfirmDialog, CountBadge } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
-import { useCoordinatorContact } from "../pages/supervisor/useCoordinatorContact";
+import { useCoordinatorContact, type CoordinatorContact } from "../pages/supervisor/useCoordinatorContact";
 
 /*
 |--------------------------------------------------------------------------
@@ -57,6 +59,7 @@ export default function SupervisorLayout({
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const coordinator = useCoordinatorContact(supervisor?.supervisor_id, menuOpen);
+  const [writingTo, setWritingTo] = useState<CoordinatorContact | null>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -188,6 +191,17 @@ export default function SupervisorLayout({
                       >
                         {coordinator.email}
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setMenuOpen(false);
+                          setWritingTo(coordinator);
+                        }}
+                        className="-mx-2 mt-2 inline-flex min-h-10 items-center gap-2 rounded-lg px-2 text-sm font-semibold text-psu-700 hover:bg-psu-50"
+                      >
+                        <Icon name="mail" size={16} />
+                        Message the coordinator
+                      </button>
                     </div>
                   )}
                   <button
@@ -239,6 +253,15 @@ export default function SupervisorLayout({
         </div>
         <SavedDataNotice />
         {children}
+        <MessageThreadHost role="supervisor" />
+        {writingTo && (
+          <ComposeMessage
+            role="supervisor"
+            to={{ role: "coordinator", id: writingTo.coordinator_id, name: writingTo.name, email: writingTo.email }}
+            subject="A question about our interns"
+            onClose={() => setWritingTo(null)}
+          />
+        )}
       </main>
 
       <ConfirmDialog
