@@ -1,0 +1,289 @@
+{
+ "when": "2026-10-18T23:01:10.693Z",
+ "site": "http://localhost:5175",
+ "settings": "Lighthouse defaults for mobile: emulated mid-range phone, simulated slow 4G and 4x CPU slowdown; median of 3 runs by performance score",
+ "results": [
+  {
+   "name": "Sign-in",
+   "path": "/",
+   "performance_runs": [
+    100,
+    100,
+    100
+   ],
+   "landed": "http://localhost:5175/",
+   "scores": {
+    "performance": 100,
+    "accessibility": 100,
+    "best-practices": 96,
+    "seo": 100
+   },
+   "metrics": {
+    "first-contentful-paint": "0.7 s",
+    "largest-contentful-paint": "1.2 s",
+    "total-blocking-time": "60 ms",
+    "cumulative-layout-shift": "0.002",
+    "speed-index": "0.7 s",
+    "interactive": "1.2 s"
+   },
+   "failing": [
+    {
+     "id": "errors-in-console",
+     "title": "Browser errors were logged to the console",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "uses-long-cache-ttl",
+     "title": "Serve static assets with an efficient cache policy",
+     "score": 0.5,
+     "value": "6 resources found"
+    },
+    {
+     "id": "cache-insight",
+     "title": "Use efficient cache lifetimes",
+     "score": 0.5,
+     "value": null
+    },
+    {
+     "id": "network-dependency-tree-insight",
+     "title": "Network dependency tree",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "render-blocking-insight",
+     "title": "Render blocking requests",
+     "score": 0,
+     "value": "Est savings of 150 ms"
+    }
+   ],
+   "lighthouse": "12.8.2"
+  },
+  {
+   "name": "Student: Today",
+   "path": "/student/dashboard",
+   "performance_runs": [
+    99,
+    99,
+    99
+   ],
+   "landed": "http://localhost:5175/student/dashboard",
+   "scores": {
+    "performance": 99,
+    "accessibility": 100,
+    "best-practices": 96,
+    "seo": 100
+   },
+   "metrics": {
+    "first-contentful-paint": "0.7 s",
+    "largest-contentful-paint": "2.0 s",
+    "total-blocking-time": "50 ms",
+    "cumulative-layout-shift": "0.004",
+    "speed-index": "0.8 s",
+    "interactive": "2.0 s"
+   },
+   "failing": [
+    {
+     "id": "errors-in-console",
+     "title": "Browser errors were logged to the console",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "uses-rel-preconnect",
+     "title": "Preconnect to required origins",
+     "score": 0,
+     "value": "Est savings of 150 ms"
+    },
+    {
+     "id": "uses-long-cache-ttl",
+     "title": "Serve static assets with an efficient cache policy",
+     "score": 0.5,
+     "value": "53 resources found"
+    },
+    {
+     "id": "cache-insight",
+     "title": "Use efficient cache lifetimes",
+     "score": 0.5,
+     "value": null
+    },
+    {
+     "id": "forced-reflow-insight",
+     "title": "Forced reflow",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "network-dependency-tree-insight",
+     "title": "Network dependency tree",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "render-blocking-insight",
+     "title": "Render blocking requests",
+     "score": 0,
+     "value": "Est savings of 150 ms"
+    }
+   ],
+   "lighthouse": "12.8.2"
+  },
+  {
+   "name": "Supervisor: Review",
+   "path": "/supervisor/dashboard",
+   "performance_runs": [
+    86,
+    98,
+    99
+   ],
+   "landed": "http://localhost:5175/supervisor/dashboard",
+   "scores": {
+    "performance": 98,
+    "accessibility": 100,
+    "best-practices": 96,
+    "seo": 100
+   },
+   "metrics": {
+    "first-contentful-paint": "0.7 s",
+    "largest-contentful-paint": "2.1 s",
+    "total-blocking-time": "110 ms",
+    "cumulative-layout-shift": "0",
+    "speed-index": "0.9 s",
+    "interactive": "2.1 s"
+   },
+   "failing": [
+    {
+     "id": "max-potential-fid",
+     "title": "Max Potential First Input Delay",
+     "score": 0.77,
+     "value": "170 ms"
+    },
+    {
+     "id": "errors-in-console",
+     "title": "Browser errors were logged to the console",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "uses-rel-preconnect",
+     "title": "Preconnect to required origins",
+     "score": 0,
+     "value": "Est savings of 150 ms"
+    },
+    {
+     "id": "uses-long-cache-ttl",
+     "title": "Serve static assets with an efficient cache policy",
+     "score": 0.5,
+     "value": "59 resources found"
+    },
+    {
+     "id": "uses-text-compression",
+     "title": "Enable text compression",
+     "score": 0.5,
+     "value": "Est savings of 3 KiB"
+    },
+    {
+     "id": "cache-insight",
+     "title": "Use efficient cache lifetimes",
+     "score": 0.5,
+     "value": null
+    },
+    {
+     "id": "forced-reflow-insight",
+     "title": "Forced reflow",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "network-dependency-tree-insight",
+     "title": "Network dependency tree",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "render-blocking-insight",
+     "title": "Render blocking requests",
+     "score": 0,
+     "value": "Est savings of 150 ms"
+    }
+   ],
+   "lighthouse": "12.8.2"
+  },
+  {
+   "name": "Coordinator: Dashboard",
+   "path": "/coordinator/dashboard",
+   "performance_runs": [
+    99,
+    99,
+    99
+   ],
+   "landed": "http://localhost:5175/coordinator/dashboard",
+   "scores": {
+    "performance": 99,
+    "accessibility": 100,
+    "best-practices": 96,
+    "seo": 100
+   },
+   "metrics": {
+    "first-contentful-paint": "0.7 s",
+    "largest-contentful-paint": "1.5 s",
+    "total-blocking-time": "90 ms",
+    "cumulative-layout-shift": "0.011",
+    "speed-index": "0.7 s",
+    "interactive": "1.5 s"
+   },
+   "failing": [
+    {
+     "id": "errors-in-console",
+     "title": "Browser errors were logged to the console",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "uses-rel-preconnect",
+     "title": "Preconnect to required origins",
+     "score": 0,
+     "value": "Est savings of 150 ms"
+    },
+    {
+     "id": "uses-long-cache-ttl",
+     "title": "Serve static assets with an efficient cache policy",
+     "score": 0.5,
+     "value": "69 resources found"
+    },
+    {
+     "id": "uses-text-compression",
+     "title": "Enable text compression",
+     "score": 0.5,
+     "value": "Est savings of 6 KiB"
+    },
+    {
+     "id": "cache-insight",
+     "title": "Use efficient cache lifetimes",
+     "score": 0.5,
+     "value": null
+    },
+    {
+     "id": "forced-reflow-insight",
+     "title": "Forced reflow",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "network-dependency-tree-insight",
+     "title": "Network dependency tree",
+     "score": 0,
+     "value": null
+    },
+    {
+     "id": "render-blocking-insight",
+     "title": "Render blocking requests",
+     "score": 0,
+     "value": "Est savings of 160 ms"
+    }
+   ],
+   "lighthouse": "12.8.2"
+  }
+ ]
+}

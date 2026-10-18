@@ -29,7 +29,8 @@
     "backup:decrypt": "tsx src/scripts/backup-decrypt.ts",
     "test": "node --test test/*.test.cjs",
     "lint": "tsx src/scripts/lint-time-zone.ts",
-    "check:route-tests": "tsx src/scripts/check-route-tests.ts"
+    "check:route-tests": "tsx src/scripts/check-route-tests.ts",
+    "docs:architecture": "tsx src/scripts/architecture-diagram.ts"
   },
   "keywords": [],
   "author": "",

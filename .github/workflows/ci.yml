@@ -68,6 +68,12 @@ jobs:
       - name: Every route has a test
         run: npm run check:route-tests
 
+      # Iteration 17: docs/ARCHITECTURE.md is generated from the route
+      # registrations and service imports; a change that alters them without
+      # regenerating it (npm run docs:architecture) fails here.
+      - name: The architecture diagram matches the code
+        run: npm run docs:architecture -- --check
+
       # Iteration 15: the nightly backup test runs the real pg_dump, which must be as
       # new as the database (postgres:18 above); the runner's own is older.
       - name: PostgreSQL 18's pg_dump, for the backup test

@@ -33,6 +33,9 @@ const PAGES = {
   supervisor: ["/supervisor/dashboard", "/supervisor/interns", "/supervisor/interns/DEMO-STU-0001", "/supervisor/attendance", "/supervisor/tasks", "/supervisor/documents", "/supervisor/journals", "/supervisor/notifications", "/supervisor/time-record", "/supervisor/announcements", "/supervisor/evaluation", "/supervisor/complaints", "/supervisor/profile"],
   coordinator: ["/coordinator/dashboard", "/coordinator/students", "/coordinator/students/DEMO-STU-0001", "/coordinator/supervisors", "/coordinator/monitoring", "/coordinator/complaints", "/coordinator/evaluations", "/coordinator/analytics", "/coordinator/profile", "/coordinator/requirements", "/coordinator/documents", "/coordinator/announcements", "/coordinator/notifications", "/coordinator/audit", "/coordinator/companies", "/coordinator/terms", "/coordinator/programs", "/coordinator/holidays", "/coordinator/coordinators", "/coordinator/site-visits"],
 };
+// Iteration 17: pages added since the baseline, checked on top of the list above (the list itself
+// is unchanged, so before and after cover the same pages). EXTRA_PAGES='{"public":["/help"]}'
+for (const [role, extra] of Object.entries(JSON.parse(process.env.EXTRA_PAGES || "{}"))) PAGES[role] = [...(PAGES[role] ?? []), ...extra];
 // Buttons that open something without changing anything. Anything that decides, sends or removes is left alone.
 const OPENS = /^(add|new|edit|write|record|time in|time out|out for lunch|back from lunch|sign out|filter|more|import|set |change|due date|correct|assign|create|upload|file |report|request|open|view|details|show|reply|what|how|why|help|account menu|notifications)/i;
 const NEVER = /(delete|remove|verify|approve|reject|cancel|send|save|mark|undo|download|export|print|discard|resolve|dismiss|deactivate|reactivate|reset|withdraw|turn on|turn off|check file|test|sign in|submit|confirm|log ?out|install)/i;

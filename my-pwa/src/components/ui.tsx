@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useId,
   useRef,
@@ -547,6 +548,24 @@ export function Modal({
     };
   }, [open, locked, onClose]);
 
+  // A body taller than the sheet scrolls; then it takes a Tab stop, so the arrow keys can scroll
+  // it when nothing inside can take focus (WCAG 2.1.1). It is no stop while it all fits.
+  const [bodyScrolls, setBodyScrolls] = useState(false);
+  const bodyRef = useCallback((element: HTMLDivElement | null) => {
+    if (!element || typeof ResizeObserver === "undefined") return;
+    const measure = () => setBodyScrolls(element.scrollHeight > element.clientHeight + 1);
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    // Content that grows once the sheet is at its full height does not resize the body itself.
+    const changes = new MutationObserver(measure);
+    changes.observe(element, { childList: true, subtree: true });
+    measure();
+    return () => {
+      observer.disconnect();
+      changes.disconnect();
+    };
+  }, []);
+
   if (!open) return null;
 
   const width = { sm: "sm:max-w-sm", md: "sm:max-w-md", lg: "sm:max-w-2xl" }[size];
@@ -582,7 +601,17 @@ export function Modal({
             <Icon name="close" />
           </button>
         </div>
-        {children && <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{children}</div>}
+        {children && (
+          <div
+            ref={bodyRef}
+            tabIndex={bodyScrolls ? 0 : undefined}
+            role={bodyScrolls ? "region" : undefined}
+            aria-label={bodyScrolls ? title : undefined}
+            className="min-h-0 flex-1 overflow-y-auto px-5 py-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-psu-600"
+          >
+            {children}
+          </div>
+        )}
         {footer && (
           <div className="flex flex-col-reverse gap-2 border-t border-slate-100 px-5 py-4 pb-[max(1rem,env(safe-area-inset-bottom))] sm:flex-row sm:justify-end">
             {footer}

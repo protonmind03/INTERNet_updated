@@ -61,3 +61,26 @@ test("the same pane in the student's sidebar and, sideways, in the supervisor's 
   await expect(row).not.toHaveAttribute("data-more-above", "");
   await supervisor.context().close();
 });
+
+test("a dialog whose body scrolls can be reached with the keyboard, one that fits is no extra stop", async ({ browser }) => {
+  // The only violation in both axe sweeps (scrollable-region-focusable): a sheet taller than a
+  // short phone's screen scrolled, but Tab could not reach it to scroll with the arrow keys.
+  const short = await (await browser.newContext({ viewport: { width: 390, height: 360 }, isMobile: true, hasTouch: true })).newPage();
+  await signIn(short, "coordinator");
+  await short.goto("/coordinator/holidays");
+  await short.getByRole("button", { name: "Add holiday" }).first().click();
+  const body = short.getByRole("region", { name: "Add holiday" });
+  await expect(body).toHaveAttribute("tabindex", "0");
+  await body.focus();
+  await short.keyboard.press("End");
+  await expect.poll(() => body.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  await short.context().close();
+
+  const tall = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+  await signIn(tall, "coordinator");
+  await tall.goto("/coordinator/holidays");
+  await tall.getByRole("button", { name: "Add holiday" }).first().click();
+  await expect(tall.getByRole("dialog", { name: "Add holiday" })).toBeVisible();
+  await expect(tall.getByRole("region", { name: "Add holiday" })).toHaveCount(0);
+  await tall.context().close();
+});
