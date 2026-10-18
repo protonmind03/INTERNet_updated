@@ -4,7 +4,7 @@ import type express from "express";
 import { Zip, ZipPassThrough } from "fflate";
 import type { Pool } from "pg";
 import { phClock } from "../services/phTime";
-import { zipNames, zipProblem } from "../services/documentZip";
+import { pictureZipNames, zipNames, zipProblem } from "../services/documentZip";
 import { readPrivateFile } from "../services/privateFileStore";
 import { programmeReport, studentPerformance } from "../services/insights";
 import { keptProjectionsFor, projectionsChanged, storedProjection } from "../services/projection";
@@ -255,6 +255,10 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
   | Takes the filter bar's choices, and optionally `status` and `doc_type`.
   | Built file by file and sent as it is built, so the server never holds
   | the whole ZIP.
+  |
+  | `include_pictures=1` (Iteration 13) adds the pictures on the same
+  | students' time-out notes and weekly reports (services/documentZip.ts
+  | names them), counted in the same 500-file and 500 MB limits.
   */
 
   app.get("/api/coordinator/documents/zip", requireCoordinator, async (req, res) => {
@@ -267,6 +271,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       }
       const docType = typeof req.query.doc_type === "string" ? req.query.doc_type.trim() : "";
       if (docType.length > 100) return res.status(400).json({ message: "That is not a requirement." });
+      const withPictures = req.query.include_pictures === "1" || req.query.include_pictures === "true";
 
       const bound = bindFilters(
         `SELECT d.id, d.file_path, d.doc_type, d.original_filename, d.size_bytes::float AS size_bytes, s.name AS student_name
@@ -285,9 +290,30 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
         size_bytes: number;
         student_name: string | null;
       }>(bound.text, bound.values);
-      const bytes = found.rows.reduce((sum, row) => sum + (Number(row.size_bytes) || 0), 0);
-      const problem = zipProblem(found.rows.length, bytes);
-      if (problem) return res.status(found.rows.length === 0 ? 404 : 413).json({ message: problem });
+      // The same students' pictures, when asked for. Never a concern's.
+      type PictureRow = { file_path: string; mime_type: string; size_bytes: number; owner_type: string; entry_date: string | null; student_name: string | null };
+      let pictures: PictureRow[] = [];
+      if (withPictures) {
+        const boundPictures = bindFilters(
+          `SELECT p.file_path, p.mime_type, p.size_bytes::float AS size_bytes, p.owner_type, s.name AS student_name,
+                  TO_CHAR(COALESCE(a.date, j.week_start), 'YYYY-MM-DD') AS entry_date
+           FROM attachments p
+           JOIN students s ON s.student_id = p.student_id
+           LEFT JOIN attendance a ON p.owner_type = 'attendance' AND a.id = p.owner_id
+           LEFT JOIN journals j ON p.owner_type = 'journal' AND j.id = p.owner_id
+           WHERE p.removed_at IS NULL AND p.owner_type IN ('attendance', 'journal')${filterConditions(read.filters, "s")}
+           ORDER BY s.name, COALESCE(a.date, j.week_start), p.owner_type, p.owner_id, p.position, p.id`,
+          [],
+          read.filters
+        );
+        pictures = (await pool.query<PictureRow>(boundPictures.text, boundPictures.values)).rows;
+      }
+      const bytes =
+        found.rows.reduce((sum, row) => sum + (Number(row.size_bytes) || 0), 0) +
+        pictures.reduce((sum, row) => sum + (Number(row.size_bytes) || 0), 0);
+      const files = found.rows.length + pictures.length;
+      const problem = zipProblem(files, bytes);
+      if (problem) return res.status(files === 0 ? 404 : 413).json({ message: problem });
 
       const names = zipNames(found.rows);
       // What was asked for, in words, for the audit log.
@@ -296,6 +322,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
           ...Object.entries(read.filters).map(([key, value]) => `${key}=${value}`),
           status ? `status=${status}` : "",
           docType ? `doc_type=${docType}` : "",
+          withPictures ? "include_pictures" : "",
         ]
           .filter(Boolean)
           .join("; ") || "none";
@@ -330,17 +357,34 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
         sent += 1;
         if (res.writableNeedDrain) await once(res, "drain");
       }
+      const pictureNames = pictureZipNames(pictures);
+      let picturesSent = 0;
+      for (const [index, row] of pictures.entries()) {
+        if (failed || res.destroyed) return;
+        let buffer: Buffer;
+        try {
+          buffer = (await readPrivateFile(nodePath.basename(row.file_path))).buffer;
+        } catch {
+          missing.push(pictureNames[index]);
+          continue;
+        }
+        const entry = new ZipPassThrough(pictureNames[index]);
+        zip.add(entry);
+        entry.push(buffer, true);
+        picturesSent += 1;
+        if (res.writableNeedDrain) await once(res, "drain");
+      }
       if (missing.length > 0) {
         const note = new ZipPassThrough("NOT INCLUDED.txt");
         zip.add(note);
         note.push(
           Buffer.from(
-            `These documents are on record but their files could not be read from storage, so they are not in this ZIP:\r\n\r\n${missing.join("\r\n")}\r\n`
+            `These files are on record but could not be read from storage, so they are not in this ZIP:\r\n\r\n${missing.join("\r\n")}\r\n`
           ),
           true
         );
       }
-      res.locals.auditNote = { filters: filterText, files: sent, missing: missing.length, bytes };
+      res.locals.auditNote = { filters: filterText, files: sent, pictures: picturesSent, missing: missing.length, bytes };
       zip.end();
       return undefined;
     } catch (error) {

@@ -24,7 +24,7 @@ export type PrivacyNotice = {
 };
 
 export const PRIVACY_NOTICE: PrivacyNotice = {
-  version: "draft-3",
+  version: "draft-4",
   placeholder: true,
   title: "Privacy notice",
   sections: [
@@ -41,7 +41,7 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
     {
       heading: "Timing in with no connection",
       body:
-        "If you time in where there is no signal, the camera check runs on your phone and your photo waits on the phone until it can be sent; it is removed from the phone once it is sent or refused, or when you sign out. To show the photo and time were not changed, your phone signs them with a key that stays on the phone. This shows the time-in came from your phone, not who was standing at the workplace, so your supervisor still confirms it. The time comes from your phone's clock, and your supervisor is told if the clock was changed while you were offline.",
+        "If you time in where there is no signal, the camera check runs on your phone and your photo waits on the phone until it can be sent; it is removed from the phone once it is sent or refused, or when you sign out. To show the photo and time were not changed, your phone signs them with a key that stays on the phone. This shows the time-in came from your phone, not who was standing at the workplace, so your supervisor still confirms it. The time comes from your phone's clock, and your supervisor is told if the clock was changed while you were offline. Pictures you add to a time-out with no signal wait on the phone the same way, made smaller, and are removed from it once they are sent or refused, or when you sign out.",
     },
     {
       heading: "Files you upload",

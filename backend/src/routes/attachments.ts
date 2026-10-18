@@ -11,6 +11,7 @@ import {
 import { stripImageMetadata } from "../services/imageMetadata";
 import { quotaProblem, recordUpload, uploadUsage } from "../services/uploadQuota";
 import { sameId } from "../services/ids";
+import { offlineMaxAgeHoursFor, CLOCK_SKEW_MS } from "../services/offlineActions";
 
 /*
 |--------------------------------------------------------------------------
@@ -40,10 +41,28 @@ import { sameId } from "../services/ids";
 | Taking a picture off an entry marks it removed. The row and the file
 | stay: nothing is deleted while its entry stands.
 |
+| PREVIEWS (Iteration 13, migration 063). The phone also makes a WebP of
+| the picture at most 480 pixels on its long side and sends it beside the
+| picture as `preview`. Lists show the preview (GET .../preview); the
+| picture itself is fetched when it is opened. A picture with no preview
+| (sent before this, or by a browser that cannot make a WebP) is shown from
+| the picture itself, as before.
+|
+| SENT LATER. Pictures chosen for a time-out recorded with no connection
+| wait on the phone and are sent after it. Each carries `client_ref`, the
+| phone's id for it: sent twice onto the same entry, it is added once and
+| the second answer is the picture already there. They also carry
+| `occurred_at`, when the time-out was pressed: older than the time-out's
+| own limit (OFFLINE_MAX_AGE_HOURS_TIME_OUT), they are refused like it.
+|
 */
 
 export const MAX_PICTURES = 3;
 const MAX_BYTES = 4 * 1024 * 1024;
+/** A preview is 480 pixels at most; this is well above what one weighs. */
+export const PREVIEW_MAX_BYTES = 200 * 1024;
+export const PREVIEW_SIDE = 480;
+const CLIENT_REF = /^[A-Za-z0-9-]{8,64}$/;
 const CAPTION_MAX = 200;
 
 type OwnerType = "attendance" | "journal" | "complaint";
@@ -68,6 +87,28 @@ const KINDS: { mime: string; extension: string; matches: (b: Buffer) => boolean 
 /** The kind of picture these bytes are, whatever the browser called them. Null when none. */
 export function pictureKind(buffer: Buffer) {
   return KINDS.find((kind) => kind.matches(buffer)) ?? null;
+}
+
+/**
+ * Why a picture sent later is too old for its entry, or null when it is not
+ * (or was sent at once: no `occurred_at`). Only a time-out's pictures wait
+ * on the phone, so only the attendance log's limit applies.
+ */
+export function lateProblem(
+  type: OwnerType,
+  occurredAt: unknown,
+  now: Date = new Date(),
+  maxAgeHours: number = offlineMaxAgeHoursFor("time-out")
+): string | null {
+  if (occurredAt === undefined || occurredAt === null || occurredAt === "" || type !== "attendance") return null;
+  const when = typeof occurredAt === "string" ? new Date(occurredAt) : new Date(NaN);
+  if (Number.isNaN(when.getTime()) || when.getTime() > now.getTime() + CLOCK_SKEW_MS) {
+    return "The time these pictures were taken is not right. Check the date and time on your phone.";
+  }
+  if (now.getTime() - when.getTime() > maxAgeHours * 60 * 60 * 1000) {
+    return `These pictures were taken more than ${maxAgeHours} hours ago, too long for them to be added to the time-out. Show them to your supervisor instead.`;
+  }
+  return null;
 }
 
 /** The entry a picture hangs on, as far as access is concerned. */
@@ -135,9 +176,13 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
     };
   }
 
-  const LIST_COLUMNS = `id::int AS id, owner_type, owner_id, mime_type, size_bytes, width, height, caption, position, created_at`;
+  const LIST_COLUMNS = `id::int AS id, owner_type, owner_id, mime_type, size_bytes, width, height, caption, position, created_at,
+                        (preview_path IS NOT NULL) AS has_preview`;
 
-  const receive = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES, files: 1 } }).single("file");
+  const receive = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES, files: 2 } }).fields([
+    { name: "file", maxCount: 1 },
+    { name: "preview", maxCount: 1 },
+  ]);
 
   app.post("/api/attachments", requireRole(["student", "supervisor"]), (req, res) => {
     receive(req, res, async (uploadError?: unknown) => {
@@ -148,6 +193,7 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
         });
       }
       let stored: string | undefined;
+      let storedPreview: string | undefined;
       try {
         const auth = (req as Authed).auth!;
         const type = req.body?.owner_type;
@@ -155,23 +201,48 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
         if (!isOwnerType(type) || ownerId === null) {
           return res.status(400).json({ message: "Say which entry the picture is for." });
         }
-        if (!req.file) return res.status(400).json({ message: "Choose a picture to attach." });
+        const files = (req.files ?? {}) as Record<string, Express.Multer.File[] | undefined>;
+        const picture = files.file?.[0];
+        const preview = files.preview?.[0];
+        if (!picture) return res.status(400).json({ message: "Choose a picture to attach." });
         // The app re-encodes pictures on the phone; this covers anything that did not.
-        req.file.buffer = stripImageMetadata(req.file.buffer);
-        const kind = pictureKind(req.file.buffer);
+        picture.buffer = stripImageMetadata(picture.buffer);
+        const kind = pictureKind(picture.buffer);
         if (!kind) {
           return res.status(400).json({ message: "That file is not a JPG, PNG or WebP picture." });
+        }
+        // A preview is optional; when sent it must be a small WebP.
+        if (preview) {
+          preview.buffer = stripImageMetadata(preview.buffer);
+          if (pictureKind(preview.buffer)?.mime !== "image/webp" || preview.buffer.length > PREVIEW_MAX_BYTES) {
+            return res.status(400).json({ message: "The picture's preview could not be read. Choose the picture again." });
+          }
+        }
+        const clientRef = typeof req.body?.client_ref === "string" && req.body.client_ref !== "" ? req.body.client_ref : null;
+        if (clientRef !== null && !CLIENT_REF.test(clientRef)) {
+          return res.status(400).json({ message: "The picture's id from the phone is not valid." });
         }
         const entry = await findEntry(type, ownerId);
         // The same answer for "no such entry" and "not yours", so ids cannot be probed.
         if (!entry || !isAuthor(type, entry, auth)) {
           return res.status(404).json({ message: "That entry was not found." });
         }
+        // Sent before and the answer was lost: the picture already there.
+        if (clientRef !== null) {
+          const already = await pool.query(
+            `SELECT ${LIST_COLUMNS} FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND client_ref = $3`,
+            [type, ownerId, clientRef]
+          );
+          if (already.rows.length > 0) return res.status(200).json({ message: "Picture already attached.", attachment: already.rows[0] });
+        }
         if (!entry.open) {
           return res.status(409).json({ message: "This entry has been decided, so pictures can no longer be added to it." });
         }
+        const late = lateProblem(type, req.body?.occurred_at);
+        if (late) return res.status(409).json({ code: "TOO_OLD", message: late });
         // The uploader's room on the server, and their files today.
-        const room = quotaProblem(await uploadUsage(pool, auth.role as "student" | "supervisor", auth.id), req.file.buffer.length);
+        const incoming = picture.buffer.length + (preview?.buffer.length ?? 0);
+        const room = quotaProblem(await uploadUsage(pool, auth.role as "student" | "supervisor", auth.id), incoming);
         if (room) return res.status(413).json({ code: "UPLOAD_QUOTA", message: room });
         const caption = typeof req.body?.caption === "string" ? req.body.caption.trim().slice(0, CAPTION_MAX) : "";
         const side = (value: unknown) => {
@@ -180,35 +251,59 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
         };
 
         stored = await savePrivateFile(
-          { ...req.file, mimetype: kind.mime } as Express.Multer.File,
+          { ...picture, mimetype: kind.mime } as Express.Multer.File,
           newStoredFileName(`picture${kind.extension}`)
         );
+        if (preview) {
+          storedPreview = await savePrivateFile(
+            { ...preview, mimetype: "image/webp" } as Express.Multer.File,
+            newStoredFileName("preview.webp")
+          );
+        }
         // Counted and added in one statement, so two uploads at once cannot both take the last place.
-        const added = await pool.query(
-          `INSERT INTO attachments
-             (owner_type, owner_id, student_id, uploaded_by_role, uploaded_by_id, file_path, mime_type,
-              size_bytes, width, height, sha256, caption, position)
-           SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
-                  COALESCE((SELECT MAX(position) + 1 FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL), 0)
-           WHERE (SELECT COUNT(*) FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL) < $13
-           RETURNING ${LIST_COLUMNS}`,
-          [
-            type, ownerId, entry.studentId, auth.role, auth.id, `/uploads/${stored}`, kind.mime,
-            req.file.buffer.length, side(req.body?.width), side(req.body?.height),
-            createHash("sha256").update(req.file.buffer).digest("hex"), caption || null, MAX_PICTURES,
-          ]
-        );
+        let added;
+        try {
+          added = await pool.query(
+            `INSERT INTO attachments
+               (owner_type, owner_id, student_id, uploaded_by_role, uploaded_by_id, file_path, mime_type,
+                size_bytes, width, height, sha256, caption, position, preview_path, preview_size_bytes, client_ref)
+             SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                    COALESCE((SELECT MAX(position) + 1 FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL), 0),
+                    $14, $15, $16
+             WHERE (SELECT COUNT(*) FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL) < $13
+             RETURNING ${LIST_COLUMNS}`,
+            [
+              type, ownerId, entry.studentId, auth.role, auth.id, `/uploads/${stored}`, kind.mime,
+              picture.buffer.length, side(req.body?.width), side(req.body?.height),
+              createHash("sha256").update(picture.buffer).digest("hex"), caption || null, MAX_PICTURES,
+              storedPreview ? `/uploads/${storedPreview}` : null, preview?.buffer.length ?? null, clientRef,
+            ]
+          );
+        } catch (insertError) {
+          // The same picture, sent twice at once: the other upload added it.
+          if ((insertError as { code?: string }).code !== "23505" || clientRef === null) throw insertError;
+          await deletePrivateFile(stored).catch(() => undefined);
+          if (storedPreview) await deletePrivateFile(storedPreview).catch(() => undefined);
+          stored = storedPreview = undefined;
+          const already = await pool.query(
+            `SELECT ${LIST_COLUMNS} FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND client_ref = $3`,
+            [type, ownerId, clientRef]
+          );
+          return res.status(200).json({ message: "Picture already attached.", attachment: already.rows[0] });
+        }
         if (added.rows.length === 0) {
           await deletePrivateFile(stored).catch(() => undefined);
+          if (storedPreview) await deletePrivateFile(storedPreview).catch(() => undefined);
           return res.status(409).json({ message: `An entry can have at most ${MAX_PICTURES} pictures.` });
         }
-        await recordUpload(pool, auth.role as "student" | "supervisor", auth.id, "picture", req.file.buffer.length, {
+        await recordUpload(pool, auth.role as "student" | "supervisor", auth.id, "picture", incoming, {
           table: "attachments",
           id: Number(added.rows[0].id),
         }).catch((ledgerError) => console.error("UPLOAD LEDGER ERROR:", ledgerError));
         return res.status(201).json({ message: "Picture attached.", attachment: added.rows[0] });
       } catch (error) {
         if (stored) await deletePrivateFile(stored).catch(() => undefined);
+        if (storedPreview) await deletePrivateFile(storedPreview).catch(() => undefined);
         console.error("ATTACH PICTURE ERROR:", error);
         return res.status(500).json({ message: "Failed to attach the picture." });
       }
@@ -243,26 +338,35 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
     }
   });
 
-  app.get("/api/attachments/:id/file", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
+  // The picture itself, or (`/preview`) its small WebP; who may see one may see the other.
+  const sendPicture = (which: "file" | "preview") => async (req: express.Request, res: express.Response) => {
     try {
       const auth = (req as Authed).auth!;
       const id = whole(req.params.id);
       const found =
         id === null
           ? { rows: [] }
-          : await pool.query<{ owner_type: OwnerType; owner_id: number; file_path: string; mime_type: string; student_id: string | null }>(
-              `SELECT owner_type, owner_id, file_path, mime_type, student_id FROM attachments WHERE id = $1 AND removed_at IS NULL`,
+          : await pool.query<{
+              owner_type: OwnerType;
+              owner_id: number;
+              file_path: string;
+              mime_type: string;
+              student_id: string | null;
+              preview_path: string | null;
+            }>(
+              `SELECT owner_type, owner_id, file_path, mime_type, student_id, preview_path FROM attachments WHERE id = $1 AND removed_at IS NULL`,
               [id]
             );
       const row = found.rows[0];
       const entry = row ? await findEntry(row.owner_type, row.owner_id) : null;
-      if (!row || !entry || !maySee(row.owner_type, entry, auth)) {
+      if (!row || !entry || !maySee(row.owner_type, entry, auth) || (which === "preview" && !row.preview_path)) {
         return res.status(404).json({ message: "Picture not found." });
       }
-      const file = await readPrivateFile(row.file_path.replace(/^\/uploads\//, ""));
+      const path = which === "preview" ? row.preview_path! : row.file_path;
+      const file = await readPrivateFile(path.replace(/^\/uploads\//, ""));
       // For the audit log: whose entry it was and what kind (services/audit.ts).
       res.locals.auditNote = { student_id: row.student_id, owner_type: row.owner_type, owner_id: row.owner_id };
-      res.setHeader("Content-Type", row.mime_type);
+      res.setHeader("Content-Type", which === "preview" ? "image/webp" : row.mime_type);
       res.setHeader("X-Content-Type-Options", "nosniff");
       res.setHeader("Content-Disposition", "inline");
       return res.send(file.buffer);
@@ -273,7 +377,9 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
       console.error("READ PICTURE ERROR:", error);
       return res.status(500).json({ message: "Failed to load the picture." });
     }
-  });
+  };
+  app.get("/api/attachments/:id/file", requireRole(["student", "supervisor", "coordinator"]), sendPicture("file"));
+  app.get("/api/attachments/:id/preview", requireRole(["student", "supervisor", "coordinator"]), sendPicture("preview"));
 
   // Takes a picture off its entry. It is marked, not deleted.
   app.delete("/api/attachments/:id", requireRole(["student", "supervisor"]), async (req, res) => {

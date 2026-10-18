@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import EntryPictures from "./EntryPictures";
 import Icon from "./Icon";
+import type { PictureRole } from "../lib/attachments";
 import { Card, Modal, StatusBadge } from "./ui";
 import { formatHours, formatLongDate, formatTime, phDateKey } from "../lib/format";
 import {
@@ -105,6 +107,7 @@ export default function MonthCalendar({
   tasks,
   termStart,
   reader = "student",
+  pictureRole,
   dayFooter,
 }: {
   shifts: CalendarShift[];
@@ -116,6 +119,8 @@ export default function MonthCalendar({
   tasks: CalendarTask[];
   termStart: string | null;
   reader?: Reader;
+  /** Who is reading, for the pictures on a day's time-out note (Iteration 13); none are shown without it. */
+  pictureRole?: PictureRole;
   /** What goes under a day's details: a link onward, for instance. */
   dayFooter?: (facts: DayFacts) => React.ReactNode;
 }) {
@@ -385,7 +390,7 @@ export default function MonthCalendar({
         }
       >
         {openedFacts && (
-          <DayDetails facts={openedFacts} future={openedFacts.date > today} reader={reader}>
+          <DayDetails facts={openedFacts} future={openedFacts.date > today} reader={reader} pictureRole={pictureRole}>
             {dayFooter?.(openedFacts)}
           </DayDetails>
         )}
@@ -408,11 +413,13 @@ function DayDetails({
   facts,
   future,
   reader,
+  pictureRole,
   children,
 }: {
   facts: DayFacts;
   future: boolean;
   reader: Reader;
+  pictureRole?: PictureRole;
   children?: React.ReactNode;
 }) {
   const { log } = facts;
@@ -473,6 +480,9 @@ function DayDetails({
           <p className="text-xs font-medium text-slate-600">{words.did}</p>
           <p className="mt-0.5 whitespace-pre-line break-words text-sm text-slate-800">{log.accomplishments}</p>
         </div>
+      )}
+      {pictureRole && log?.id && log.id > 0 && (
+        <EntryPictures role={pictureRole} owner="attendance" ownerId={log.id} count={log.pictures} className="" />
       )}
       {log?.tasks && log.tasks.length > 0 && (
         <div>

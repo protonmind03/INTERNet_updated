@@ -11,7 +11,7 @@ import {
   QUEUE_TRIED,
   retryWaitingSteps,
   waitingRows,
-  type QueuedPath,
+  type QueuedKind,
   type QueuedStep,
 } from "../../lib/offlineQueue";
 import { useReachability } from "../../lib/reachability";
@@ -38,15 +38,20 @@ type Limits = { time_in: number; lunch: number; time_out: number };
 const DEFAULT_LIMITS: Limits = { time_in: 12, lunch: 12, time_out: 24 };
 const LIMITS_KEY = "internet-offline-limits";
 
-const NAMES: Record<QueuedPath, string> = {
+const NAMES: Record<QueuedKind, string> = {
   "time-in": "Time-in",
   break: "Out for lunch",
   "break-end": "Back from lunch",
   "time-out": "Time-out",
+  pictures: "Pictures for the time-out",
 };
 
-function limitFor(path: QueuedPath, limits: Limits): number {
-  return path === "time-in" ? limits.time_in : path === "time-out" ? limits.time_out : limits.lunch;
+/** How it is named in a sentence: "this time-out", "these pictures". */
+const thisOne = (path: QueuedKind) => (path === "pictures" ? "these pictures" : `this ${NAMES[path].toLowerCase()}`);
+
+// A time-out's pictures are held to the time-out's limit.
+function limitFor(path: QueuedKind, limits: Limits): number {
+  return path === "time-in" ? limits.time_in : path === "time-out" || path === "pictures" ? limits.time_out : limits.lunch;
 }
 
 function savedLimits(): Limits {
@@ -134,7 +139,19 @@ export default function WaitingToSend() {
   };
 
   const behind = discarding?.step.path === "time-in"
-    ? rows.filter((row) => row.id !== discarding.id && row.step.logId === LOCAL_LOG_ID).length
+    ? rows.filter((row) => row.id !== discarding.id && row.step.logId === LOCAL_LOG_ID && row.step.path !== "pictures").length
+    : 0;
+  // A time-out's pictures go with it (and a time-in's, through its time-out).
+  const goingPictures = discarding
+    ? rows
+        .filter(
+          (row) =>
+            row.step.path === "pictures" &&
+            row.id !== discarding.id &&
+            (row.step.forRequest === discarding.step.requestId ||
+              (discarding.step.path === "time-in" && row.step.logId === LOCAL_LOG_ID))
+        )
+        .reduce((sum, row) => sum + (row.step.pictures?.length ?? 0), 0)
     : 0;
 
   const discard = async () => {
@@ -197,7 +214,10 @@ export default function WaitingToSend() {
             return (
               <li key={row.id} className="flex flex-wrap items-start justify-between gap-3 p-3" data-testid="waiting-step">
                 <div className="min-w-0 text-sm">
-                  <p className="font-semibold text-slate-900">{NAMES[step.path]}</p>
+                  <p className="font-semibold text-slate-900">
+                    {NAMES[step.path]}
+                    {step.path === "pictures" && ` (${step.pictures?.length ?? 0})`}
+                  </p>
                   <p className="text-slate-700">
                     Recorded {formatDateTime(step.occurredAt)} ({span(now - recorded)} ago)
                   </p>
@@ -228,12 +248,14 @@ export default function WaitingToSend() {
 
       <ConfirmDialog
         open={discarding !== null}
-        title={discarding ? `Discard this ${NAMES[discarding.step.path].toLowerCase()}?` : "Discard?"}
+        title={discarding ? `Discard ${thisOne(discarding.step.path)}?` : "Discard?"}
         message={
-          discarding
+          discarding?.step.path === "pictures"
+            ? `They were chosen for the time-out at ${formatDateTime(discarding.step.occurredAt)} and have not reached the server. Once discarded they cannot be brought back from this phone. The time-out itself is kept.`
+            : discarding
             ? `It was recorded at ${formatDateTime(discarding.step.occurredAt)} and has not reached the server. Once discarded it cannot be brought back; tell your supervisor what time it really was.${
                 behind > 0 ? ` The ${behind === 1 ? "step" : `${behind} steps`} recorded after it ${behind === 1 ? "goes" : "go"} too, because ${behind === 1 ? "it belongs" : "they belong"} to this day's time-in.` : ""
-              }`
+              }${goingPictures > 0 ? ` ${goingPictures === 1 ? "The picture" : `The ${goingPictures} pictures`} chosen for the time-out ${goingPictures === 1 ? "goes" : "go"} too.` : ""}`
             : undefined
         }
         confirmLabel="Discard"

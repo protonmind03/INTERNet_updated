@@ -10603,3 +10603,195 @@ test("a stale version on another supervisor's record says nothing about it: the 
     await f.cleanup();
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| ITERATION 13: PICTURES (PREVIEWS, SENT LATER, THE ZIP)
+|--------------------------------------------------------------------------
+*/
+
+test("pictures sent later: held to the time-out's age limit; names in the ZIP's Pictures folder", () => {
+  require("tsx/cjs");
+  const { lateProblem } = require("../src/routes/attachments.ts");
+  const { pictureZipNames } = require("../src/services/documentZip.ts");
+  const now = new Date("2026-10-18T12:00:00Z");
+  const ago = (hours) => new Date(now.getTime() - hours * 3_600_000).toISOString();
+  // Sent at once (no time given), or not a time-out's: no limit here.
+  assert.equal(lateProblem("attendance", undefined, now, 24), null);
+  assert.equal(lateProblem("journal", ago(100), now, 24), null);
+  assert.equal(lateProblem("attendance", ago(23), now, 24), null);
+  assert.match(lateProblem("attendance", ago(25), now, 24), /more than 24 hours ago/);
+  assert.match(lateProblem("attendance", "yesterday", now, 24), /not right/);
+  assert.match(lateProblem("attendance", new Date(now.getTime() + 10 * 60_000).toISOString(), now, 24), /not right/);
+
+  assert.deepEqual(
+    pictureZipNames([
+      { student_name: "Ana Cruz", owner_type: "attendance", entry_date: "2026-10-14", mime_type: "image/jpeg" },
+      { student_name: "Ana Cruz", owner_type: "attendance", entry_date: "2026-10-14", mime_type: "image/webp" },
+      { student_name: "Ana Cruz", owner_type: "journal", entry_date: "2026-10-12", mime_type: "image/png" },
+      { student_name: "Ben/Dela:Cruz", owner_type: "attendance", entry_date: null, mime_type: "image/jpeg" },
+    ]),
+    [
+      "Pictures/Ana Cruz/Time-out 2026-10-14 - 1.jpg",
+      "Pictures/Ana Cruz/Time-out 2026-10-14 - 2.webp",
+      "Pictures/Ana Cruz/Weekly report 2026-10-12 - 1.png",
+      "Pictures/Ben Dela Cruz/Time-out undated - 1.jpg",
+    ]
+  );
+});
+
+test("a picture's preview: a small WebP kept beside it, listed, and sent only to whoever may see the picture", async (t) => {
+  assert.equal((await jsonRequest("/api/attachments/1/preview")).response.status, 401);
+  assert.equal((await jsonRequest("/api/attachments/999999999/preview", { headers: authHeaders(coordinatorToken) })).response.status, 404);
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("PREV");
+  const pool = f.pool;
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("a small jpeg body")]);
+  const webp = Buffer.concat([Buffer.from("RIFF"), Buffer.from([1, 0, 0, 0]), Buffer.from("WEBPVP8 preview")]);
+  const send = async (token, fields, picture, preview) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+    if (picture) form.append("file", new Blob([picture], { type: "image/jpeg" }), "photo.jpg");
+    if (preview) form.append("preview", new Blob([preview], { type: "image/webp" }), "preview.webp");
+    const response = await fetch(new URL("/api/attachments", apiBaseUrl), { method: "POST", headers: authHeaders(token), body: form });
+    return { status: response.status, body: await response.json().catch(() => ({})) };
+  };
+  try {
+    const logId = await f.log({ daysAgo: 1, open: false });
+    const log = { owner_type: "attendance", owner_id: logId };
+    // A preview must be a WebP, and small.
+    assert.equal((await send(f.mine.token, log, jpeg, jpeg)).status, 400);
+    assert.equal((await send(f.mine.token, log, jpeg, Buffer.concat([webp, Buffer.alloc(200 * 1024)]))).status, 400);
+
+    const added = await send(f.mine.token, { ...log, client_ref: "ref-preview-0001" }, jpeg, webp);
+    assert.equal(added.status, 201, JSON.stringify(added.body));
+    assert.equal(added.body.attachment.has_preview, true);
+    const plain = await send(f.mine.token, log, jpeg);
+    assert.equal(plain.body.attachment.has_preview, false, "a picture with no preview, as before");
+    const kept = (await pool.query(`SELECT preview_path, preview_size_bytes FROM attachments WHERE id = $1`, [added.body.attachment.id])).rows[0];
+    assert.match(kept.preview_path, /^\/uploads\/\d+-[a-f0-9]{12}\.webp$/);
+    assert.equal(kept.preview_size_bytes, webp.length);
+    // The quota counts both.
+    const ledger = (await pool.query(`SELECT bytes FROM upload_ledger WHERE source = 'attachments' AND source_id = $1`, [added.body.attachment.id])).rows[0];
+    assert.equal(Number(ledger.bytes), jpeg.length + webp.length);
+
+    // Listed with has_preview; the preview itself to the student, their supervisor and a coordinator only.
+    const listed = (await jsonRequest(`/api/attachments?owner_type=attendance&owner_id=${logId}`, { headers: authHeaders(f.supervisor.token) })).body;
+    assert.deepEqual(listed.attachments.map((item) => item.has_preview), [true, false]);
+    for (const token of [f.mine.token, f.supervisor.token, coordinatorToken]) {
+      const response = await fetch(new URL(`/api/attachments/${added.body.attachment.id}/preview`, apiBaseUrl), { headers: authHeaders(token) });
+      assert.equal(response.status, 200);
+      assert.equal(response.headers.get("content-type"), "image/webp");
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()), webp);
+    }
+    assert.equal((await jsonRequest(`/api/attachments/${added.body.attachment.id}/preview`, { headers: authHeaders(studentToken) })).response.status, 404);
+    assert.equal((await jsonRequest(`/api/attachments/${plain.body.attachment.id}/preview`, { headers: authHeaders(f.mine.token) })).response.status, 404, "none was sent");
+  } finally {
+    await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [f.sid]);
+    await pool.query(`DELETE FROM attachments WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("pictures sent later from the phone: one sent twice is kept once, and they are held to the time-out's age", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await rejectionFixture("LATE");
+  const pool = f.pool;
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("a small jpeg body")]);
+  const send = async (fields) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+    form.append("file", new Blob([jpeg], { type: "image/jpeg" }), "photo.jpg");
+    const response = await fetch(new URL("/api/attachments", apiBaseUrl), { method: "POST", headers: authHeaders(f.mine.token), body: form });
+    return { status: response.status, body: await response.json().catch(() => ({})) };
+  };
+  try {
+    const logId = await f.log({ daysAgo: 0, open: false });
+    const log = { owner_type: "attendance", owner_id: logId };
+    const hoursAgo = (hours) => new Date(Date.now() - hours * 3_600_000).toISOString();
+    assert.equal((await send({ ...log, client_ref: "bad ref!" })).status, 400);
+
+    const first = await send({ ...log, client_ref: "phone-ref-0001", occurred_at: hoursAgo(1) });
+    assert.equal(first.status, 201, JSON.stringify(first.body));
+    // The answer was lost and the phone sends it again: the same picture, not a second one.
+    const again = await send({ ...log, client_ref: "phone-ref-0001", occurred_at: hoursAgo(1) });
+    assert.equal(again.status, 200);
+    assert.equal(again.body.attachment.id, first.body.attachment.id);
+    // Two at once with the same id: still one.
+    const [a, b] = await Promise.all([
+      send({ ...log, client_ref: "phone-ref-0002", occurred_at: hoursAgo(1) }),
+      send({ ...log, client_ref: "phone-ref-0002", occurred_at: hoursAgo(1) }),
+    ]);
+    assert.deepEqual([a.status, b.status].sort(), [200, 201]);
+    assert.equal(a.body.attachment.id, b.body.attachment.id);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attachments WHERE owner_type = 'attendance' AND owner_id = $1`, [logId])).rows[0].n, 2);
+
+    // Older than the time-out's own limit (24 hours by default): refused like it.
+    const old = await send({ ...log, client_ref: "phone-ref-0003", occurred_at: hoursAgo(30) });
+    assert.equal(old.status, 409);
+    assert.equal(old.body.code, "TOO_OLD");
+    assert.match(old.body.message, /more than \d+ hours ago/);
+    // A picture already there is still answered after the log is decided (the answer was lost after it went in).
+    await pool.query(`UPDATE attendance SET status = 'Verified' WHERE id = $1`, [logId]);
+    assert.equal((await send({ ...log, client_ref: "phone-ref-0001" })).status, 200);
+    assert.equal((await send({ ...log, client_ref: "phone-ref-0004" })).status, 409, "a new one is refused on a decided log");
+  } finally {
+    await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [f.sid]);
+    await pool.query(`DELETE FROM attachments WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("the coordinator's ZIP with Include pictures: time-out and weekly report pictures by student, never a concern's, inside the limits", async (t) => {
+  if (needsWrites(t)) return;
+  const { unzipSync } = require("fflate");
+  const f = await rejectionFixture("ZIPP");
+  const pool = f.pool;
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from(`zip picture ${f.sid}`)]);
+  const send = async (fields) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, String(value));
+    form.append("file", new Blob([jpeg], { type: "image/jpeg" }), "photo.jpg");
+    const response = await fetch(new URL("/api/attachments", apiBaseUrl), { method: "POST", headers: authHeaders(f.mine.token), body: form });
+    assert.equal(response.status, 201);
+  };
+  let journalId = null;
+  let concernId = null;
+  try {
+    const logId = await f.log({ daysAgo: 1, open: false });
+    const day = (await pool.query(`SELECT TO_CHAR(date, 'YYYY-MM-DD') AS d FROM attendance WHERE id = $1`, [logId])).rows[0].d;
+    journalId = (await pool.query(`INSERT INTO journals (student_id, week_start, activities, learnings) VALUES ($1, DATE_TRUNC('week', CURRENT_DATE)::date - 7, 'Did.', 'Learned.') RETURNING id, TO_CHAR(week_start, 'YYYY-MM-DD') AS w`, [f.sid])).rows[0];
+    concernId = (await pool.query(`INSERT INTO complaints (student_id, report_type, category, description) VALUES ($1, 'supervisor', 'Conduct', 'A concern for the ZIP test.') RETURNING id`, [f.sid])).rows[0].id;
+    await send({ owner_type: "attendance", owner_id: logId });
+    await send({ owner_type: "attendance", owner_id: logId });
+    await send({ owner_type: "journal", owner_id: journalId.id });
+    await send({ owner_type: "complaint", owner_id: concernId });
+
+    const supervisorId = encodeURIComponent(f.supervisor.supervisor.supervisor_id);
+    // No document of this requirement: without pictures there is nothing to send.
+    const query = `?supervisor=${supervisorId}&doc_type=No%20such%20requirement`;
+    const none = await jsonRequest(`/api/coordinator/documents/zip${query}`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(none.response.status, 404);
+    const response = await fetch(new URL(`/api/coordinator/documents/zip${query}&include_pictures=1`, apiBaseUrl), { headers: authHeaders(coordinatorToken) });
+    assert.equal(response.status, 200);
+    const files = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    const mine = Object.keys(files).filter((name) => name.startsWith(`Pictures/Check ZIPP/`)).sort();
+    assert.deepEqual(mine, [
+      `Pictures/Check ZIPP/Time-out ${day} - 1.jpg`,
+      `Pictures/Check ZIPP/Time-out ${day} - 2.jpg`,
+      `Pictures/Check ZIPP/Weekly report ${journalId.w} - 1.jpg`,
+    ]);
+    assert.deepEqual(Buffer.from(files[mine[0]]), jpeg, "the picture itself, byte for byte");
+    // Logged as part of the download.
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=document.bulk_download&limit=5", { headers: authHeaders(coordinatorToken) });
+    const logged = audit.body.entries.find((entry) => String(entry.details?.filters || "").includes("include_pictures"));
+    assert.ok(logged && logged.details.pictures >= 3, JSON.stringify(audit.body.entries.slice(0, 2)));
+  } finally {
+    await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [f.sid]);
+    await pool.query(`DELETE FROM attachments WHERE student_id = $1`, [f.sid]);
+    if (journalId) await pool.query(`DELETE FROM journals WHERE id = $1`, [journalId.id]);
+    if (concernId) await pool.query(`DELETE FROM complaints WHERE id = $1`, [concernId]);
+    await f.cleanup();
+  }
+});

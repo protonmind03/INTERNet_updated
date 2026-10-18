@@ -467,6 +467,7 @@ function Attendance({ intern, work }: TabProps) {
       ) : (
         <MonthCalendar
           reader="staff"
+          pictureRole="supervisor"
           shifts={shifts}
           holidays={holidays}
           logs={logs}

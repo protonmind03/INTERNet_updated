@@ -71,6 +71,10 @@ export type CalendarLog = {
   status: string;
   accomplishments?: string | null;
   tasks?: { id: number; title: string }[];
+  /** The log's id, for its pictures; missing (or below 1) for a day the phone holds before the server has it. */
+  id?: number;
+  /** How many pictures are on the time-out note. Missing from an older server. */
+  pictures?: number;
 };
 
 export type CalendarAbsence = { date: string; status: string; reason?: string | null };

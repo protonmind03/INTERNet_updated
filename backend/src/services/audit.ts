@@ -241,6 +241,7 @@ export const AUDIT_RULES: Rule[] = [
     from: (source) => ({
       filters: source.noted?.filters,
       files: source.noted?.files,
+      pictures: source.noted?.pictures,
       missing: source.noted?.missing,
       bytes: source.noted?.bytes,
     }),

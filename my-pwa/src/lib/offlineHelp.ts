@@ -32,9 +32,10 @@ export const OFFLINE_TABLE: OfflineRow[] = [
       "Time-in: with your photo when the phone is ready for it (Profile says so), otherwise without one for your supervisor to confirm. Sent within 12 hours",
       "Out for lunch and back from lunch: sent within 12 hours",
       "Time-out: sent within 24 hours",
+      "Up to 3 pictures on the time-out note, made smaller to about 400 kB each: sent after the time-out, within the same 24 hours",
     ],
     needs: [
-      "Submitting a task, document, journal or absence",
+      "Submitting a task, document, journal or absence, and the pictures on a journal or concern",
       "Sending a message or a concern",
       "Signing in",
     ],

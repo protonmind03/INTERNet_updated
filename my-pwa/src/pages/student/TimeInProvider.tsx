@@ -4,6 +4,7 @@ import { ConfirmDialog } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { cue } from "../../lib/cues";
 import { uploadPictures, type PictureDraft } from "../../lib/attachments";
+import { queuePictures } from "../../lib/offlineQueue";
 import { formatDuration, formatTime } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
@@ -159,8 +160,15 @@ function TimeInActions({ children }: { children: ReactNode }) {
             (key, percent) => setPictureProgress((current) => ({ ...current, [key]: percent }))
           ).finally(() => setSendingPictures(false));
           if (failure) pictureNote = ` ${sent} of ${outPictures.length} pictures were attached: ${failure}`;
+        } else if (outcome === "queued") {
+          // Kept with the time-out, made smaller, and sent after it (Iteration 13).
+          const { kept, problem } = await queuePictures(outPictures);
+          pictureNote =
+            kept > 0
+              ? ` ${kept === 1 ? "Its picture waits" : `Its ${kept} pictures wait`} with it.${problem ? ` ${problem}` : ""}`
+              : ` The pictures were not kept. ${problem}`.trimEnd();
         } else {
-          pictureNote = " The pictures were not kept: they need a connection.";
+          pictureNote = " The pictures were not kept: the day's log is not on the server yet.";
         }
         for (const draft of outPictures) URL.revokeObjectURL(draft.preview);
         setOutPictures([]);
@@ -322,12 +330,13 @@ function TimeInActions({ children }: { children: ReactNode }) {
             onChange={setOutPictures}
             disabled={busy || sendingPictures}
             progress={pictureProgress}
-            unavailable={
-              !online || (todayLog?.waiting?.length ?? 0) > 0
-                ? "Pictures need a connection, so none can be added to this time-out."
-                : undefined
-            }
           />
+          {(!online || (todayLog?.waiting?.length ?? 0) > 0) && (
+            <p className="mt-1.5 text-xs text-slate-600">
+              With no connection, the pictures wait on this phone with your time-out and are sent after it, made smaller
+              to about 400 kB each.
+            </p>
+          )}
         </div>
       </ConfirmDialog>
     </TimeInContext.Provider>

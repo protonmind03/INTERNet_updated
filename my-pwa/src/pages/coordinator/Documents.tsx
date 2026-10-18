@@ -84,6 +84,8 @@ export default function CoordinatorDocuments() {
   const [searchParams] = useSearchParams();
   const [docType, setDocType] = useState(() => searchParams.get("doc_type") || "");
   const [zipping, setZipping] = useState(false);
+  // Iteration 13: the same students' pictures on time-out notes and weekly reports, in the same ZIP.
+  const [withPictures, setWithPictures] = useState(false);
   // A deliverable of the coordinator's being rejected: a reason is asked for first.
   const [rejecting, setRejecting] = useState<SubmittedDocument | null>(null);
   const [reason, setReason] = useState("");
@@ -193,6 +195,7 @@ export default function CoordinatorDocuments() {
     const sent = new URLSearchParams(chosen);
     if (status !== "all") sent.set("status", status);
     if (docType) sent.set("doc_type", docType);
+    if (withPictures) sent.set("include_pictures", "1");
     setZipping(true);
     try {
       await downloadDocumentsZip(sent.toString());
@@ -427,6 +430,15 @@ export default function CoordinatorDocuments() {
                   ))}
                 </select>
               </label>
+              <label className="inline-flex h-10 items-center gap-2 text-sm text-slate-800">
+                <input
+                  type="checkbox"
+                  checked={withPictures}
+                  onChange={(event) => setWithPictures(event.target.checked)}
+                  className="h-4 w-4 rounded border-slate-400 text-psu-700"
+                />
+                Include pictures
+              </label>
               <Button variant="secondary" icon="download" busy={zipping} busyProcess="export" onClick={() => void downloadZip()}>
                 {zipping ? "Building" : "Download as ZIP"}
               </Button>
@@ -434,7 +446,9 @@ export default function CoordinatorDocuments() {
             <p className="text-xs text-slate-600">
               The ZIP holds every file that fits the filter bar at the top, the status and the requirement chosen
               here, up to 500 files or 500 MB. The search box and the dates do not narrow it. Each file is named
-              with the student, the requirement and its original name.
+              with the student, the requirement and its original name. With Include pictures, the pictures on the
+              same students' time-out notes and weekly reports are added in a Pictures folder, one folder per
+              student, and count toward the same limits. Pictures on concerns are never included.
             </p>
             <DateRangeFilter
               from={dateFrom}

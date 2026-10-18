@@ -72,3 +72,30 @@ export function zipNames(
     return seen === 1 ? `${base}${extension}` : `${base} (${seen})${extension}`;
   });
 }
+
+/*
+| Iteration 13: with "Include pictures", each student's pictures on their
+| time-out notes and weekly reports go in a folder of their own:
+|
+|   Pictures/<student name>/Time-out <date> - <n>.<ext>
+|   Pictures/<student name>/Weekly report <week's Monday> - <n>.<ext>
+|
+| Pictures on concerns are never included: a concern may be about someone
+| who could be handed the ZIP.
+*/
+
+const PICTURE_EXTENSIONS: Record<string, string> = { "image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp" };
+
+/** The name of each picture inside the ZIP, in the order given. */
+export function pictureZipNames(
+  pictures: { student_name: string | null; owner_type: string; entry_date: string | null; mime_type: string }[]
+): string[] {
+  const count = new Map<string, number>();
+  return pictures.map((picture) => {
+    const what = picture.owner_type === "journal" ? "Weekly report" : "Time-out";
+    const base = `Pictures/${clean(picture.student_name ?? "", "Unknown student")}/${what} ${clean(picture.entry_date ?? "", "undated")}`;
+    const n = (count.get(base.toLowerCase()) ?? 0) + 1;
+    count.set(base.toLowerCase(), n);
+    return `${base} - ${n}${PICTURE_EXTENSIONS[picture.mime_type] ?? ".jpg"}`;
+  });
+}

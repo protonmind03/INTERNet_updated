@@ -13,6 +13,7 @@ import {
   sendWaitingSteps,
   waitingSteps,
   type QueuedPath,
+  isLogStep,
   type QueuedStep,
   type StepPath,
 } from "../../lib/offlineQueue";
@@ -83,7 +84,9 @@ const STEP_FIELD: Record<StepPath, "break_time" | "break_end_time" | "time_out">
  * the day reads correctly (and the same step cannot be pressed twice) until
  * the server has them.
  */
-function withWaitingSteps(logs: AttendanceLog[], steps: QueuedStep[]): AttendanceLog[] {
+function withWaitingSteps(logs: AttendanceLog[], queued: QueuedStep[]): AttendanceLog[] {
+  // Pictures waiting with a time-out are not a step of the day.
+  const steps = queued.filter(isLogStep);
   if (steps.length === 0) return logs;
   // A time-in still waiting has no log on the server. The day is shown from
   // what the phone holds, so the next step can be taken and the same
@@ -430,7 +433,7 @@ export function useAttendance(studentId: string | undefined) {
       }
       setLogs((current) => withWaitingSteps(current, [kept]).map((log) =>
         log.id === kept.logId
-          ? { ...log, waiting: [...(todayLog.waiting ?? []), kept.path] }
+          ? { ...log, waiting: [...(todayLog.waiting ?? []), path] }
           : log
       ));
       // Start trying to send it: this keeps going until it gets through.

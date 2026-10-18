@@ -1,4 +1,5 @@
 import { API_URL, withStudentAuth } from "./api";
+import { fitForQueue, MAX_PICTURES, pictureForm, type PictureDraft } from "./attachments";
 import { notifyDataChanged } from "./navCounts";
 import { dequeue, enqueue, queued, requeue } from "./offlineStore";
 import { checkReachable, markUnreachable, REACHABILITY_CHANGED, watchReachability } from "./reachability";
@@ -39,6 +40,15 @@ import { toast } from "./toast";
 | the sign-in token, and keeping the token where the worker could read it
 | would widen who can reach it.
 |
+| PICTURES (Iteration 13). Pictures chosen for a time-out recorded with no
+| connection wait too: three at most, each made smaller first to about
+| 400 kB (lib/attachments.ts#fitForQueue). They are kept as one row of
+| their own right after the time-out (`path: "pictures"`, `forRequest`
+| naming the time-out) and sent once it has been accepted, each with its
+| own id (so one sent twice is kept once) and the time-out's time (so the
+| server holds them to the time-out's age limit). If the time-out is
+| refused, or discarded, its pictures go with it.
+|
 */
 
 export type StepPath = "break" | "break-end" | "time-out";
@@ -46,18 +56,35 @@ export type StepPath = "break" | "break-end" | "time-out";
 /** Anything that can wait in the queue: a step on a log, or the time-in that starts one. */
 export type QueuedPath = StepPath | "time-in";
 
+/** A step, or the pictures that go with a time-out (Iteration 13). */
+export type QueuedKind = QueuedPath | "pictures";
+
+/** One picture waiting with its time-out. */
+export type QueuedPicture = {
+  ref: string;
+  file: Blob;
+  thumb?: Blob;
+  width: number;
+  height: number;
+  caption: string;
+};
+
 /** The id a log has on this phone before the server has given it one. */
 export const LOCAL_LOG_ID = -1;
 
 export type QueuedStep = {
   logId: number;
-  path: QueuedPath;
+  path: QueuedKind;
   occurredAt: string;
   requestId: string;
   /** Anything else the step carries: at time-out, the accomplishment note and the tasks worked on. */
   extra?: Record<string, unknown>;
   /** A time-in's photo, when the camera check ran offline; sent as a form with `extra`. */
   photo?: Blob;
+  /** The pictures still to send, on a "pictures" row. */
+  pictures?: QueuedPicture[];
+  /** On a "pictures" row: the request id of the time-out they go with. */
+  forRequest?: string;
   /** How many times sending it has been tried and has not got through. */
   attempts?: number;
   /** When it was last tried, ISO. */
@@ -71,6 +98,11 @@ export const QUEUE_CHANGED = "internet-offline-queue";
 
 /** Sent when a try did not get through, so the "Waiting to send" panel can show why. Nothing on the server changed. */
 export const QUEUE_TRIED = "internet-offline-queue-tried";
+
+/** A step on a log, as the attendance list shows it; not a row of pictures. */
+export function isLogStep(step: QueuedStep): step is QueuedStep & { path: QueuedPath } {
+  return step.path !== "pictures";
+}
 
 const STEP_NAMES: Record<QueuedPath, string> = {
   "time-in": "time-in",
@@ -125,6 +157,44 @@ export async function queueStep(
   }
 }
 
+/**
+ * Keeps the pictures chosen for the time-out just kept on the phone, to be
+ * sent after it. Returns how many were kept, and why any were not.
+ */
+export async function queuePictures(drafts: PictureDraft[]): Promise<{ kept: number; problem: string }> {
+  if (drafts.length === 0) return { kept: 0, problem: "" };
+  const rows = await waitingRows();
+  const timeOut = [...rows].reverse().find((row) => row.step.path === "time-out");
+  if (!timeOut) return { kept: 0, problem: "The pictures were not kept: the time-out they go with is not on this phone." };
+  const pictures: QueuedPicture[] = [];
+  const problems: string[] = [];
+  for (const draft of drafts.slice(0, MAX_PICTURES)) {
+    try {
+      const fit = await fitForQueue(draft);
+      pictures.push({ ref: fit.ref, file: fit.file, thumb: fit.thumb, width: fit.width, height: fit.height, caption: fit.caption });
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : "A picture could not be kept.");
+    }
+  }
+  if (pictures.length === 0) return { kept: 0, problem: problems.join(" ") };
+  const step: QueuedStep = {
+    logId: timeOut.step.logId,
+    path: "pictures",
+    occurredAt: timeOut.step.occurredAt,
+    requestId: requestId(),
+    forRequest: timeOut.step.requestId,
+    pictures,
+  };
+  try {
+    const id = await enqueue("student", step);
+    if (id === null) return { kept: 0, problem: "This browser cannot keep pictures on the phone." };
+  } catch {
+    return { kept: 0, problem: "This phone has no room to keep the pictures." };
+  }
+  window.dispatchEvent(new Event(QUEUE_TRIED));
+  return { kept: pictures.length, problem: problems.join(" ") };
+}
+
 /** The signed-in student's steps still waiting to be sent, oldest first. */
 export async function waitingSteps(): Promise<QueuedStep[]> {
   try {
@@ -162,6 +232,12 @@ export async function discardWaitingStep(id: number): Promise<number> {
   const going = [row];
   if (row.step.path === "time-in") {
     going.push(...rows.filter((other) => other.id !== id && other.step.logId === LOCAL_LOG_ID));
+  }
+  // A time-out's pictures go with it.
+  for (const other of rows) {
+    if (other.step.forRequest && going.some((one) => one.step.requestId === other.step.forRequest) && !going.includes(other)) {
+      going.push(other);
+    }
   }
   for (const each of going) await dequeue(each.id).catch(() => {});
   window.dispatchEvent(new Event(QUEUE_CHANGED));
@@ -233,7 +309,10 @@ async function send(): Promise<"done" | "waiting"> {
 
   let stillWaiting = false;
   let sent = 0;
+  let picturesSent = 0;
   const refused: string[] = [];
+  // Time-outs refused for good in this round: their pictures are not sent.
+  const refusedRequests = new Set<string>();
   // The id the server gave the log a waiting time-in started, once it has one.
   let startedLog: number | null = null;
   // Set when a waiting time-in was refused with no log to fall back on.
@@ -252,6 +331,17 @@ async function send(): Promise<"done" | "waiting"> {
         break;
       }
       step = { ...step, logId: startedLog };
+    }
+    if (step.path === "pictures") {
+      const outcome = await sendPictures(row.id, step, refusedRequests);
+      if (outcome.kind === "waiting") {
+        stillWaiting = true;
+        break;
+      }
+      if (outcome.kind === "session") break;
+      picturesSent += outcome.sent;
+      if (outcome.kind === "refused") refused.push(outcome.message);
+      continue;
     }
     const timeIn = step.path === "time-in";
     const fields = {
@@ -334,6 +424,7 @@ async function send(): Promise<"done" | "waiting"> {
       sent += 1;
     } else {
       // Refused for good (too old, out of order, already recorded another way).
+      refusedRequests.add(step.requestId);
       refused.push(
         `Your ${STEP_NAMES[step.path]} recorded offline was not added. ${
           typeof data.message === "string" ? data.message : ""
@@ -350,13 +441,82 @@ async function send(): Promise<"done" | "waiting"> {
         : `The ${sent} steps you recorded offline have been sent.`
     );
   }
+  if (picturesSent > 0) {
+    if (sent === 0) cue("sent");
+    toast.success(
+      picturesSent === 1 ? "1 picture was added to your time-out." : `${picturesSent} pictures were added to your time-out.`
+    );
+  }
   if (refused.length > 0) cue("refused");
   for (const message of refused) toast.error(message);
-  if (sent > 0 || refused.length > 0) {
+  if (sent > 0 || picturesSent > 0 || refused.length > 0) {
     window.dispatchEvent(new Event(QUEUE_CHANGED));
     notifyDataChanged();
   }
   return stillWaiting ? "waiting" : "done";
+}
+
+type PicturesOutcome =
+  | { kind: "sent"; sent: number }
+  | { kind: "refused"; sent: number; message: string }
+  | { kind: "waiting" }
+  | { kind: "session" };
+
+/**
+ * Sends the pictures of one "pictures" row, one at a time. What is sent
+ * comes off the row as it goes, so a dropped connection resends only the
+ * rest (and the server keeps one sent twice once, by its id).
+ */
+async function sendPictures(rowId: number, step: QueuedStep, refusedRequests: Set<string>): Promise<PicturesOutcome> {
+  // Its time-out was refused for good: there is nothing for them to go on.
+  if (step.forRequest && refusedRequests.has(step.forRequest)) {
+    await dequeue(rowId).catch(() => {});
+    return { kind: "refused", sent: 0, message: "The pictures for that time-out were not added either." };
+  }
+  const total = step.pictures?.length ?? 0;
+  let left = [...(step.pictures ?? [])];
+  let sent = 0;
+  const stop = async (message: string) => {
+    await noteFailure({ id: rowId, data: { ...step, pictures: left } }, message);
+  };
+  while (left.length > 0) {
+    let response: Response;
+    try {
+      response = await fetch(
+        `${API_URL}/api/attachments`,
+        withStudentAuth({ method: "POST", body: pictureForm("attendance", step.logId, left[0], step.occurredAt) })
+      );
+    } catch {
+      markUnreachable();
+      await stop("The connection dropped while sending the pictures.");
+      return { kind: "waiting" };
+    }
+    if (response.status >= 500) {
+      await stop(`The server had a problem (error ${response.status}). It will try again.`);
+      return { kind: "waiting" };
+    }
+    if (response.status === 401 || response.status === 403) {
+      await stop("Your session has ended. Sign in again and they will be sent.");
+      return { kind: "session" };
+    }
+    if (!response.ok) {
+      // Refused for good (too old, the log decided meanwhile): the rest would be too.
+      const data = (await response.json().catch(() => ({}))) as { message?: unknown };
+      await dequeue(rowId).catch(() => {});
+      const reason = typeof data.message === "string" ? data.message : "";
+      return {
+        kind: "refused",
+        sent,
+        message: `${sent > 0 ? `${sent} of ${total} pictures were added to your time-out; the rest were not.` : "The pictures for your time-out recorded offline were not added."} ${reason}`.trim(),
+      };
+    }
+    sent += 1;
+    left = left.slice(1);
+    // Written down at once, so a round cut short does not send this one again.
+    if (left.length > 0) await requeue(rowId, { ...step, pictures: left }).catch(() => {});
+  }
+  await dequeue(rowId).catch(() => {});
+  return { kind: "sent", sent };
 }
 
 /** Starts watching for the moments when waiting steps can be sent. Call once. */

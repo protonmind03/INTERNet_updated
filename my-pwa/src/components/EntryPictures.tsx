@@ -18,8 +18,13 @@ import { errorText, toast } from "../lib/toast";
  * small squares that open one at a time, full size, with the arrow keys or
  * a swipe to go between them. Nothing is shown when there are none.
  *
- * On a connection the browser reports as metered or slow, a picture is not
- * fetched until it is asked for; its size is shown instead.
+ * The squares show each picture's small preview (Iteration 13: 480 pixels,
+ * made on the phone that sent it); the picture itself is only fetched when
+ * it is opened. A picture with no preview (sent before previews, or from a
+ * browser that cannot make one) shows the picture itself, as before.
+ *
+ * On a connection the browser reports as metered or slow, a picture with no
+ * preview is not fetched until it is asked for; its size is shown instead.
  *
  * Whoever wrote the entry can take a picture off it while the entry can
  * still change (`onCount` tells the page how many are left, so its picker
@@ -49,8 +54,9 @@ export default function EntryPictures({
 }) {
   const [pictures, setPictures] = useState<Picture[]>([]);
   const [canChange, setCanChange] = useState(false);
-  // Object URLs by picture id, once fetched.
+  // Object URLs by picture id, once fetched: the picture itself, and its preview.
   const [urls, setUrls] = useState<Record<number, string>>({});
+  const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const [open, setOpen] = useState<number | null>(null);
   const [costly] = useState(() => onCostlyConnection());
   const kept = useRef<string[]>([]);
@@ -90,15 +96,32 @@ export default function EntryPictures({
     [role]
   );
 
-  // Fetched by themselves unless the connection is one to be careful with.
+  const fetchThumb = useCallback(
+    async (id: number) => {
+      try {
+        const url = await pictureUrl(role, id, true);
+        kept.current.push(url);
+        setThumbs((current) => ({ ...current, [id]: url }));
+      } catch {
+        // The square says "Show" instead; opening it fetches the picture itself.
+      }
+    },
+    [role]
+  );
+
+  // Previews are small and fetched by themselves. A picture with none is
+  // fetched whole, unless the connection is one to be careful with.
   useEffect(() => {
-    if (costly) return;
     for (const picture of pictures) {
-      if (!urls[picture.id]) void Promise.resolve().then(() => fetchOne(picture.id));
+      if (picture.has_preview) {
+        if (!thumbs[picture.id]) void Promise.resolve().then(() => fetchThumb(picture.id));
+      } else if (!costly && !urls[picture.id]) {
+        void Promise.resolve().then(() => fetchOne(picture.id));
+      }
     }
-    // `urls` is left out on purpose: each picture is asked for once.
+    // `urls` and `thumbs` are left out on purpose: each is asked for once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pictures, costly, fetchOne]);
+  }, [pictures, costly, fetchOne, fetchThumb]);
 
   // Give the object URLs back when the entry leaves the screen.
   useEffect(
@@ -168,12 +191,12 @@ export default function EntryPictures({
               aria-label={`Open ${altOf(picture, index)}`}
               className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-lg border border-slate-200 bg-slate-100 text-slate-600 hover:border-psu-400"
             >
-              {urls[picture.id] ? (
-                <img src={urls[picture.id]} alt="" className="h-full w-full object-cover" />
+              {thumbs[picture.id] || urls[picture.id] ? (
+                <img src={thumbs[picture.id] || urls[picture.id]} alt="" className="h-full w-full object-cover" />
               ) : (
                 <span className="flex flex-col items-center gap-0.5 px-1 text-center text-[11px] leading-tight">
                   <Icon name="image" size={18} />
-                  {costly ? `Show (${formatFileSize(picture.size_bytes)})` : "Loading"}
+                  {costly && !picture.has_preview ? `Show (${formatFileSize(picture.size_bytes)})` : "Loading"}
                 </span>
               )}
             </button>

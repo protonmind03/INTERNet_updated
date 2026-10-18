@@ -10,7 +10,7 @@ together.
 
 | Role | Works with no connection | Waits on the phone, sent later | Needs a connection |
 |---|---|---|---|
-| Student | Dashboard, attendance, tasks, schedule, absences, company and profile as last loaded; drafts of journals, reports, task notes, absences and messages | Time-in (with a photo when the phone is ready, otherwise without one for the supervisor to confirm), within 12 h; out for lunch and back from lunch, within 12 h; time-out, within 24 h | Submitting tasks, documents, journals and absences; messages and concerns; signing in |
+| Student | Dashboard, attendance, tasks, schedule, absences, company and profile as last loaded; drafts of journals, reports, task notes, absences and messages | Time-in (with a photo when the phone is ready, otherwise without one for the supervisor to confirm), within 12 h; out for lunch and back from lunch, within 12 h; time-out, within 24 h, with up to 3 pictures (about 400 kB each) sent after it | Submitting tasks, documents, journals and absences, and pictures on journals and concerns; messages and concerns; signing in |
 | Supervisor | Interns, logs, tasks, documents, absences, weekly reports and schedules as last loaded; message drafts | Nothing: a decision is never kept for later | Every decision; recording an intern's time-in; giving tasks; messages; signing in |
 | Coordinator | Notifications and announcements as last loaded; message drafts | Nothing | Every page's current figures; every decision, change, import and export; signing in |
 
@@ -55,3 +55,30 @@ message and reload.
   checks.
 - A new decision route should call `staleDecision(...)` right after its id
   check, and its list should select the `version` column.
+
+## Pictures on entries
+
+Up to three pictures on a time-out note, a weekly report or a concern
+(`backend/src/routes/attachments.ts`, `my-pwa/src/lib/attachments.ts`).
+
+- The phone redraws each picture (at most 1600 px, JPEG, which drops the
+  camera's location data) and also makes a **480 px WebP preview**. Both are
+  sent; the server keeps the preview as `preview_path` (migration 063).
+  Lists show previews (`GET /api/attachments/:id/preview`); the picture
+  itself (`/file`) is fetched when it is opened. A picture without a
+  preview is shown from the picture itself.
+- Each picture carries `client_ref`, the phone's id for it: a second
+  upload with the same id onto the same entry returns the picture already
+  there.
+- **Offline:** pictures chosen for a time-out with no connection wait in the
+  queue as a `"pictures"` row right after it (made smaller to about
+  400 kB each), and are sent once the time-out is accepted, with the
+  time-out's `occurred_at`; the server refuses them past
+  `OFFLINE_MAX_AGE_HOURS_TIME_OUT`. Journals and concerns still need a
+  connection, pictures included.
+- **HEIC** is refused with guidance on what to change on the phone
+  (roadmap decision 6); no converter is shipped.
+- **Coordinator ZIP:** `include_pictures=1` on
+  `/api/coordinator/documents/zip` adds the same students' pictures on
+  time-out notes and weekly reports as `Pictures/<student>/...`, inside the
+  same 500-file and 500 MB limits. Pictures on concerns are never included.

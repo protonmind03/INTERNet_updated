@@ -30,6 +30,7 @@ export default function ScheduleMonth(props: {
     <MonthCalendar
       {...props}
       logs={attendance.logs}
+      pictureRole="student"
       dayFooter={(facts) => {
         const toTasks = facts.due.length > 0 && !facts.log;
         // A deliverable (its id is negative) is handed in on the Documents page.

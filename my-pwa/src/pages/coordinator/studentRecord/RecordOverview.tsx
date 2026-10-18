@@ -1,4 +1,5 @@
 import { useId, type ReactNode } from "react";
+import EntryPictures from "../../../components/EntryPictures";
 import Icon, { type IconName } from "../../../components/Icon";
 import { EmptyState, ProgressRing, Stars, StatusBadge } from "../../../components/ui";
 import { formatDate, formatDayDate, formatHours, formatLongDate, formatTime, getInitials, phDateKey } from "../../../lib/format";
@@ -1066,6 +1067,8 @@ function DayDetail(props: Props & { info: DayInfo }) {
         <div className="mt-3 grid gap-x-4 gap-y-2.5 sm:grid-cols-2">
           <DaySection label="What was done">
             {log.accomplishments ? log.accomplishments : <span className="text-slate-500">{open ? "Written at time-out." : "Nothing was written at time-out."}</span>}
+            {/* Iteration 13: the pictures on the time-out note. */}
+            <EntryPictures role="coordinator" owner="attendance" ownerId={log.id} count={log.pictures} className="mt-2" />
           </DaySection>
           {log.tasks && log.tasks.length > 0 && (
             <DaySection label="Tasks worked on">
