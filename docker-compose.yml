@@ -61,7 +61,9 @@ services:
   api:
     image: node:22-bookworm
     working_dir: /app/backend
-    command: sh -c "npm install --no-audit --no-fund && npm run db:migrate && npx tsx watch src/server.ts"
+    # Packages are installed once, into the container's own folder, with npm ci (which never
+    # changes package-lock.json). After a package change: docker compose exec api npm ci
+    command: sh -c "[ -x node_modules/.bin/tsx ] || npm ci --no-audit --no-fund; npm run db:migrate && npx tsx watch src/server.ts"
     depends_on:
       db:
         condition: service_healthy
@@ -114,7 +116,8 @@ services:
   web:
     image: node:22-bookworm
     working_dir: /app/my-pwa
-    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5173 --strictPort"
+    # As for the API: after a package change, docker compose exec web npm ci
+    command: sh -c "[ -x node_modules/.bin/vite ] || npm ci --no-audit --no-fund; npm run dev -- --host 0.0.0.0 --port 5173 --strictPort"
     depends_on:
       - api
     environment:

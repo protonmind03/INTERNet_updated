@@ -163,6 +163,11 @@ docker compose exec api npm run db:seed-demo
 `docker compose down` stops everything and keeps the data;
 `docker compose down -v` erases it too.
 
+Packages are installed once, into the containers' own folders, with
+`npm ci`, so `package-lock.json` on your computer is never changed. After
+adding or updating a package, run `docker compose exec api npm ci` (or
+`web`) and restart that container.
+
 Notes:
 
 - **Stop any `npm run dev` of your own first.** Two dev servers on port

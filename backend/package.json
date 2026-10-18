@@ -4,7 +4,7 @@
   "description": "",
   "main": "src/server.ts",
   "engines": {
-    "node": ">=20"
+    "node": ">=20.19"
   },
   "scripts": {
     "start": "npm run db:migrate && tsx src/server.ts",
