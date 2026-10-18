@@ -128,3 +128,82 @@ the role, how long the data takes, and reduced motion to choose.
 The prototype components themselves are not used by the app. The page exists in development (`npm run dev`, or
 `npm run dev:phone` to open it on a phone), or in a build made with
 `VITE_BRAND_PREVIEW=true` (for a test site only; production leaves it unset).
+
+## Docker for development
+
+`docker-compose.yml` (in the project folder) runs the whole system on
+your computer: PostgreSQL 16, the API (`tsx watch`, so it restarts when a
+file changes), the Vite dev server, Mailpit, which catches every email,
+and an S3 stand-in for Cloudflare R2. **None of it is used by the test
+site or production**: Vercel and Railway build from the folders directly,
+and every password in it is a throwaway.
+
+**First run** (needs Docker Desktop):
+
+```
+docker compose up
+```
+
+The first start downloads the images and installs the packages inside the
+containers (a few minutes). Then, in a second terminal, add the demo
+accounts:
+
+```
+docker compose exec api npm run db:seed-demo
+```
+
+| What | Where |
+|---|---|
+| The app | http://localhost:5173 (sign in with the demo accounts the seed printed) |
+| The API | http://localhost:5000/api/health |
+| Caught email | http://localhost:8025 (password resets, reminders, messages) |
+| The database | `localhost:5433`, user `postgres`, password `postgres`, database `internet_ojt` |
+| The bucket stand-in | http://localhost:9090, buckets `internet-dev-uploads` and `internet-dev-backups`, any access key |
+
+`docker compose down` stops everything and keeps the data;
+`docker compose down -v` erases it too.
+
+Notes:
+
+- **Stop any `npm run dev` of your own first.** Two dev servers on port
+  5173 (or 5000) answer for each other.
+- **Email** goes to Mailpit without TLS. The API allows that only when
+  `SMTP_ALLOW_PLAINTEXT=true` *and* the mail server is `mailpit` or this
+  computer; any real mail server still needs TLS.
+- **The demo seed** refuses every database but a local `internet_ojt`. In
+  the containers the database is called `db`, so the compose file sets
+  `INTERNET_DOCKER_DEV=1`, which allows exactly that host.
+- **The database address** ends in `?sslmode=disable`: the container has
+  no TLS, and the backend otherwise uses TLS for every host that is not
+  this computer.
+- **Uploads** stay on the API container's disk, as on Railway today.
+  Uncomment the four `R2_*` lines in the compose file to try the bucket
+  stand-in instead.
+- **Backups** can be tried against the stand-in: run
+  `docker compose exec api npm run backup:keygen`, put the public key in
+  your shell (PowerShell: `$env:BACKUP_AGE_RECIPIENT="age1…"`), run
+  `docker compose up -d api`, then
+  `docker compose exec api npm run backup:uploads-now`. The nightly
+  database backup needs `pg_dump`, which is in `backend/backup.Dockerfile`,
+  not in the API container.
+- `backend/.env` on your computer is visible inside the API container (the
+  folder is shared), but the compose file's own settings win for every name
+  it sets.
+
+## Scheduled backups
+
+`backend/src/services/backups.ts` and `backend/src/scripts/backup-cron.ts`;
+DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
+
+- The nightly database backup is a separate Railway service
+  (`backend/railway.backup.json`, `backend/backup.Dockerfile`): `pg_dump -Fc`
+  streamed through age encryption (the `age-encryption` package, to a
+  public key) into a multipart upload, never held whole in memory or on
+  disk. A dump that fails is abandoned before the upload is made final.
+- The weekly uploads pack runs in the backend's scheduler, between 02:30
+  and 05:00, only while files are on its disk.
+- Every run is a row in `backup_runs` (migration 064); the coordinator's
+  status card reads them (`GET /api/coordinator/system-status` > `backups`).
+  A restore drill is recorded with `POST /api/coordinator/backups/restore-drill`.
+- `npm run backup:keygen` makes the key pair; `npm run backup:decrypt`
+  opens a backup with the private key, for a restore.

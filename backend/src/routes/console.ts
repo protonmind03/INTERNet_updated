@@ -10,6 +10,7 @@ import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
 import { recentProblems } from "../services/problems";
 import { PURGE_TIME, lastPhotoPurge } from "../services/photoPurge";
 import { uploadUsage } from "../services/uploadQuota";
+import { backupStatus } from "../services/backups";
 
 /*
 |--------------------------------------------------------------------------
@@ -70,10 +71,36 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
           photo_purge_time: PURGE_TIME,
           last_photo_purge: await lastPhotoPurge(pool),
         },
+        // Iteration 15: the last backups and restore drill (backup_runs, migration 064).
+        backups: await backupStatus(pool),
       });
     } catch (error) {
       console.error("SYSTEM STATUS ERROR:", error);
       return res.status(500).json({ message: "Failed to read what is switched on." });
+    }
+  });
+
+  // A restore drill done by a person (DEPLOY.md, "Restore drill"), recorded so the
+  // status card stops asking for one until next month. What was restored, in a line.
+  app.post("/api/coordinator/backups/restore-drill", requireCoordinator, async (req, res) => {
+    try {
+      const auth = (req as express.Request & { auth?: { id: string } }).auth!;
+      const detail = typeof req.body?.detail === "string" ? req.body.detail.trim() : "";
+      if (detail.length < 5 || detail.length > 300) {
+        return res.status(400).json({ message: "Say in a line which backup was restored and what was checked (5 to 300 characters)." });
+      }
+      const added = await pool.query<{ id: string; finished_at: Date }>(
+        `INSERT INTO backup_runs (kind, status, finished_at, detail, recorded_by)
+         VALUES ('restore_drill', 'ok', NOW(), $1, $2) RETURNING id, finished_at`,
+        [detail, String(auth.id)]
+      );
+      return res.status(201).json({
+        message: "Restore drill recorded. The status card will ask again in a month.",
+        drill: { id: Number(added.rows[0].id), at: added.rows[0].finished_at, detail },
+      });
+    } catch (error) {
+      console.error("RECORD RESTORE DRILL ERROR:", error);
+      return res.status(500).json({ message: "Failed to record the restore drill." });
     }
   });
 

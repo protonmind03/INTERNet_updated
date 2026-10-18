@@ -1,0 +1,10 @@
+# Never sent to a Docker build: secrets, installed packages, and personal data.
+.env
+.env.*
+node_modules
+private-uploads
+uploads
+backups
+*.dump
+*.age
+test

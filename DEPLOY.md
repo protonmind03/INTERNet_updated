@@ -246,12 +246,115 @@ volume and are not in a database dump.
 Railway's own backups (volume > **Backups** tab: manual, scheduled,
 point-in-time) need the Pro plan. On Pro, set a daily schedule on both the
 Postgres volume and the backend volume and skip the manual steps below. On
-the trial or Hobby plan the manual steps are the only backup there is.
+the trial or Hobby plan, set up the scheduled backups below; until then the
+manual steps are the only backup there is.
 
 Take a backup **before every deploy that contains a migration**, and keep
 the files somewhere other than one laptop. Both contain personal data:
 never commit them (`*.dump` and `backend/backups/` are git-ignored) and
 never share them in a chat.
+
+### Scheduled backups (set up by you, once)
+
+**Not set up yet.** The code is ready (Iteration 15); nothing has been
+done on Railway or Cloudflare. Until these steps are done, the manual
+backups below are still the only ones.
+
+What it does once set up:
+
+- **Every night at 01:30 Philippine time** a small Railway service of its
+  own dumps the database (`pg_dump -Fc`) over Railway's private network,
+  **encrypts** it with a public key, and uploads it to a private Cloudflare
+  R2 bucket. On the 1st of the month the same file is also kept as that
+  month's copy.
+- **Once a week**, between 02:30 and 05:00, the backend packs every
+  uploaded file (photos, documents) into one encrypted ZIP in the same
+  bucket, as long as the files are on its volume. Once uploads are moved to
+  a bucket ("Moving uploads to a bucket"), this stops by itself.
+- The bucket deletes old copies by itself: nightly ones after 30 days,
+  monthly ones after a year, weekly upload packs after 35 days.
+- Every run is recorded. **Profile settings > What is switched on** shows
+  the last good backup, any failure and its reason, and turns amber when a
+  night was missed. It also asks for a restore drill once a month.
+
+Only you can open a backup: it is encrypted to a key whose private half
+never goes to Railway or Cloudflare. **Lose that private key and every
+backup is unreadable.**
+
+**1. Make the key pair** (on your computer, in the `backend` folder):
+
+```
+npm run backup:keygen
+```
+
+It prints a **public key** (`age1…`) and a **private key**
+(`AGE-SECRET-KEY-…`). Save the private key in a password manager **and**
+on paper kept somewhere safe, then clear the window. Never paste it into
+Railway, a chat, an email or the repository. Keep the public key for step 4.
+
+**2. Make the bucket** (Cloudflare dashboard > R2):
+
+1. Create bucket: name `internet-backups`, location Automatic. Leave
+   public access **off**.
+2. In the bucket: Settings > Object lifecycle rules > Add rule, four times:
+
+   | Rule name | Prefix | Action |
+   |---|---|---|
+   | nightly | `backups/database/daily/` | Delete objects 30 days after upload |
+   | monthly | `backups/database/monthly/` | Delete objects 365 days after upload |
+   | uploads | `backups/uploads/weekly/` | Delete objects 35 days after upload |
+   | unfinished | (whole bucket) | Abort incomplete multipart uploads after 1 day |
+
+**3. Make a token for this bucket only** (R2 > Manage API tokens > Create
+API token): permission **Object Read & Write**, applied to **Specific
+bucket: internet-backups**. It shows an **Access Key ID** and a **Secret
+Access Key** once; your **Account ID** is on the R2 overview page. Put them
+straight into Railway in step 4; do not save them anywhere else and never
+paste them into a chat.
+
+**4. Add the backup service** (Railway, the production project):
+
+1. New > GitHub Repo > this repository. Rename the new service `backup`.
+2. Service > Settings:
+   - Source > **Root Directory**: `backend`
+   - Config-as-code > **Railway config file**: `/backend/railway.backup.json`
+     This sets everything else: it builds `backend/backup.Dockerfile` (Node
+     and PostgreSQL 18's `pg_dump`), runs `npm run backup:database`, on the
+     cron schedule `30 17 * * *` (17:30 UTC is 01:30 in the Philippines),
+     and never restarts a run that ended.
+   - Networking: add **no** public domain; it needs none.
+3. Service > Variables (type the names exactly; the values from steps 1 and 3):
+
+   | Variable | Value |
+   |---|---|
+   | `BACKUP_DATABASE_URL` | `${{Postgres.DATABASE_URL}}` (typed exactly: Railway fills in the private address) |
+   | `BACKUP_R2_ACCOUNT_ID` | the Account ID |
+   | `BACKUP_R2_ACCESS_KEY_ID` | the token's Access Key ID |
+   | `BACKUP_R2_SECRET_ACCESS_KEY` | the token's Secret Access Key |
+   | `BACKUP_R2_BUCKET` | `internet-backups` |
+   | `BACKUP_AGE_RECIPIENT` | the public key, `age1…` |
+
+4. Deploy. A cron service only runs at its time. To see it work the same
+   day, change the schedule to a few minutes from now (in UTC) in
+   Settings > Cron Schedule, wait for the run, then set it back to
+   `30 17 * * *`.
+
+**5. Add the weekly uploads pack to the backend** (Railway, the backend
+service > Variables): the same five `BACKUP_R2_*`/`BACKUP_AGE_RECIPIENT`
+variables as in step 4 (not `BACKUP_DATABASE_URL`). To pack once right
+away instead of waiting for the night: `railway ssh` into the backend
+service, then `npm run backup:uploads-now`.
+
+**6. Check** the next morning: Profile settings > What is switched on >
+**Database backup** says "On" with last night's time and size. If it says
+"Missed" or shows a failure, the line says why; the backup service's
+Deployments tab on Railway has the full log (it never prints the
+password or the keys). In Cloudflare, the bucket shows
+`backups/database/daily/<date>.dump.age`.
+
+Cost: Cloudflare R2 is free up to 10 GB stored a month. Thirty nightly
+dumps plus twelve monthly ones of today's database are a few megabytes; the
+weekly upload packs are the size of the uploads folder, five weeks of them.
 
 ### Database (run by you)
 
@@ -332,9 +435,22 @@ somewhere other than your laptop, and never share it.
 
 ### Restore drill
 
-A backup that has never been restored is not yet a backup. To check a dump,
-restore it into a scratch database on your own machine and run the tests
-against it:
+A backup that has never been restored is not yet a backup. Do this once a
+month; the status card reminds you.
+
+**A scheduled backup** is encrypted. Download the newest
+`backups/database/daily/<date>.dump.age` from the bucket (Cloudflare > R2 >
+`internet-backups` > the file > Download), save your private key in a file
+(one line, `AGE-SECRET-KEY-…`) and open the backup in the `backend` folder:
+
+```
+npm run backup:decrypt -- C:path	o6-10-17.dump.age C:path	okey.txt
+```
+
+It writes `2026-10-17.dump` beside it. Delete the key file when done.
+
+Then restore the dump into a scratch database on your own machine and run
+the tests against it:
 
 ```powershell
 $bin = "C:\Program Files\PostgreSQL\18\bin"
@@ -346,6 +462,9 @@ Then start the API against it on a spare port
 (`DATABASE_PUBLIC_URL=...localhost.../internet_restore`, `PORT=5002`) and
 compare a few row counts with production. Drop the scratch database when
 done: it holds real personal data.
+
+Finally, record it: Profile settings > What is switched on > **Record a
+drill**, with a line on what you restored and checked.
 
 This drill was run on 2026-10-10 with a local dump (made by
 `npm run db:backup-local`): restore succeeded, row counts and the 16 applied

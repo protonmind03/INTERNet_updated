@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { Card, SkeletonRows } from "../../components/ui";
+import { Card, ConfirmDialog, FormField, SkeletonRows } from "../../components/ui";
+import { formatFileSize } from "../../lib/files";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import { PH_TIME_ZONE, phStamp } from "../../lib/phTime";
@@ -23,6 +24,18 @@ type Status = {
     photo_purge_time?: string;
     last_photo_purge?: { ran_at: string; retention_days: number; removed: number; failed: number; by_hand: boolean } | null;
   };
+  /** Iteration 15 (backup_runs, migration 064). Missing from an older server. */
+  backups?: {
+    database: BackupLine;
+    uploads: BackupLine & { needed: boolean };
+    restore_drill: { last: { at: string; detail: string | null; recorded_by: string | null } | null; due: boolean };
+  };
+};
+
+type BackupLine = {
+  last_ok: { finished_at: string; size_bytes: number | null; object_key: string | null } | null;
+  last_run: { started_at: string; finished_at: string | null; status: "running" | "ok" | "failed" | "unfinished"; detail: string | null } | null;
+  missed: boolean;
 };
 
 type Problem = {
@@ -56,6 +69,11 @@ export default function SystemStatus() {
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
   const [problems, setProblems] = useState<Problem[] | null>(null);
+  // Recording a restore drill: what was restored, in a line.
+  const [drillOpen, setDrillOpen] = useState(false);
+  const [drillText, setDrillText] = useState("");
+  const [drillSaving, setDrillSaving] = useState(false);
+  const [drillError, setDrillError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -67,6 +85,7 @@ export default function SystemStatus() {
     return () => controller.abort();
   }, []);
 
+  const [reload, setReload] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
     coordinatorRequest<Status>("/api/coordinator/system-status", { signal: controller.signal })
@@ -76,7 +95,30 @@ export default function SystemStatus() {
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, []);
+  }, [reload]);
+
+  const recordDrill = async () => {
+    if (drillText.trim().length < 5) {
+      setDrillError("Say which backup was restored and what you checked.");
+      return;
+    }
+    setDrillSaving(true);
+    setDrillError("");
+    try {
+      const data = await coordinatorRequest<{ message: string }>("/api/coordinator/backups/restore-drill", {
+        method: "POST",
+        body: { detail: drillText.trim() },
+      });
+      toast.success(data.message);
+      setDrillOpen(false);
+      setDrillText("");
+      setReload((current) => current + 1);
+    } catch (saveError) {
+      setDrillError(errorText(saveError, "The restore drill could not be recorded."));
+    } finally {
+      setDrillSaving(false);
+    }
+  };
 
   if (failed) return null;
 
@@ -190,8 +232,71 @@ export default function SystemStatus() {
                 : "Kept with no limit."
             }
           />
+          {status.backups && (
+            <>
+              <Line
+                name="Database backup"
+                on={Boolean(status.backups.database.last_ok) && !status.backups.database.missed}
+                warn={status.backups.database.missed && Boolean(status.backups.database.last_run)}
+                state={backupState(status.backups.database)}
+                about={backupText(status.backups.database, "nightly")}
+              />
+              {status.backups.uploads.needed && (
+                <Line
+                  name="Uploaded files backup"
+                  on={Boolean(status.backups.uploads.last_ok) && !status.backups.uploads.missed}
+                  warn={status.backups.uploads.missed && Boolean(status.backups.uploads.last_run)}
+                  state={backupState(status.backups.uploads)}
+                  about={backupText(status.backups.uploads, "weekly")}
+                />
+              )}
+              <Line
+                name="Restore drill"
+                on={!status.backups.restore_drill.due}
+                warn={status.backups.restore_drill.due}
+                state={status.backups.restore_drill.due ? "Due" : "Done"}
+                about={drillSummary(status.backups.restore_drill)}
+                action={
+                  <button
+                    type="button"
+                    onClick={() => setDrillOpen(true)}
+                    className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                  >
+                    Record a drill
+                  </button>
+                }
+              />
+            </>
+          )}
         </ul>
       )}
+      <ConfirmDialog
+        open={drillOpen}
+        title="Record a restore drill"
+        message="Once a month, a backup is restored on someone's own computer and checked (the deployment notes have the steps). Record it here when it is done."
+        confirmLabel="Record it"
+        busy={drillSaving}
+        onConfirm={() => void recordDrill()}
+        onCancel={() => {
+          setDrillOpen(false);
+          setDrillError("");
+        }}
+      >
+        <FormField label="What was restored and checked" htmlFor="drill-detail" hint="For example: the 17 Oct nightly backup, restored to a scratch database; row counts matched.">
+          <input
+            id="drill-detail"
+            value={drillText}
+            maxLength={300}
+            onChange={(event) => setDrillText(event.target.value)}
+            className="mt-1 block h-10 w-full rounded-lg border border-slate-300 px-3 text-sm"
+          />
+        </FormField>
+        {drillError && (
+          <p role="alert" className="mt-2 text-sm text-red-700">
+            {drillError}
+          </p>
+        )}
+      </ConfirmDialog>
       {problems !== null && (
         <section aria-labelledby="problems-heading" className="mt-4 border-t border-slate-100 pt-4">
           <h3 id="problems-heading" className="text-sm font-semibold text-slate-900">
@@ -243,6 +348,45 @@ function photoPurgeText(privacy: Status["privacy"]): string {
   );
 }
 
+function backupState(line: BackupLine): string {
+  if (!line.last_run) return "Not yet";
+  if (line.missed) return line.last_run.status === "running" ? "Running" : "Missed";
+  return "On";
+}
+
+/** What the card says about one kind of backup: when the last good one was, and any later failure. */
+function backupText(line: BackupLine, how: "nightly" | "weekly"): string {
+  if (!line.last_run) {
+    return how === "nightly"
+      ? "No backup has run yet. The backup service is set up on Railway (deployment notes, Scheduled backups)."
+      : "Packed once a week while files are on the server's disk. It has not run yet.";
+  }
+  const parts: string[] = [];
+  if (line.last_ok) {
+    const size = line.last_ok.size_bytes === null ? "" : `, ${formatFileSize(line.last_ok.size_bytes)}`;
+    parts.push(`Last good backup ${phStamp(new Date(line.last_ok.finished_at))}${size}, encrypted.`);
+  } else {
+    parts.push("No backup has worked yet.");
+  }
+  const last = line.last_run;
+  if (last.status === "failed" || last.status === "unfinished") {
+    parts.push(
+      `The last try, ${phStamp(new Date(last.started_at))}, ${last.status === "failed" ? "failed" : "did not finish"}${last.detail ? `: ${last.detail}` : "."}`
+    );
+  }
+  if (line.missed) {
+    parts.push(how === "nightly" ? "There is no good backup from the last day: check the backup service." : "There is no good pack from the last week.");
+  }
+  return parts.join(" ");
+}
+
+function drillSummary(drill: NonNullable<Status["backups"]>["restore_drill"]): string {
+  const last = drill.last
+    ? `Last ${phStamp(new Date(drill.last.at))}${drill.last.detail ? `: ${drill.last.detail}` : "."}`
+    : "None recorded yet.";
+  return drill.due ? `${last} One is due: a backup is only proven by restoring it, once a month.` : last;
+}
+
 function emailText(email: Status["email"]): string {
   if (!email.on) {
     return "No email is sent. \"Forgot password\" does not work; reset a password from the person's row instead.";
@@ -263,12 +407,15 @@ function emailText(email: Status["email"]): string {
 function Line({
   name,
   on,
+  warn = false,
   state,
   about,
   action,
 }: {
   name: string;
   on: boolean;
+  /** Something needs doing (a missed backup, a drill due): the label stands out. */
+  warn?: boolean;
   state?: string;
   about: string;
   action?: React.ReactNode;
@@ -280,7 +427,7 @@ function Line({
           {name}
           <span
             className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-              on ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"
+              warn ? "bg-amber-50 text-amber-900" : on ? "bg-emerald-50 text-emerald-800" : "bg-slate-100 text-slate-700"
             }`}
           >
             {state ?? (on ? "On" : "Off")}

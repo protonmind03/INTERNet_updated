@@ -1,0 +1,135 @@
+# INTERNet for DEVELOPMENT ONLY. Nothing here is used by the test site or
+# production (Vercel and Railway build from the folders directly). Every
+# password below is a throwaway for this computer.
+#
+#   docker compose up            start everything (first run: a few minutes)
+#   docker compose exec api npm run db:seed-demo      the demo accounts
+#   docker compose down          stop (the data stays)
+#   docker compose down -v       stop and erase the data
+#
+# Then:  the app        http://localhost:5173
+#        the API        http://localhost:5000/api/health
+#        caught email   http://localhost:8025   (every email the API sends)
+#        the database   localhost:5433, user postgres, password postgres
+#        the bucket     http://localhost:9090   (S3 stand-in, any keys)
+#
+# DEVELOPING.md, "Docker for development", explains each part.
+
+name: internet-dev
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: internet_ojt
+    ports:
+      # 5433 on this computer, so a PostgreSQL installed here (5432) keeps working.
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d internet_ojt"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # Catches every email the API sends; nothing leaves this computer.
+  mailpit:
+    image: axllent/mailpit:v1.31.3
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  # An S3-compatible stand-in for Cloudflare R2 (the MinIO community image
+  # is no longer published): two buckets, any access key accepted.
+  bucket:
+    image: adobe/s3mock:5.2.3
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: internet-dev-uploads,internet-dev-backups
+      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /s3mockroot
+      COM_ADOBE_TESTING_S3MOCK_STORE_RETAIN_FILES_ON_EXIT: "true"
+    ports:
+      - "9090:9090"
+    volumes:
+      - bucket-data:/s3mockroot
+
+  api:
+    image: node:22-bookworm
+    working_dir: /app/backend
+    command: sh -c "npm install --no-audit --no-fund && npm run db:migrate && npx tsx watch src/server.ts"
+    depends_on:
+      db:
+        condition: service_healthy
+      mailpit:
+        condition: service_started
+      bucket:
+        condition: service_started
+    environment:
+      # The database container has no TLS; sslmode=disable says so (pg reads it from the address).
+      DATABASE_PUBLIC_URL: postgresql://postgres:postgres@db:5432/internet_ojt?sslmode=disable
+      JWT_SECRET: development-only-signing-key-not-for-any-real-server
+      PORT: "5000"
+      FRONTEND_URL: http://localhost:5173
+      PRIVATE_UPLOAD_DIR: /app/uploads
+      # Lets `npm run db:seed-demo` add the demo accounts to this database ("db").
+      INTERNET_DOCKER_DEV: "1"
+      # Email goes to Mailpit, without TLS (allowed only for mailpit/localhost).
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      SMTP_USER: dev
+      SMTP_PASSWORD: dev
+      SMTP_FROM: INTERNet (development) <noreply@internet.local>
+      SMTP_ALLOW_PLAINTEXT: "true"
+      # Uploads stay on the container's disk, as on Railway today. To try the
+      # bucket instead, uncomment these four:
+      # R2_ACCOUNT_ID: dev
+      # R2_ACCESS_KEY_ID: dev
+      # R2_SECRET_ACCESS_KEY: dev
+      # R2_BUCKET: internet-dev-uploads
+      R2_ENDPOINT: http://bucket:9090
+      # Backups to the stand-in bucket: set BACKUP_AGE_RECIPIENT to a key from
+      # `npm run backup:keygen` to switch them on (DEVELOPING.md).
+      BACKUP_R2_ACCOUNT_ID: dev
+      BACKUP_R2_ACCESS_KEY_ID: dev
+      BACKUP_R2_SECRET_ACCESS_KEY: dev
+      BACKUP_R2_BUCKET: internet-dev-backups
+      BACKUP_R2_ENDPOINT: http://bucket:9090
+      BACKUP_AGE_RECIPIENT: ${BACKUP_AGE_RECIPIENT:-}
+      BACKUP_DATABASE_URL: postgresql://postgres:postgres@db:5432/internet_ojt?sslmode=disable
+      # File changes on a Windows or macOS folder reach the container by polling.
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backend:/app/backend
+      # The container's own packages, never this computer's (they differ by system).
+      - api-modules:/app/backend/node_modules
+      - uploads:/app/uploads
+
+  web:
+    image: node:22-bookworm
+    working_dir: /app/my-pwa
+    command: sh -c "npm install --no-audit --no-fund && npm run dev -- --host 0.0.0.0 --port 5173 --strictPort"
+    depends_on:
+      - api
+    environment:
+      # The browser on this computer calls the API, so its address is this computer's.
+      VITE_API_URL: http://localhost:5000
+      CHOKIDAR_USEPOLLING: "true"
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./my-pwa:/app/my-pwa
+      - web-modules:/app/my-pwa/node_modules
+
+volumes:
+  db-data:
+  bucket-data:
+  uploads:
+  api-modules:
+  web-modules:

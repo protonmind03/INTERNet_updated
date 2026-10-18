@@ -52,9 +52,12 @@ async function seedDemoData() {
   }
 
   const host = databaseUrl.hostname.replace(/^\[|\]$/g, "");
+  // In the development containers (docker-compose.yml) the database is the
+  // container named "db", reachable only inside that private network.
+  const dockerDev = process.env.INTERNET_DOCKER_DEV === "1" && host === "db";
   if (
     !["postgres:", "postgresql:"].includes(databaseUrl.protocol) ||
-    !["localhost", "127.0.0.1", "::1"].includes(host) ||
+    (!["localhost", "127.0.0.1", "::1"].includes(host) && !dockerDev) ||
     databaseUrl.pathname !== "/internet_ojt"
   ) {
     throw new Error(

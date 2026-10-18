@@ -16,6 +16,9 @@ backend/private-uploads/
 # Database dumps and upload copies made by the backup scripts
 backend/backups/
 *.dump
+# Encrypted scheduled backups, and private keys for them, never belong in the repository
+*.age
+AGE-SECRET-KEY*
 
 # Paper drafts stay local; they carry the group members' names
 CC106 GROUP 9*.docx

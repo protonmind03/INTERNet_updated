@@ -177,11 +177,17 @@ async function sendThroughSmtp(email: Email): Promise<void> {
     throw new Error("SMTP_PORT must be a valid TCP port.");
   }
 
+  // Development only: Mailpit (docker-compose.yml) catches mail without TLS.
+  // Allowed only when asked for and only for a mail server on this machine or
+  // the development containers' own; every real server still needs TLS.
+  const plaintext =
+    process.env.SMTP_ALLOW_PLAINTEXT === "true" && ["mailpit", "localhost", "127.0.0.1"].includes(String(process.env.SMTP_HOST));
   const transporter = nodemailer.createTransport({
     host: process.env.SMTP_HOST,
     port,
     secure: port === 465,
-    requireTLS: port !== 465,
+    requireTLS: port !== 465 && !plaintext,
+    ...(plaintext ? { ignoreTLS: true } : {}),
     // A mail server that accepts the connection and then says nothing
     // would otherwise hold each send for minutes.
     connectionTimeout: 10_000,

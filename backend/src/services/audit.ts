@@ -842,6 +842,16 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     keep: ["name", "isActive", "is_active"],
   },
+  // Iteration 15: a coordinator saying a backup was restored and checked.
+  {
+    method: "POST",
+    path: "/api/coordinator/backups/restore-drill",
+    action: "backup.restore_drill",
+    entityType: "backup",
+    entityId: (source) => nested(source.result, "drill") && nested(nested(source.result, "drill"), "id"),
+    roles: ["coordinator"],
+    keep: ["detail"],
+  },
   {
     method: "PUT",
     path: "/api/coordinator/students/:studentId/schedule",

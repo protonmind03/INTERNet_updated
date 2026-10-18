@@ -20,6 +20,7 @@ import { isEmailConfigured, sendEmail, useEmailBudget } from "./services/mailer"
 import { claimEmail, returnEmail } from "./services/emailBudget";
 import { createProblemKeeper, problemFromBrowser, watchServerErrors } from "./services/problems";
 import { runPhotoPurgeIfDue } from "./services/photoPurge";
+import { runUploadsPackIfDue } from "./services/backups";
 import { stripImageMetadata } from "./services/imageMetadata";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
 import {
@@ -10107,6 +10108,7 @@ app.listen(
     startDeadlineReminderScheduler(pool, createNotification);
     startTimeOutReminderScheduler(pool, createNotification);
     // The nightly photo clean-up rides on the same check (services/photoPurge.ts).
-    startDigestScheduler(pool, [sendCoordinatorDigests, runPhotoPurgeIfDue]);
+    // The weekly pack of uploaded files to the backup bucket, while they are on this server's disk (Iteration 15).
+    startDigestScheduler(pool, [sendCoordinatorDigests, runPhotoPurgeIfDue, runUploadsPackIfDue]);
   }
 );

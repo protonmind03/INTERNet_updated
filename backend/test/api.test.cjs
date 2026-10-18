@@ -10826,3 +10826,317 @@ test("the loading prototypes P1 to P3 are reached only from the brand preview, n
     assert.doesNotMatch(fs.readFileSync(path.join(src, file), "utf8"), /BrandPreview|LoadingPrototypes|PrototypeRun/, file);
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| ITERATION 15: SCHEDULED BACKUPS
+|--------------------------------------------------------------------------
+*/
+
+/** A stand-in bucket that speaks the parts of S3 the backups use: multipart upload, copy, abort, read. */
+async function multipartStandIn() {
+  const http = require("node:http");
+  const objects = new Map();
+  const uploads = new Map();
+  const log = [];
+  let next = 0;
+  const server = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const url = new URL(req.url, "http://x");
+      const key = decodeURIComponent(url.pathname);
+      const q = url.searchParams;
+      const body = Buffer.concat(chunks);
+      const xml = (status, text) => res.writeHead(status, { "Content-Type": "application/xml" }).end(`<?xml version="1.0" encoding="UTF-8"?>${text}`);
+      if (req.method === "POST" && q.has("uploads")) {
+        const id = `u${(next += 1)}`;
+        uploads.set(id, { key, parts: new Map() });
+        log.push(["create", key]);
+        return xml(200, `<InitiateMultipartUploadResult><Bucket>b</Bucket><Key>${key}</Key><UploadId>${id}</UploadId></InitiateMultipartUploadResult>`);
+      }
+      if (req.method === "PUT" && q.has("uploadId")) {
+        uploads.get(q.get("uploadId")).parts.set(Number(q.get("partNumber")), body);
+        log.push(["part", Number(q.get("partNumber")), body.length]);
+        return res.writeHead(200, { ETag: `"p${q.get("partNumber")}"` }).end();
+      }
+      if (req.method === "POST" && q.has("uploadId")) {
+        const upload = uploads.get(q.get("uploadId"));
+        const parts = [...upload.parts.entries()].sort((a, b) => a[0] - b[0]).map(([, part]) => part);
+        objects.set(key, Buffer.concat(parts));
+        uploads.delete(q.get("uploadId"));
+        log.push(["complete", key]);
+        return xml(200, `<CompleteMultipartUploadResult><Bucket>b</Bucket><Key>${key}</Key><ETag>"x"</ETag></CompleteMultipartUploadResult>`);
+      }
+      if (req.method === "DELETE" && q.has("uploadId")) {
+        uploads.delete(q.get("uploadId"));
+        log.push(["abort", key]);
+        return res.writeHead(204).end();
+      }
+      if (req.method === "PUT" && req.headers["x-amz-copy-source"]) {
+        const from = decodeURIComponent(String(req.headers["x-amz-copy-source"]).replace(/^\/?/, "/"));
+        objects.set(key, objects.get(from));
+        log.push(["copy", from, key]);
+        return xml(200, `<CopyObjectResult><ETag>"x"</ETag><LastModified>2026-10-18T00:00:00.000Z</LastModified></CopyObjectResult>`);
+      }
+      if (req.method === "GET" && objects.has(key)) return res.writeHead(200).end(objects.get(key));
+      return xml(404, `<Error><Code>NoSuchKey</Code></Error>`);
+    });
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  return { endpoint: `http://127.0.0.1:${server.address().port}`, objects, uploads, log, close: () => new Promise((resolve) => server.close(resolve)) };
+}
+
+test("backup settings: all or none, a public age key only, the prefix tidied; keys by Philippine date; failures told without secrets", () => {
+  require("tsx/cjs");
+  const { backupSettings, backupKeys, safeDetail } = require("../src/services/backups.ts");
+  assert.equal(backupSettings({}), null);
+  const base = { BACKUP_R2_ACCOUNT_ID: "acct", BACKUP_R2_ACCESS_KEY_ID: "id", BACKUP_R2_SECRET_ACCESS_KEY: "s", BACKUP_R2_BUCKET: "b" };
+  assert.match(backupSettings(base).problem, /Missing: BACKUP_AGE_RECIPIENT/);
+  assert.match(backupSettings({ ...base, BACKUP_AGE_RECIPIENT: "AGE-SECRET-KEY-1QQQ" }).problem, /not an age public key/);
+  const ok = backupSettings({ ...base, BACKUP_AGE_RECIPIENT: "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq", BACKUP_R2_PREFIX: "/nightly" });
+  assert.deepEqual(ok.settings.prefix, "nightly/");
+  assert.equal(ok.settings.bucket.endpoint, "https://acct.r2.cloudflarestorage.com");
+  assert.equal(backupSettings({ ...base, BACKUP_AGE_RECIPIENT: "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq" }).settings.prefix, "backups/");
+  assert.match(backupSettings({ ...base, BACKUP_AGE_RECIPIENT: "age1qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq", BACKUP_R2_PREFIX: "a b" }).problem, /BACKUP_R2_PREFIX/);
+
+  // 01:30 Philippine time on the 1st is still the previous evening in UTC: the keys follow the Philippine date.
+  const first = backupKeys("backups/", new Date("2026-10-31T17:30:00Z"));
+  assert.deepEqual(first, {
+    daily: "backups/database/daily/2026-11-01.dump.age",
+    monthly: "backups/database/monthly/2026-11.dump.age",
+    uploads: "backups/uploads/weekly/2026-11-01.zip.age",
+  });
+  assert.equal(backupKeys("backups/", new Date("2026-11-01T17:30:00Z")).monthly, null);
+
+  const said = safeDetail(new Error("connect to postgresql://postgres:hunter2@postgres.railway.internal:5432/railway failed; password=hunter2 AGE-SECRET-KEY-1ABCDEF at https://acct.r2.cloudflarestorage.com/b"));
+  assert.doesNotMatch(said, /hunter2|ABCDEF|cloudflarestorage|railway\.internal/);
+  assert.match(said, /^connect to postgresql:\/\/… failed/);
+});
+
+test("a backup streams through age encryption into equal parts; a dump that fails is abandoned, never left as a backup", async () => {
+  require("tsx/cjs");
+  const { Readable } = require("node:stream");
+  const { encryptStream, decryptStream, uploadStream, copyObject, backupClient, PART_SIZE } = require("../src/services/backups.ts");
+  const { generateIdentity, identityToRecipient } = await import("age-encryption");
+  const identity = await generateIdentity();
+  const recipient = await identityToRecipient(identity);
+  const store = await multipartStandIn();
+  try {
+    const client = backupClient({ bucket: { endpoint: store.endpoint, accessKeyId: "k", secretAccessKey: "s", bucket: "backups" }, prefix: "", recipient });
+    // A little over two parts, in uneven pieces.
+    const plain = Buffer.alloc(2 * PART_SIZE + 12345);
+    for (let i = 0; i < plain.length; i += 4096) plain[i] = i % 251;
+    const pieces = [];
+    for (let at = 0; at < plain.length; at += 3_000_001) pieces.push(plain.subarray(at, at + 3_000_001));
+    const sealed = await encryptStream(Readable.from(pieces), recipient);
+    const sent = await uploadStream(client, "backups", "database/daily/2026-10-18.dump.age", sealed);
+    const kept = store.objects.get("/backups/database/daily/2026-10-18.dump.age");
+    assert.ok(kept, "the object is in the bucket");
+    assert.equal(sent.bytes, kept.length);
+    assert.equal(sent.sha256, require("node:crypto").createHash("sha256").update(kept).digest("hex"));
+    // Every part but the last is the same size, as R2 asks.
+    const parts = store.log.filter((entry) => entry[0] === "part").map((entry) => entry[2]);
+    assert.equal(parts.length, 3);
+    assert.deepEqual(parts.slice(0, -1), [PART_SIZE, PART_SIZE]);
+    // Encrypted: the bytes are not the dump's, and only the private key opens them.
+    assert.equal(kept.subarray(0, 21).toString(), "age-encryption.org/v1");
+    assert.equal(kept.includes(plain.subarray(4096, 4096 + 64)), false);
+    const opened = [];
+    for await (const chunk of await decryptStream(Readable.from([kept]), identity)) opened.push(Buffer.from(chunk));
+    assert.ok(Buffer.concat(opened).equals(plain), "decrypted, it is the dump byte for byte");
+    const other = await generateIdentity();
+    await assert.rejects(async () => {
+      for await (const _ of await decryptStream(Readable.from([kept]), other)) void _;
+    });
+
+    // The 1st of the month: a copy under monthly/.
+    await copyObject(client, "backups", "database/daily/2026-10-18.dump.age", "database/monthly/2026-10.dump.age");
+    assert.ok(store.objects.get("/backups/database/monthly/2026-10.dump.age").equals(kept));
+
+    // pg_dump stopped with an error: the upload is abandoned and nothing is left behind.
+    await assert.rejects(
+      uploadStream(client, "backups", "database/daily/broken.dump.age", Readable.from([Buffer.from("half a dump")]), async () => {
+        throw new Error("pg_dump stopped with code 1");
+      }),
+      /pg_dump stopped/
+    );
+    assert.equal(store.objects.has("/backups/database/daily/broken.dump.age"), false);
+    assert.deepEqual(store.log.at(-1), ["abort", "/backups/database/daily/broken.dump.age"]);
+    assert.equal(store.uploads.size, 0);
+  } finally {
+    await store.close();
+  }
+});
+
+test("backup runs on the status card: the last good one, a failure, a missed night, a run that never finished, and the monthly restore drill", async (t) => {
+  assert.equal((await jsonRequest("/api/coordinator/backups/restore-drill", { method: "POST" })).response.status, 401);
+  assert.equal((await jsonRequest("/api/coordinator/backups/restore-drill", jsonBody(studentToken, "POST", { detail: "Restored." }))).response.status, 403);
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { backupStatus } = require("../src/services/backups.ts");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  try {
+    await pool.query(`DELETE FROM backup_runs`);
+    const now = new Date();
+    let status = await backupStatus(pool, now, "disk");
+    assert.equal(status.database.last_run, null);
+    assert.equal(status.database.missed, true);
+    assert.equal(status.uploads.needed, true);
+    assert.equal(status.restore_drill.due, true);
+    assert.equal((await backupStatus(pool, now, "bucket")).uploads.needed, false, "files in a bucket need no pack");
+
+    // A good backup last night, then a failed try today: the good one is still the last good one.
+    await pool.query(
+      `INSERT INTO backup_runs (kind, status, started_at, finished_at, object_key, size_bytes, sha256) VALUES
+         ('database', 'ok', NOW() - INTERVAL '20 hours', NOW() - INTERVAL '20 hours', 'backups/database/daily/x.dump.age', 1048576, 'aa'),
+         ('database', 'failed', NOW() - INTERVAL '1 hour', NOW() - INTERVAL '1 hour', NULL, NULL, NULL)`
+    );
+    await pool.query(`UPDATE backup_runs SET detail = 'pg_dump stopped with code 1: server version mismatch' WHERE status = 'failed'`);
+    status = await backupStatus(pool, now, "disk");
+    assert.equal(status.database.last_ok.size_bytes, 1048576);
+    assert.equal(status.database.last_run.status, "failed");
+    assert.match(status.database.last_run.detail, /version mismatch/);
+    assert.equal(status.database.missed, false);
+    // Two days on with nothing new: missed.
+    assert.equal((await backupStatus(pool, new Date(now.getTime() + 2 * 86_400_000), "disk")).database.missed, true);
+    // A pack that started hours ago and never finished.
+    await pool.query(`INSERT INTO backup_runs (kind, status, started_at) VALUES ('uploads', 'running', NOW() - INTERVAL '5 hours')`);
+    status = await backupStatus(pool, now, "disk");
+    assert.equal(status.uploads.last_run.status, "unfinished");
+    assert.equal(status.uploads.missed, true);
+
+    // The drill: refused for another role and without a line; recorded, logged, and the card stops asking.
+    assert.equal((await jsonRequest("/api/coordinator/backups/restore-drill", jsonBody(supervisor.token, "POST", { detail: "Restored the 17 Oct backup." }))).response.status, 403);
+    assert.equal((await jsonRequest("/api/coordinator/backups/restore-drill", jsonBody(coordinatorToken, "POST", { detail: "ok" }))).response.status, 400);
+    const recorded = await jsonRequest("/api/coordinator/backups/restore-drill", jsonBody(coordinatorToken, "POST", { detail: "Restored the 17 Oct nightly backup; row counts matched." }));
+    assert.equal(recorded.response.status, 201, JSON.stringify(recorded.body));
+    const card = (await jsonRequest("/api/coordinator/system-status", { headers: authHeaders(coordinatorToken) })).body.backups;
+    assert.equal(card.restore_drill.due, false);
+    assert.match(card.restore_drill.last.detail, /row counts matched/);
+    assert.equal(card.database.last_run.status, "failed");
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await jsonRequest("/api/coordinator/audit?action=backup.restore_drill&limit=3", { headers: authHeaders(coordinatorToken) });
+    assert.ok(audit.body.entries.some((entry) => String(entry.details?.detail || "").includes("row counts matched")), JSON.stringify(audit.body.entries.slice(0, 1)));
+  } finally {
+    await pool.query(`DELETE FROM backup_runs`);
+    await pool.end();
+  }
+});
+
+test("the weekly pack of uploaded files: only in the quiet hours, once a week, every file in an encrypted ZIP, recorded", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const fsp = require("node:fs/promises");
+  const { Readable } = require("node:stream");
+  const { unzipSync } = require("fflate");
+  const { runUploadsPackIfDue, decryptStream, UPLOADS_WINDOW } = require("../src/services/backups.ts");
+  const { localUploadDirectory, fileStoreKind } = require("../src/services/privateFileStore.ts");
+  if (fileStoreKind() !== "disk") return t.skip("this test process keeps files in a bucket");
+  const { generateIdentity, identityToRecipient } = await import("age-encryption");
+  const identity = await generateIdentity();
+  const store = await multipartStandIn();
+  const pool = localTestPool();
+  const folder = localUploadDirectory();
+  const marker = `backup-test-${Date.now()}.txt`;
+  const env = {
+    BACKUP_R2_ACCOUNT_ID: "dev", BACKUP_R2_ACCESS_KEY_ID: "k", BACKUP_R2_SECRET_ACCESS_KEY: "s", BACKUP_R2_BUCKET: "backups",
+    BACKUP_R2_ENDPOINT: store.endpoint, BACKUP_AGE_RECIPIENT: await identityToRecipient(identity),
+  };
+  try {
+    await pool.query(`DELETE FROM backup_runs WHERE kind = 'uploads'`);
+    await fsp.mkdir(folder, { recursive: true });
+    await fsp.writeFile(nodePath.join(folder, marker), "a file to back up");
+    // Outside the quiet hours (noon in the Philippines), or with no settings: nothing.
+    assert.equal(await runUploadsPackIfDue(pool, { now: new Date("2026-10-18T04:00:00Z"), env }), null);
+    assert.equal(await runUploadsPackIfDue(pool, { now: new Date("2026-10-17T19:00:00Z"), env: {} }), null);
+    // 03:00 in the Philippines: it starts, and runs on in the background.
+    assert.equal(UPLOADS_WINDOW.from, "02:30");
+    assert.equal(await runUploadsPackIfDue(pool, { now: new Date("2026-10-17T19:00:00Z"), env }), "started");
+    let run;
+    for (let i = 0; i < 100; i += 1) {
+      run = (await pool.query(`SELECT * FROM backup_runs WHERE kind = 'uploads' ORDER BY id DESC LIMIT 1`)).rows[0];
+      if (run && run.status !== "running") break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.equal(run.status, "ok", run.detail);
+    assert.equal(run.object_key, "backups/uploads/weekly/2026-10-18.zip.age");
+    // Encrypted ZIP of every file, the new one among them.
+    const kept = store.objects.get(`/backups/${run.object_key}`);
+    assert.equal(Number(run.size_bytes), kept.length);
+    const opened = [];
+    for await (const chunk of await decryptStream(Readable.from([kept]), identity)) opened.push(Buffer.from(chunk));
+    const files = unzipSync(new Uint8Array(Buffer.concat(opened)));
+    assert.equal(Buffer.from(files[marker]).toString(), "a file to back up");
+    // Once a week: the next night it is not due again.
+    assert.equal(await runUploadsPackIfDue(pool, { now: new Date("2026-10-18T19:00:00Z"), env }), null);
+  } finally {
+    await fsp.rm(nodePath.join(folder, marker), { force: true });
+    await pool.query(`DELETE FROM backup_runs WHERE kind = 'uploads'`);
+    await pool.end();
+    await store.close();
+  }
+});
+
+test("the nightly backup script: pg_dump of the database, encrypted, in the bucket, recorded; it exits 1 and says why when it cannot", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { spawnSync } = require("node:child_process");
+  const { findPgDump } = require("../src/scripts/pg-tools.ts");
+  const pool = localTestPool();
+  // pg_dump must be as new as the database; an older one on this machine cannot be used here.
+  const client = spawnSync(findPgDump(), ["--version"], { encoding: "utf8" });
+  const server = (await pool.query(`SHOW server_version_num`)).rows[0].server_version_num;
+  const clientMajor = Number((client.stdout || "").match(/(\d+)\./)?.[1] || 0);
+  if (client.status !== 0 || clientMajor < Math.floor(Number(server) / 10000)) {
+    await pool.end();
+    return t.skip(`pg_dump ${clientMajor || "missing"} is older than the database`);
+  }
+  const { generateIdentity, identityToRecipient } = await import("age-encryption");
+  const identity = await generateIdentity();
+  const store = await multipartStandIn();
+  const databaseUrl = process.env.DATABASE_PUBLIC_URL;
+  const run = (env) =>
+    new Promise((resolve) => {
+      const child = require("node:child_process").spawn(process.execPath, [require.resolve("tsx/cli"), nodePath.join(__dirname, "..", "src", "scripts", "backup-cron.ts")], {
+        env: { ...process.env, ...env },
+        stdio: ["ignore", "pipe", "pipe"],
+      });
+      let out = "";
+      child.stdout.on("data", (chunk) => (out += chunk));
+      child.stderr.on("data", (chunk) => (out += chunk));
+      child.on("close", (code) => resolve({ code, out }));
+    });
+  try {
+    await pool.query(`DELETE FROM backup_runs WHERE kind = 'database'`);
+    const settings = {
+      BACKUP_DATABASE_URL: databaseUrl,
+      BACKUP_R2_ACCOUNT_ID: "dev", BACKUP_R2_ACCESS_KEY_ID: "k", BACKUP_R2_SECRET_ACCESS_KEY: "s", BACKUP_R2_BUCKET: "backups",
+      BACKUP_R2_ENDPOINT: store.endpoint, BACKUP_AGE_RECIPIENT: await identityToRecipient(identity),
+    };
+    const good = await run(settings);
+    assert.equal(good.code, 0, good.out);
+    assert.doesNotMatch(good.out, /postgres(ql)?:\/\/|AGE-SECRET-KEY/i, "nothing secret is printed");
+    const row = (await pool.query(`SELECT * FROM backup_runs WHERE kind = 'database' ORDER BY id DESC LIMIT 1`)).rows[0];
+    assert.equal(row.status, "ok");
+    assert.match(row.object_key, /^backups\/database\/daily\/\d{4}-\d{2}-\d{2}\.dump\.age$/);
+    const kept = store.objects.get(`/backups/${row.object_key}`);
+    const { Readable } = require("node:stream");
+    const { decryptStream } = require("../src/services/backups.ts");
+    const opened = [];
+    for await (const chunk of await decryptStream(Readable.from([kept]), identity)) opened.push(Buffer.from(chunk));
+    assert.equal(Buffer.concat(opened).subarray(0, 5).toString(), "PGDMP", "a pg_dump custom-format file");
+
+    // Without the key setting: it says so, records the failure, and exits 1.
+    const bad = await run({ ...settings, BACKUP_AGE_RECIPIENT: "" });
+    assert.equal(bad.code, 1);
+    assert.match(bad.out, /Missing: BACKUP_AGE_RECIPIENT/);
+    const failed = (await pool.query(`SELECT status, detail FROM backup_runs WHERE kind = 'database' ORDER BY id DESC LIMIT 1`)).rows[0];
+    assert.deepEqual([failed.status, /BACKUP_AGE_RECIPIENT/.test(failed.detail)], ["failed", true]);
+  } finally {
+    await pool.query(`DELETE FROM backup_runs WHERE kind = 'database'`);
+    await pool.end();
+    await store.close();
+  }
+});
