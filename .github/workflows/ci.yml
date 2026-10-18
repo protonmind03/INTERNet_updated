@@ -68,6 +68,17 @@ jobs:
       - name: Every route has a test
         run: npm run check:route-tests
 
+      # Iteration 15: the nightly backup test runs the real pg_dump, which must be as
+      # new as the database (postgres:18 above); the runner's own is older.
+      - name: PostgreSQL 18's pg_dump, for the backup test
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl -fsSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg-18.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+
       - name: Apply migrations
         run: npm run db:migrate
 

@@ -832,6 +832,11 @@ Cloudflare R2 keeps them somewhere durable instead.
    example, `internet-files-staging`. Leave it private (the default).
    Do not turn on public access or a public address: files are only ever
    read through the backend, which checks who is asking.
+   **Lifecycle rules:** add only one, "Abort incomplete multipart uploads
+   after 1 day". Never a rule that deletes objects after some days, as the
+   backup bucket has: here that would delete students' photos and
+   documents. (Old time-in photos are removed by the photo clean-up,
+   which also updates the records.)
 2. R2 → Manage API tokens → Create API token. Permission: **Object Read
    & Write**, limited to that one bucket. It shows an Access Key ID and a
    Secret Access Key once. Do not paste either into a chat, a commit or a
