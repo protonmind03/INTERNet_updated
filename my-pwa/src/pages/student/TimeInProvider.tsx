@@ -4,7 +4,7 @@ import { ConfirmDialog } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { cue } from "../../lib/cues";
 import { uploadPictures, type PictureDraft } from "../../lib/attachments";
-import { queuePictures } from "../../lib/offlineQueue";
+import { queuePictures, type QueuedStep } from "../../lib/offlineQueue";
 import { formatDuration, formatTime } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
 import { useAccount } from "../../lib/session";
@@ -131,6 +131,15 @@ function TimeInActions({ children }: { children: ReactNode }) {
     setAccomplishmentError("");
     // The log the pictures belong to: today's, once the server has it.
     const logForPictures = todayLog && !isLocalLog(todayLog) ? todayLog.id : null;
+    // Kept with the time-out if it has to wait on the phone: put in the queue
+    // behind it before sending starts, made smaller (Iteration 13).
+    let keptPictures: { kept: number; problem: string } | null = null;
+    const withPictures =
+      outPictures.length > 0
+        ? async (kept: QueuedStep) => {
+            keptPictures = await queuePictures(outPictures, kept);
+          }
+        : undefined;
     try {
       const outcome =
         action === "break"
@@ -140,7 +149,8 @@ function TimeInActions({ children }: { children: ReactNode }) {
             : await attendance.timeOut(
                 accomplishment,
                 // Only tasks still on the list: one finished meanwhile is not sent.
-                openTasks.filter((task) => workedOn.has(task.id)).map((task) => task.id)
+                openTasks.filter((task) => workedOn.has(task.id)).map((task) => task.id),
+                withPictures
               );
       if (action === "out") {
         discardAccomplishment();
@@ -161,8 +171,10 @@ function TimeInActions({ children }: { children: ReactNode }) {
           ).finally(() => setSendingPictures(false));
           if (failure) pictureNote = ` ${sent} of ${outPictures.length} pictures were attached: ${failure}`;
         } else if (outcome === "queued") {
-          // Kept with the time-out, made smaller, and sent after it (Iteration 13).
-          const { kept, problem } = await queuePictures(outPictures);
+          const { kept, problem } = (keptPictures as { kept: number; problem: string } | null) ?? {
+            kept: 0,
+            problem: "They could not be kept on this phone.",
+          };
           pictureNote =
             kept > 0
               ? ` ${kept === 1 ? "Its picture waits" : `Its ${kept} pictures wait`} with it.${problem ? ` ${problem}` : ""}`

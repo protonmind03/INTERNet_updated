@@ -158,13 +158,20 @@ export async function queueStep(
 }
 
 /**
- * Keeps the pictures chosen for the time-out just kept on the phone, to be
- * sent after it. Returns how many were kept, and why any were not.
+ * Keeps the pictures chosen for a time-out kept on the phone, to be sent
+ * after it. `forStep` is that time-out, handed over before sending starts
+ * (useAttendance's timeOut), so it cannot have gone already; without it the
+ * last time-out waiting is used. Returns how many were kept, and why any
+ * were not.
  */
-export async function queuePictures(drafts: PictureDraft[]): Promise<{ kept: number; problem: string }> {
+export async function queuePictures(
+  drafts: PictureDraft[],
+  forStep?: QueuedStep
+): Promise<{ kept: number; problem: string }> {
   if (drafts.length === 0) return { kept: 0, problem: "" };
-  const rows = await waitingRows();
-  const timeOut = [...rows].reverse().find((row) => row.step.path === "time-out");
+  const timeOut = forStep
+    ? { step: forStep }
+    : [...(await waitingRows())].reverse().find((row) => row.step.path === "time-out");
   if (!timeOut) return { kept: 0, problem: "The pictures were not kept: the time-out they go with is not on this phone." };
   const pictures: QueuedPicture[] = [];
   const problems: string[] = [];

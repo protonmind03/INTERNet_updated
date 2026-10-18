@@ -912,7 +912,7 @@ function DayList(props: Props & { week: Week; days: DayInfo[] }) {
             >
               <span>
                 <b className="block text-[13px] font-semibold text-slate-900">{WEEKDAYS[weekdayOf(day.date)].slice(0, 3)}</b>
-                <span className="text-[11.5px] text-slate-500">{formatDayDate(day.date).replace(/^[A-Za-z]+, /, "")}</span>
+                <span className="text-[11.5px] text-slate-600">{formatDayDate(day.date).replace(/^[A-Za-z]+, /, "")}</span>
               </span>
               <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-slate-700">{summary}</span>
               <span className="tabular text-right text-[13px] font-semibold text-slate-900">{hours}</span>

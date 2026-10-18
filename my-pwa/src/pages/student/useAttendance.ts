@@ -401,7 +401,10 @@ export function useAttendance(studentId: string | undefined) {
     async (
       path: StepPath,
       fallback: string,
-      extra?: Record<string, unknown>
+      extra?: Record<string, unknown>,
+      // Told the step kept on the phone before sending starts, so what goes with it
+      // (a time-out's pictures) is in the queue behind it first.
+      onQueued?: (kept: QueuedStep) => Promise<void>
     ): Promise<"sent" | "queued"> => {
       if (!todayLog) throw new Error("Time in first.");
       // Earlier steps are still waiting: this one has to wait behind them,
@@ -436,6 +439,7 @@ export function useAttendance(studentId: string | undefined) {
           ? { ...log, waiting: [...(todayLog.waiting ?? []), path] }
           : log
       ));
+      if (onQueued) await onQueued(kept).catch(() => {});
       // Start trying to send it: this keeps going until it gets through.
       void sendWaitingSteps();
       return "queued";
@@ -501,12 +505,17 @@ export function useAttendance(studentId: string | undefined) {
     endBreak: () => step("break-end", "Could not record that you are back from lunch."),
     /** Times out, with the student's note of what they did today. */
     /** `taskIds`: the tasks worked on today, if the student chose any. */
-    timeOut: (accomplishments: string, taskIds: number[] = []) =>
-      step("time-out", "Could not record your time-out.", {
-        accomplishments: accomplishments.trim(),
-        // Left out when none is chosen, so the request is what it always was.
-        ...(taskIds.length > 0 ? { task_ids: taskIds } : {}),
-      }),
+    timeOut: (accomplishments: string, taskIds: number[] = [], onQueued?: (kept: QueuedStep) => Promise<void>) =>
+      step(
+        "time-out",
+        "Could not record your time-out.",
+        {
+          accomplishments: accomplishments.trim(),
+          // Left out when none is chosen, so the request is what it always was.
+          ...(taskIds.length > 0 ? { task_ids: taskIds } : {}),
+        },
+        onQueued
+      ),
   };
 }
 

@@ -261,11 +261,13 @@ export default function EntryPictures({
               step(end < start ? 1 : -1);
             }}
           >
-            {urls[shown.id] ? (
+            {urls[shown.id] || thumbs[shown.id] ? (
+              // The preview stands in, blurred a little, until the picture itself has loaded.
               <img
-                src={urls[shown.id]}
+                src={urls[shown.id] || thumbs[shown.id]}
                 alt={altOf(shown, open)}
-                className="max-h-[70vh] w-full rounded-lg object-contain"
+                aria-busy={urls[shown.id] ? undefined : true}
+                className={`max-h-[70vh] w-full rounded-lg object-contain ${urls[shown.id] ? "" : "blur-[1px]"}`}
               />
             ) : (
               <p className="p-6 text-sm text-slate-600">Loading the picture</p>
