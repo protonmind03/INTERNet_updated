@@ -1092,6 +1092,10 @@ test.describe("time-in with no connection", () => {
       "The second demo student already has a log today (an earlier run of this journey)."
     );
 
+    // This phone is never made ready for an offline camera check: with a one-use pass
+    // collected in the background before the connection goes, the app would rightly
+    // offer that instead, and whether it got there first was down to timing.
+    await page.route(/\/api\/attendance\/offline-vouchers/, (route) => route.abort());
     await signIn(page, "student", SECOND_STUDENT);
     await expect(page.getByRole("button", { name: /^Time in/ }).first()).toBeVisible();
 
