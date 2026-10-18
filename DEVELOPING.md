@@ -82,3 +82,32 @@ Up to three pictures on a time-out note, a weekly report or a concern
   `/api/coordinator/documents/zip` adds the same students' pictures on
   time-out notes and weekly reports as `Pictures/<student>/...`, inside the
   same 500-file and 500 MB limits. Pictures on concerns are never included.
+
+## The PWA check and Lighthouse in CI
+
+- `npm run check:pwa` (in `my-pwa`, after `npm run build`) fails when the
+  build is no longer an installable, offline-capable PWA: a manifest field
+  an install needs, an icon size (192 and 512, "any" and "maskable"), an
+  icon or screenshot that is missing or not the size it says, the service
+  worker (or it is the kill switch, or it does not keep `index.html` and
+  `offline.html`), `offline.html`, the Home Screen icon, `lang="en-PH"`, or an
+  iPhone start-up image (`npm run startup-images` makes them). CI runs it in
+  the frontend job.
+- `npm run lighthouse` (in `e2e`, with the site and API running) runs
+  Lighthouse with its mobile settings on the sign-in page and each portal's
+  first page, the same pages as the Iteration 0 baseline
+  (`docs/baseline/`). It writes `e2e/lighthouse-reports/` (an HTML and a JSON
+  report per page, and `summary.md`). CI runs it after the end-to-end tests,
+  shows the summary on the run's page and keeps the reports as the
+  `lighthouse-reports` artifact for 30 days. It does not fail the build over
+  a score.
+
+## The brand preview and the loading prototypes
+
+`/brand-preview` shows the brand kit; `/brand-preview?view=loading` shows the
+three loading prototypes for after sign-in (P1 Road to today, P2 Shaped
+skeleton, P3 The one thing; `my-pwa/src/brand/LoadingPrototypes.tsx`), with
+the role, how long the data takes, and reduced motion to choose. None is
+wired into sign-in. The page exists in development (`npm run dev`, or
+`npm run dev:phone` to open it on a phone), or in a build made with
+`VITE_BRAND_PREVIEW=true` (for a test site only; production leaves it unset).

@@ -179,8 +179,11 @@ const CoordinatorSystemStatus = page("coordinator", () => import("./pages/coordi
 const CoordinatorCompanyPage = page("coordinator", () => import("./pages/coordinator/CompanyPage"));
 const CoordinatorSupervisorPage = page("coordinator", () => import("./pages/coordinator/SupervisorPage"));
 
-// The brand kit preview only exists in development builds.
-const BrandPreview = import.meta.env.DEV ? lazy(() => import("./brand/BrandPreview")) : null;
+// The brand kit preview (and the loading prototypes, Iteration 14) only exists in development
+// builds, or in a build made with VITE_BRAND_PREVIEW=true, so it can be tried on a test site.
+// Production leaves it unset.
+const BrandPreview =
+  import.meta.env.DEV || import.meta.env.VITE_BRAND_PREVIEW === "true" ? lazy(() => import("./brand/BrandPreview")) : null;
 
 /** The thin line at the top of the screen that runs on every page change. */
 function RouteLine() {

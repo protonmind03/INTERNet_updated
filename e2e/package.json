@@ -4,9 +4,12 @@
   "version": "1.0.0",
   "description": "End-to-end tests: a real browser against the built app and a local API.",
   "scripts": {
-    "test": "playwright test"
+    "test": "playwright test",
+    "lighthouse": "node lighthouse/run-lighthouse.mjs"
   },
   "devDependencies": {
-    "@playwright/test": "^1.49.0"
+    "@playwright/test": "^1.49.0",
+    "lighthouse": "^12.8.2",
+    "puppeteer-core": "^24.43.1"
   }
 }

@@ -1,0 +1,4 @@
+# INTERNet is a private portal: there is nothing here for search engines
+# beyond the sign-in page, which may be listed.
+User-agent: *
+Allow: /

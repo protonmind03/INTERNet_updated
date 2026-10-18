@@ -1,8 +1,11 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { BrandIcon, BrandLoader, BrandLockup, PortalBrand, PortalHeader, ROLE_THEMES, RouteProgress, SplashScreen, Wordmark } from ".";
 // The kit's own toasts, shown only on this development-only page.
 import { ActionButton, BrandToastProvider } from "./feedback";
 import type { Role } from ".";
+import { PrototypeRun } from "./LoadingPrototypes";
+import { PROTOTYPES, TIMINGS, useReducedMotion, type Timing } from "./loadingPrototypeData";
 
 const ROLES: Role[] = ["student", "supervisor", "coordinator"];
 const CONTEXT: Record<Role, string> = {
@@ -54,10 +57,141 @@ const ACTIONS: Record<Role, { label: string; process: "timeIn" | "taskSubmit" | 
 };
 
 export default function BrandPreview() {
+  const [params] = useSearchParams();
   return (
     <BrandToastProvider>
-      <PreviewInner />
+      {params.get("view") === "loading" ? <LoadingView /> : <PreviewInner />}
     </BrandToastProvider>
+  );
+}
+
+/*
+| Iteration 14: the three loading prototypes (LoadingPrototypes.tsx), side by
+| side, or one full screen (`&full=1`) to try on a phone. Only here: none
+| of them is wired into sign-in.
+*/
+function LoadingView() {
+  const [params, setParams] = useSearchParams();
+  const role = (ROLES as string[]).includes(params.get("role") ?? "") ? (params.get("role") as Role) : "student";
+  const timing = (TIMINGS.find((item) => item.id === params.get("timing"))?.id ?? "usual") as Timing;
+  const full = PROTOTYPES.find((item) => item.id === params.get("proto") && params.get("full") === "1")?.id ?? null;
+  const [run, setRun] = useState(0);
+  const [forceCalm, setForceCalm] = useState(params.get("calm") === "1");
+  const calm = useReducedMotion(forceCalm);
+  const set = (key: string, value: string | null) => {
+    const next = new URLSearchParams(params);
+    if (value === null) next.delete(key);
+    else next.set(key, value);
+    setParams(next, { replace: true });
+    setRun((current) => current + 1);
+  };
+  const replay = () => setRun((current) => current + 1);
+
+  if (full) {
+    return (
+      <div className="fixed inset-0 bg-white">
+        <PrototypeRun key={`${full}-${role}-${timing}-${run}`} prototype={full} role={role} timing={timing} run={run} calm={calm} onRetry={replay} />
+        <div className="fixed bottom-3 right-3 flex gap-2">
+          <button type="button" onClick={replay} className="h-10 rounded-lg bg-white/90 px-3 text-sm font-semibold text-slate-800 shadow ring-1 ring-slate-300">
+            Replay
+          </button>
+          <button type="button" onClick={() => set("full", null)} className="h-10 rounded-lg bg-white/90 px-3 text-sm font-semibold text-slate-800 shadow ring-1 ring-slate-300">
+            Back
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100 text-slate-900">
+      <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-8">
+        <header className="flex flex-wrap items-center justify-between gap-4">
+          <BrandLockup size={30} />
+          <a href="/brand-preview" className="text-sm font-semibold text-psu-700 underline underline-offset-2">
+            Back to the brand kit
+          </a>
+        </header>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">The loading screen after sign-in</h1>
+          <p className="mt-1 max-w-3xl text-sm text-slate-700">
+            Three prototypes to try before one is chosen (roadmap 8.3). Each plays what happens between Sign in and the first
+            page, with the data taking as long as chosen below. None of them is used by the app yet. On a phone, open one full
+            screen.
+          </p>
+        </div>
+
+        <section aria-label="Settings" className="flex flex-wrap items-end gap-4 rounded-2xl bg-white p-4 ring-1 ring-slate-200">
+          <fieldset>
+            <legend className="text-xs font-semibold text-slate-700">Role</legend>
+            <div className="mt-1 flex gap-1.5">
+              {ROLES.map((r) => (
+                <button
+                  key={r}
+                  type="button"
+                  aria-pressed={r === role}
+                  onClick={() => set("role", r)}
+                  className={`h-10 rounded-lg px-3 text-sm font-semibold ${r === role ? "bg-[#1A237E] text-white" : "bg-white text-slate-700 ring-1 ring-slate-300"}`}
+                >
+                  {ROLE_THEMES[r].portal.replace(" Portal", "")}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <label className="text-xs font-semibold text-slate-700">
+            The data takes
+            <select
+              value={timing}
+              onChange={(event) => set("timing", event.target.value)}
+              className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2 text-sm font-normal text-slate-800"
+            >
+              {TIMINGS.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex h-10 items-center gap-2 text-sm text-slate-800">
+            <input type="checkbox" checked={forceCalm} onChange={(event) => setForceCalm(event.target.checked)} className="h-4 w-4" />
+            Show as with reduced motion
+          </label>
+          <button type="button" onClick={replay} className="h-10 rounded-lg bg-psu-700 px-4 text-sm font-semibold text-white">
+            Replay all three
+          </button>
+        </section>
+
+        <div className="grid gap-6 lg:grid-cols-3">
+          {PROTOTYPES.map((item) => (
+            <section key={item.id} aria-labelledby={`proto-${item.id}`} className="flex flex-col gap-3">
+              <div>
+                <h2 id={`proto-${item.id}`} className="text-base font-bold">
+                  {item.name}
+                </h2>
+                <p className="text-sm text-slate-700">{item.idea}</p>
+                <p className="text-xs text-slate-600">{item.principle}</p>
+              </div>
+              <div className="mx-auto h-[640px] w-full max-w-[360px] overflow-hidden rounded-[32px] bg-white ring-[8px] ring-slate-900" data-testid={`frame-${item.id}`}>
+                <PrototypeRun key={`${item.id}-${role}-${timing}-${run}`} prototype={item.id} role={role} timing={timing} run={run} calm={calm} onRetry={replay} />
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = new URLSearchParams(params);
+                  next.set("proto", item.id);
+                  next.set("full", "1");
+                  setParams(next);
+                  setRun((current) => current + 1);
+                }}
+                className="mx-auto h-10 rounded-lg bg-white px-4 text-sm font-semibold text-slate-800 ring-1 ring-slate-300"
+              >
+                Open {item.name.split(" · ")[0]} full screen
+              </button>
+            </section>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -73,6 +207,9 @@ function PreviewInner() {
       <div className="mx-auto flex max-w-6xl flex-col gap-8 px-4 py-8">
         <header className="flex flex-wrap items-center justify-between gap-4">
           <BrandLockup size={34} />
+          <a href="/brand-preview?view=loading" className="text-sm font-semibold text-psu-700 underline underline-offset-2">
+            Loading prototypes (P1 to P3)
+          </a>
           <div className="flex gap-2" role="tablist" aria-label="Role">
             {ROLES.map((r) => (
               <button

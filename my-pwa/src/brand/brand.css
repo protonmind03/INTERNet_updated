@@ -222,3 +222,16 @@
   .inb-countdown { animation: none; }
   .inb-press:active:not(:disabled) { transform: none; }
 }
+
+/* Iteration 14: the loading prototypes in the brand preview (LoadingPrototypes.tsx). Not used anywhere else. */
+@keyframes inb-proto-shimmer { 0% { opacity: 1; } 50% { opacity: 0.55; } 100% { opacity: 1; } }
+.inb-proto-shimmer { animation: inb-proto-shimmer 1.6s ease-in-out infinite; }
+@keyframes inb-proto-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }
+.inb-proto-pulse { animation: inb-proto-pulse 1.2s ease-in-out infinite; }
+@keyframes inb-proto-rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.inb-proto-rise { animation: inb-proto-rise 240ms ease-out backwards; }
+@keyframes inb-proto-fade { from { opacity: 0; } to { opacity: 1; } }
+.inb-proto-fade { animation: inb-proto-fade 180ms ease-out backwards; }
+@media (prefers-reduced-motion: reduce) {
+  .inb-proto-shimmer, .inb-proto-pulse, .inb-proto-rise, .inb-proto-fade { animation: none !important; }
+}

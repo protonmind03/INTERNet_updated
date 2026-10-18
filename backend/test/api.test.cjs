@@ -10795,3 +10795,34 @@ test("the coordinator's ZIP with Include pictures: time-out and weekly report pi
     await f.cleanup();
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| ITERATION 14: THE LOADING PROTOTYPES STAY IN THE BRAND PREVIEW
+|--------------------------------------------------------------------------
+*/
+
+test("the loading prototypes P1 to P3 are reached only from the brand preview, never from sign-in", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = path.join(__dirname, "..", "..", "my-pwa", "src");
+  const importers = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (/\.(tsx?|jsx?)$/.test(entry.name) && /LoadingPrototypes|loadingPrototypeData/.test(fs.readFileSync(full, "utf8"))) {
+        importers.push(path.relative(src, full).split(path.sep).join("/"));
+      }
+    }
+  };
+  walk(src);
+  assert.deepEqual(importers.sort(), ["brand/BrandPreview.tsx", "brand/LoadingPrototypes.tsx", "brand/loadingPrototypeData.ts"].sort());
+  // The preview itself is in a build only in development or with VITE_BRAND_PREVIEW=true.
+  const app = fs.readFileSync(path.join(src, "App.tsx"), "utf8");
+  assert.match(app, /import\.meta\.env\.DEV \|\| import\.meta\.env\.VITE_BRAND_PREVIEW === "true" \? lazy\(\(\) => import\("\.\/brand\/BrandPreview"\)\) : null/);
+  // Nothing on the sign-in path names them.
+  for (const file of ["pages/Login.tsx", "brand/LoginScreen.tsx", "brand/SplashScreen.tsx"]) {
+    assert.doesNotMatch(fs.readFileSync(path.join(src, file), "utf8"), /BrandPreview|LoadingPrototypes|PrototypeRun/, file);
+  }
+});
