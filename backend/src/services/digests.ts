@@ -19,6 +19,7 @@ import { isEmailConfigured, sendEmail } from "./mailer";
 import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
 import { phClock } from "./phTime";
+import { LOOP_LOCKS, withLoopLock } from "./loopLock";
 
 type Mailer = (email: { to: string; subject: string; text: string }) => Promise<void>;
 
@@ -180,6 +181,8 @@ export function startDigestScheduler(pool: Pool, also: ((pool: Pool) => Promise<
       running = false;
     }
   };
-  void run();
-  setInterval(() => void run(), CHECK_EVERY_MS);
+  // One server at a time (services/loopLock.ts).
+  const guarded = () => withLoopLock(pool, LOOP_LOCKS.digests, run);
+  void guarded();
+  setInterval(() => void guarded(), CHECK_EVERY_MS);
 }

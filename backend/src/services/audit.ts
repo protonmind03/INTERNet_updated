@@ -264,11 +264,35 @@ export const AUDIT_RULES: Rule[] = [
     entityType: "attendance",
     entityId: param("id"),
     keep: ["status", "reason"],
-    // A day closed as absent for a photo not retaken, verified after all.
-    from: (source) =>
-      String(source.body.status) === "Verified" && nested(source.result.attendance, "photo_redo_status") === "missed"
+    from: (source) => ({
+      // A day closed as absent for a photo not retaken, verified after all.
+      ...(String(source.body.status) === "Verified" && nested(source.result.attendance, "photo_redo_status") === "missed"
         ? { after_missed_photo_redo: true }
-        : {},
+        : {}),
+      // Iteration 16: which kind of rejection: "attendance" (the whole log) or "time_in" (only the photo).
+      ...(String(source.body.status) === "Rejected"
+        ? { rejection: nested(source.result.attendance, "rejection_scope") ?? "attendance" }
+        : {}),
+    }),
+  },
+  // Iteration 16: messages. Who wrote to whom and about what kind of record,
+  // never the subject or the words (those stay in the thread itself).
+  {
+    method: "POST",
+    path: "/api/messages",
+    action: "message.send",
+    entityType: "message_thread",
+    entityId: (source) => source.result.thread_id,
+    keep: ["to_role", "to_id", "context_type", "context_id"],
+    from: (source) => ({ email: source.result.email_status }),
+  },
+  {
+    method: "POST",
+    path: "/api/messages/threads/:id",
+    action: "message.reply",
+    entityType: "message_thread",
+    entityId: param("id"),
+    from: (source) => ({ email: source.result.email_status }),
   },
   {
     method: "POST",

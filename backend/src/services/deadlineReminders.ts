@@ -7,6 +7,7 @@ import { releaseDueTasks, released } from "./taskRelease";
 import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
 import { phSql } from "./phTime";
 import { closeMissedRedos, remindRedoDeadlines } from "./photoRedo";
+import { LOOP_LOCKS, withLoopLock } from "./loopLock";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -232,6 +233,8 @@ export function startDeadlineReminderScheduler(
     }
   };
 
-  void run();
-  setInterval(() => void run(), 60_000);
+  // One server at a time (services/loopLock.ts).
+  const guarded = () => withLoopLock(pool, LOOP_LOCKS.deadlineReminders, run);
+  void guarded();
+  setInterval(() => void guarded(), 60_000);
 }

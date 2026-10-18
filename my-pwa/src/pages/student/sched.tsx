@@ -271,7 +271,8 @@ export default function OjtSchedule() {
         {view === "week" && (
         <>
         <div className="grid gap-5 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
+          {/* min-w-0: a grid item otherwise grows to its longest line, which pushed the hours off a phone screen. */}
+          <Card className="min-w-0 lg:col-span-2">
             <CardHeader
               title="Weekly schedule"
               action={
@@ -381,7 +382,7 @@ export default function OjtSchedule() {
             </div>
           </Card>
 
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <Card className="p-4 sm:p-5">
               <h2 className="text-sm font-semibold text-slate-900">Today</h2>
               {loading ? (

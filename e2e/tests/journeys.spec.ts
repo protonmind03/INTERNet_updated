@@ -1384,7 +1384,7 @@ test.describe("camera details stay on the phone", () => {
       await route.continue();
     });
     const chooser = page.waitForEvent("filechooser");
-    await page.getByRole("button", { name: /^(Upload|Upload again)$/ }).first().click();
+    await page.getByRole("button", { name: /^(Upload|Upload again)(: .+)?$/ }).first().click();
     await (await chooser).setFiles({ name: "IMG_2041.jpg", mimeType: "image/jpeg", buffer: photo });
     await expect.poll(() => sent !== null, { timeout: 15_000 }).toBe(true);
     const body = sent as unknown as Buffer;

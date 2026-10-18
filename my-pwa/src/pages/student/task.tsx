@@ -181,6 +181,7 @@ export default function MyTasks() {
               <li key={task.id} id={recordId("task", task.id)}>
                 <TaskCard
                   task={task}
+                  filter={filter}
                   onSubmit={() => setSubmitting(task)}
                   onDownload={download}
                 />
@@ -206,10 +207,13 @@ export default function MyTasks() {
 
 function TaskCard({
   task,
+  filter,
   onSubmit,
   onDownload,
 }: {
   task: Task;
+  /** The tab the list is on: a badge that only repeats it is left out (UX pass). */
+  filter: string;
   onSubmit: () => void;
   onDownload: (filePath: string, name?: string | null) => void;
 }) {
@@ -217,6 +221,12 @@ function TaskCard({
   const days = daysUntil(task.due_date);
   const late = open && days !== null && days < 0;
   const soon = open && days !== null && days >= 0 && days <= 2;
+  const status = late ? "Overdue" : open && task.review_notes ? "Needs changes" : open ? "To do" : task.status;
+  // "To do" under To do, "Submitted" under Submitted: said once, by the tab.
+  const sameAsTab =
+    (filter === "todo" && status === "To do") ||
+    (filter === "submitted" && status === "Submitted") ||
+    (filter === "reviewed" && status === "Reviewed");
 
   return (
     <Card className={`p-4 sm:p-5 ${late ? "border-red-200" : ""}`}>
@@ -224,18 +234,12 @@ function TaskCard({
         <h2 className="min-w-0 flex-1 text-base font-semibold text-slate-900">
           {task.title}
         </h2>
-        <StatusBadge
-          status={
-            late
-              ? "Overdue"
-              : open && task.review_notes
-                ? "Needs changes"
-                : open
-                  ? "To do"
-                  : task.status
-          }
-          tone={late ? "bad" : open && task.review_notes ? "waiting" : open ? "neutral" : undefined}
-        />
+        {!sameAsTab && (
+          <StatusBadge
+            status={status}
+            tone={late ? "bad" : open && task.review_notes ? "waiting" : open ? "neutral" : undefined}
+          />
+        )}
       </div>
 
       {task.description && (

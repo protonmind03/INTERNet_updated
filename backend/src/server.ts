@@ -26,7 +26,10 @@ import { recordUpload, uploadQuota } from "./services/uploadQuota";
 import {
   publishNotification,
   closeNotificationStreams,
+  missedNotifications,
+  readAfter,
   registerNotificationStream,
+  sendCatchUp,
   startPostgresNotificationListener,
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
@@ -1463,6 +1466,13 @@ app.get(
     response.flushHeaders();
     const disconnect = registerNotificationStream(auth, response);
     request.on("close", disconnect);
+    // A reconnect after a drop: what arrived meanwhile (Iteration 16).
+    const after = readAfter(request.query.after);
+    if (after !== null) {
+      void missedNotifications(pool, auth, after)
+        .then((missed) => sendCatchUp(response, missed))
+        .catch((error) => console.error("NOTIFICATION CATCH-UP ERROR:", error));
+    }
   }
 );
 

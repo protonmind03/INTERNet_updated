@@ -1,5 +1,6 @@
-import { useId } from "react";
+import { useId, useState } from "react";
 import SavedViews from "./SavedViews";
+import Icon from "../../components/Icon";
 import { Skeleton } from "../../components/ui";
 import type { FilterKey, StudentFilterState } from "./useStudentFilters";
 
@@ -13,6 +14,11 @@ import type { FilterKey, StudentFilterState } from "./useStudentFilters";
 | with nothing to choose from is left out (no blocks made yet, say), so the
 | bar is as short as the programme's records allow. The state is held by
 | useStudentFilters; this only draws it.
+|
+| On a phone (UX pass, Iteration 16) the bar is one line saying which
+| students are shown, and opens the choices on a tap, so the page's own
+| content is not pushed below the first screen. From the small breakpoint
+| up it is open, as before.
 |
 */
 
@@ -71,6 +77,25 @@ export default function FilterBar({
   // A page that hides a level cannot show a view honestly: the view might choose that level.
   const views = hide.length === 0;
   const { filters, set, clear, active, choices, options } = state;
+  const [open, setOpen] = useState(false);
+  const panelId = useId();
+  const chosen = Object.values(filters).filter(Boolean).length;
+  // The one line a phone shows; the choices open beneath it.
+  const toggle = (
+    <button
+      type="button"
+      onClick={() => setOpen((current) => !current)}
+      aria-expanded={open}
+      aria-controls={panelId}
+      className="flex min-h-11 w-full items-center justify-between gap-2 rounded-lg text-left text-sm sm:hidden"
+    >
+      <span className="min-w-0">
+        <span className="font-semibold text-slate-900">Which students</span>
+        <span className="text-slate-600"> · {chosen === 0 ? "all" : `${chosen} ${chosen === 1 ? "choice" : "choices"} on`}</span>
+      </span>
+      <Icon name="chevron-down" size={18} className={`shrink-0 text-slate-500 transition-transform ${open ? "rotate-180" : ""}`} />
+    </button>
+  );
   const shows = (key: FilterKey, has: boolean) => !hide.includes(key) && (has || Boolean(filters[key]));
   // A block's term is said when it is not the term already chosen.
   const blockLabel = (name: string, termName: string | null) =>
@@ -168,7 +193,11 @@ export default function FilterBar({
         aria-busy="true"
         className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-card sm:p-4 print:hidden"
       >
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-hidden="true">
+        {/* A phone shows the closed line's place; wider screens, the open bar's. */}
+        <div className="flex h-11 items-center sm:hidden" aria-hidden="true">
+          <Skeleton className="h-4 w-44" />
+        </div>
+        <div className="hidden grid-cols-2 gap-3 sm:grid md:grid-cols-3 xl:grid-cols-6" aria-hidden="true">
           {[0, 1, 2].map((choice) => (
             <div key={choice} className="space-y-1.5">
               <Skeleton className="h-3.5 w-1/2" />
@@ -186,18 +215,21 @@ export default function FilterBar({
       aria-label="Which students"
       className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-card sm:p-4 print:hidden"
     >
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{selects}</div>
-      {(active || note) && (
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-slate-600">
-          <p>{note ?? "Showing only the students these choices leave."}</p>
-          {active && (
-            <button type="button" onClick={clear} className="text-sm font-semibold text-psu-700 hover:underline">
-              Clear filters
-            </button>
-          )}
-        </div>
-      )}
-      {views && <SavedViews state={state} />}
+      {toggle}
+      <div id={panelId} className={`${open ? "mt-3 block" : "hidden"} sm:mt-0 sm:block`}>
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">{selects}</div>
+        {(active || note) && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-slate-600">
+            <p>{note ?? "Showing only the students these choices leave."}</p>
+            {active && (
+              <button type="button" onClick={clear} className="text-sm font-semibold text-psu-700 hover:underline">
+                Clear filters
+              </button>
+            )}
+          </div>
+        )}
+        {views && <SavedViews state={state} />}
+      </div>
     </section>
   );
 }

@@ -4,6 +4,32 @@ Frontend on **Vercel**, backend + PostgreSQL + uploaded files on **Railway**.
 Do the steps in order: the backend URL is needed to build the frontend, and
 the frontend URL is needed by the backend.
 
+## Steps waiting for you
+
+Things only the project owner can do, kept here so none is forgotten. Each
+links to its full steps below.
+
+1. **Check the content security policy in production.** It is already
+   enforced (`my-pwa/vercel.json`). On the live site, open the browser's
+   developer tools, sign in as each role and open a few pages: the Console
+   should show no line starting "Refused to". If one appears, send it
+   before changing anything. (Section "Checks after deploying".)
+2. **Make the server insist on privacy consent.** A week after the deploy
+   that brought the current app, set `PRIVACY_CONSENT_REQUIRED=true` on the
+   production backend in Railway, then check the status card says
+   "Privacy notice: Asked". (Section "Privacy notice and photo retention".)
+3. **Validate the old foreign keys** (optional, after a backup). Through the
+   tunnel, with the port number it prints (a bare number, never
+   `127.0.0.1:PORT`, which would quietly use your local database):
+   `railway connect Postgres --tunnel-only` in one terminal, then in the
+   `backend` folder `railway run --service Postgres npm run db:fk-orphans <port>`,
+   and only if every key shows zero orphans,
+   `railway run --service Postgres npm run db:fk-validate <port> confirm`.
+   (Section "Validating the foreign keys".)
+4. **Set up the scheduled backups** (Iteration 15): the key pair, the
+   Cloudflare bucket and token, the Railway backup service. (Section
+   "Scheduled backups".)
+
 ## 0. Put the project on GitHub
 
 Both hosts deploy from a GitHub repository. Create a **private** repository
@@ -167,11 +193,11 @@ If both this and the five `SMTP_*` are set, the provider's API is used.
 `VITE_API_URL` is read when the site is built. After changing it, redeploy.
 
 `my-pwa/vercel.json` sets the site's security headers. Its
-`Content-Security-Policy-Report-Only` header names the backend address the
-site may call (`connect-src`). **If the backend URL ever changes, change it
-there as well as in `VITE_API_URL`.** While the header is report-only a
-mismatch only shows as a browser console warning; once it is enforced, a
-mismatch would stop the site reaching the API.
+`Content-Security-Policy` header (enforced since commit 51549d6) names the
+backend addresses the site may call (`connect-src`). **If the backend URL
+ever changes, change it there as well as in `VITE_API_URL`**: a mismatch
+stops the site reaching the API, with a "Refused to connect" line in the
+browser console.
 
 ## Which branch deploys
 
@@ -606,14 +632,19 @@ existed before. Two scripts deal with those rows. Neither is part of the
 deploy.
 
 1. Take a database backup (above).
-2. Report, read-only, from the `backend` folder:
-   `railway run npm run db:fk-orphans`
+2. Open the tunnel in a second terminal (see "Running a data script on the
+   hosted database"): `railway connect Postgres --tunnel-only`, and note
+   the port it listens on. Each command below takes that port as a bare
+   number; `127.0.0.1:PORT` would quietly use your local database.
+3. Report, read-only, from the `backend` folder:
+   `railway run --service Postgres npm run db:fk-orphans <port>`
    It lists each unvalidated key and how many rows point at a missing
    parent.
-3. Dry run: `railway run npm run db:fk-validate` prints the statements it
-   would run.
-4. Apply: `railway run npm run db:fk-validate -- --confirm` validates only
-   the keys with zero orphans and skips the rest. It is safe to run again.
+4. Dry run: `railway run --service Postgres npm run db:fk-validate <port>`
+   prints the statements it would run.
+5. Apply: `railway run --service Postgres npm run db:fk-validate <port> confirm`
+   validates only the keys with zero orphans and skips the rest. It is safe
+   to run again.
 
 If a key has orphans, do not delete rows to make it pass; send the report
 and decide what those rows should point at first.
@@ -747,10 +778,9 @@ pass.
 - Upload a document, redeploy the backend, and confirm it still downloads.
 - In the browser's developer tools (Network > the page > Response
   Headers): `Permissions-Policy` includes `camera=(self)` and
-  `Content-Security-Policy-Report-Only` is present. In the Console, sign
-  in and open a few pages: a line mentioning "Report Only" names something
-  the policy would have blocked. The offline page's own script is the one
-  known case.
+  `Content-Security-Policy` is present. In the Console, sign in and open a
+  few pages: a line starting "Refused to" names something the policy
+  blocked, and is a fault to report.
 - On a phone, tap Time in: the camera opens, the prompts appear, and the
   photo is taken by itself. (The camera needs https, which both hosts
   provide. The Vercel build copies the face-tracking files itself.)
@@ -905,9 +935,11 @@ Railway for the same label.
 
 **For the host.** `/api/health` says the server is running.
 `/api/health/ready` also asks the database and answers 503 when it does
-not reply within three seconds. Optional: Railway → backend service →
-Settings → Healthcheck Path → `/api/health/ready`, so a deploy that
-cannot reach its database is not put into service.
+not reply within three seconds. Railway checks `/api/health/ready` when it
+deploys the backend (`backend/railway.json`, since Iteration 16), so a
+deploy that cannot reach its database is not put into service and the
+running version stays. If the Railway dashboard shows a different
+Healthcheck Path, the file wins at the next deploy.
 
 **No outside monitoring service is used.** Nothing about faults leaves
 the system, so there is no account to create and nothing to add to the

@@ -63,7 +63,8 @@ export const awaitsReview = (entry: AttendanceEntry) =>
 export function bulkSkipReason(entry: AttendanceEntry): string | null {
   if (!awaitsReview(entry)) return null;
   if (!entry.time_out) return "Still on the clock";
-  if (entry.offline_time_in) return "Offline time-in: verify it by itself";
+  // The chip beside it already says it was an offline time-in.
+  if (entry.offline_time_in) return "Verify on its own";
   return null;
 }
 

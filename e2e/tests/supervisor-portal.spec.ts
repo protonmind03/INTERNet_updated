@@ -76,7 +76,7 @@ test("supervisor portal: a panel per intern, the attendance view bar, and notifi
     const firstGroup = sp.locator("tbody").first().locator("th");
     await expect(firstGroup).toContainText("Needs review", { timeout: 20_000 });
     const row = sp.locator("tbody tr").filter({ hasText: name });
-    await expect(row).toContainText("Not in Verify all: still on the clock");
+    await expect(row).toContainText("Left out of Verify all: Still on the clock");
 
     // A view chosen here is still there after a reload.
     await sp.getByLabel("Group by").selectOption("intern");

@@ -16,6 +16,7 @@
 
 import type { Pool } from "pg";
 import { phSql } from "./phTime";
+import { LOOP_LOCKS, withLoopLock } from "./loopLock";
 
 type NotificationWriter = (notification: {
   studentId?: string;
@@ -126,6 +127,8 @@ export function startTimeOutReminderScheduler(
     }
   };
 
-  void run();
-  setInterval(() => void run(), CHECK_EVERY_MS);
+  // One server at a time (services/loopLock.ts).
+  const guarded = () => withLoopLock(pool, LOOP_LOCKS.timeOutReminders, run);
+  void guarded();
+  setInterval(() => void guarded(), CHECK_EVERY_MS);
 }

@@ -72,9 +72,10 @@ function LogMarks({ entry }: { entry: AttendanceEntry }) {
     <span className="mt-1 flex flex-wrap gap-1">
       {/* Whatever the grouping, a waiting log Verify all leaves out says why. */}
       {skipped && (
-        <span className={`${mark} bg-slate-800 text-white`}>
+        <span className={`${mark} bg-slate-100 text-slate-800 ring-1 ring-inset ring-slate-300`} title="Left out of Verify all">
           <Icon name="ban" size={12} />
-          Not in Verify all: {skipped.charAt(0).toLowerCase() + skipped.slice(1)}
+          <span className="sr-only">Left out of Verify all: </span>
+          {skipped}
         </span>
       )}
       {entry.time_correction_reason && (

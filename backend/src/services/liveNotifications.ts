@@ -54,6 +54,54 @@ export function registerNotificationStream(
   };
 }
 
+/*
+| CATCHING UP (Iteration 16). Every notification event carries its id
+| (`id:`). A browser whose stream dropped reconnects with the last id it saw
+| (`GET /api/events?after=<id>`) and is sent, in one `catchup` event, what
+| arrived for it meanwhile: at most CATCH_UP_LIMIT, from the last
+| CATCH_UP_HOURS. Older ones are on the notifications page as always.
+*/
+export const CATCH_UP_LIMIT = 50;
+export const CATCH_UP_HOURS = 24;
+
+const RECIPIENT_COLUMN: Record<Recipient["role"], string> = {
+  student: "student_id",
+  supervisor: "supervisor_id",
+  coordinator: "coordinator_id",
+};
+
+/** The id a reconnecting browser last saw, or null (a first connection). */
+export function readAfter(value: unknown): number | null {
+  const text = Array.isArray(value) ? value[0] : value;
+  return typeof text === "string" && /^\d{1,15}$/.test(text) ? Number(text) : null;
+}
+
+/** What arrived for the recipient after that id: oldest first, and whether there is more. */
+export async function missedNotifications(
+  pool: Pick<Pool, "query">,
+  recipient: Recipient,
+  afterId: number
+): Promise<{ notifications: NotificationPayload[]; more: boolean }> {
+  const found = await pool.query<NotificationPayload>(
+    `SELECT id, title, message, type, created_at, link, entity_type, entity_id
+     FROM notifications
+     WHERE ${RECIPIENT_COLUMN[recipient.role]}::text = $1::text
+       AND id > $2
+       AND created_at > NOW() - INTERVAL '${CATCH_UP_HOURS} hours'
+     ORDER BY id ASC
+     LIMIT $3`,
+    [recipient.id, afterId, CATCH_UP_LIMIT + 1]
+  );
+  return { notifications: found.rows.slice(0, CATCH_UP_LIMIT), more: found.rows.length > CATCH_UP_LIMIT };
+}
+
+/** Sends one stream what it missed, as a single `catchup` event (nothing when there is nothing). */
+export function sendCatchUp(response: Response, missed: { notifications: NotificationPayload[]; more: boolean }): void {
+  if (missed.notifications.length === 0 || response.writableEnded) return;
+  const last = missed.notifications[missed.notifications.length - 1];
+  response.write(`id: ${last.id}\nevent: catchup\ndata: ${JSON.stringify(missed)}\n\n`);
+}
+
 export function closeNotificationStreams(recipient: Recipient): void {
   const key = recipientKey(recipient);
   const listeners = streams.get(key);
@@ -71,7 +119,8 @@ export function publishNotification(
   const listeners = streams.get(recipientKey(recipient));
   if (!listeners) return;
 
-  const event = `event: notification\ndata: ${JSON.stringify(payload)}\n\n`;
+  // The id lets a browser that reconnects say where it got to (missedNotifications).
+  const event = `id: ${payload.id}\nevent: notification\ndata: ${JSON.stringify(payload)}\n\n`;
   for (const response of listeners) {
     if (response.writableEnded || response.destroyed) {
       listeners.delete(response);

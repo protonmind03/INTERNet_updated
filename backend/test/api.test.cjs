@@ -11140,3 +11140,138 @@ test("the nightly backup script: pg_dump of the database, encrypted, in the buck
     await store.close();
   }
 });
+
+/*
+|--------------------------------------------------------------------------
+| ITERATION 16: CHAPTER 9 IMPROVEMENTS
+|--------------------------------------------------------------------------
+*/
+
+test("live notifications: each event carries its id, and a reconnect is sent what arrived meanwhile in one catch-up", async (t) => {
+  require("tsx/cjs");
+  const live = require("../src/services/liveNotifications.ts");
+  assert.equal(live.readAfter("41"), 41);
+  assert.equal(live.readAfter(["7", "8"]), 7);
+  assert.equal(live.readAfter("abc"), null);
+  assert.equal(live.readAfter(undefined), null);
+  // A published event names its id, so the browser can say where it got to.
+  const written = [];
+  const fake = { write: (text) => written.push(text), end: () => {}, writableEnded: false, destroyed: false };
+  const stop = live.registerNotificationStream({ role: "coordinator", id: "C-test" }, fake);
+  live.publishNotification({ role: "coordinator", id: "C-test" }, { id: 905, title: "T", message: "M", type: "info", created_at: "2026-10-18T00:00:00Z" });
+  stop();
+  assert.match(written.join(""), /^id: 905\nevent: notification\ndata: /m);
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const coordinatorId = String((await login("coordinator", coordinatorEmail, coordinatorPassword)).coordinator.coordinator_id);
+  const made = [];
+  try {
+    const insert = async (title) =>
+      (await pool.query(`INSERT INTO notifications (coordinator_id, title, message, type, is_read) VALUES ($1, $2, 'Catch-up test.', 'info', FALSE) RETURNING id`, [coordinatorId, title])).rows[0].id;
+    const before = await insert("Catch-up test, already seen");
+    made.push(before);
+    const missedA = await insert("Catch-up test, missed A");
+    const missedB = await insert("Catch-up test, missed B");
+    made.push(missedA, missedB);
+    // Reconnecting after "before": one catch-up event with the two that came after, oldest first.
+    const response = await fetch(new URL(`/api/events?after=${before}`, apiBaseUrl), { headers: authHeaders(coordinatorToken) });
+    assert.equal(response.status, 200);
+    const reader = response.body.getReader();
+    let text = "";
+    const until = Date.now() + 5000;
+    while (!/event: catchup/.test(text) && Date.now() < until) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      text += new TextDecoder().decode(value);
+    }
+    await reader.cancel();
+    const block = text.split("\n\n").find((part) => part.includes("event: catchup"));
+    assert.ok(block, text);
+    assert.match(block, new RegExp(`^id: ${missedB}$`, "m"), "the catch-up carries the newest id");
+    const data = JSON.parse(block.match(/^data: (.+)$/m)[1]);
+    const mine = data.notifications.filter((item) => String(item.title).startsWith("Catch-up test"));
+    assert.deepEqual(mine.map((item) => item.id), [missedA, missedB]);
+    assert.equal(data.more, false);
+    // A first connection (no after) is sent nothing extra; someone else's notifications are never in it.
+    const others = await live.missedNotifications(pool, { role: "student", id: "NOBODY" }, before);
+    assert.deepEqual(others.notifications, []);
+  } finally {
+    if (made.length) await pool.query(`DELETE FROM notifications WHERE id = ANY($1::int[])`, [made]);
+    await pool.end();
+  }
+});
+
+test("scheduled loops: one server at a time takes a loop's round, and the lock is let go after it", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { withLoopLock, LOOP_LOCKS } = require("../src/services/loopLock.ts");
+  assert.equal(new Set(Object.values(LOOP_LOCKS)).size, Object.keys(LOOP_LOCKS).length, "one number per loop");
+  const pool = localTestPool();
+  try {
+    let release;
+    const holding = new Promise((resolve) => (release = resolve));
+    const first = withLoopLock(pool, 7_031_199, async () => {
+      await holding;
+      return "first";
+    });
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    // A second server meanwhile: skipped.
+    assert.equal(await withLoopLock(pool, 7_031_199, async () => "second"), null);
+    release();
+    assert.equal(await first, "first");
+    // Free again once the round is over.
+    assert.equal(await withLoopLock(pool, 7_031_199, async () => "third"), "third");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("audit: a message records who wrote to whom and about what, never the subject or the words; a rejection records its kind", async (t) => {
+  if (needsWrites(t)) return;
+  const supervisor = await supervisorSession();
+  const words = `Audit test message ${Date.now()}`;
+  const sent = await jsonRequest("/api/messages", jsonBody(coordinatorToken, "POST", {
+    to_role: "supervisor",
+    to_id: String(supervisor.supervisor.supervisor_id),
+    subject: `Private subject ${words}`,
+    body: `Private words: ${words}. Please check the logs of this week.`,
+  }));
+  assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+  const reply = await jsonRequest(`/api/messages/threads/${sent.body.thread_id}`, jsonBody(supervisor.token, "POST", { body: `A reply to ${words}, with private words.` }));
+  assert.equal(reply.response.status, 201, JSON.stringify(reply.body));
+
+  const f = await rejectionFixture("AUD16");
+  try {
+    const log = await f.log({ daysAgo: 1, open: false });
+    const rejected = await jsonRequest(`/api/attendance/${log}/status`, jsonBody(f.supervisor.token, "PATCH", { status: "Rejected", reason: "No one was at the site that day.", expected_status: "Pending" }));
+    assert.equal(rejected.response.status, 200, JSON.stringify(rejected.body));
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const read = async (action) => (await jsonRequest(`/api/coordinator/audit?action=${action}&limit=10`, { headers: authHeaders(coordinatorToken) })).body.entries;
+    const send = (await read("message.send")).find((entry) => String(entry.entity_id) === String(sent.body.thread_id));
+    assert.ok(send, "the message is in the audit log");
+    assert.equal(send.details.to_role, "supervisor");
+    assert.equal(typeof send.details.email, "string", "whether it was also emailed");
+    const replied = (await read("message.reply")).find((entry) => String(entry.entity_id) === String(sent.body.thread_id));
+    assert.ok(replied, "the reply is in the audit log");
+    for (const entry of [send, replied]) {
+      assert.doesNotMatch(JSON.stringify(entry), /Private|private words/, "never the subject or the words");
+    }
+    const rejection = (await read("attendance.reject")).find((entry) => String(entry.entity_id) === String(log))
+      ?? (await read("attendance.rejected")).find((entry) => String(entry.entity_id) === String(log));
+    assert.ok(rejection, "the rejection is in the audit log");
+    assert.equal(rejection.details.rejection, "attendance", "the whole log, not only its photo");
+  } finally {
+    const pool = localTestPool();
+    await pool.query(`DELETE FROM messages WHERE thread_id = $1`, [sent.body.thread_id]).catch(() => undefined);
+    await pool.query(`DELETE FROM message_threads WHERE id = $1`, [sent.body.thread_id]).catch(() => undefined);
+    await pool.end();
+    await f.cleanup();
+  }
+});
+
+test("Railway checks the readiness route when it deploys the backend", () => {
+  const fs = require("node:fs");
+  const config = JSON.parse(fs.readFileSync(nodePath.join(__dirname, "..", "railway.json"), "utf8"));
+  assert.equal(config.deploy.healthcheckPath, "/api/health/ready");
+});

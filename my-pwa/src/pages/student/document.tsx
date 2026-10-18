@@ -399,9 +399,12 @@ function RequirementRow({
   const state = stateOf(latest);
   const mark = STATE_ICON[state];
   const canUpload = state === "missing" || state === "rejected";
+  // Nothing uploaded yet: one row, the Upload button beside the requirement it is for
+  // (UX pass). A returned file keeps the roomier layout for the reviewer's note.
+  const compact = state === "missing";
 
   return (
-    <li className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:px-5">
+    <li className={`flex gap-3 px-4 py-4 sm:items-center sm:px-5 ${compact ? "items-center" : "flex-col sm:flex-row"}`}>
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <span
           className={`mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${mark.className}`}
@@ -411,16 +414,10 @@ function RequirementRow({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
             <p className="text-sm font-semibold text-slate-900">{requirement.name}</p>
-            <StatusBadge
-              status={
-                state === "missing"
-                  ? "Not uploaded"
-                  : state === "pending"
-                    ? "Under review"
-                    : latest!.status
-              }
-              tone={state === "missing" ? "neutral" : undefined}
-            />
+            {/* "Not uploaded" is said by the Upload button beside it. */}
+            {!compact && (
+              <StatusBadge status={state === "pending" ? "Under review" : latest!.status} />
+            )}
           </div>
           {requirement.description && (
             <p className="mt-0.5 text-sm text-slate-600">{requirement.description}</p>
@@ -472,7 +469,8 @@ function RequirementRow({
           type="button"
           onClick={onUpload}
           disabled={disabled}
-          className={`inline-flex h-10 shrink-0 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${
+          aria-label={`${uploading ? "Uploading" : state === "rejected" ? "Upload again" : "Upload"}: ${requirement.name}`}
+          className={`inline-flex h-11 shrink-0 items-center justify-center gap-2 rounded-lg text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${compact ? "px-3.5" : "px-4"} ${
             state === "rejected"
               ? "bg-psu-700 text-white hover:bg-psu-800"
               : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"

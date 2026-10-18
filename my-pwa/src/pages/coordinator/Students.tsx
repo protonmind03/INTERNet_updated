@@ -220,7 +220,8 @@ export default function CoordinatorStudents() {
               onChange={fromFirstPage(setSearch)}
               label="Search students"
               placeholder="Search name, ID, email or company"
-              className="w-full sm:w-80"
+              // One row with the status chips and Sort by on a laptop screen (UX pass).
+              className="w-full sm:w-72"
             />
             <FilterChips
               label="Account status"
