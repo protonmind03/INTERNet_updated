@@ -270,7 +270,7 @@ What it does once set up:
 - **Once a week**, between 02:30 and 05:00, the backend packs every
   uploaded file (photos, documents) into one encrypted ZIP in the same
   bucket, as long as the files are on its volume. Once uploads are moved to
-  a bucket ("Moving uploads to a bucket"), this stops by itself.
+  a bucket ("Keeping uploaded files in a bucket"), this stops by itself.
 - The bucket deletes old copies by itself: nightly ones after 30 days,
   monthly ones after a year, weekly upload packs after 35 days.
 - Every run is recorded. **Profile settings > What is switched on** shows
