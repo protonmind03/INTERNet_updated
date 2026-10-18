@@ -11,10 +11,10 @@ import {
   Skeleton,
   SkeletonRows,
 } from "../../components/ui";
-import { BrandLoader } from "../../brand";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate, formatHours, formatLongDate, greetingFor } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
+import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import KpiCards from "./KpiCards";
 import { coordinatorRequest } from "./request";
@@ -85,6 +85,8 @@ export default function CoordinatorDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [actions, setActions] = useState<Actions | null>(null);
   const [loading, setLoading] = useState(true);
+  // Greeted by name at once, from the account kept on this device (Iteration 14, P2).
+  const coordinatorName = useAccount("coordinator")?.name?.trim() ?? "";
   const [error, setError] = useState("");
   useLaunchReady(!loading);
   // Shared with the other coordinator pages, so the choice carries between them.
@@ -132,7 +134,7 @@ export default function CoordinatorDashboard() {
   return (
     <CoordinatorLayout
       title="Dashboard"
-      subtitle={`${greetingFor(new Date())}. Here is where the programme stands on ${formatLongDate(new Date())}.`}
+      subtitle={`${greetingFor(new Date())}${coordinatorName ? `, ${coordinatorName}` : ""}. Here is where the programme stands on ${formatLongDate(new Date())}.`}
     >
       <div className="space-y-6">
         <FilterBar state={studentFilters} />
@@ -143,10 +145,17 @@ export default function CoordinatorDashboard() {
           <h2 id="today-heading" className="mb-3 text-sm font-semibold text-slate-900">
             Today's attendance
           </h2>
-          {loading ? (
-            <BrandLoader role="coordinator" process="dashboard" />
-          ) : !data || !actions ? (
-            <Skeleton className="h-20 rounded-xl" />
+          {loading || !data || !actions ? (
+            // The four figures' places, empty, so nothing moves when they arrive (Iteration 14, P2).
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-hidden="true">
+              {[0, 1, 2, 3].map((figure) => (
+                <div key={figure} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-card">
+                  <span className="flex h-4 items-center"><Skeleton className="h-3 w-2/3" /></span>
+                  <span className="mt-1 flex h-8 items-center"><Skeleton className="h-6 w-1/3" /></span>
+                  <span className="mt-0.5 flex h-4 items-center"><Skeleton className="h-3 w-4/5" /></span>
+                </div>
+              ))}
+            </div>
           ) : (
             <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
               <TodayFigure

@@ -107,7 +107,24 @@ Up to three pictures on a time-out note, a weekly report or a concern
 `/brand-preview` shows the brand kit; `/brand-preview?view=loading` shows the
 three loading prototypes for after sign-in (P1 Road to today, P2 Shaped
 skeleton, P3 The one thing; `my-pwa/src/brand/LoadingPrototypes.tsx`), with
-the role, how long the data takes, and reduced motion to choose. None is
-wired into sign-in. The page exists in development (`npm run dev`, or
+the role, how long the data takes, and reduced motion to choose.
+
+**P2 was chosen** (2026-10-18) and is what the app does after sign-in:
+
+- Sign in fetches the role's first page file while the sign-in is checked
+  (`my-pwa/src/lib/homePages.ts`) and opens the page as soon as it is
+  answered; there is no launch screen of a set length after sign-in. The
+  splash when the installed app is opened is unchanged.
+- While that file is still coming, `components/PageSkeleton.tsx` stands in
+  on the three first pages.
+- Each first page draws placeholders where its figures and lists will be
+  (`StatTile loading`, `TodayStripSkeleton`, the coordinator's filter bar
+  and figures, the student's progress card) and fills them in place.
+- `e2e/tests/first-page.spec.ts` holds the data back and fails if the page
+  shifts by 0.1 or more (cumulative layout shift) when it arrives. A new
+  first-page element that appears only after loading needs a placeholder
+  of its size.
+
+The prototype components themselves are not used by the app. The page exists in development (`npm run dev`, or
 `npm run dev:phone` to open it on a phone), or in a build made with
 `VITE_BRAND_PREVIEW=true` (for a test site only; production leaves it unset).

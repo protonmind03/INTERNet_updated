@@ -13,7 +13,6 @@ import {
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
-import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import {
@@ -374,9 +373,24 @@ function ProgressCard({
 }) {
   const projection = [...useProjections("student").values()][0];
   if (loading || !summary) {
+    // The card's own shape, filled in place when the figures arrive (Iteration 14, P2).
     return (
-      <Card className="p-5">
-        <BrandLoader role="student" process="dashboard" />
+      <Card>
+        <CardHeader title="OJT progress" description="Verified hours toward your requirement" />
+        <div className="flex flex-col items-center gap-5 px-4 pb-5 pt-4 sm:flex-row sm:gap-7 sm:px-5" aria-hidden="true">
+          <Skeleton className="h-[132px] w-[132px] shrink-0 rounded-full" />
+          <div className="w-full min-w-0 flex-1">
+            <div className="grid grid-cols-3 gap-2 sm:gap-3">
+              {[0, 1, 2].map((figure) => (
+                <Skeleton key={figure} className="h-[62px] rounded-lg" />
+              ))}
+            </div>
+            <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
+              <Skeleton className="h-4 w-full" />
+              <Skeleton className="h-4 w-3/4" />
+            </div>
+          </div>
+        </div>
       </Card>
     );
   }

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
-import { Card } from "../../components/ui";
+import { Card, Skeleton } from "../../components/ui";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { daysUntil, dueLabel, formatHours, formatLongDate, phDateKey } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
@@ -195,7 +195,7 @@ export default function TodayStrip({
         </p>
       </div>
 
-      <ul className="mt-3 flex flex-wrap gap-2" aria-label="Your interns today">
+      <ul className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap" aria-label="Your interns today">
         {chips.map(({ intern, state, detail }) => {
           const look = state ? CHIP[state] : CHIP.off;
           return (
@@ -317,5 +317,27 @@ function Line({ icon, children }: { icon: React.ComponentProps<typeof Icon>["nam
       <Icon name={icon} size={16} className="mt-0.5 shrink-0 text-slate-600" />
       <div className="min-w-0 flex-1">{children}</div>
     </li>
+  );
+}
+
+/** Where the Today strip will be, while the interns load (Iteration 14, P2): the page does not jump when it arrives. */
+export function TodayStripSkeleton() {
+  return (
+    <Card className="p-4 sm:p-5">
+      <div aria-hidden="true">
+        <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+          <h2 className="text-base font-semibold text-slate-900">Today</h2>
+          <Skeleton className="h-4 w-56 max-w-full" />
+        </div>
+        <div className="mt-3 grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
+          <Skeleton className="h-[47px] w-full rounded-lg sm:w-44" />
+          <Skeleton className="h-[47px] w-full rounded-lg sm:w-44" />
+        </div>
+        <div className="mt-4 space-y-3 border-t border-slate-100 pt-3">
+          <Skeleton className="h-4 w-4/5" />
+          <Skeleton className="h-4 w-3/5" />
+        </div>
+      </div>
+    </Card>
   );
 }

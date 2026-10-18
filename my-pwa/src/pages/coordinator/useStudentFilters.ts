@@ -193,12 +193,18 @@ function settle(filters: StudentFilters, options: FilterOptions): StudentFilters
 export function useStudentFilters({ remember: remembers = true }: { remember?: boolean } = {}) {
   const [params, setParams] = useSearchParams();
   const [options, setOptions] = useState<FilterOptions>(cached ?? NO_OPTIONS);
+  // Whether the choices have come (Iteration 14): until then the bar keeps its place empty.
+  const [ready, setReady] = useState(cached !== null);
 
   useEffect(() => {
     let current = true;
-    void loadOptions().then((loaded) => {
-      if (current) setOptions(loaded);
-    });
+    void loadOptions()
+      .then((loaded) => {
+        if (current) setOptions(loaded);
+      })
+      .finally(() => {
+        if (current) setReady(true);
+      });
     return () => {
       current = false;
     };
@@ -287,6 +293,7 @@ export function useStudentFilters({ remember: remembers = true }: { remember?: b
     query,
     active: query !== "",
     options,
+    ready,
     choices: useMemo(() => narrowed(options, filters), [options, filters]),
   };
 }

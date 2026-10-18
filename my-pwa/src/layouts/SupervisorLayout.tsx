@@ -244,7 +244,7 @@ export default function SupervisorLayout({
 
       <main className="mx-auto w-full max-w-7xl flex-1 animate-page-in px-4 pb-12 pt-6 md:px-8 md:pt-8 print:max-w-none print:p-0">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-          <div className="min-w-0">
+          <div className="min-w-0 basis-full sm:basis-auto">
             <h1 className="text-2xl font-bold tracking-tight text-slate-900">{title}</h1>
             {subtitle && <p className="mt-1 text-sm text-slate-600">{subtitle}</p>}
           </div>

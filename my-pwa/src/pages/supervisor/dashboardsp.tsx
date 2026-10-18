@@ -10,9 +10,9 @@ import {
   FilterChips,
   Modal,
   ProgressBar,
+  SkeletonRows,
   StatTile,
 } from "../../components/ui";
-import { BrandLoader } from "../../brand";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import {
   daysUntil,
@@ -30,7 +30,7 @@ import { finalEvaluationPath, useFinalDue, type FinalDue } from "./finalDue";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { awaitsReview, bulkSkipReason } from "./attendanceView";
-import TodayStrip from "./TodayStrip";
+import TodayStrip, { TodayStripSkeleton } from "./TodayStrip";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
@@ -365,8 +365,9 @@ export default function SupervisorDashboard() {
               Excuse {waitingAbsences.length} absences
             </Button>
           )}
-          {interns.length > 0 && (
-            <Button variant="secondary" icon="camera" onClick={() => setRecording(true)}>
+          {/* Shown (not yet usable) while loading, so the header does not grow when the interns arrive. */}
+          {(loading || interns.length > 0) && (
+            <Button variant="secondary" icon="camera" disabled={loading} onClick={() => setRecording(true)}>
               Record time-in
             </Button>
           )}
@@ -376,7 +377,9 @@ export default function SupervisorDashboard() {
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
-        {!loading && (
+        {loading ? (
+          <TodayStripSkeleton />
+        ) : (
           <TodayStrip
             interns={interns.filter((intern) => inGroup(intern.student_id))}
             work={work}
@@ -395,12 +398,14 @@ export default function SupervisorDashboard() {
             label="Waiting on you"
             value={loading ? "–" : queue.length}
             hint={queue.length === 0 ? "Nothing to review" : "Across all your interns"}
+            loading={loading}
             icon="clipboard"
             tone={!loading && queue.length > 0 ? "waiting" : "neutral"}
           />
           <StatTile
             label="Interns"
             value={loading ? "–" : interns.length}
+            loading={loading}
             hint={
               loading
                 ? undefined
@@ -412,12 +417,14 @@ export default function SupervisorDashboard() {
             label="Hours verified this week"
             value={loading ? "–" : formatHours(summary.weekHours)}
             hint="Since Monday"
+            loading={loading}
             icon="clock"
             tone="gold"
           />
           <StatTile
             label="Tasks with interns"
             value={loading ? "–" : summary.openTasks}
+            loading={loading}
             hint={
               loading
                 ? undefined
@@ -480,7 +487,7 @@ export default function SupervisorDashboard() {
           {/* QUEUE */}
           <Card className="overflow-hidden">
             {loading ? (
-              <BrandLoader role="supervisor" process="dashboard" />
+              <SkeletonRows rows={5} />
             ) : visible.length === 0 ? (
               <EmptyState
                 icon="check-circle"

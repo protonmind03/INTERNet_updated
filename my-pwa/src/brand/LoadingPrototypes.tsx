@@ -11,8 +11,9 @@ import { ROLE_THEMES } from "./roles";
 |
 | Iteration 14 (roadmap 8.3, workstream C). Three ways to show what happens
 | between "Sign in" and the first page, to be tried on a phone before one
-| is chosen. They live here and in the brand preview only; none of them is
-| wired into sign-in.
+| is chosen. They live here and in the brand preview only. P2 was chosen;
+| the app does it with each first page's own placeholders (lib/homePages.ts,
+| components/PageSkeleton.tsx), not with these components.
 |
 |   P1  Road to today     the road glyph draws itself while the role's first
 |                         data loads, with two milestones: "Signing you in",

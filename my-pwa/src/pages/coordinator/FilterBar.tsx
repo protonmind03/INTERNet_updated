@@ -1,5 +1,6 @@
 import { useId } from "react";
 import SavedViews from "./SavedViews";
+import { Skeleton } from "../../components/ui";
 import type { FilterKey, StudentFilterState } from "./useStudentFilters";
 
 /*
@@ -159,6 +160,25 @@ export default function FilterBar({
     ),
   ].filter(Boolean);
 
+  // The choices are still on their way: the bar's place, empty, so the page does not move when they come.
+  if (!state.ready && selects.length === 0) {
+    return (
+      <section
+        aria-label="Which students"
+        aria-busy="true"
+        className="rounded-xl border border-slate-200/80 bg-white p-3 shadow-card sm:p-4 print:hidden"
+      >
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-hidden="true">
+          {[0, 1, 2].map((choice) => (
+            <div key={choice} className="space-y-1.5">
+              <Skeleton className="h-3.5 w-1/2" />
+              <Skeleton className="h-10 w-full rounded-lg" />
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+  }
   if (selects.length === 0) return null;
 
   return (

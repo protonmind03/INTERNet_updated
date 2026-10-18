@@ -10,6 +10,8 @@ import Login from "./pages/Login";
 import ForgotPassword from "./pages/ForgotPassword";
 import ChangePassword from "./pages/ChangePassword";
 import Go from "./pages/Go";
+import PageSkeleton from "./components/PageSkeleton";
+import { HOME_PAGE, HOME_PATH } from "./lib/homePages";
 import Help from "./pages/Help";
 import CoordinatorHub, { MovedPage } from "./pages/coordinator/CoordinatorHub";
 
@@ -91,6 +93,9 @@ function PortalPrefetch() {
 
 /** Shown while a page's file is on its way. */
 function PageFallback() {
+  const { pathname } = useLocation();
+  // The first page after sign-in: its shape, not a spinner (Iteration 14, P2).
+  if (Object.values(HOME_PATH).includes(pathname)) return <PageSkeleton />;
   return (
     <div className="app-canvas grid min-h-[calc(100dvh-var(--inb-top-inset))] place-items-center px-6">
       <BrandLoader variant="page" process="launch" />
@@ -115,7 +120,7 @@ function ToResolutionTab({ tab }: { tab: "concerns" | "evaluations" }) {
 |--------------------------------------------------------------------------
 */
 
-const Dashboard = page("student", () => import("./pages/student/dashboard"));
+const Dashboard = page("student", HOME_PAGE.student);
 const DailyLog = page("student", () => import("./pages/student/dailylog"));
 const MyTasks = page("student", () => import("./pages/student/task"));
 const Schedule = page("student", () => import("./pages/student/sched"));
@@ -135,7 +140,7 @@ const SupervisorJournals = page("supervisor", () => import("./pages/supervisor/J
 |--------------------------------------------------------------------------
 */
 
-const SupervisorDashboard = page("supervisor", () => import("./pages/supervisor/dashboardsp"));
+const SupervisorDashboard = page("supervisor", HOME_PAGE.supervisor);
 const SupervisorAttendanceApproval = page("supervisor", () => import("./pages/supervisor/attendance"));
 const SupervisorTasks = page("supervisor", () => import("./pages/supervisor/tasks"));
 const StudentProfilePage = page("student", () => import("./pages/student/Profile"));
@@ -154,7 +159,7 @@ const SupervisorTimeRecord = page("supervisor", () => import("./pages/supervisor
 |--------------------------------------------------------------------------
 */
 
-const CoordinatorDashboard = page("coordinator", () => import("./pages/coordinator/Dashboard"));
+const CoordinatorDashboard = page("coordinator", HOME_PAGE.coordinator);
 const CoordinatorStudents = page("coordinator", () => import("./pages/coordinator/Students"));
 const CoordinatorSupervisors = page("coordinator", () => import("./pages/coordinator/Supervisors"));
 const CoordinatorMonitoring = page("coordinator", () => import("./pages/coordinator/Monitoring"));

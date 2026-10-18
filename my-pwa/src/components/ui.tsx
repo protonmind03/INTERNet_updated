@@ -286,12 +286,15 @@ export function StatTile({
   hint,
   icon,
   tone = "brand",
+  loading = false,
 }: {
   label: string;
   value: ReactNode;
   hint?: ReactNode;
   icon?: IconName;
   tone?: keyof typeof TILE_TONES;
+  /** While the figure loads: placeholders where the number and its line will be, so nothing moves when they arrive. */
+  loading?: boolean;
 }) {
   return (
     <div className="rounded-xl border border-slate-200/80 bg-linear-to-br from-white to-psu-50/50 p-4 shadow-card">
@@ -305,10 +308,23 @@ export function StatTile({
           </span>
         )}
       </div>
-      <p className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
-        {value}
-      </p>
-      {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
+      {loading ? (
+        <>
+          <span className="mt-1.5 flex h-8 items-center" aria-hidden="true">
+            <Skeleton className="h-6 w-14" />
+          </span>
+          <span className="mt-0.5 flex h-4 items-center" aria-hidden="true">
+            <Skeleton className="h-3 w-24" />
+          </span>
+        </>
+      ) : (
+        <>
+          <p className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
+            {value}
+          </p>
+          {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
+        </>
+      )}
     </div>
   );
 }

@@ -115,8 +115,9 @@ function LoadingView() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">The loading screen after sign-in</h1>
           <p className="mt-1 max-w-3xl text-sm text-slate-700">
-            Three prototypes to try before one is chosen (roadmap 8.3). Each plays what happens between Sign in and the first
-            page, with the data taking as long as chosen below. None of them is used by the app yet. On a phone, open one full
+            The three prototypes from roadmap 8.3. P2, the shaped skeleton, was chosen: it is what the app now does after sign-in
+            (each first page draws its own shape and fills it in place). P1 and P3 are kept here for comparison. Each plays what
+            happens between Sign in and the first page, with the data taking as long as chosen below. On a phone, open one full
             screen.
           </p>
         </div>

@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Navigate, useNavigate } from "react-router-dom";
-import { LoginScreen, SplashScreen, type Role } from "../brand";
+import { LoginScreen, type Role } from "../brand";
 import { IosInstallGuide } from "../components/InstallApp";
 import { API_URL } from "../lib/api";
+import { HOME_PATH, preloadHome } from "../lib/homePages";
 
 /*
 |--------------------------------------------------------------------------
@@ -16,11 +17,7 @@ import { API_URL } from "../lib/api";
 |
 */
 
-const HOME: Record<Role, string> = {
-  student: "/student/dashboard",
-  supervisor: "/supervisor/dashboard",
-  coordinator: "/coordinator/dashboard",
-};
+const HOME: Record<Role, string> = HOME_PATH;
 
 const ROLES: Role[] = ["student", "supervisor", "coordinator"];
 const LAST_ROLE_KEY = "inb_last_role";
@@ -65,8 +62,6 @@ export default function Login() {
 
   // Set by the session guard when it sends an expired session back here.
   const [notice, setNotice] = useState(() => sessionStorage.getItem("session_notice") || "");
-  // After a successful sign-in the role's launch screen shows briefly, then the portal opens.
-  const [launch, setLaunch] = useState<{ role: Role; to: string } | null>(null);
   // Whether the account that just signed in has to set a new password first.
   const mustChangePassword = useRef(false);
 
@@ -74,12 +69,6 @@ export default function Login() {
     sessionStorage.removeItem("session_notice");
     document.title = "Sign in · INTERNet";
   }, []);
-
-  useEffect(() => {
-    if (!launch) return;
-    const timer = window.setTimeout(() => navigate(launch.to), 1200);
-    return () => window.clearTimeout(timer);
-  }, [launch, navigate]);
 
   const rememberRole = (role: Role) => {
     try {
@@ -91,6 +80,9 @@ export default function Login() {
 
   const signIn = async (role: Role, identifier: string, password: string) => {
     setNotice("");
+    // Iteration 14 (P2): the first page's file is fetched while the sign-in is checked,
+    // so it can open in its own shape the moment the answer comes.
+    preloadHome(role);
     const response = await fetch(`${API_URL}/api/login/${role}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -122,17 +114,14 @@ export default function Login() {
 
   return (
     <>
-      {launch && <SplashScreen role={launch.role} />}
       <IosInstallGuide />
       <LoginScreen
         initialRole={lastRole()}
         onRoleChange={rememberRole}
         onSubmit={signIn}
+        // The page opens at once and fills in place (Iteration 14, P2): no launch screen of a set length.
         onSignedIn={(role) =>
-          setLaunch({
-            role,
-            to: mustChangePassword.current ? `/change-password?role=${role}` : HOME[role],
-          })
+          navigate(mustChangePassword.current ? `/change-password?role=${role}` : HOME[role])
         }
         forgotHref={(role) => `/forgot-password?role=${role}`}
         notice={notice || undefined}
