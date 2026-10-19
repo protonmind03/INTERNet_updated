@@ -60,7 +60,7 @@ the new ones keep the brief's numbers 065 to 070.
 - [x] 23.4 three sign-in doors
 - [x] 23.5 onboarding carousel
 - [x] 23.6 architecture diagram and PR notes
-- [ ] final verification and report
+- [x] final verification and report
 
 ## Decisions made during the run
 
@@ -424,7 +424,100 @@ PAPER-CORRECTIONS, docs/pr/.
 
 **Migrations.** None.
 
-**Tests.** See the final run below.
+**Tests.** See the final verification below.
 
 **Skipped.** Passkey sign-in at the doors (see the decision above).
+
+## Final verification (branch iter-23-landing)
+
+Run on 20 October 2026, 01:40 to 05:20 Philippine time, on a fresh local database (every
+migration, `db:seed-demo`, and for the audits `docs/baseline/tools/populate.mjs`), the clock on
+UTC for the API tests, as CI does. Nothing was run against a hosted database, Railway or Vercel.
+
+**Tests.**
+- Backend: lint passed; check:route-tests: all 246 routes named; API: 265 run, 265 passed, 0 failed.
+- App: lint and build passed; check:pwa: 146 passed, 0 failed (four manifests, both pages, the landing script at 4.2 kB).
+- e2e: 83 passed, 0 failed, 0 flaky, 4 skipped (journeys that need today's time-in window open; the run ended at 05:20, before the demo schedule's window opens).
+- The first full run on this branch found two faults, both fixed and in the counts above: an API
+  check still read the removed pages/Login.tsx (it now reads pages/Door.tsx, the sign-in path), and
+  the journeys test "a student adds a picture when timing out" tried an offline time-in at 01:45,
+  which the Phase 18 day rules refuse; it now skips when the time-in window is closed, as the other
+  journeys do.
+
+**Accessibility (axe-core 4.10.2, WCAG 2.1 A and AA, 390 and 1280 px, Iteration 0 settings).**
+Files: docs/after-iter-23/axe.json and axe-sweep.log.
+
+| | Iteration 0 (16 Oct) | Iteration 17 (19 Oct) | Iteration 23 (20 Oct) |
+|---|---|---|---|
+| Page loads | 100 | 108 | 120 (the same list, plus /help, the landing page, the three doors and pages added since) |
+| States checked (menus, tabs, dialogs opened) | 546 | 571 | 629 |
+| Violations | 1 | 0 | **0** |
+
+The Phase 21 sweep's 31 findings (day banner chip and pager contrast, snap rows not focusable,
+other-month day numbers) are all gone.
+
+**Lighthouse 12.8.2, mobile defaults, median of 3 runs.** Files: docs/after-iter-23/lighthouse.md
+and lighthouse.json. "/" was the sign-in page before Iteration 23 and is the landing page now; the
+sign-in moved to the doors, so the trainee's door is measured too.
+
+| Page | Iteration 0 | Iteration 17 | Iteration 23 | LCP | TBT | CLS |
+|---|---|---|---|---|---|---|
+| "/" (sign-in, now the landing page) | 100 | 100 | **100** (a11y 100, best practices 100, SEO 100) | 0.9 s | 10 ms | 0 |
+| Trainee door (sign-in) | - | - | **100** | 0.6 s | 60 ms | 0 |
+| Student: Today | 98 | 99 | **97** | 2.1 s | 150 ms | 0.022 |
+| Supervisor: Review | 78 | 98 | **98** | 2.1 s | 130 ms | 0 |
+| Coordinator: Dashboard | 97 | 99 | **99** | 1.5 s | 110 ms | 0.011 |
+
+The landing page meets its budget: LCP 0.9 s (budget 2.5 s), CLS 0 (budget 0.1), its script 4.2 kB
+compressed (budget 90 kB; check-pwa.mjs measures it on every build). Student: Today is 2 points
+lower than at Iteration 17 (the day banner, figure cards, dock and action button of Phases 20 and
+21 are drawn on the first page); its LCP is unchanged at about 2 s and every page stays in
+Lighthouse's "good" range. Accessibility is 100 on every page.
+
+**Screenshots.** docs/screens/iter-18-23/: the student portal (Today, Daily log, Schedule, Tasks,
+Time Record, Notifications, Profile) at 320, 390, 768 and 1280 px, and the landing page and the
+three doors at 390 and 1280 px (the landing page with reduced motion, its end state, so sections
+that rise into view are shown). None scrolls sideways. One overlap was found and fixed: at 320 px
+the student's Today page clipped the right edge of the OJT progress card (its grid columns kept
+their content's width; pages/student/dashboard.tsx, min-w-0). The other wide elements found are
+intended sideways rows (figure cards, filter tabs) and the Time Record's zoomable print preview.
+
+## Where each role stands
+
+- **Trainee:** a day with clear rules (credited time, lateness, half days), a day banner and figure
+  cards, a signed Time Record, a dock and two-tap action button, a month calendar, passkey
+  confirmation of each step, and its own installable app with a "Badge-in" door and first-open
+  slides.
+- **Supervisor:** sees how each step was made (passkey, not confirmed, sent later, camera check),
+  records time-ins in person under the same rules, and has its own app with the "Desk" door.
+- **Coordinator:** sets the institution profile and program formal names for the Time Record,
+  sees trainees with no linked program, notifications split into actions and information, and has
+  its own app with the "Console" door.
+- **Everyone else:** a public landing page at "/" that explains the system honestly and shows how
+  to install each app.
+
+## Steps for me
+
+1. **Database backup before deploying.** Take a backup of the production database before migrations
+   065 to 070 run (Railway has no automatic backups on this plan). They are additive, but a backup
+   is the only way back.
+2. **Privacy notice version (D8).** The notice's text changed (a sentence about signatures,
+   Phase 20) but its version is still "draft-4", as the brief asks. When the text is approved, bump
+   the version (services/privacy.ts) so trainees are asked to agree again.
+3. **Real phones** (on the deployed address, HTTPS):
+   - offline time-in on an Android phone and an iPhone: open the app with a connection, turn on
+     airplane mode, time in with the camera check, reconnect and check it arrives attested;
+   - passkeys on Android (Chrome) and on an installed iPhone (Safari, from the Home Screen): DEPLOY.md,
+     "Phone checks for passkeys";
+   - install each role app from its door (Android: Install; iPhone: Share, Add to Home Screen) and
+     check its name, icon, colours, shortcuts and the four first-open slides.
+4. **Decide on the offline End break camera check** (not built; see Phase 22's decisions).
+5. **Passkey sign-in at the doors** was not added (see Phase 23's decisions); it needs a schema
+   change if wanted.
+6. **Set nothing new on Railway or Vercel.** No new settings are needed: vercel.json carries the
+   landing page, the rewrite to app.html and the /login redirect; passkeys use FRONTEND_URL and
+   CORS_ORIGINS, already set.
+7. Nothing has been pushed. The six branches are local: iter-18-rules, iter-19-brand,
+   iter-20-attendance, iter-21-shell, iter-22-passkeys, iter-23-landing (each from the one before);
+   PR descriptions are in docs/pr/.
 

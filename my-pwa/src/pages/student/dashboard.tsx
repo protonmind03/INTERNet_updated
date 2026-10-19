@@ -214,7 +214,7 @@ function DashboardPage() {
         )}
 
         <div className="grid gap-5 lg:grid-cols-3">
-          <div className="space-y-5 lg:col-span-2">
+          <div className="min-w-0 space-y-5 lg:col-span-2">
             <ProgressCard
               summary={summary}
               loading={loading}
@@ -223,7 +223,7 @@ function DashboardPage() {
             <WeekCard logs={attendance.logs} loading={attendance.loading} />
           </div>
 
-          <div className="space-y-5">
+          <div className="min-w-0 space-y-5">
             <Card>
               <CardHeader
                 title="Up next"

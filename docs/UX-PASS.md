@@ -104,4 +104,5 @@ One line per UI change, in the form screen - change - design principle.
 - All · Forgot password and Change password - themed as the door they came from; "Back to sign in" returns to that door - *Consistency.*
 - All · installed app, first open - four slides per role, once per role on each device, Skip on every slide, swipe or Next and Back, dots; the notification slide asks only when its button is tapped - *User control; no surprise permission prompts.*
 - All · Help - new Privacy notice and Contact the OJT office sections, linked from the landing page's footer - *Help and documentation.*
+- Student · Today, 320 px - the OJT progress card no longer cut off at the right edge - *Aesthetic and minimalist design: nothing hidden by the frame.*
 
