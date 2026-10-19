@@ -61,7 +61,7 @@ type SupervisorOption = {
 };
 
 // "unassigned" is active students who have no supervisor.
-type StatusFilter = "all" | "active" | "inactive" | "unassigned";
+type StatusFilter = "all" | "active" | "inactive" | "unassigned" | "no-program";
 type SortBy = "name" | "progress" | "supervisor";
 
 /** Students shown at a time; the server sends one page of them. */
@@ -100,7 +100,7 @@ export default function CoordinatorStudents() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState(() => searchParams.get("q") || "");
   const [status, setStatus] = useState<StatusFilter>(() =>
-    searchParams.get("filter") === "unassigned" ? "unassigned" : "all"
+    searchParams.get("filter") === "unassigned" ? "unassigned" : searchParams.get("filter") === "no-program" ? "no-program" : "all"
   );
   const [sortBy, setSortBy] = useState<SortBy>("name");
   // Term, college, program, block, company and supervisor, shared with the
@@ -231,6 +231,7 @@ export default function CoordinatorStudents() {
                 { value: "all", label: "All" },
                 { value: "active", label: "Active" },
                 { value: "unassigned", label: "No supervisor" },
+                { value: "no-program", label: "No linked program" },
                 { value: "inactive", label: "Deactivated" },
               ]}
             />

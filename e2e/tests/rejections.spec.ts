@@ -68,7 +68,7 @@ test("a rejected time-in photo: the supervisor's choice, the student's banner, a
     const page = await studentContext.newPage();
     await signIn(page, "student", { ...ACCOUNTS.student, email, password: "RejectCheck456!" });
     const banner = page.getByRole("status").filter({ hasText: "Retake your time-in photo" });
-    await expect(banner).toContainText("before you tap Back from lunch");
+    await expect(banner).toContainText("before you tap End break");
     await expect(banner).toContainText("The photo is too dark to see your face.");
     await expect(banner.getByRole("button", { name: "Retake photo" })).toBeVisible();
 

@@ -40,8 +40,8 @@ const LIMITS_KEY = "internet-offline-limits";
 
 const NAMES: Record<QueuedKind, string> = {
   "time-in": "Time-in",
-  break: "Out for lunch",
-  "break-end": "Back from lunch",
+  break: "Lunch break",
+  "break-end": "End break",
   "time-out": "Time-out",
   pictures: "Pictures for the time-out",
 };

@@ -70,6 +70,7 @@ function TimeRecordPage() {
         </div>
       )}
       <DtrSheet
+        viewer="student"
         loading={attendance.loading}
         person={{
           name: student?.name || "",

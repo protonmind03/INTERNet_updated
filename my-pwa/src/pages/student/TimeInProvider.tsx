@@ -194,7 +194,7 @@ function TimeInActions({ children }: { children: ReactNode }) {
         // No connection: kept on the phone with the time it was pressed.
         toast.info(`Saved on this phone. It will be sent when you're back online.${pictureNote}`);
       } else if (action === "break") {
-        toast.success("Out for lunch. Tap \"Back from lunch\" when you return.");
+        toast.success("Lunch break recorded. Tap \"End break\" when you return.");
       } else if (action === "back") {
         toast.success("Welcome back. Your lunch has ended.");
       } else {
@@ -245,9 +245,9 @@ function TimeInActions({ children }: { children: ReactNode }) {
 
       <ConfirmDialog
         open={pending === "break"}
-        title="Out for lunch?"
-        message={`You will be marked out for lunch at ${formatTime(now)}. Lunch is not counted in your rendered hours.`}
-        confirmLabel="Out for lunch"
+        title="Start your lunch break?"
+        message={`Your lunch break starts at ${formatTime(now)}. Lunch is not counted in your rendered hours.`}
+        confirmLabel="Lunch break"
         busy={busy}
         busyProcess="timeIn"
         onConfirm={confirm}
@@ -255,13 +255,13 @@ function TimeInActions({ children }: { children: ReactNode }) {
       />
       <ConfirmDialog
         open={pending === "back"}
-        title="Back from lunch?"
+        title="End your break?"
         message={
           todayLog?.photo_redo_status === "required" && !todayLog.photo_redo_due_at
-            ? `Your new time-in photo is still due. Tapping Back from lunch now closes that chance, and today will be marked absent. Retake the photo first from the banner at the top of the page.`
-            : `You will be marked back from lunch at ${formatTime(now)}.`
+            ? `Your new time-in photo is still due. Tapping End break now closes that chance, and today will be marked absent. Retake the photo first from the banner at the top of the page.`
+            : `Your break ends at ${formatTime(now)}.`
         }
-        confirmLabel="Back from lunch"
+        confirmLabel="End break"
         busy={busy}
         busyProcess="timeIn"
         onConfirm={confirm}

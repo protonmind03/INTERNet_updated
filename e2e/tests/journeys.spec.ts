@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ACCOUNTS, API, SECOND_STUDENT, api, apiSession, signIn, today, type Role } from "./helpers";
+import { ACCOUNTS, API, SECOND_STUDENT, api, apiSession, signIn, timeInClosed, today, type Role } from "./helpers";
 
 /*
 | The journeys a real person takes, start to finish, in a real browser.
@@ -43,6 +43,7 @@ test.describe("time-in", () => {
       log.body.attendance.some((entry) => String(entry.date).slice(0, 10) === today()),
       "The demo student already has a log for today, so Time in is not offered."
     );
+    test.skip(await timeInClosed(student.token, student.id), "Today's time-in window is closed at this hour (the day's rules).");
     const privacy = await api<{ current: boolean }>(
       student.token,
       "GET",
@@ -81,6 +82,7 @@ test.describe("the floating next-step button", () => {
       log.body.attendance.some((entry) => String(entry.date).slice(0, 10) === today()),
       "The demo student already has a log for today, so the next step is not Time in."
     );
+    test.skip(await timeInClosed(student.token, student.id), "Today's time-in window is closed at this hour (the day's rules).");
     const privacy = await api<{ current: boolean }>(
       student.token,
       "GET",
@@ -1091,6 +1093,7 @@ test.describe("time-in with no connection", () => {
       (await logsNow()).some((log) => log.date === today()),
       "The second demo student already has a log today (an earlier run of this journey)."
     );
+    test.skip(await timeInClosed(student.token, student.id), "Today's time-in window is closed at this hour (the day's rules).");
 
     // This phone is never made ready for an offline camera check: with a one-use pass
     // collected in the background before the connection goes, the app would rightly
@@ -1109,7 +1112,7 @@ test.describe("time-in with no connection", () => {
     await dialog.getByRole("button", { name: "Time in without a photo" }).click();
     await expect(page.getByText(/Time-in saved on this phone at/)).toBeVisible();
     // The day goes on from what the phone holds: the next step is offered, a second time-in is not.
-    await expect(page.getByRole("button", { name: /^Out for lunch/ }).first()).toBeVisible();
+    await expect(page.getByRole("button", { name: /^Lunch break/ }).first()).toBeVisible();
     await expect(page.getByRole("button", { name: /^Time in/ })).toHaveCount(0);
     expect((await logsNow()).some((log) => log.date === today())).toBe(false);
 

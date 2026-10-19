@@ -904,3 +904,14 @@ describe; the earlier notes it replaces are marked there.
   old all-navy screens, they are out of date.
 - **Splash.** The splash shows only when the installed app is opened cold,
   for at most 1.2 seconds; in a browser tab there is none.
+- **Time Record header and signature (Iteration 20).** The printed Daily
+  Time Record now carries the university's header (seal, republic line,
+  university in blackletter, campus, college, the program's formal name,
+  locality), the trainee's details read at the moment of printing, and the
+  trainee's signature above their line. The signature is an image of their
+  handwriting drawn in Profile, not a digital or cryptographic signature; a
+  certified month keeps the signature it was certified with. ERD: as in
+  migration 067 above.
+- **Attendance figures.** The Attendance page's four counters were replaced
+  by three cards: hours (verified, waiting, to go, with the projected
+  finish), on time over the last 20 scheduled days, and this week.

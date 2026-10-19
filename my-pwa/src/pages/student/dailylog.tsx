@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import EntryPictures from "../../components/EntryPictures";
@@ -11,7 +11,6 @@ import {
   FilterChips,
   Modal,
   SkeletonRows,
-  StatTile,
   StatusBadge,
 } from "../../components/ui";
 import { BrandLoader } from "../../brand";
@@ -38,15 +37,20 @@ import {
 import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
 import TodayAttendance from "./TodayAttendance";
+import FigureCards, { type FigureAction } from "./FigureCards";
+import { useStudentProgress } from "./useStudentProgress";
+import { addDays } from "../../lib/studentCalendar";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
 import { AppealActions } from "./Appeals";
 import { sameId } from "../../lib/ids";
 
-type Filter = "All" | "Verified" | "Pending" | "Rejected";
+type Filter = "All" | "Verified" | "Pending" | "Rejected" | "Late";
 
 /** Supervisors may mark a log "Flagged" or "Rejected"; students see one group. */
 function matchesFilter(log: AttendanceLog, filter: Filter): boolean {
   if (filter === "All") return true;
+  // Late as the server judged it (Iteration 18): the time-in, or the end of the break.
+  if (filter === "Late") return (log.late_minutes ?? 0) > 0 || (log.lunch_late_minutes ?? 0) > 0;
   if (filter === "Rejected") return log.status === "Rejected" || log.status === "Flagged";
   return log.status === filter;
 }
@@ -91,17 +95,29 @@ function DailyLogPage() {
       Verified: logs.filter((log) => matchesFilter(log, "Verified")).length,
       Pending: logs.filter((log) => matchesFilter(log, "Pending")).length,
       Rejected: logs.filter((log) => matchesFilter(log, "Rejected")).length,
+      Late: logs.filter((log) => matchesFilter(log, "Late")).length,
     }),
     [logs]
   );
 
-  const verifiedHours = useMemo(
-    () =>
-      logs
-        .filter((log) => log.status === "Verified")
-        .reduce((sum, log) => sum + (Number(log.hours) || 0), 0),
-    [logs]
-  );
+  const progress = useStudentProgress(student?.student_id);
+  const historyRef = useRef<HTMLDivElement | null>(null);
+  /** A figure card's action: narrow the list below to what it counts, and bring the list into view. */
+  const figureAction = (action: FigureAction) => {
+    setSearch("");
+    if (action === "week") {
+      const sunday = addDays(today, -new Date(`${today}T00:00:00Z`).getUTCDay());
+      setFilter("All");
+      setDateFrom(sunday);
+      setDateTo(addDays(sunday, 6));
+    } else {
+      setFilter(action === "pending" ? "Pending" : "Late");
+      setDateFrom("");
+      setDateTo("");
+    }
+    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    historyRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+  };
 
   const visibleLogs = useMemo(() => {
     const text = search.trim().toLowerCase();
@@ -173,30 +189,16 @@ function DailyLogPage() {
 
         <TodayAttendance />
 
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <StatTile label="Days logged" value={loading ? "–" : counts.All} icon="calendar" />
-          <StatTile
-            label="Verified hours"
-            value={loading ? "–" : formatHours(verifiedHours)}
-            icon="check-circle"
-            tone="good"
-          />
-          <StatTile
-            label="Awaiting verification"
-            value={loading ? "–" : counts.Pending}
-            icon="clock"
-            tone={!loading && counts.Pending > 0 ? "waiting" : "neutral"}
-          />
-          <StatTile
-            label="Rejected"
-            value={loading ? "–" : counts.Rejected}
-            icon="alert"
-            tone={!loading && counts.Rejected > 0 ? "bad" : "neutral"}
-          />
-        </div>
+        <FigureCards
+          studentId={student?.student_id}
+          logs={logs}
+          loading={loading}
+          required={progress ? progress.required : null}
+          onAction={figureAction}
+        />
 
         <Card>
-          <div className="space-y-3 border-b border-slate-100 p-4 sm:p-5">
+          <div ref={historyRef} className="scroll-mt-20 space-y-3 border-b border-slate-100 p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h2 className="text-sm font-semibold text-slate-900">Attendance history</h2>
               <label className="relative block w-full sm:w-64">
@@ -224,6 +226,7 @@ function DailyLogPage() {
                 { value: "Verified", label: "Verified", count: counts.Verified },
                 { value: "Pending", label: "Pending", count: counts.Pending },
                 { value: "Rejected", label: "Rejected", count: counts.Rejected },
+                { value: "Late", label: "Late", count: counts.Late },
               ]}
             />
             <DateRangeFilter
@@ -368,7 +371,9 @@ function DailyLogPage() {
           )}
         </Card>
 
-        <Absences studentId={student?.student_id} />
+        <div id="absences" className="scroll-mt-20">
+          <Absences studentId={student?.student_id} />
+        </div>
       </div>
 
       <PhotoDialog log={photoLog} onClose={() => setPhotoLog(null)} />

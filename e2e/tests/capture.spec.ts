@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { FAKE_FACE_TRACKER } from "../camera/fake-face-tracker";
 import { MARKER } from "../camera/test-card";
-import { ACCOUNTS, API, api, apiSession, signIn, today } from "./helpers";
+import { ACCOUNTS, API, api, apiSession, signIn, today, shiftAroundNow } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -150,7 +150,8 @@ test.describe("a time-in with no connection", () => {
     })).status).toBe(201);
     const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
     expect((await api(coordinator.token, "PUT", `/api/coordinator/students/${id}/schedule`, {
-      schedule: days.map((day) => ({ day, start_time: "08:00", end_time: "17:00" })),
+      // A shift open for a time-in now (the day's rules, Iteration 18), on every day for the vouchers.
+      schedule: days.map((day) => ({ day, ...shiftAroundNow() })),
     })).status).toBe(200);
     const login = async (password: string) =>
       (await (await fetch(`${API}/api/login/student`, {

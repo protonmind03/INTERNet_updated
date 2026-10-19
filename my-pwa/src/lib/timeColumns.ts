@@ -8,8 +8,8 @@
 | first:
 |
 |   time_in         "Time in"           AM In
-|   break_time      "Out for lunch"     AM Out
-|   break_end_time  "Back from lunch"   PM In
+|   break_time      "Lunch break"       AM Out
+|   break_end_time  "End break"         PM In
 |   time_out        "Time out"          PM Out
 |
 | The one rule above the others: never print a time that did not happen.
@@ -113,7 +113,7 @@ export function timeColumns(log: LogTimes, timeZone?: string): TimeColumns {
 /** What each of the four steps is called on screen, in order. */
 export const STEP_LABELS = {
   time_in: "Time in",
-  break_time: "Out for lunch",
-  break_end_time: "Back from lunch",
+  break_time: "Lunch break",
+  break_end_time: "End break",
   time_out: "Time out",
 } as const;

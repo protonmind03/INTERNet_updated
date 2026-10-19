@@ -46,7 +46,7 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
     {
       heading: "Files you upload",
       body:
-        "Before a photo or picture is kept, the details your phone's camera writes into it are taken out, including where it was taken. PDF and Word files are kept exactly as you upload them, so check them for anything you do not want to share.",
+        "Before a photo or picture is kept, the details your phone's camera writes into it are taken out, including where it was taken. PDF and Word files are kept exactly as you upload them, so check them for anything you do not want to share. If you add your signature in Profile, an image of your handwriting is kept and printed on your Time Record; it is not a digital or cryptographic signature, and it is in the copy of your data you can download.",
     },
     {
       heading: "Who can see it",

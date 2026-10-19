@@ -772,6 +772,7 @@ function TimeRecord({ intern, work, supervisorName }: TabProps & { supervisorNam
   const dtr = useDtrCertifications("supervisor", intern.student_id);
   return (
     <DtrSheet
+      viewer="supervisor"
       key={intern.student_id}
       loading={work.loading}
       person={{

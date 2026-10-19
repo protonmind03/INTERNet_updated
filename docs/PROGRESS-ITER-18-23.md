@@ -28,11 +28,11 @@ the new ones keep the brief's numbers 065 to 070.
 - [x] test run and commit
 
 ### Phase 20: trainee attendance and Time Record (`iter-20-attendance`)
-- [ ] 20.1 day banner
-- [ ] 20.2 figure cards
-- [ ] 20.3 Time Record header
-- [ ] 20.4 signature
-- [ ] test run and commit
+- [x] 20.1 day banner
+- [x] 20.2 figure cards
+- [x] 20.3 Time Record header
+- [x] 20.4 signature
+- [x] test run and commit
 
 ### Phase 21: shell, notifications, schedule, profile (`iter-21-shell`)
 - [ ] 21.1 header overlap
@@ -118,6 +118,39 @@ the new ones keep the brief's numbers 065 to 070.
 - **Per-role start-up images** are in public/startup/<role>/ (not precached, like the others);
   the role apps link them in Phase 23.
 
+### Phase 20
+- **Step tiles are the buttons.** The next step's tile (and Time out, since lunch is optional)
+  is the button, named by its step ("Time in", "Lunch break" ...); recorded tiles are read-only
+  groups. Before the window opens the Time in tile is a disabled button that says when it
+  opens, with a countdown in the last hour.
+- **Session before a time-in** is shown from the server's plan: a morning or afternoon shift, or
+  "afternoon only" once the server's pmCutoff has passed. The app compares the clock with the
+  times the server sent; it works out no rule itself.
+- **On time card**: late is the server's late_minutes; a log from before the rules (null) counts
+  as on time. Half days are logs with session am/pm on a shift that spans noon. The client's
+  old LATE_AFTER_MINUTES (15) is still used by the Schedule page's progress tab and the
+  supervisor's intern page until Phase 21 replaces the progress tab; noted for the supervisor
+  page as a suggestion.
+- **"File a reason"** opens Attendance at #absences with the absence form already set to the
+  morning (?absence=am); the form gained "Part of the day".
+- **Header data and signatures** come from new routes in routes/timeRecord.ts:
+  GET /api/time-record/:studentId/header, GET/PUT/DELETE /api/student/signature,
+  GET /api/students/:studentId/signature (?id= for a certified month's). They are registered
+  before GET /api/student/:studentId, which would otherwise catch /api/student/signature.
+- **Signature upload** is JSON (svg_paths + a PNG data URL, at most 70 kB) rather than
+  multipart: the device always makes the 600 x 200 PNG, from the pad or from an uploaded image
+  it redraws (lib/image.ts withoutCameraDetails, then fitted). It counts in upload_ledger as
+  kind "signature".
+- **Coordinator's signature reads** are audited as signature.view, once in ten minutes.
+- **Time Record on screen**: "Print size" draws the sheet at its real size inside a grey frame;
+  "Zoom 200%" uses CSS zoom on the sheet, and print ignores the frame.
+- **Seal on the record** is 76 CSS px on screen (20 mm at 96 dpi) and exactly 20 mm in print.
+- **e2e at any hour**: helpers.ts gained timeInClosed() (the three journeys that time the demo
+  students in skip, as they already did for "already has a log today", when the server says the
+  window is closed) and shiftAroundNow() (capture.spec's own student gets a shift open now).
+- **docs/ARCHITECTURE.md** regenerated (CI's --check would fail after Phases 18 and 20 added
+  routes).
+
 ## Phase reports
 
 ### Phase 18 (branch iter-18-rules)
@@ -163,5 +196,31 @@ the seal's sizes and rules). Docs: UX-PASS, PAPER-CORRECTIONS.
 
 **Tests.** backend lint, route check: passed. API: 251 passed. App lint, build: passed.
 check:pwa: 58 passed. e2e: 67 passed.
+
+**Skipped.** Nothing.
+
+### Phase 20 (branch iter-20-attendance)
+
+**Changed.** Backend: routes/timeRecord.ts (new), server.ts (registration, lunch step messages
+renamed, "no-program" filter on the students list), routes/extensions.ts (certification keeps
+trainee_signature_id; signatures in the data download), services/audit.ts (signature.view),
+services/uploadQuota.ts (kind signature), services/privacy.ts (one sentence; version still
+draft-4). App: pages/student/TodayAttendance.tsx (rebuilt day banner), FigureCards.tsx,
+SignatureCard.tsx (new), dailylog.tsx (cards, Late filter, #absences), Absences.tsx (part of the
+day, ?absence=am), useAttendance.ts (today's plan and rule fields), nextStep.ts (STEP_NAMES),
+TimeInProvider.tsx, DayStatus.tsx, PhotoRedo.tsx, WaitingToSend.tsx, Profile.tsx;
+components/DtrSheet.tsx, DtrHeader.tsx (new), SignaturePad.tsx (new); lib/timeRecordHeader.ts,
+lib/signature.ts (new), lib/offlineQueue.ts, lib/timeColumns.ts; supervisor ReviewDetail,
+InternPage, TimeRecord; coordinator Students (No linked program), RecordSections (viewer);
+brand.css (banner, tiles, cards, snap row, Time Record). Package: @fontsource/unifrakturmaguntia
+5.3.0 (exact). Tests: 3 new API tests; existing tests' step labels updated; e2e helpers and three
+journeys and capture.spec as described. Docs: UX-PASS, PAPER-CORRECTIONS, ARCHITECTURE.md.
+
+**Migrations.** None (067 and 068 from Phase 18 are used).
+
+**Tests.** backend lint and route check (241 routes): passed. API: 254 passed. App lint, build:
+passed. check:pwa: 58 passed. e2e: 67 passed. Screens checked at 320, 390 and 1280 px: no
+horizontal scroll (a screen-reader summary inside the off-screen cards had widened the page; each
+card is now its containing block).
 
 **Skipped.** Nothing.

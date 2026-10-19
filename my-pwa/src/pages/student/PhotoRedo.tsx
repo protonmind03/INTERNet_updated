@@ -31,7 +31,7 @@ export function PhotoRedoBanner() {
 
   const deadline = log.photo_redo_due_at
     ? `by ${formatTime(log.photo_redo_due_at)}`
-    : "before you tap Back from lunch";
+    : "before you tap End break";
   return (
     <div role="status" className="mb-5 flex flex-col gap-3 rounded-xl bg-amber-50 px-4 py-3.5 ring-1 ring-inset ring-amber-600/25 sm:flex-row sm:items-center">
       <Icon name="camera" className="hidden shrink-0 text-amber-700 sm:block" />

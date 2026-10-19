@@ -587,6 +587,7 @@ export function TimeRecordSection({ data, holidays, certifications }: { data: Ov
         <SectionHead title="Time record" description="A Daily Time Record for one month, in the Civil Service form's four columns, with signature lines." />
       </div>
       <DtrSheet
+        viewer="coordinator"
         loading={false}
         person={{ name: student.name, studentId: student.student_id, program: student.program, company: student.company, supervisor: student.supervisor_name }}
         logs={data.attendance}

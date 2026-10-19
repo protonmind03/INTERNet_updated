@@ -72,7 +72,7 @@ test("waiting steps: held while the server does not answer, shown with age, expi
   await expect(timeOut).toContainText(/\(2 h( \d+ min)? ago\)/);
   await expect(timeOut).toContainText(/Can be sent until .* \((21|22) h( \d+ min)? left\)/);
   await expect(timeOut).toContainText(/Tried \d+ times?.*The server could not be reached\./);
-  const lunch = panel.getByTestId("waiting-step").filter({ hasText: "Out for lunch" });
+  const lunch = panel.getByTestId("waiting-step").filter({ hasText: "Lunch break" });
   await expect(lunch).toContainText("Too old to be added: the limit is 12 hours.");
   // Nothing was sent while the server did not answer.
   expect(await waiting(page)).toBe(2);
@@ -80,12 +80,12 @@ test("waiting steps: held while the server does not answer, shown with age, expi
   await expect(page.getByTestId("waiting-badge")).toHaveText(/^2\s*steps waiting to send$/);
 
   // Discard asks first; Cancel keeps it.
-  await lunch.getByRole("button", { name: /^Discard out for lunch/ }).click();
-  const dialog = page.getByRole("dialog", { name: "Discard this out for lunch?" });
+  await lunch.getByRole("button", { name: /^Discard lunch break/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Discard this lunch break?" });
   await expect(dialog).toContainText("cannot be brought back");
   await dialog.getByRole("button", { name: "Cancel" }).click();
   expect(await waiting(page)).toBe(2);
-  await lunch.getByRole("button", { name: /^Discard out for lunch/ }).click();
+  await lunch.getByRole("button", { name: /^Discard lunch break/ }).click();
   await dialog.getByRole("button", { name: "Discard" }).click();
   await expect(panel.getByRole("heading", { name: "Waiting to send (1)" })).toBeVisible();
   expect(await waiting(page)).toBe(1);

@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -6093,7 +6093,7 @@ test("a day's times go in the time record's AM and PM columns, and none is made 
   assert.equal(timeColumns({ ...recorded, time_in: "2026-10-12T05:00:00Z", time_out: "2026-10-12T09:00:00Z" }, "Asia/Manila").pmIn, "2026-10-12T05:00:00Z");
   assert.equal(timeColumns({ ...recorded, time_in: "2026-10-12T05:00:00Z", time_out: "2026-10-12T09:00:00Z" }, "UTC").amIn, "2026-10-12T05:00:00Z");
 
-  assert.deepEqual(STEP_LABELS, { time_in: "Time in", break_time: "Out for lunch", break_end_time: "Back from lunch", time_out: "Time out" });
+  assert.deepEqual(STEP_LABELS, { time_in: "Time in", break_time: "Lunch break", break_end_time: "End break", time_out: "Time out" });
 });
 
 test("the student's calendar and progress are worked out from the saved lists", () => {
@@ -9517,7 +9517,7 @@ test("rejecting a time-in photo: today's open log only, a reason, the log stays 
     assert.deepEqual([log.status, log.time_out, log.rejection_scope, log.photo_redo_status, log.photo_redo_due_at], ["Pending", null, "time_in", "required", null]);
     assert.equal((await f.rejectPhoto(today)).body.code, "REDO_ALREADY_REQUIRED");
     const told = await f.pool.query(`SELECT message FROM notifications WHERE student_id = $1 AND title = 'Time-in photo rejected'`, [f.sid]);
-    assert.match(told.rows[0].message, /before you tap Back from lunch/);
+    assert.match(told.rows[0].message, /before you tap End break/);
     assert.match(told.rows[0].message, /your hours still count/);
 
     // The student's own list says so.
@@ -9628,7 +9628,7 @@ test("a time correction tells the student the times before and after, and keeps 
     assert.equal(corrected.response.status, 200, JSON.stringify(corrected.body));
     const note = (await f.pool.query(`SELECT message FROM notifications WHERE student_id = $1 AND title = 'Attendance times corrected'`, [f.sid])).rows[0].message;
     assert.match(note, /time in 8:00 AM → 8:30 AM/);
-    assert.match(note, /out for lunch none → 12:00 PM/);
+    assert.match(note, /lunch break none → 12:00 PM/);
     assert.doesNotMatch(note, /time out/, "an unchanged time is not listed");
     assert.match(note, /appeal to the OJT coordinator within 7 days/);
     assert.deepEqual((await f.row(id)).times_before_correction, { time_in: "08:00", break_time: null, break_end_time: null, time_out: "17:00", hours: 9 });
@@ -11849,4 +11849,173 @@ test("the seal's smaller copies are the seal, shrunk: square, the sizes named, a
   assert.match(component, /Math\.max\(SEAL\.minPx/);
   assert.match(component, /alt=\{decorative \? "" : "Pangasinan State University seal"\}/);
   assert.match(component, /decoding="async"/);
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 20: the Time Record's header, the trainee's signature
+|--------------------------------------------------------------------------
+*/
+
+/** A PNG with a mark on it, 600 x 200 unless said, as the signature pad makes one. */
+function signaturePng(width = 600, height = 200) {
+  const zlib = require("node:zlib");
+  const crcTable = Array.from({ length: 256 }, (_, n) => {
+    let c = n;
+    for (let k = 0; k < 8; k += 1) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  });
+  const crc = (buffer) => {
+    let c = 0xffffffff;
+    for (const byte of buffer) c = crcTable[(c ^ byte) & 255] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  };
+  const chunk = (type, body) => {
+    const head = Buffer.alloc(8);
+    head.writeUInt32BE(body.length, 0);
+    head.write(type, 4, "ascii");
+    const tail = Buffer.alloc(4);
+    tail.writeUInt32BE(crc(Buffer.concat([head.subarray(4), body])), 0);
+    return Buffer.concat([head, body, tail]);
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(width, 0);
+  header.writeUInt32BE(height, 4);
+  header[8] = 8;
+  header[9] = 6;
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let x = 10; x < width - 10; x += 1) raw[Math.floor(height / 2) * (width * 4 + 1) + 1 + x * 4 + 3] = 255;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", header),
+    chunk("IDAT", zlib.deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+test("the signature pad's strokes are SVG path data the server accepts", () => {
+  require("tsx/cjs");
+  const { strokePath, PAD_WIDTH, PAD_HEIGHT } = require("../../my-pwa/src/lib/signature.ts");
+  const { readSignature, SIGNATURE_PNG } = require("../src/routes/timeRecord.ts");
+  assert.equal(PAD_WIDTH, SIGNATURE_PNG.width);
+  assert.equal(PAD_HEIGHT, SIGNATURE_PNG.height);
+  const path = strokePath([{ x: 10, y: 20 }, { x: 30, y: 40 }, { x: 50, y: 20 }, { x: 70, y: 40 }]);
+  assert.equal(path, "M10 20 Q30 40 40 30 Q50 20 60 30 L70 40");
+  assert.equal(strokePath([{ x: 5, y: 5 }]), "M5 5 L5.1 5.1", "a dot is a stroke too");
+  const png = `data:image/png;base64,${signaturePng().toString("base64")}`;
+  assert.ok("png" in readSignature({ svg_paths: path, png }));
+  assert.match(readSignature({ svg_paths: "", png }).problem, /empty/, "an empty pad is refused");
+  assert.ok("png" in readSignature({ svg_paths: "", png, uploaded: true }), "an uploaded image has no strokes");
+  assert.match(readSignature({ svg_paths: "<script>", png }).problem, /strokes/);
+  assert.match(readSignature({ svg_paths: path, png: "data:image/jpeg;base64,AAAA" }).problem, /PNG/);
+  assert.match(readSignature({ svg_paths: path, png: `data:image/png;base64,${signaturePng(300, 100).toString("base64")}` }).problem, /600 by 200/);
+});
+
+test("the trainee's signature: saved, replaced, read by their supervisor and a coordinator (audited), kept with a certified month, removed", async (t) => {
+  for (const [method, path] of [["GET", "/api/student/signature"], ["PUT", "/api/student/signature"], ["DELETE", "/api/student/signature"]]) {
+    assert.equal((await jsonRequest(path, { method })).response.status, 401);
+    assert.equal((await jsonRequest(path, { method, headers: authHeaders(coordinatorToken) })).response.status, 403, `${method} ${path} is the student's own`);
+  }
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("SIGN");
+  const sign = (body, token = f.mine.token) => jsonRequest("/api/student/signature", jsonBody(token, "PUT", body));
+  const png = `data:image/png;base64,${signaturePng().toString("base64")}`;
+  try {
+    assert.equal((await jsonRequest("/api/student/signature", { headers: authHeaders(f.mine.token) })).body.signature, null, "none yet");
+    assert.equal((await sign({ svg_paths: "", png })).response.status, 400, "an empty pad");
+    const first = await sign({ svg_paths: "M10 20 Q30 40 40 30 L70 40", png });
+    assert.equal(first.response.status, 200, JSON.stringify(first.body));
+    assert.match(first.body.signature.png, /^data:image\/png;base64,/);
+    const second = await sign({ svg_paths: "M1 1 L50 50", png });
+    assert.notEqual(second.body.signature.id, first.body.signature.id, "replacing makes a new one");
+    const rows = (await f.pool.query(`SELECT id, revoked_at FROM student_signatures WHERE student_id = $1 ORDER BY id`, [f.sid])).rows;
+    assert.equal(rows.length, 2);
+    assert.ok(rows[0].revoked_at, "the old one is revoked, not deleted");
+    assert.equal(rows[1].revoked_at, null);
+    const counted = await f.pool.query(`SELECT COUNT(*)::int AS n FROM upload_ledger WHERE account_id = $1 AND kind = 'signature'`, [f.sid]);
+    assert.equal(counted.rows[0].n, 2, "each counts against the upload quota");
+
+    // Read by their supervisor and a coordinator; not by another student.
+    const path = `/api/students/${encodeURIComponent(f.sid)}/signature`;
+    assert.equal((await jsonRequest(path, { headers: authHeaders(f.supervisor.token) })).body.signature.svg_paths, "M1 1 L50 50");
+    assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+    assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    const audit = await f.pool.query(`SELECT COUNT(*)::int AS n FROM audit_log WHERE action = 'signature.view' AND entity_id = $1`, [f.sid]);
+    assert.equal(audit.rows[0].n, 1, "a coordinator's read is audited, once in ten minutes");
+
+    // A certified month keeps the signature it was certified with.
+    const month = f.phToday().slice(0, 7);
+    await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + TIME '12:00', 4, 'Verified')`,
+      [f.sid, `${month}-01`]
+    );
+    const certified = await jsonRequest("/api/dtr-certifications", jsonBody(f.supervisor.token, "POST", { student_id: f.sid, month }));
+    assert.equal(certified.response.status, 201, JSON.stringify(certified.body));
+    assert.equal(certified.body.certification.trainee_signature_id, second.body.signature.id);
+
+    // Removed: revoked; the certified month still reads its own.
+    assert.equal((await jsonRequest("/api/student/signature", { method: "DELETE", headers: authHeaders(f.mine.token) })).response.status, 200);
+    assert.equal((await jsonRequest("/api/student/signature", { headers: authHeaders(f.mine.token) })).body.signature, null);
+    const kept = await jsonRequest(`${path}?id=${second.body.signature.id}`, { headers: authHeaders(f.supervisor.token) });
+    assert.equal(kept.body.signature.id, second.body.signature.id);
+    assert.ok(kept.body.signature.revoked_at);
+    assert.equal((await jsonRequest("/api/student/signature", { method: "DELETE", headers: authHeaders(f.mine.token) })).response.status, 404);
+
+    // In the student's own download, as stroke paths, without the stored file's name.
+    const exported = await jsonRequest(`/api/students/${encodeURIComponent(f.sid)}/data-export`, { headers: authHeaders(f.mine.token) });
+    assert.equal(exported.body.signatures.length, 2);
+    assert.ok(!("file_path" in exported.body.signatures[0]));
+    // The privacy notice says so; its version waits for the university's text (D8).
+    const { PRIVACY_NOTICE } = require("../src/services/privacy.ts");
+    assert.match(JSON.stringify(PRIVACY_NOTICE.sections), /image of your handwriting/);
+    assert.equal(PRIVACY_NOTICE.version, "draft-4");
+  } finally {
+    await f.pool.query(`DELETE FROM dtr_certifications WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM student_signatures WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("the Time Record's header: the institution's lines, the college and formal program, live hours, for who may see the record", async (t) => {
+  const path = (id) => `/api/time-record/${encodeURIComponent(id)}/header`;
+  assert.equal((await jsonRequest(path(student.student_id))).response.status, 401);
+  const own = await jsonRequest(path(student.student_id), { headers: authHeaders(studentToken) });
+  assert.equal(own.response.status, 200, JSON.stringify(own.body));
+  assert.equal(own.body.institution.university_name, "Pangasinan State University");
+  assert.equal(own.body.institution.republic_line, "REPUBLIC OF THE PHILIPPINES");
+  assert.equal(own.body.trainee.student_id, student.student_id);
+  assert.equal(typeof own.body.trainee.verified_hours, "number");
+  assert.equal((await jsonRequest(path("someone-else"), { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path(student.student_id), { headers: authHeaders(coordinatorToken) })).response.status, 200);
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("HEADER");
+  try {
+    // No linked program: no college line, the typed program instead of a formal name.
+    await f.pool.query(`UPDATE students SET program = 'BS Something Typed', program_id = NULL, required_hours = 486 WHERE student_id = $1`, [f.sid]);
+    let header = (await jsonRequest(path(f.sid), { headers: authHeaders(f.supervisor.token) })).body;
+    assert.equal(header.trainee.college, null);
+    assert.equal(header.trainee.program, "BS Something Typed");
+    assert.equal(header.trainee.program_linked, false);
+    assert.equal(header.trainee.required_hours, 486);
+    // The coordinator's list finds them under "No linked program".
+    const listed = await jsonRequest(`/api/coordinator/students?status=no-program&q=${encodeURIComponent(f.sid)}`, { headers: authHeaders(coordinatorToken) });
+    assert.ok(listed.body.students.some((row) => row.student_id === f.sid));
+    // Linked: the college and the program's formal name.
+    const program = (await f.pool.query(`SELECT p.id, p.name, p.formal_name, c.name AS college FROM programs p JOIN colleges c ON c.id = p.college_id WHERE p.short_code = 'BSIT'`)).rows[0];
+    await f.pool.query(`UPDATE students SET program_id = $2 WHERE student_id = $1`, [f.sid, program.id]);
+    header = (await jsonRequest(path(f.sid), { headers: authHeaders(f.mine.token) })).body;
+    assert.equal(header.trainee.college, program.college);
+    assert.equal(header.trainee.program, program.formal_name || program.name);
+    const linkedNow = await jsonRequest(`/api/coordinator/students?status=no-program&q=${encodeURIComponent(f.sid)}`, { headers: authHeaders(coordinatorToken) });
+    assert.ok(!linkedNow.body.students.some((row) => row.student_id === f.sid));
+    // Verified hours are read live.
+    await f.pool.query(`INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 3, NOW(), NOW(), 6.5, 'Verified')`, [f.sid]);
+    assert.equal((await jsonRequest(path(f.sid), { headers: authHeaders(f.mine.token) })).body.trainee.verified_hours, 6.5);
+  } finally {
+    await f.cleanup();
+  }
 });

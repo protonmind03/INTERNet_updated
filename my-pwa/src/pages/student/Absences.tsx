@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   Button,
   Card,
@@ -17,9 +18,14 @@ import { savedFetch } from "../../lib/offlineStore";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
 
+/** Migration 066: a whole day, or the morning or afternoon alone. */
+type Part = "day" | "am" | "pm";
+const PART_LABEL: Record<Part, string> = { day: "Whole day", am: "Morning", pm: "Afternoon" };
+
 type Absence = {
   id: number;
   date: string;
+  part?: Part;
   reason: string;
   status: "Pending" | "Excused" | "Unexcused";
   review_notes: string | null;
@@ -40,7 +46,10 @@ export default function Absences({ studentId }: { studentId: string | undefined 
   const [absences, setAbsences] = useState<Absence[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [filing, setFiling] = useState(false);
+  // Opened from the day banner's "File a reason" (?absence=am): the form, for this morning.
+  const [params, setParams] = useSearchParams();
+  const askedPart = params.get("absence");
+  const [filing, setFiling] = useState<Part | null>(askedPart === "am" || askedPart === "pm" ? askedPart : null);
   const [withdrawing, setWithdrawing] = useState<Absence | null>(null);
   const [withdrawBusy, setWithdrawBusy] = useState(false);
 
@@ -99,7 +108,7 @@ export default function Absences({ studentId }: { studentId: string | undefined 
         title="Absences"
         description="Tell your supervisor about a day you will miss or have missed."
         action={
-          <Button variant="secondary" size="sm" icon="plus" onClick={() => setFiling(true)}>
+          <Button variant="secondary" size="sm" icon="plus" onClick={() => setFiling("day")}>
             Report an absence
           </Button>
         }
@@ -120,6 +129,7 @@ export default function Absences({ studentId }: { studentId: string | undefined 
                 <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
                   <p className="text-sm font-semibold text-slate-900">
                     {formatDayDate(absence.date)}
+                    {absence.part && absence.part !== "day" && <span className="font-normal text-slate-600"> · {PART_LABEL[absence.part]}</span>}
                   </p>
                   <StatusBadge
                     status={absence.status === "Pending" ? "Awaiting review" : absence.status}
@@ -155,9 +165,15 @@ export default function Absences({ studentId }: { studentId: string | undefined 
 
       {filing && (
         <FileAbsenceDialog
-          onClose={() => setFiling(false)}
+          part={filing}
+          onClose={() => {
+            setFiling(null);
+            // Opened from the banner: closing it leaves the address as it was before.
+            if (askedPart) setParams((current) => { current.delete("absence"); return current; }, { replace: true });
+          }}
           onFiled={() => {
-            setFiling(false);
+            setFiling(null);
+            if (askedPart) setParams((current) => { current.delete("absence"); return current; }, { replace: true });
             void load();
           }}
         />
@@ -182,13 +198,16 @@ export default function Absences({ studentId }: { studentId: string | undefined 
 }
 
 function FileAbsenceDialog({
+  part: askedPart,
   onClose,
   onFiled,
 }: {
+  part: Part;
   onClose: () => void;
   onFiled: () => void;
 }) {
   const [date, setDate] = useState(() => phDateKey(new Date()));
+  const [part, setPart] = useState<Part>(askedPart);
   const [reason, setReason] = useState("");
   const discardReason = useDraft("student", "absence-reason", reason, setReason);
   const [error, setError] = useState("");
@@ -206,7 +225,7 @@ function FileAbsenceDialog({
         withStudentAuth({
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ date, reason: reason.trim() }),
+          body: JSON.stringify({ date, reason: reason.trim(), part }),
         })
       );
       const data = await response.json().catch(() => ({}));
@@ -254,6 +273,15 @@ function FileAbsenceDialog({
             onChange={(event) => setDate(event.target.value)}
             className="field"
           />
+        </FormField>
+        <FormField label="Part of the day" htmlFor="absence-part">
+          <select id="absence-part" value={part} onChange={(event) => setPart(event.target.value as Part)} className="field">
+            {(Object.keys(PART_LABEL) as Part[]).map((value) => (
+              <option key={value} value={value}>
+                {PART_LABEL[value]}
+              </option>
+            ))}
+          </select>
         </FormField>
         <FormField label="Reason" htmlFor="absence-reason">
           <textarea

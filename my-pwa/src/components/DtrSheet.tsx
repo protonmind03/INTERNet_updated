@@ -4,6 +4,9 @@ import { formatHours, formatLongDate, formatTime } from "../lib/format";
 import { timeColumns } from "../lib/timeColumns";
 import { errorText, toast } from "../lib/toast";
 import { formatPh, phCalendarDate } from "../lib/phTime";
+import type { OfflineRole } from "../lib/offlineStore";
+import { DtrHeader, PrintPreviewFrame, SignatureMark, TraineeDetails } from "./DtrHeader";
+import { useSignatureImage, useTimeRecordHeader } from "../lib/timeRecordHeader";
 
 export type DtrLog = {
   id: number;
@@ -35,6 +38,8 @@ export type DtrCertified = {
   certified_by_name: string;
   verified_hours: number;
   certified_at: string;
+  /** The trainee's signature when the month was certified (migration 067). */
+  trainee_signature_id?: number | null;
 };
 
 export type DtrPerson = {
@@ -109,7 +114,13 @@ export default function DtrSheet({
   onCertify,
   onWithdraw,
   loading,
+  viewer,
 }: {
+  /**
+   * Who is reading, for the header, details and signature from the server
+   * (Iteration 20). Without it the sheet prints only what it is given.
+   */
+  viewer?: OfflineRole;
   person: DtrPerson;
   logs: DtrLog[];
   /** Absences the student filed, shown on the days they cover. */
@@ -131,6 +142,8 @@ export default function DtrSheet({
     return [...found].sort().reverse();
   }, [logs]);
 
+  // Read again whenever the logs change, so an attendance change shows in the details at once.
+  const header = useTimeRecordHeader(viewer ?? "student", viewer ? person.studentId : undefined, logs);
   const [chosen, setChosen] = useState("");
   const month = chosen || months[0];
 
@@ -179,6 +192,12 @@ export default function DtrSheet({
   const holidayCount = rows.filter((row) => row.holiday).length;
 
   const certified = certifications.find((item) => item.month === month);
+  // A certified month prints the signature it was certified with; otherwise the one saved now.
+  const signature = useSignatureImage(
+    viewer ?? "student",
+    viewer ? person.studentId : undefined,
+    certified ? certified.trainee_signature_id : header?.signature?.id
+  );
   // A month can be certified once it has a log and none is open or undecided.
   const unsettled = rows.filter(
     (row) => row.log && (row.log.status === "Pending" || !row.log.time_out)
@@ -261,22 +280,19 @@ export default function DtrSheet({
         </div>
       )}
 
+      <PrintPreviewFrame>
       <Card className="p-5 sm:p-8 print:border-0 print:p-0">
-        <div className="text-center">
-          <p className="text-sm text-slate-600">Pangasinan State University</p>
-          <h2 className="text-lg font-bold tracking-tight text-slate-900">
-            Daily Time Record
-          </h2>
-          <p className="text-sm text-slate-700">On-the-Job Training · {monthLabel(month)}</p>
-        </div>
+        <DtrHeader data={header} monthLabel={monthLabel(month)} />
 
-        <dl className="mt-5 grid gap-x-8 gap-y-1.5 text-sm sm:grid-cols-2">
-          <Line label="Name" value={person.name} />
-          <Line label="Student ID" value={person.studentId} />
-          <Line label="Program" value={person.program || "—"} />
-          <Line label="Company" value={person.company || "—"} />
-          {person.supervisor && <Line label="Supervisor" value={person.supervisor} />}
-        </dl>
+        <TraineeDetails
+          data={header}
+          fallback={person}
+          certificationLine={
+            certified
+              ? `Certified correct by ${certified.certified_by_name} on ${formatLongDate(certified.certified_at)}`
+              : null
+          }
+        />
 
         <div className="mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="Time record table">
           <table className="w-full border-collapse text-left text-sm">
@@ -373,29 +389,22 @@ export default function DtrSheet({
         )}
 
         <div className="mt-12 grid gap-10 sm:grid-cols-2 print:grid-cols-2">
-          <Signature label="Student trainee" name={person.name} />
-          <Signature label="Company supervisor" name={person.supervisor || ""} />
+          <Signature label="Student trainee" name={header?.trainee.name || person.name} mark={<SignatureMark image={signature} />} trainee />
+          <Signature label="Company supervisor" name={header?.trainee.supervisor || person.supervisor || ""} />
         </div>
       </Card>
+      </PrintPreviewFrame>
     </div>
   );
 }
 
-function Line({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex gap-2">
-      <dt className="w-24 shrink-0 text-slate-500">{label}</dt>
-      <dd className="font-medium text-slate-900">{value}</dd>
-    </div>
-  );
-}
-
-function Signature({ label, name }: { label: string; name: string }) {
+function Signature({ label, name, mark, trainee = false }: { label: string; name: string; mark?: React.ReactNode; trainee?: boolean }) {
   return (
     <div className="text-center text-sm">
+      {mark}
       <p className="min-h-5 font-medium text-slate-900">{name}</p>
       <p className="border-t border-slate-400 pt-1 text-slate-600">
-        {label} · signature over printed name
+        {trainee ? "Signature over printed name of the trainee" : `${label} · signature over printed name`}
       </p>
     </div>
   );

@@ -62,12 +62,46 @@ export type AttendanceLog = {
   photo_rejected_at?: string | null;
   /** After a photo rejection: a new one is due, was taken, or was not taken in time. */
   photo_redo_status?: "required" | "submitted" | "missed" | null;
-  /** When the window to retake it closes; null while it closes at "Back from lunch". */
+  /** When the window to retake it closes; null while it closes at "End break". */
   photo_redo_due_at?: string | null;
   /** The latest appeal to the coordinator about this log. */
   appeal?: { id: number; kind: string; status: "open" | "upheld" | "overturned" | "withdrawn"; decision_note: string | null } | null;
   /** Steps taken offline on this phone that have not reached the server yet. */
   waiting?: QueuedPath[];
+  /**
+   * Iteration 18, the day's rules (backend services/dayRules.ts). Missing or
+   * null on a log from before them. 'pm' is an afternoon-only day, 'am' a
+   * morning shift.
+   */
+  session?: "full" | "am" | "pm" | null;
+  /** When the hours start to count: the time-in, or the start when it was early. */
+  credited_from?: string | null;
+  /** Minutes after the start; 0 on time, null with no schedule. */
+  late_minutes?: number | null;
+  /** "HH:MM" the time-in was measured against. */
+  scheduled_start?: string | null;
+  /** Minutes back after the lunch end (shown only). */
+  lunch_late_minutes?: number | null;
+};
+
+/**
+ * Today's rules as the server works them out (GET /api/attendance/:id,
+ * `today`). The app shows these; it never works them out itself.
+ */
+export type DayPlan = {
+  date: string;
+  kind: "unscheduled" | "holiday" | "full" | "am" | "pm";
+  holiday: string | null;
+  shiftStart: string | null;
+  shiftEnd: string | null;
+  lunchStart: string | null;
+  lunchEnd: string | null;
+  /** When the time-in opens (ISO). */
+  opensAt: string | null;
+  /** With no time-in by then, the day is afternoon-only (ISO). */
+  pmCutoff: string | null;
+  /** When an afternoon-only time-in opens (ISO). */
+  pmOpensAt: string | null;
 };
 
 /** True for a log that exists only on this phone so far: its time-in has not been sent. */
@@ -192,6 +226,7 @@ export function workedMinutes(log: AttendanceLog, now: Date): number {
  */
 export function useAttendance(studentId: string | undefined) {
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [today, setToday] = useState<DayPlan | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -211,6 +246,9 @@ export function useAttendance(studentId: string | undefined) {
       }
       const loaded = Array.isArray(data.attendance) ? (data.attendance as AttendanceLog[]) : [];
       setLogs(withWaitingSteps(loaded, await waitingSteps()));
+      // A saved copy from another day says nothing about today.
+      const plan = data.today && typeof data.today === "object" ? (data.today as DayPlan) : null;
+      setToday(plan && plan.date === phToday() ? plan : null);
       setError("");
     } catch (loadError) {
       setError(
@@ -486,6 +524,8 @@ export function useAttendance(studentId: string | undefined) {
 
   return {
     logs,
+    /** Today's rules from the server; null before they load or with an older server. */
+    today,
     loading,
     error,
     busy,
@@ -501,8 +541,8 @@ export function useAttendance(studentId: string | undefined) {
     offlineVoucher,
     timeInOfflineAttested,
     redoPhoto,
-    startBreak: () => step("break", "Could not record that you went out for lunch."),
-    endBreak: () => step("break-end", "Could not record that you are back from lunch."),
+    startBreak: () => step("break", "Could not record your lunch break."),
+    endBreak: () => step("break-end", "Could not record the end of your break."),
     /** Times out, with the student's note of what they did today. */
     /** `taskIds`: the tasks worked on today, if the student chose any. */
     timeOut: (accomplishments: string, taskIds: number[] = [], onQueued?: (kept: QueuedStep) => Promise<void>) =>

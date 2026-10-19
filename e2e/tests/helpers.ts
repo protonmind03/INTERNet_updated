@@ -78,3 +78,28 @@ export async function api<T = Record<string, unknown>>(
 export function today(): string {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date());
 }
+
+/*
+| Iteration 18: a time-in opens 30 minutes before the shift, and with no
+| time-in by the lunch start the day waits for the afternoon window. The
+| journeys run at whatever hour CI does, so a journey that times in either
+| checks the window first or gives its own student a shift around now.
+*/
+
+type DayPlan = { opensAt: string | null; pmCutoff: string | null; pmOpensAt: string | null } | null;
+
+/** True when today's time-in window is closed for this student right now (the server's own times). */
+export async function timeInClosed(token: string, studentId: string): Promise<boolean> {
+  const plan = (await api<{ today?: DayPlan }>(token, "GET", `/api/attendance/${encodeURIComponent(studentId)}`)).body.today ?? null;
+  if (!plan) return false;
+  const now = Date.now();
+  if (plan.opensAt && now < Date.parse(plan.opensAt)) return true;
+  if (plan.pmCutoff && plan.pmOpensAt && now >= Date.parse(plan.pmCutoff) && now < Date.parse(plan.pmOpensAt)) return true;
+  return false;
+}
+
+/** A shift that is open for a time-in now and has no lunch: the morning until 11:59, or the afternoon from 12:00. */
+export function shiftAroundNow(): { start_time: string; end_time: string } {
+  const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Manila", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
+  return hour < 12 ? { start_time: "00:00", end_time: "11:59" } : { start_time: "12:00", end_time: "23:59" };
+}

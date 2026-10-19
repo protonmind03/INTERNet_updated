@@ -387,8 +387,8 @@ export function CorrectTimesDialog({
         <div className="grid grid-cols-2 gap-4">
           {time("correct-time-in", "Time in", timeIn, setTimeIn)}
           {time("correct-time-out", "Time out", timeOut, setTimeOut, true)}
-          {time("correct-break-start", "Out for lunch", breakStart, setBreakStart, true)}
-          {time("correct-break-end", "Back from lunch", breakEnd, setBreakEnd, true)}
+          {time("correct-break-start", "Lunch break", breakStart, setBreakStart, true)}
+          {time("correct-break-end", "End break", breakEnd, setBreakEnd, true)}
         </div>
         <FormField
           label="Reason"
@@ -466,7 +466,7 @@ function PhotoRedoNote({ entry }: { entry: AttendanceEntry }) {
   if (!entry.photo_redo_status && !entry.photo_rejection_reason) return null;
   const until = entry.photo_redo_due_at
     ? `by ${formatTime(entry.photo_redo_due_at)}`
-    : "before they tap Back from lunch (or by time-out, if they take no lunch)";
+    : "before they tap End break (or by time-out, if they take no lunch)";
   const where = {
     required: `Waiting for a new photo, ${until}. Their hours keep counting meanwhile.`,
     submitted: "A new photo was taken with the stricter camera check; it is shown below.",

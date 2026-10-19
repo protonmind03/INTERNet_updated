@@ -38,7 +38,7 @@ export default function DayStatus() {
     stage === "not-started" || !todayLog
       ? "Not timed in yet"
       : stage === "on-break"
-        ? `Out for lunch since ${formatTime(todayLog.break_time)}`
+        ? `On lunch break since ${formatTime(todayLog.break_time)}`
         : stage === "done"
           ? doneText(todayLog.hours, todayLog.status)
           : `On the clock since ${formatTime(todayLog.time_in)}, ${formatDuration(workedMinutes(todayLog, now))}`;

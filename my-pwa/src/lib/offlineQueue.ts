@@ -106,8 +106,8 @@ export function isLogStep(step: QueuedStep): step is QueuedStep & { path: Queued
 
 const STEP_NAMES: Record<QueuedPath, string> = {
   "time-in": "time-in",
-  break: "\"Out for lunch\"",
-  "break-end": "\"Back from lunch\"",
+  break: "\"Lunch break\"",
+  "break-end": "\"End break\"",
   "time-out": "time-out",
 };
 

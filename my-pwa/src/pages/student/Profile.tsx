@@ -17,6 +17,7 @@ import CompletionChecklist from "./CompletionChecklist";
 import ContactDetails, { CoordinatorCard, SupervisorCard, type Contact, type Coordinator, type Supervisor } from "./ContactDetails";
 import { PrivacyCard } from "./Privacy";
 import OfflineReadyCard from "./OfflineReadyCard";
+import SignatureCard from "./SignatureCard";
 import { resolutionPath } from "./resolutionTabs";
 
 type StudentProfile = {
@@ -241,6 +242,8 @@ export default function StudentProfilePage() {
           <NotificationPreferences role="student" />
           <CueSettingsCard />
           {studentId && <OfflineReadyCard studentId={studentId} />}
+
+          <SignatureCard />
 
           {studentId && <PrivacyCard studentId={studentId} />}
 

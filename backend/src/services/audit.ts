@@ -155,6 +155,16 @@ export const AUDIT_RULES: Rule[] = [
     roles: ["coordinator"],
     quietMinutes: READ_QUIET_MINUTES,
   },
+  // A trainee's signature, read by a coordinator for the Time Record (Iteration 20).
+  {
+    method: "GET",
+    path: "/api/students/:studentId/signature",
+    action: "signature.view",
+    entityType: "student",
+    entityId: param("studentId"),
+    roles: ["coordinator"],
+    quietMinutes: READ_QUIET_MINUTES,
+  },
   // Colleges, programs, majors and blocks
   {
     method: "POST",

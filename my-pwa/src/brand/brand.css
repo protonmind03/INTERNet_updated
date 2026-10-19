@@ -350,3 +350,108 @@
   .inb-s2r-pin { transform: scale(1); }
   .inb-s2r-word, .inb-s2r-role { opacity: 1; transform: none; }
 }
+
+/* =====================================================================
+   Iteration 20: the day banner, the figure cards, the Time Record.
+   Role colours only (--role-*, --status-*); no new hex values.
+   ===================================================================== */
+
+/* One rule set for a sideways row that snaps (also 21.5): no scrollbar,
+   16 px edge fades only where there is more, momentum, no page bounce. */
+.inb-snap-row {
+  --inb-fade-start: 0px;
+  --inb-fade-end: 0px;
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+  min-width: 0;
+  max-width: 100%;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, black var(--inb-fade-start), black calc(100% - var(--inb-fade-end)), transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, black var(--inb-fade-start), black calc(100% - var(--inb-fade-end)), transparent 100%);
+}
+.inb-snap-row::-webkit-scrollbar { display: none; }
+.inb-snap-row[data-more-above] { --inb-fade-start: 16px; }
+.inb-snap-row[data-more-below] { --inb-fade-end: 16px; }
+.inb-snap-row > * { scroll-snap-align: start; }
+@media (prefers-reduced-motion: reduce) { .inb-snap-row { scroll-behavior: auto; } }
+
+/* The day banner: the role's primary, its tiles on the role's surface. */
+.day-banner { background: var(--role-primary); color: var(--role-on-primary); }
+.day-banner-muted { color: var(--role-on-primary); opacity: 0.92; }
+.day-banner-chip { background: color-mix(in srgb, var(--role-on-primary) 14%, transparent); }
+.day-banner-link { color: var(--role-on-primary); }
+.day-banner-switch { background: color-mix(in srgb, var(--role-on-primary) 16%, transparent); }
+.day-banner-switch [role="tab"] { color: var(--role-on-primary); transition: background-color var(--inb-dur-2), color var(--inb-dur-2); }
+.day-banner-switch [role="tab"][aria-selected="true"] { background: var(--role-accent); color: var(--role-on-accent); }
+.day-banner-switch [role="tab"]:focus-visible, .step-tile:focus-visible { outline: 3px solid var(--role-accent); outline-offset: 2px; }
+
+.step-tile {
+  display: flex;
+  min-width: 140px;
+  min-height: 88px;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  border-radius: 14px;
+  padding: 10px 12px;
+  text-align: left;
+  background: var(--role-surface);
+  color: var(--role-ink);
+  border: 1px solid color-mix(in srgb, var(--role-ink) 12%, transparent);
+}
+.step-tile-label { font-size: 13px; font-weight: 600; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
+.step-tile-time { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.step-tile-detail { font-size: 12px; font-weight: 600; line-height: 1.3; }
+.step-tile--next { background: var(--role-accent); color: var(--role-on-accent); border-color: transparent; cursor: pointer; transition: transform var(--inb-dur-1) var(--inb-ease-out); }
+.step-tile--next:active { transform: scale(0.98); }
+.step-tile--closed { border-style: dashed; cursor: not-allowed; }
+.step-tile--late { background: var(--status-late-bg); color: var(--status-late-ink); }
+.step-tile--early .step-tile-detail, .step-tile--later .step-tile-detail { color: var(--status-info-ink); }
+.step-tile--waiting { opacity: 0.85; }
+@media (prefers-reduced-motion: reduce) { .step-tile--next { transition: none; } .step-tile--next:active { transform: none; } }
+
+.status-chip { display: inline-flex; min-height: 28px; align-items: center; border-radius: 9999px; padding: 0 10px; font-size: 13px; font-weight: 600; }
+.status-chip--absent { background: var(--status-absent-bg); color: var(--status-absent-ink); }
+.status-chip--late { background: var(--status-late-bg); color: var(--status-late-ink); }
+
+/* The figure cards: a snap row on phones, three columns from 600 px. */
+.figure-cards > .figure-card { width: min(85%, 320px); }
+.figure-dot { width: 7px; height: 7px; border-radius: 9999px; background: color-mix(in srgb, var(--role-ink) 25%, transparent); }
+.figure-dot--on { background: var(--role-primary); }
+.figure-action { color: var(--role-primary); }
+@media (min-width: 600px) {
+  .figure-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; -webkit-mask-image: none; mask-image: none; }
+  .figure-cards > .figure-card { width: auto; }
+  .figure-dots { display: none !important; }
+}
+.ring-track { stroke: color-mix(in srgb, var(--role-ink) 12%, transparent); }
+.ring-track-fill { fill: color-mix(in srgb, var(--role-ink) 12%, transparent); }
+.ring-verified { stroke: var(--role-primary); }
+.ring-verified-fill { fill: var(--role-primary); }
+.ring-pending { stroke: var(--status-warning-ink); }
+.ring-pending-fill { fill: var(--status-warning-ink); }
+.ring-legend text { fill: var(--role-ink); }
+.dot-on-time { fill: var(--role-primary); }
+.dot-late { fill: var(--status-late-bg); stroke: var(--status-late-ink); stroke-width: 1.5; }
+.dot-absent, .dot-hollow { fill: none; stroke: color-mix(in srgb, var(--role-ink) 55%, transparent); stroke-width: 1.5; }
+.bar-scheduled { fill: none; stroke: color-mix(in srgb, var(--role-ink) 45%, transparent); stroke-width: 1.5; }
+.bar-rendered { fill: var(--role-primary); }
+.bar-label { fill: color-mix(in srgb, var(--role-ink) 70%, transparent); }
+.bar-today { fill: var(--role-primary); font-weight: 700; }
+.bar-today-dot { fill: var(--role-primary); }
+
+/* The Time Record: the seal is 2 cm in print; the signature at most 45 x 15 mm. */
+.dtr-line { margin: 0; color: black; line-height: 1.25; }
+.dtr-signature { max-width: 45mm; max-height: 15mm; width: 45mm; height: 15mm; color: black; }
+.dtr-frame-viewport { overflow: auto; border-radius: 12px; background: color-mix(in srgb, var(--role-ink) 6%, white); padding: 12px; }
+.dtr-frame-viewport > * { background: white; }
+.dtr-frame-viewport--zoom > * { zoom: 2; }
+@media print {
+  .dtr-seal .psu-seal-frame, .dtr-seal .psu-seal { width: 20mm !important; height: 20mm !important; }
+  .dtr-frame-viewport { overflow: visible; padding: 0; background: none; }
+  .dtr-frame-viewport--zoom > * { zoom: 1; }
+}

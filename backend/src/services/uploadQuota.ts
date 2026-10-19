@@ -28,7 +28,7 @@ import { phSql } from "./phTime";
 */
 
 export type QuotaRole = "student" | "supervisor";
-export type UploadKind = "document" | "task_file" | "evidence" | "picture";
+export type UploadKind = "document" | "task_file" | "evidence" | "picture" | "signature";
 
 export type QuotaLimits = { bytes: number; dailyFiles: number };
 

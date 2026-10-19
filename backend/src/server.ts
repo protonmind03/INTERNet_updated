@@ -64,6 +64,7 @@ import { registerAccountDetailRoutes } from "./routes/accountDetails";
 import { registerProjectionRoutes } from "./routes/projections";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { registerInstitutionRoutes } from "./routes/institution";
+import { registerTimeRecordRoutes } from "./routes/timeRecord";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
   bindFilters,
@@ -2055,6 +2056,10 @@ app.post(
 |--------------------------------------------------------------------------
 */
 
+// Iteration 20. Registered here, before GET /api/student/:studentId, which
+// would otherwise take /api/student/signature for a student id.
+registerTimeRecordRoutes(app, { pool, requireRole, savePrivateFile, deletePrivateFile, readPrivateFile });
+
 app.get(
   "/api/student/:studentId",
   requireRole(["student", "supervisor", "coordinator"]),
@@ -3034,7 +3039,7 @@ app.put(
       ) {
         return res.status(404).json({
           message:
-            "Attendance record not found, or you are already out for lunch.",
+            "Attendance record not found, or your lunch break is already recorded.",
         });
       }
 
@@ -3042,7 +3047,7 @@ app.put(
 
       return res.json({
         message:
-          "Out for lunch recorded.",
+          "Lunch break recorded.",
         attendance:
           result.rows[0],
       });
@@ -3054,7 +3059,7 @@ app.put(
 
       return res.status(500).json({
         message:
-          "Failed to record that you went out for lunch.",
+          "Failed to record your lunch break.",
         error:
           error instanceof Error
             ? error.message
@@ -3127,7 +3132,7 @@ app.put(
       ) {
         return res.status(404).json({
           message:
-            "Attendance record not found, or you are already back from lunch.",
+            "Attendance record not found, or your end of break is already recorded.",
         });
       }
 
@@ -3143,7 +3148,7 @@ app.put(
 
       return res.status(200).json({
         message:
-          "Back from lunch recorded.",
+          "End break recorded.",
         attendance:
           result.rows[0],
       });
@@ -3155,7 +3160,7 @@ app.put(
 
       return res.status(500).json({
         message:
-          "Failed to record that you are back from lunch.",
+          "Failed to record the end of your break.",
         error:
           error instanceof Error
             ? error.message
@@ -3811,7 +3816,7 @@ app.post(
       const deadline =
         window.closes === "minutes"
           ? `by ${updated.rows[0].due_clock}`
-          : "before you tap Back from lunch (or before you time out, if you take no lunch)";
+          : "before you tap End break (or before you time out, if you take no lunch)";
       await createNotification({
         studentId: log.student_id,
         entity: { type: "attendance", id: Number(id) },
@@ -4501,7 +4506,7 @@ function correctionText(
   before: Record<"time_in" | "break_time" | "break_end_time" | "time_out", string | null | undefined>,
   after: Record<"time_in" | "break_time" | "break_end_time" | "time_out", string | null | undefined>
 ): string {
-  const names = { time_in: "time in", break_time: "out for lunch", break_end_time: "back from lunch", time_out: "time out" } as const;
+  const names = { time_in: "time in", break_time: "lunch break", break_end_time: "end break", time_out: "time out" } as const;
   return (Object.keys(names) as Array<keyof typeof names>)
     .filter((key) => before[key] !== after[key])
     .map((key) => `${names[key]} ${clock12(before[key])} → ${clock12(after[key])}`)
@@ -4539,17 +4544,17 @@ app.patch(
       }
       if ((breakStart === null) !== (breakEnd === null) && timeOut !== null) {
         return res.status(400).json({
-          message: "Give both \"Out for lunch\" and \"Back from lunch\", or leave both empty.",
+          message: "Give both \"Lunch break\" and \"End break\", or leave both empty.",
         });
       }
       if (breakEnd !== null && breakStart === null) {
-        return res.status(400).json({ message: "\"Back from lunch\" needs an \"Out for lunch\" before it." });
+        return res.status(400).json({ message: "\"End break\" needs a \"Lunch break\" before it." });
       }
       const order = [timeIn, breakStart, breakEnd, timeOut].filter((value): value is string => Boolean(value));
       for (let index = 1; index < order.length; index += 1) {
         if (order[index] <= order[index - 1]) {
           return res.status(400).json({
-            message: "The times must be in order: time in, out for lunch, back from lunch, time out.",
+            message: "The times must be in order: time in, lunch break, end break, time out.",
           });
         }
       }
@@ -6163,7 +6168,9 @@ app.get(
           OR ($2 = 'active' AND s.is_active = TRUE)
           OR ($2 = 'inactive' AND s.is_active = FALSE)
           -- Active students nobody is supervising.
-          OR ($2 = 'unassigned' AND s.is_active = TRUE AND sup.supervisor_id IS NULL))${scope.sql}
+          OR ($2 = 'unassigned' AND s.is_active = TRUE AND sup.supervisor_id IS NULL)
+          -- Iteration 20: whose Time Record header lacks its college and formal program name.
+          OR ($2 = 'no-program' AND s.is_active = TRUE AND s.program_id IS NULL))${scope.sql}
         ORDER BY s.name ASC
         `,
         [q, status || null]

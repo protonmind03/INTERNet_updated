@@ -3308,7 +3308,7 @@ export function registerExtensionRoutes(
         return res.status(403).json({ message: "You can only download your own data." });
       }
       const mine = (sql: string) => pool.query(sql, [auth.id]).then((result) => result.rows);
-      const [profile, attendance, absences, tasks, documents, journals, finalEvaluation, certifications, evaluations, complaints,
+      const [profile, attendance, absences, tasks, documents, journals, finalEvaluation, certifications, signatures, evaluations, complaints,
         complaintMessages, schedule, notifications, tasksWorkedOn, weeklyItems, notificationChoices, pictures] = await Promise.all([
         mine(`SELECT * FROM students WHERE student_id = $1`),
         mine(`SELECT * FROM attendance WHERE student_id = $1 ORDER BY date, id`),
@@ -3318,6 +3318,8 @@ export function registerExtensionRoutes(
         mine(`SELECT * FROM journals WHERE student_id = $1 ORDER BY week_start`),
         mine(`SELECT * FROM final_evaluations WHERE student_id = $1`),
         mine(`SELECT * FROM dtr_certifications WHERE student_id = $1 ORDER BY month`),
+        // Iteration 20: the signatures drawn, without the image files (each is in the Time Record).
+        mine(`SELECT id, svg_paths, sha256, width, height, created_at, revoked_at FROM student_signatures WHERE student_id = $1 ORDER BY id`),
         // Evaluations of the student, and the ones the student wrote.
         mine(`SELECT * FROM evaluations
               WHERE student_id = $1 OR (evaluator_type = 'student' AND evaluator_id = $1)
@@ -3370,6 +3372,8 @@ export function registerExtensionRoutes(
         evaluations,
         final_evaluation: finalEvaluation[0] ?? null,
         time_record_certifications: certifications,
+        // An image of the trainee's handwriting, as stroke paths: not a cryptographic signature.
+        signatures,
         complaints,
         complaint_messages: complaintMessages,
         schedule,
@@ -3402,7 +3406,7 @@ export function registerExtensionRoutes(
 
   const DTR_COLUMNS = `
     c.id, c.student_id, c.month, c.certified_by, c.certified_by_name,
-    c.verified_hours::float AS verified_hours, c.days_logged, c.certified_at
+    c.verified_hours::float AS verified_hours, c.days_logged, c.certified_at, c.trainee_signature_id
   `;
 
   app.get(
@@ -3476,13 +3480,18 @@ export function registerExtensionRoutes(
         });
       }
 
+      // The trainee's signature as it is now goes with the certified month (migration 067).
+      const signed = await pool.query<{ id: number }>(
+        `SELECT id FROM student_signatures WHERE student_id = $1 AND revoked_at IS NULL ORDER BY id DESC LIMIT 1`,
+        [studentId]
+      );
       const result = await pool.query(
         `INSERT INTO dtr_certifications AS c
-           (student_id, month, certified_by, certified_by_name, verified_hours, days_logged)
-         VALUES ($1, $2, $3, $4, $5, $6)
+           (student_id, month, certified_by, certified_by_name, verified_hours, days_logged, trainee_signature_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (student_id, month) DO NOTHING
          RETURNING ${DTR_COLUMNS}`,
-        [studentId, month, auth.id, owner.rows[0].supervisor_name, verifiedHours, total]
+        [studentId, month, auth.id, owner.rows[0].supervisor_name, verifiedHours, total, signed.rows[0]?.id ?? null]
       );
       if (result.rows.length === 0) {
         return res.status(409).json({ message: "That month is already certified." });
