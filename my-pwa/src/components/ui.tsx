@@ -548,6 +548,48 @@ export function Modal({
     };
   }, [open, locked, onClose]);
 
+  // Iteration 21: focus moves into the dialog, Tab stays inside it, and it
+  // goes back to what had it when the dialog closes.
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (!open) return;
+    const before = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusable = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(
+          'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        ) ?? []
+      ).filter((element) => element.offsetParent !== null || element === document.activeElement);
+    const frame = window.requestAnimationFrame(() => {
+      if (dialog && !dialog.contains(document.activeElement)) (focusable()[0] ?? dialog).focus();
+    });
+    const onTab = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !dialog) return;
+      const items = focusable();
+      if (items.length === 0) {
+        event.preventDefault();
+        dialog.focus();
+        return;
+      }
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && (document.activeElement === first || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || !dialog.contains(document.activeElement))) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", onTab);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("keydown", onTab);
+      if (before && document.contains(before)) before.focus({ preventScroll: true });
+    };
+  }, [open]);
+
   // A body taller than the sheet scrolls; then it takes a Tab stop, so the arrow keys can scroll
   // it when nothing inside can take focus (WCAG 2.1.1). It is no stop while it all fits.
   const [bodyScrolls, setBodyScrolls] = useState(false);
@@ -573,12 +615,14 @@ export function Modal({
   return (
     <div
       // The page behind is dimmed and softened, so the dialog reads as the one thing to attend to.
-      className="fixed inset-0 z-(--z-modal) flex animate-fade-in items-end justify-center bg-psu-950/50 backdrop-blur-sm sm:items-center sm:p-4"
+      className="modal-backdrop fixed inset-0 z-(--z-modal) flex animate-fade-in items-end justify-center sm:items-center sm:p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !locked) onClose();
       }}
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label={title}

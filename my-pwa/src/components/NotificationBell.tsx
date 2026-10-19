@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { BrandLoader } from "../brand";
 import AnnouncementList from "./AnnouncementList";
 import SentAnnouncements from "./SentAnnouncements";
+import TraineeAnnouncements from "./TraineeAnnouncements";
 import Icon from "./Icon";
 import Tooltip from "./Tooltip";
 import { FilterChips } from "./ui";
@@ -59,7 +60,13 @@ export default function NotificationBell({
     loadMore,
     markRead,
     markAllRead,
-  } = useNotificationFeed(role, filter);
+  } = useNotificationFeed(
+    role,
+    filter,
+    // Iteration 21: a trainee's Notifications tab is what asks for something; what only
+    // informs is under Announcements with the coordinator's announcements.
+    announcementsFor === "student" ? "action" : undefined
+  );
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -88,6 +95,9 @@ export default function NotificationBell({
   useEffect(() => {
     if (!open) return;
     const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element | null;
+      // A dialog opened from the panel is drawn outside it, over the page.
+      if (target?.closest?.('[role="dialog"], .modal-backdrop')) return;
       if (
         containerRef.current &&
         !containerRef.current.contains(event.target as Node)
@@ -186,7 +196,13 @@ export default function NotificationBell({
               tabIndex={0}
               className="max-h-[min(24rem,60dvh)] overflow-y-auto"
             >
-              {announcementsFor === "coordinator" ? <SentAnnouncements /> : <AnnouncementList role={announcementsFor} compact />}
+              {announcementsFor === "coordinator" ? (
+                <SentAnnouncements />
+              ) : announcementsFor === "student" ? (
+                <TraineeAnnouncements onNavigate={() => setOpen(false)} />
+              ) : (
+                <AnnouncementList role={announcementsFor} compact />
+              )}
             </div>
           )}
 
@@ -249,6 +265,9 @@ export default function NotificationBell({
                     >
                       {item.title}
                     </span>
+                    {item.action_required && !item.acted_at && (
+                      <span className="status-chip status-chip--late mt-1 min-h-6 text-xs">Action needed</span>
+                    )}
                     <span className="mt-0.5 block text-sm text-slate-600">
                       {item.message}
                     </span>

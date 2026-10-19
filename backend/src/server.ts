@@ -65,6 +65,7 @@ import { registerProjectionRoutes } from "./routes/projections";
 import { registerAttachmentRoutes } from "./routes/attachments";
 import { registerInstitutionRoutes } from "./routes/institution";
 import { registerTimeRecordRoutes } from "./routes/timeRecord";
+import { markActed, notificationKind, type NotificationKind } from "./services/notificationKinds";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
   bindFilters,
@@ -505,14 +506,17 @@ async function notificationList(
 ) {
   const request = req.res?.locals.list as ListRequest | undefined;
   const unreadOnly = request?.status === "unread";
+  // Iteration 21: ?kind=action or ?kind=info, for the bell's two tabs.
+  const kindFilter =
+    req.query.kind === "action" ? " AND COALESCE(kind, 'action') = 'action'" : req.query.kind === "info" ? " AND kind = 'info'" : "";
   const { rows, page } = await listQuery(
     req,
     { order: "created_at DESC, id DESC" },
     `
     SELECT id, ${column}, title, message, type, is_read, created_at,
-           link, entity_type, entity_id
+           link, entity_type, entity_id, kind, action_required, acted_at
     FROM notifications
-    WHERE ${column} = $1${unreadOnly ? " AND is_read = FALSE" : ""}
+    WHERE ${column} = $1${unreadOnly ? " AND is_read = FALSE" : ""}${kindFilter}
     ORDER BY created_at DESC, id DESC
     ${cap}
     `,
@@ -1273,6 +1277,9 @@ async function createNotification(options: {
   type?: string;
   link?: string;
   entity?: { type: string; id: string | number | null | undefined };
+  /** Iteration 21: said by the writer; otherwise worked out (services/notificationKinds.ts). */
+  kind?: NotificationKind;
+  actionRequired?: boolean;
 }) {
   const recipients: {
     role: "coordinator" | "student" | "supervisor";
@@ -1303,6 +1310,9 @@ async function createNotification(options: {
     safeLink(options.link) ??
     notificationLink(recipient.role, options.type, options.title, entity);
 
+  // Whether it asks for something (migration 070).
+  const rule = notificationKind(recipient.role, options.type, options.title, link);
+
   const result = await pool.query<{
     id: number;
     title: string;
@@ -1312,13 +1322,16 @@ async function createNotification(options: {
     link: string | null;
     entity_type: string | null;
     entity_id: string | null;
+    kind: string;
+    action_required: boolean;
+    acted_at: string | null;
   }>(
     `
     INSERT INTO notifications
     (student_id, supervisor_id, coordinator_id, title, message, type, is_read,
-     link, entity_type, entity_id)
-    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9)
-    RETURNING id, title, message, type, created_at, link, entity_type, entity_id
+     link, entity_type, entity_id, kind, action_required)
+    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, $10, $11)
+    RETURNING id, title, message, type, created_at, link, entity_type, entity_id, kind, action_required, acted_at
     `,
     [
       options.studentId || null,
@@ -1330,6 +1343,8 @@ async function createNotification(options: {
       link,
       entity ? String(entity.type).slice(0, 40) : null,
       entity ? String(entity.id).slice(0, 80) : null,
+      options.kind ?? rule.kind,
+      options.actionRequired ?? rule.actionRequired,
     ]
   );
   const payload = result.rows[0];
@@ -2524,8 +2539,18 @@ app.post(
         });
       }
 
-      // The day's rules (services/dayRules.ts), before the camera check is
-      // spent: a time-in before the window opens is refused with when it opens.
+      // The photo must come from the in-app camera check, not a chosen file.
+      const liveness = readLivenessReport(
+        String(student_id),
+        req.body.liveness_ticket,
+        req.body.liveness_report
+      );
+      if ("problem" in liveness) {
+        return res.status(400).json({ message: liveness.problem });
+      }
+
+      // The day's rules (services/dayRules.ts), after the photo and the camera
+      // check are read and before the check is spent: a time-in before the window opens is refused with when it opens.
       const timedInAt = new Date();
       const dayRules = await loadDayRuleSettings(pool);
       const dayPlan = await loadDayPlan(pool, String(student_id), phToday(timedInAt), dayRules);
@@ -2539,15 +2564,6 @@ app.post(
         });
       }
 
-      // The photo must come from the in-app camera check, not a chosen file.
-      const liveness = readLivenessReport(
-        String(student_id),
-        req.body.liveness_ticket,
-        req.body.liveness_report
-      );
-      if ("problem" in liveness) {
-        return res.status(400).json({ message: liveness.problem });
-      }
       // One camera check, one time-in: the ticket is spent here, and a
       // second request carrying it is refused whatever else it holds.
       const spent = await pool.query(
@@ -3359,6 +3375,7 @@ app.put(
       }
 
       await rememberOfflineStep(step, "time-out", result.rows[0]);
+      await markActed(pool, String(result.rows[0].student_id), { titles: ["Did you forget to time out?"] });
 
       // A day the supervisor recorded in person is already verified: count its
       // hours and tell the student, instead of asking the supervisor again.
@@ -3608,6 +3625,7 @@ app.put(
         });
       }
 
+      await markActed(pool, String(auth?.id), { titles: ["Did you forget to time out?"] });
       await notifyLogOwnerSupervisor(
         String(auth?.id),
         "Late time-out to review",
@@ -3956,6 +3974,8 @@ app.post(
           type: "attendance",
         }).catch((error) => console.error("PHOTO REDO NOTIFICATION ERROR:", error));
       }
+      // The act the notification asked for is done (Iteration 21).
+      await markActed(pool, String(auth?.id), { entity: { type: "attendance", id: Number(id) }, titles: ["Retake your time-in photo soon"] });
       return res.json({ message: "New photo saved. Your supervisor will review it.", attendance: { id: Number(id), photo_redo_status: "submitted" } });
     } catch (error) {
       if (uploadedFileName) await deletePrivateFile(uploadedFileName).catch(() => undefined);
@@ -8029,6 +8049,7 @@ app.post(
         });
       }
 
+      await markActed(pool, String(task.student_id ?? (req as AuthedRequest).auth?.id), { entity: { type: "task", id: task.id } });
       return res.json({
         message: "Task submitted for review.",
         task,
@@ -9622,6 +9643,7 @@ app.post(
         id: Number(result.rows[0].id),
       }).catch((ledgerError) => console.error("UPLOAD LEDGER ERROR:", ledgerError));
 
+      await markActed(pool, String(result.rows[0].student_id), { titles: ["Requirement due", "New document required"] });
       return res.status(201).json({
         message: "Document uploaded and submitted for review.",
         document: result.rows[0],

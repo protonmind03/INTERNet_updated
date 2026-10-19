@@ -426,15 +426,20 @@ are true of the system today, for a scope section:
   period for attendance photos has been set: photos are kept. If the paper
   describes a retention period or an approved consent form, it is ahead of
   the system.
-- The student portal's menu, since October 2026, is Today, Attendance,
-  Tasks and Documents, with Schedule and Weekly journal under "More".
+- The student portal's menu (rewritten for Iteration 21, October 2026):
+  on a phone it is a dock at the bottom of the screen with Today,
+  Attendance, Schedule and Tasks, and "More" (Documents, Weekly report,
+  Resolution Center, Help). On a wider screen the folder's tabs are Today,
+  Attendance, Schedule, Tasks, Documents and Weekly report.
   Notifications, Announcements, Completion, Feedback and Report a concern
   are no longer menu items. If the paper, a screenshot or the module
   diagram lists them as separate student pages or menu entries, say
   instead where each is now:
   - notifications and announcements are read from the bell in the header,
-    on two tabs; the bell shows twenty notifications at a time and can
-    show only the unread ones;
+    on two tabs; for trainees (Iteration 21) the first tab holds what asks
+    them to do something ("Action needed" until it is done) and the second
+    the coordinator's announcements together with notifications that only
+    inform; the bell shows twenty at a time and can show only the unread;
   - the completion checklist is a card on the student's Profile;
   - reporting a concern and the evaluations (those written about the
     student, and the student's rating of the company) are the two tabs of
@@ -915,3 +920,18 @@ describe; the earlier notes it replaces are marked there.
 - **Attendance figures.** The Attendance page's four counters were replaced
   by three cards: hours (verified, waiting, to go, with the projected
   finish), on time over the last 20 scheduled days, and this week.
+- **Notifications (Iteration 21, migration 070).** Each notification is an
+  "action" (it opens the page where something is done, and that thing is
+  highlighted) or "info" (read in a dialog). ERD: `notifications` gains
+  `kind`, `action_required` and `acted_at`; the system sets `acted_at`
+  when the trainee does what was asked (retakes the photo, times out,
+  submits the task, resubmits the weekly report, uploads the requirement,
+  replies).
+- **Calendar and progress.** The trainee's month starts on Sunday;
+  weekends are tinted; each day shows one status dot and opens a sheet with
+  its schedule, times, hours, decision and an appeal link. "My progress" is
+  a burn-up chart, milestones (25 to 100%), the change in the projected
+  finish since last week, and an eight-week rhythm strip.
+- **Floating button.** On a phone the next-step button takes two taps: the
+  first shows the step's name, the second opens it. A keyboard or screen
+  reader opens it at once.

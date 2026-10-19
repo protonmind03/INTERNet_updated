@@ -22,7 +22,11 @@ const MOST_AT_ONCE = 200;
  * not they have been loaded. Kept current when a live notification
  * arrives or another part of the page marks something read.
  */
-export function useNotificationFeed(role: NotificationRole, filter: NotificationFilter) {
+/**
+ * `kind` (Iteration 21): "action" for what asks for something, "info" for
+ * what only tells; left out, both.
+ */
+export function useNotificationFeed(role: NotificationRole, filter: NotificationFilter, kind?: "action" | "info") {
   const [items, setItems] = useState<NotificationItem[]>([]);
   const [total, setTotal] = useState(0);
   const [unread, setUnread] = useState(0);
@@ -39,13 +43,13 @@ export function useNotificationFeed(role: NotificationRole, filter: Notification
     async (offset: number, limit: number) => {
       const accountId = localStorage.getItem(`${role}_id`);
       if (!accountId) return null;
-      const query = `limit=${limit}&offset=${offset}${filter === "unread" ? "&status=unread" : ""}`;
+      const query = `limit=${limit}&offset=${offset}${filter === "unread" ? "&status=unread" : ""}${kind ? `&kind=${kind}` : ""}`;
       const url = `${API_URL}/api/notifications/${role}/${encodeURIComponent(accountId)}?${query}`;
       // The newest page is kept for reading without a connection, except
       // the coordinator's: theirs name people across the whole programme.
       const response =
         role !== "coordinator" && offset === 0 && filter === "all"
-          ? await savedFetch(role, "notifications-recent", url, withRoleAuth(role))
+          ? await savedFetch(role, kind ? `notifications-recent-${kind}` : "notifications-recent", url, withRoleAuth(role))
           : await fetch(url, withRoleAuth(role));
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Failed to load notifications.");
@@ -57,7 +61,7 @@ export function useNotificationFeed(role: NotificationRole, filter: Notification
           typeof data.unread === "number" ? data.unread : rows.filter((item) => !item.is_read).length,
       };
     },
-    [role, filter]
+    [role, filter, kind]
   );
 
   /** Loads again from the top, as far down as was already on screen. */

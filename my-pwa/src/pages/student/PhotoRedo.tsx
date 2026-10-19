@@ -42,7 +42,7 @@ export function PhotoRedoBanner() {
           your hours still count. If no new photo is taken in time, today is marked absent.
         </p>
       </div>
-      <Button icon="camera" onClick={() => setOpen(true)} disabled={!online} className="shrink-0">
+      <Button icon="camera" onClick={() => setOpen(true)} disabled={!online} className="shrink-0" data-focus="retake-photo">
         {online ? "Retake photo" : "Connect to retake"}
       </Button>
       {open && <PhotoRedoDialog logId={log.id} onClose={() => setOpen(false)} />}

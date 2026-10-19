@@ -14,6 +14,7 @@ import { keptProjectionsFor, projectionsChanged } from "../services/projection";
 import { staleDecision } from "../services/versions";
 import { uploadQuota } from "../services/uploadQuota";
 import { sameId, sqlSameId } from "../services/ids";
+import { markActed } from "../services/notificationKinds";
 
 /*
 |--------------------------------------------------------------------------
@@ -2594,6 +2595,7 @@ export function registerExtensionRoutes(
           }
         });
 
+        if (auth.role === "student") await markActed(pool, String(auth.id), { entity: { type: "complaint", id: req.params.id } });
         return res.status(201).json({ message: "Reply sent.", reply: result.rows[0] });
       } catch (error) {
         console.error("POST COMPLAINT MESSAGE ERROR:", error);
@@ -2902,6 +2904,7 @@ export function registerExtensionRoutes(
           });
         }
 
+        await markActed(pool, String(auth.id), { entity: { type: "journal", id: journal.id }, titles: ["Weekly report returned"] });
         return res.status(before ? 200 : 201).json({
           message: before ? "Weekly report updated." : "Weekly report submitted.",
           journal,

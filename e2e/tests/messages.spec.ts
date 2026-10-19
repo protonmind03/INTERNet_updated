@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { ACCOUNTS, API, api, apiSession, signIn } from "./helpers";
+import { ACCOUNTS, API, api, apiSession, signIn, openProfileGroup } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -57,6 +57,7 @@ test("messages: from Profile to the supervisor, a reply from the notification, a
   const page = await studentContext.newPage();
   await signIn(page, "student", { ...ACCOUNTS.student, email, password: "MessageCheck456!" });
   await page.goto("/profile");
+  await openProfileGroup(page, "Placement");
   await expect(page.getByRole("heading", { name: "Your supervisor" })).toBeVisible({ timeout: 20_000 });
   // The supervisor card comes before the coordinator card.
   const toSupervisor = page.getByRole("button", { name: /^Message / }).first();

@@ -293,6 +293,9 @@ function StepPager({
           watch(element);
         }}
         data-axis="x"
+        tabIndex={0}
+        role="group"
+        aria-label="Steps of the day; swipe or use the switch above"
         className="inb-snap-row"
         onScroll={(event) => {
           const pane = event.currentTarget;
@@ -366,13 +369,14 @@ function StepTile({
         disabled={Boolean(opensAt)}
         onClick={onAct}
         className={`step-tile step-tile--${opensAt ? "closed" : "next"}`}
+        data-focus={tileKey === "time_out" ? "time-out" : undefined}
       >
         {body}
       </button>
     );
   }
   return (
-    <div className={`step-tile step-tile--${state}`} role="group" aria-label={`${tile.label}: ${value ? formatTime(value) : "not yet"}${detail ? `, ${detail}` : ""}`}>
+    <div className={`step-tile step-tile--${state}`} data-focus={tileKey === "time_out" ? "time-out" : undefined} role="group" aria-label={`${tile.label}: ${value ? formatTime(value) : "not yet"}${detail ? `, ${detail}` : ""}`}>
       {body}
     </div>
   );

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
 import { toast } from "./toast";
+import { spotlight } from "./spotlight";
 
 /**
  * The record a link asks the page to show: `?focus=task-12` gives
@@ -36,10 +37,10 @@ export function useFocusRecord(ready: boolean): string | null {
         toast.info("That item is not shown here. It may be hidden by a filter, or it was removed.");
         return;
       }
-      const calm = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      row.scrollIntoView({ block: "center", behavior: calm ? "auto" : "smooth" });
-      row.classList.add("record-focus");
-      window.setTimeout(() => row.classList.remove("record-focus"), 4000);
+      // Iteration 21: the same spotlight a notification's ?spot= gets (lib/spotlight.ts).
+      // A ?spot= on the same address spotlights its own target instead.
+      if (new URLSearchParams(window.location.search).get("spot")) return;
+      spotlight(row);
     });
     return () => window.cancelAnimationFrame(frame);
   }, [ready, focus]);

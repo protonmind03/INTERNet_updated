@@ -54,7 +54,9 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
       className={`sticky top-(--inb-top-inset) z-30 ${dark ? "surface-brand shadow-raised" : ""}`}
       style={dark ? undefined : { background: t.colors.surface, borderBottom: "1px solid #E2E8F0" }}
     >
-      <div className="flex items-center gap-2.5 px-3 py-2.5">
+      {/* Iteration 21: three tracks (auto, 1fr, auto) so the brand shrinks and never runs under the icons. */}
+      <div className="portal-header-grid grid items-center gap-2.5 px-3 py-2.5">
+        <div className="flex items-center gap-2.5">
         {onMenu && (
           <button
             type="button"
@@ -69,18 +71,21 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
           </button>
         )}
         <BrandIcon size={LOGO_SIZES.bar.icon} tile={t.colors.surfaceRaised} />
-        <div className="inb-mark min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
+        </div>
+        <div className="inb-mark min-w-0">
+          <div className="flex min-w-0 items-center gap-1.5">
             <Wordmark height={LOGO_SIZES.bar.cap} tone={dark ? "onDark" : "onLight"} />
-            <span className="inline-flex h-[18px] items-center rounded-full px-2 text-[10px] font-semibold leading-none" style={{ background: t.colors.tagBg, color: t.colors.tagText }}>
+            {/* Below 360 px the pill becomes a dot in the role's colour, named for screen readers. */}
+            <span className="role-pill inline-flex h-[18px] shrink-0 items-center rounded-full px-2 text-[10px] font-semibold leading-none" style={{ background: t.colors.tagBg, color: t.colors.tagText }}>
               {t.tag}
             </span>
+            <span role="img" aria-label={t.tag} className="role-dot h-2.5 w-2.5 shrink-0 rounded-full" />
           </div>
           <p className="mt-1 truncate text-[11px] font-medium leading-none" style={{ color: t.colors.muted }}>
             {pageTitle ? `${pageTitle}${context ? ` · ${context}` : ""}` : context ?? t.portal}
           </p>
         </div>
-        <div className="flex shrink-0 items-center gap-1">{right}</div>
+        <div className="flex items-center gap-1">{right}</div>
       </div>
       {status && (
         <div className="px-3 pb-2">

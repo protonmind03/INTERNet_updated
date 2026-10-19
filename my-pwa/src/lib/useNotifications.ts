@@ -20,6 +20,11 @@ export type NotificationItem = {
   /** The record it is about, when the server knew one. */
   entity_type?: string | null;
   entity_id?: string | null;
+  /** Iteration 21 (migration 070): asks for something, or only tells. */
+  kind?: "action" | "info" | null;
+  /** The trainee is expected to do something; "Action needed" until acted_at is set. */
+  action_required?: boolean;
+  acted_at?: string | null;
 };
 
 /**

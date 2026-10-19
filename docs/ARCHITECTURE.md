@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-241 routes in 15 files; 43 services in use.
+241 routes in 15 files; 44 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -54,6 +54,7 @@ flowchart LR
     services_liveness["liveness.ts"]
     services_loopLock["loopLock.ts"]
     services_mailer["mailer.ts"]
+    services_notificationKinds["notificationKinds.ts"]
     services_notificationLinks["notificationLinks.ts"]
     services_notificationPreferences["notificationPreferences.ts"]
     services_offlineActions["offlineActions.ts"]
@@ -115,6 +116,7 @@ flowchart LR
   routes_extensions --> services_deliverables
   routes_extensions --> services_ids
   routes_extensions --> services_insights
+  routes_extensions --> services_notificationKinds
   routes_extensions --> services_notificationPreferences
   routes_extensions --> services_phTime
   routes_extensions --> services_privacy
@@ -127,6 +129,7 @@ flowchart LR
   routes_messages --> services_emailBudget
   routes_messages --> services_ids
   routes_messages --> services_mailer
+  routes_messages --> services_notificationKinds
   routes_offlineTimeIn --> services_dayRules
   routes_offlineTimeIn --> services_liveness
   routes_offlineTimeIn --> services_offlineActions
@@ -173,6 +176,7 @@ flowchart LR
   server --> services_liveNotifications
   server --> services_liveness
   server --> services_mailer
+  server --> services_notificationKinds
   server --> services_notificationLinks
   server --> services_notificationPreferences
   server --> services_offlineActions
@@ -329,6 +333,7 @@ flowchart LR
 | `liveness.ts` | `routes/appeals.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
 | `loopLock.ts` | `services/deadlineReminders.ts`, `services/digests.ts`, `services/timeOutReminders.ts` |
 | `mailer.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
+| `notificationKinds.ts` | `routes/extensions.ts`, `routes/messages.ts`, `server.ts` |
 | `notificationLinks.ts` | `server.ts` |
 | `notificationPreferences.ts` | `routes/extensions.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
 | `offlineActions.ts` | `routes/attachments.ts`, `routes/offlineTimeIn.ts`, `server.ts` |

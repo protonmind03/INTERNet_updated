@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { EmailLimitError } from "../services/emailBudget";
 import { isEmailConfigured, sendEmail } from "../services/mailer";
 import { sameId } from "../services/ids";
+import { markActed } from "../services/notificationKinds";
 
 /*
 |--------------------------------------------------------------------------
@@ -323,6 +324,7 @@ export function registerMessageRoutes(app: express.Express, deps: Dependencies):
         return res.status(429).json({ code: "MESSAGE_LIMIT", message: `You have sent ${MESSAGES_PER_DAY} messages today, the most for one day. Try again tomorrow.` });
       }
       const sent = await deliver(found.thread.id, `Re: ${found.thread.subject}`.slice(0, SUBJECT_MAX_LENGTH + 4), found.thread.context_label, from, to, read.body);
+      if (from.role === "student") await markActed(pool, String(from.id), { entity: { type: "message", id: found.thread.id } });
       return res.status(201).json({ message: sent.delivery, thread_id: found.thread.id, email_status: sent.email_status });
     } catch (error) {
       console.error("REPLY MESSAGE ERROR:", error);

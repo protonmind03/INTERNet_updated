@@ -4929,6 +4929,11 @@ test("a camera-check ticket is spent by its first time-in and refused the second
   }
   require("tsx/cjs");
   const { forgetSpentTickets } = require("../src/services/timeOutReminders.ts");
+  // Iteration 18: a trainee with no schedule, so the day's window never refuses the first use
+  // (a refused-as-too-early time-in keeps its ticket), whatever hour the test runs.
+  const f = await dayRulesFixture("TICKET");
+  const student = { student_id: f.sid };
+  const studentToken = f.mine.token;
   const pool = localTestPool();
   const challenge = await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(studentToken) });
   assert.equal(challenge.response.status, 200);
@@ -4978,6 +4983,7 @@ test("a camera-check ticket is spent by its first time-in and refused the second
   } finally {
     await pool.query(`DELETE FROM liveness_ticket_uses WHERE jti LIKE 'test-%'`);
     await pool.end();
+    await f.cleanup();
   }
 });
 
@@ -9293,8 +9299,10 @@ test("an offline time-in with a photo: every refusal, then accepted once, a repl
   try {
     await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, 'Attest Check', TRUE, $4)`, [sid, email, await bcrypt.hash("AttestCheck123!", 4), supervisor.supervisor.supervisor_id]);
     await pool.query(
-      `INSERT INTO ojt_schedule (student_id, day, start_time, end_time)
-       SELECT $1, day, '08:00', '17:00' FROM unnest(ARRAY['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']) AS day`,
+      // Every day, open all day (Iteration 18: a time-in opens 30 minutes before the shift),
+      // so the test reads the same whatever hour it runs; the lunch is at the day's very end.
+      `INSERT INTO ojt_schedule (student_id, day, start_time, end_time, lunch_start, lunch_end)
+       SELECT $1, day, '00:00', '23:59', '23:57', '23:58' FROM unnest(ARRAY['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday']) AS day`,
       [sid]
     );
     const mine = (await login("student", email, "AttestCheck123!")).token;
@@ -11484,10 +11492,16 @@ async function dayRulesFixture(label) {
     form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "intern.jpg");
     return jsonRequest("/api/supervisor/attendance/record", { method: "POST", headers: authHeaders(supervisor.token), body: form });
   };
-  const cameraTimeIn = () => {
+  /** A camera time-in with a passed camera check, or (`check: false`) none at all. */
+  const cameraTimeIn = async ({ check = true } = {}) => {
     const form = new FormData();
     form.set("student_id", sid);
     form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "photo.jpg");
+    if (check) {
+      const challenge = (await jsonRequest("/api/attendance/liveness-challenge", { method: "POST", headers: authHeaders(mine.token) })).body;
+      form.set("liveness_ticket", challenge.ticket);
+      form.set("liveness_report", JSON.stringify({ completed: [...challenge.prompts, ...(challenge.spare ? [challenge.spare] : [])], flash: "passed" }));
+    }
     return jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(mine.token), body: form });
   };
   const clearLogs = () => pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
@@ -11506,9 +11520,9 @@ test("time-in routes follow the day's rules: refused before the window, credited
   if (needsWrites(t)) return;
   const f = await dayRulesFixture("RULES");
   try {
-    // A shift two hours away: the camera time-in is refused before the camera check is spent.
+    // A shift 45 minutes away: the camera time-in is refused before the camera check is spent.
     // Each shift here has its lunch after now, so the morning is never gone yet.
-    const far = await f.shift(120, 240, [200, 210]);
+    const far = await f.shift(45, 70, [55, 60]);
     if (!far) return t.skip("too near midnight to build a shift around now");
     const refused = await f.cameraTimeIn();
     assert.equal(refused.response.status, 409, JSON.stringify(refused.body));
@@ -11523,12 +11537,22 @@ test("time-in routes follow the day's rules: refused before the window, credited
     assert.equal(listed.body.today.shiftStart, far.start);
     assert.equal(typeof listed.body.today.opensAt, "string");
 
-    // Inside the window (start in 10 minutes): past the rules, to the camera check.
-    const near = await f.shift(10, 200, [150, 160]);
+    // A refused time-in did not spend its camera check: the same rules refuse again, not "used".
+    const again = await f.cameraTimeIn();
+    assert.equal(again.body.code, "TOO_EARLY");
+    // Without a camera check, that is what is refused first.
+    const noCheck = await f.cameraTimeIn({ check: false });
+    assert.equal(noCheck.response.status, 400);
+    assert.match(noCheck.body.message, /camera check/);
+
+    // Inside the window (start in 10 minutes): the camera time-in is recorded, credited from the start.
+    const near = await f.shift(10, 40, [25, 30]);
     if (!near) return t.skip("too near midnight");
-    const toCheck = await f.cameraTimeIn();
-    assert.equal(toCheck.response.status, 400, "refused only for the missing camera check");
-    assert.match(toCheck.body.message, /camera check/);
+    const recorded = await f.cameraTimeIn();
+    assert.equal(recorded.response.status, 201, JSON.stringify(recorded.body));
+    assert.equal(recorded.body.attendance.scheduled_start, near.start);
+    assert.equal(recorded.body.attendance.late_minutes, 0);
+    await f.clearLogs();
 
     // In person, early: credited from the start, on time.
     const early = await f.recordInPerson();
@@ -11544,7 +11568,7 @@ test("time-in routes follow the day's rules: refused before the window, credited
     await f.clearLogs();
 
     // In person, 61 minutes after the start: late, counted from the time-in.
-    const started = await f.shift(-61, 120, [100, 110]);
+    const started = await f.shift(-61, 40, [25, 30]);
     if (!started) return t.skip("too near midnight");
     const lateIn = await f.recordInPerson();
     assert.equal(lateIn.response.status, 201, JSON.stringify(lateIn.body));
@@ -11563,8 +11587,8 @@ test("a day with no time-in by the lunch start is afternoon-only: its own window
     // A shift over noon (from before 12:00 to after 13:00), whose lunch began
     // an hour ago and ends in 45 minutes: the afternoon opens in 15.
     const from = f.hhmm(Math.min(f.nowMinutes - 120, 11 * 60));
-    const to = f.hhmm(Math.max(f.nowMinutes + 180, 13 * 60));
-    if (f.nowMinutes < 120 || f.nowMinutes > 20 * 60 + 59) return t.skip("too near midnight to build a shift around now");
+    const to = f.hhmm(Math.max(f.nowMinutes + 50, 13 * 60));
+    if (f.nowMinutes < 120 || f.nowMinutes > 23 * 60 + 9) return t.skip("too near midnight to build a shift around now");
     const before = await f.shift(from, to, [-60, 45]);
     const refused = await f.cameraTimeIn();
     assert.equal(refused.response.status, 409, JSON.stringify(refused.body));
@@ -11612,7 +11636,7 @@ test("an offline time-in is judged at its real time: the phone's time less its c
   try {
     // The shift opens in 4 minutes. Pressed a minute ago on a phone 5 minutes
     // ahead: really 6 minutes ago, 10 before the opening. Refused.
-    const shift = await f.shift(34, 200, [180, 190]);
+    const shift = await f.shift(34, 60, [45, 50]);
     if (!shift) return t.skip("too near midnight to build a shift around now");
     const now = Date.now();
     const refused = await jsonRequest("/api/attendance/offline-time-in", jsonBody(f.mine.token, "POST", {
@@ -11630,7 +11654,7 @@ test("an offline time-in is judged at its real time: the phone's time less its c
     }));
     assert.equal(rightClock.body.code, "TOO_EARLY");
     // Once open (the start 20 minutes away), it is added and credited from the start.
-    const open = await f.shift(20, 200, [180, 190]);
+    const open = await f.shift(20, 60, [45, 50]);
     const added = await jsonRequest("/api/attendance/offline-time-in", jsonBody(f.mine.token, "POST", {
       occurred_at: new Date(now).toISOString(),
       client_sent_at: new Date(now).toISOString(),
@@ -12015,6 +12039,92 @@ test("the Time Record's header: the institution's lines, the college and formal 
     // Verified hours are read live.
     await f.pool.query(`INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 3, NOW(), NOW(), 6.5, 'Verified')`, [f.sid]);
     assert.equal((await jsonRequest(path(f.sid), { headers: authHeaders(f.mine.token) })).body.trainee.verified_hours, 6.5);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 21: notifications that ask, and notifications that tell
+|--------------------------------------------------------------------------
+*/
+
+test("every notification is an action or only information, and a trainee's acts are named", () => {
+  require("tsx/cjs");
+  const { notificationKind } = require("../src/services/notificationKinds.ts");
+  const kind = (title, type = "info", link = "/somewhere") => notificationKind("student", type, title, link);
+  for (const title of ["Welcome to INTERNet", "Supervisor assigned", "OJT schedule updated", "Attendance verified", "Time record certified"]) {
+    assert.equal(kind(title).kind, "info", title);
+    assert.equal(kind(title).actionRequired, false, title);
+  }
+  const expect = [
+    ["Time-in photo rejected", "retake", true],
+    ["Retake your time-in photo soon", "retake", true],
+    ["Did you forget to time out?", "time-out", true],
+    ["Attendance log rejected", "read", false],
+    ["Attendance times corrected", "read", false],
+    ["Task past its deadline", "submit", true],
+    ["New task assigned", "open-task", true],
+    ["Requirement due", "upload", true],
+    ["Weekly report returned", "resubmit", true],
+    ["Appeal decided", "read", false],
+    ["New message", "reply", true],
+  ];
+  for (const [title, act, required] of expect) {
+    const rule = kind(title);
+    assert.equal(rule.kind, "action", title);
+    assert.equal(rule.act, act, title);
+    assert.equal(rule.actionRequired, required, title);
+  }
+  assert.equal(notificationKind("student", "announcement", "Announcement: Hello", "/announcements").kind, "info");
+  assert.equal(notificationKind("supervisor", "attendance", "Attendance log awaiting verification", "/supervisor/dashboard").kind, "action");
+  assert.equal(notificationKind("coordinator", "info", "Something with no page", null).kind, "info", "no page to open: information");
+});
+
+test("the trainee's routing table: each notification opens its page with the thing to spotlight", () => {
+  require("tsx/cjs");
+  const { resolveNotificationTarget } = require("../../my-pwa/src/lib/notificationTargets.ts");
+  const open = (title, entity_type, entity_id) => resolveNotificationTarget("student", { title, entity_type, entity_id, link: "/daily-log" }).path;
+  assert.equal(open("Time-in photo rejected", "attendance", 7), "/daily-log?spot=retake-photo");
+  assert.equal(open("Attendance log rejected", "attendance", 7), "/schedule?view=month&log=7&spot=day-decision");
+  assert.equal(open("Did you forget to time out?"), "/daily-log?spot=time-out");
+  assert.equal(open("New task assigned", "task", 3), "/task?focus=task-3&spot=task-3");
+  assert.equal(open("Task past its deadline", "task", 3), "/task?focus=task-3&spot=submit-3");
+  assert.equal(open("Requirement due"), "/documents?spot=requirements");
+  assert.equal(open("Weekly report returned", "journal", 2), "/journal?spot=supervisor-note");
+  assert.equal(open("Appeal decided", "attendance", 9), "/daily-log?focus=attendance-9");
+  // Anything else keeps the earlier rules.
+  assert.equal(resolveNotificationTarget("student", { title: "Something else", link: "/task" }).path, "/task");
+});
+
+test("the bell's two lists, and an act marking its notification done", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("KINDS");
+  try {
+    // A reminder to time out is an action that is required; timing out does it.
+    await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, NOW() - INTERVAL '2 hours', 'Pending')`,
+      [f.sid, f.phToday()]
+    );
+    const log = (await f.pool.query(`SELECT id FROM attendance WHERE student_id = $1`, [f.sid])).rows[0].id;
+    await f.pool.query(
+      `INSERT INTO notifications (student_id, title, message, type, is_read, link, kind, action_required)
+       VALUES ($1, 'Did you forget to time out?', 'x', 'attendance', FALSE, '/daily-log', 'action', TRUE),
+              ($1, 'OJT schedule updated', 'y', 'schedule', FALSE, NULL, 'info', FALSE)`,
+      [f.sid]
+    );
+    const list = (kind) => jsonRequest(`/api/notifications/student/${encodeURIComponent(f.sid)}?limit=20&offset=0&kind=${kind}`, { headers: authHeaders(f.mine.token) });
+    const actions = (await list("action")).body.notifications;
+    const infos = (await list("info")).body.notifications;
+    assert.ok(actions.some((item) => item.title === "Did you forget to time out?" && item.action_required && !item.acted_at));
+    assert.ok(!actions.some((item) => item.title === "OJT schedule updated"));
+    assert.ok(infos.some((item) => item.title === "OJT schedule updated"));
+    const out = await jsonRequest(`/api/attendance/${log}/time-out`, jsonBody(f.mine.token, "PUT", {}));
+    assert.equal(out.response.status, 200, JSON.stringify(out.body));
+    const after = (await list("action")).body.notifications.find((item) => item.title === "Did you forget to time out?");
+    assert.ok(after.acted_at, "timing out is the act the reminder asked for");
   } finally {
     await f.cleanup();
   }

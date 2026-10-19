@@ -306,7 +306,7 @@ function TaskCard({
 
       {open && (
         <div className="mt-4">
-          <Button icon="upload" onClick={onSubmit}>
+          <Button icon="upload" onClick={onSubmit} data-focus={`submit-${task.id}`}>
             {task.review_notes ? "Submit again" : "Submit work"}
           </Button>
         </div>

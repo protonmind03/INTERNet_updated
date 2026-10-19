@@ -3,6 +3,8 @@ import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PortalHeader } from "../brand";
 import { useRoleTheme } from "../brand/useRoleTheme";
 import FolderShell, { type FolderTab } from "../components/folder/FolderShell";
+import StudentDock from "../components/StudentDock";
+import { useSpotlightParam } from "../lib/spotlight";
 import Icon, { type IconName } from "../components/Icon";
 import MessageThreadHost from "../components/MessageThreadHost";
 import NotificationBell from "../components/NotificationBell";
@@ -47,12 +49,14 @@ import { useStudentProgress } from "../pages/student/useStudentProgress";
 
 type NavItem = { label: string; path: string; icon: IconName };
 
+// Iteration 21: Schedule moves up beside Attendance. On a phone the first four are
+// the dock (components/StudentDock.tsx); the rest are under its More.
 const FOLDER_TABS: NavItem[] = [
   { label: "Today", path: "/student/dashboard", icon: "home" },
   { label: "Attendance", path: "/daily-log", icon: "clock" },
+  { label: "Schedule", path: "/schedule", icon: "calendar" },
   { label: "Tasks", path: "/task", icon: "tasks" },
   { label: "Documents", path: "/documents", icon: "document" },
-  { label: "Schedule", path: "/schedule", icon: "calendar" },
   { label: "Weekly report", path: "/journal", icon: "note" },
 ];
 
@@ -108,6 +112,10 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
     };
   }, [confirmSignOut]);
   const menuRef = useRef<HTMLDivElement | null>(null);
+  // The page scrolls in <main>; the dock watches it to step aside.
+  const [scroller, setScroller] = useState<HTMLElement | null>(null);
+  // A notification opened this page with ?spot=: show what it is about (lib/spotlight.ts).
+  useSpotlightParam();
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -219,9 +227,10 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
         />
       </div>
 
-      <main className="app-canvas flex-1 overflow-y-auto print:overflow-visible">
-        <div className="mx-auto w-full max-w-6xl animate-page-in px-2 pb-28 pt-3 sm:px-4 md:px-8 md:pb-10 md:pt-6 print:max-w-none print:p-0">
+      <main ref={setScroller} className="app-canvas flex-1 overflow-y-auto print:overflow-visible">
+        <div className="mx-auto w-full max-w-6xl animate-page-in px-2 pb-44 pt-3 sm:px-4 md:px-8 md:pb-10 md:pt-6 print:max-w-none print:p-0">
           <FolderShell
+            phoneTabs={false}
             tabsLabel="Main"
             tabs={tabs}
             current={current}
@@ -265,7 +274,16 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
         </div>
       </main>
 
-      {/* The next step of the day, one tap away on a phone. */}
+      {/* Phones: the dock, and the next step of the day one tap away above it. */}
+      <StudentDock
+        scroller={scroller}
+        items={FOLDER_TABS.slice(0, 4).map((item) => ({ ...item, count: counts[item.path] }))}
+        more={[
+          ...FOLDER_TABS.slice(4).map((item) => ({ ...item, count: counts[item.path] })),
+          { ...RESOLUTION_NAV, count: counts[RESOLUTION_NAV.path] },
+          { label: "Help", path: "/help", icon: "info" as const },
+        ]}
+      />
       <TimeInFab />
 
       <ConfirmDialog

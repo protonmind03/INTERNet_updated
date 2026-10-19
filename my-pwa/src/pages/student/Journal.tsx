@@ -240,6 +240,7 @@ function Entry({
 
       {journal.review_notes && (
         <p
+          data-focus="supervisor-note"
           className={`rounded-lg px-3 py-2.5 text-sm ${
             journal.status === "Returned"
               ? "bg-amber-50 text-amber-950 ring-1 ring-inset ring-amber-600/20"

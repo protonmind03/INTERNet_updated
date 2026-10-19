@@ -84,3 +84,31 @@ test("a dialog whose body scrolls can be reached with the keyboard, one that fit
   await expect(tall.getByRole("region", { name: "Add holiday" })).toHaveCount(0);
   await tall.context().close();
 });
+
+// Iteration 21: every sideways area shares one rule set (.inb-snap-row in brand.css).
+test.describe("sideways rows", () => {
+  test.use({ viewport: { width: 390, height: 844 } });
+
+  test("the figure cards and the day pager snap, hide their scrollbar, and keep the page from moving", async ({ page }) => {
+    await signIn(page, "student");
+    await page.goto("/daily-log");
+    const rows = page.locator(".inb-snap-row");
+    await expect(rows.first()).toBeVisible();
+    for (const row of await rows.all()) {
+      const styles = await row.evaluate((element) => {
+        const style = getComputedStyle(element);
+        return { snap: style.scrollSnapType, bar: style.scrollbarWidth, overscroll: style.overscrollBehaviorX, axis: element.getAttribute("data-axis") };
+      });
+      expect(styles.snap).toContain("x");
+      expect(styles.snap).toContain("mandatory");
+      expect(styles.bar).toBe("none");
+      expect(styles.overscroll).toBe("contain");
+      expect(styles.axis).toBe("x");
+    }
+    // The figure cards have more to the right, so that edge fades; the first edge does not.
+    const cards = page.locator(".figure-cards");
+    await expect(cards).toHaveAttribute("data-more-below", "");
+    await expect(cards).not.toHaveAttribute("data-more-above", "");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+});

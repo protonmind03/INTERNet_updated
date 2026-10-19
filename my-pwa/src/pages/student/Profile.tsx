@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import AccountDetailsForm from "../../components/AccountDetailsForm";
 import Icon from "../../components/Icon";
 import InstallApp from "../../components/InstallApp";
 import CueSettingsCard from "../../components/CueSettingsCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
 import PasswordForm from "../../components/PasswordForm";
-import { Button, Card, ErrorNotice } from "../../components/ui";
+import { Button, Card, ConfirmDialog, ErrorNotice } from "../../components/ui";
+import ProfileGroups, { CompletionRing, PasskeySlot, type ProfileGroup } from "./ProfileGroups";
 import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import { getInitials } from "../../lib/format";
-import { updateStoredAccount, useAccount } from "../../lib/session";
+import { formatLongDate, getInitials } from "../../lib/format";
+import { signOut as endSession, updateStoredAccount, useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import CompletionChecklist from "./CompletionChecklist";
 import ContactDetails, { CoordinatorCard, SupervisorCard, type Contact, type Coordinator, type Supervisor } from "./ContactDetails";
@@ -43,6 +44,20 @@ export default function StudentProfilePage() {
   const [email, setEmail] = useState("");
   const [profileError, setProfileError] = useState("");
   const [savingProfile, setSavingProfile] = useState(false);
+  const navigate = useNavigate();
+  const [confirmSignOut, setConfirmSignOut] = useState(false);
+  // The signature row's hint: when it was saved, or "Not set".
+  const [signatureHint, setSignatureHint] = useState("");
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_URL}/api/student/signature`, withStudentAuth())
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => active && setSignatureHint(data?.signature ? `Saved ${formatLongDate(data.signature.created_at)}` : "Not set"))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 
 
   const load = useCallback(async () => {
@@ -70,6 +85,10 @@ export default function StudentProfilePage() {
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
+
+  // The header ring: how much of the profile is filled in (mobile, emergency contact, signature).
+  const checks = [Boolean(profile?.phone), Boolean(profile?.emergency_contact_name && profile?.emergency_contact_phone), signatureHint.startsWith("Saved")];
+  const done = checks.filter(Boolean).length;
 
   const profileChanged =
     profile !== null && (name.trim() !== profile.name || email.trim() !== profile.email);
@@ -111,87 +130,29 @@ export default function StudentProfilePage() {
   };
 
 
-  return (
-    <StudentLayout title="Profile" subtitle="Your account details and password.">
-      {error && (
-        <div className="mb-5">
-          <ErrorNotice message={error} onRetry={() => void load()} />
-        </div>
-      )}
-
-      <div className="grid gap-5 lg:grid-cols-3">
-        <Card className="p-5 lg:self-start">
-          {loading || !profile ? (
-            <BrandLoader role="student" process="profile" />
-          ) : (
-            <>
-              <div className="flex items-center gap-4">
-                <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-psu-700 text-xl font-bold text-white">
-                  {getInitials(profile.name, "ST")}
-                </span>
-                <div className="min-w-0">
-                  <p className="truncate text-base font-semibold text-slate-900">
-                    {profile.name}
-                  </p>
-                  <p className="truncate text-sm text-slate-500">{profile.student_id}</p>
-                </div>
-              </div>
-              <dl className="mt-5 space-y-3 border-t border-slate-100 pt-4 text-sm">
-                <Row label="Program">{profile.program || "Not set"}</Row>
-                <Row label="Company">{profile.company || "Not assigned"}</Row>
-                <Row label="Required hours">{profile.required_hours} h</Row>
-              </dl>
-              <p className="mt-4 flex gap-2 text-sm text-slate-500">
-                <Icon name="info" size={16} className="mt-0.5 shrink-0 text-slate-400" />
-                Program, company and hours are set by your OJT coordinator.
-              </p>
-            </>
-          )}
-        </Card>
-
-        <div className="space-y-5 lg:col-span-2">
-          {/* What is left before the OJT is done, and the request for a review. */}
-          <CompletionChecklist />
-
+  // Iteration 21: the page is grouped. Each group holds the same forms as before.
+  const groups: ProfileGroup[] = [
+    {
+      id: "account",
+      title: "Account",
+      hint: profile?.email ?? "Name, email, password",
+      content: (
+        <>
           <Card>
             <form onSubmit={saveProfile} className="p-4 sm:p-5" noValidate>
-              <h2 className="text-sm font-semibold text-slate-900">Account details</h2>
+              <h3 className="text-sm font-semibold text-slate-900">Name and email</h3>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label
-                    htmlFor="profile-name"
-                    className="mb-1.5 block text-sm font-medium text-slate-700"
-                  >
+                  <label htmlFor="profile-name" className="mb-1.5 block text-sm font-medium text-slate-700">
                     Full name
                   </label>
-                  <input
-                    id="profile-name"
-                    type="text"
-                    autoComplete="name"
-                    maxLength={150}
-                    value={name}
-                    disabled={loading}
-                    onChange={(event) => setName(event.target.value)}
-                    className="field"
-                  />
+                  <input id="profile-name" type="text" autoComplete="name" maxLength={150} value={name} disabled={loading} onChange={(event) => setName(event.target.value)} className="field" />
                 </div>
                 <div>
-                  <label
-                    htmlFor="profile-email"
-                    className="mb-1.5 block text-sm font-medium text-slate-700"
-                  >
+                  <label htmlFor="profile-email" className="mb-1.5 block text-sm font-medium text-slate-700">
                     Email
                   </label>
-                  <input
-                    id="profile-email"
-                    type="email"
-                    autoComplete="email"
-                    maxLength={150}
-                    value={email}
-                    disabled={loading}
-                    onChange={(event) => setEmail(event.target.value)}
-                    className="field"
-                  />
+                  <input id="profile-email" type="email" autoComplete="email" maxLength={150} value={email} disabled={loading} onChange={(event) => setEmail(event.target.value)} className="field" />
                 </div>
               </div>
               {profileError && (
@@ -199,57 +160,130 @@ export default function StudentProfilePage() {
                   {profileError}
                 </p>
               )}
-              <Button
-                type="submit"
-                busy={savingProfile} doneLabel="Saved" failed={Boolean(profileError)}
-                disabled={!profileChanged}
-                className="mt-4"
-              >
+              <Button type="submit" busy={savingProfile} doneLabel="Saved" failed={Boolean(profileError)} disabled={!profileChanged} className="mt-4">
                 {savingProfile ? "Saving" : "Save changes"}
               </Button>
             </form>
           </Card>
-
+          {studentId && <PasswordForm role="student" accountId={studentId} />}
+          <p className="px-1 text-sm text-slate-600">Changing your password signs you out on your other devices.</p>
+        </>
+      ),
+    },
+    {
+      id: "contact",
+      title: "Contact",
+      hint: profile ? (profile.phone ? profile.phone : "Missing") : "",
+      missing: Boolean(profile && !profile.phone),
+      content: (
+        <>
           {studentId && profile && (
             <ContactDetails
               key={studentId}
               studentId={studentId}
               contact={profile}
-              onSaved={(contact) =>
-                setProfile((current) => (current ? { ...current, ...contact } : current))
-              }
+              onSaved={(contact) => setProfile((current) => (current ? { ...current, ...contact } : current))}
             />
           )}
-
           <AccountDetailsForm role="student" viewer="student" title="How you prefer to be reached" />
-
+        </>
+      ),
+    },
+    {
+      id: "placement",
+      title: "Placement",
+      hint: profile?.company || "Not assigned",
+      content: (
+        <>
+          <Card className="p-5">
+            <dl className="space-y-3 text-sm">
+              <Row label="Program">{profile?.program || "Not set"}</Row>
+              <Row label="Company">{profile?.company || "Not assigned"}</Row>
+              <Row label="Required hours">{profile ? `${profile.required_hours} h` : ""}</Row>
+            </dl>
+            <p className="mt-4 flex gap-2 text-sm text-slate-600">
+              <Icon name="info" size={16} className="mt-0.5 shrink-0 text-slate-500" />
+              Set by your OJT coordinator.
+            </p>
+          </Card>
           <SupervisorCard supervisor={supervisor} />
-
           <CoordinatorCard coordinator={coordinator} />
-
           <p className="px-1 text-sm text-slate-600">
             Something wrong at your placement?{" "}
-            <Link
-              to={resolutionPath("concerns")}
-              className="font-semibold text-psu-700 hover:underline"
-            >
+            <Link to={resolutionPath("concerns")} className="font-semibold text-psu-700 hover:underline">
               Report a concern
             </Link>
           </p>
-
-          {studentId && <PasswordForm role="student" accountId={studentId} />}
-
+        </>
+      ),
+    },
+    { id: "signature", title: "Signature", hint: signatureHint, content: <SignatureCard /> },
+    {
+      id: "security",
+      title: "Security and device",
+      hint: "Passkeys, this device, offline use",
+      content: (
+        <>
+          <PasskeySlot />
+          <InstallApp />
+          {studentId && <OfflineReadyCard studentId={studentId} />}
+        </>
+      ),
+    },
+    {
+      id: "notifications",
+      title: "Notifications",
+      hint: "Push and email, by kind",
+      content: (
+        <>
           <NotificationPreferences role="student" />
           <CueSettingsCard />
-          {studentId && <OfflineReadyCard studentId={studentId} />}
+        </>
+      ),
+    },
+    { id: "privacy", title: "Privacy and data", hint: "The notice, your consent, your data", content: studentId ? <PrivacyCard studentId={studentId} /> : null },
+    { id: "completion", title: "Completion", hint: "What is left, and the review", content: <CompletionChecklist /> },
+  ];
 
-          <SignatureCard />
-
-          {studentId && <PrivacyCard studentId={studentId} />}
-
-          <InstallApp />
+  return (
+    <StudentLayout title="Profile" subtitle="Your account, placement, signature and settings.">
+      {error && (
+        <div className="mb-5">
+          <ErrorNotice message={error} onRetry={() => void load()} />
         </div>
-      </div>
+      )}
+
+      <Card className="mb-5 p-4 sm:p-5">
+        {loading || !profile ? (
+          <BrandLoader role="student" process="profile" />
+        ) : (
+          <div className="flex items-center gap-4">
+            <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-psu-700 text-lg font-bold text-white">{getInitials(profile.name, "ST")}</span>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-base font-semibold text-slate-900">{profile.name}</p>
+              <p className="truncate text-sm text-slate-600">{profile.student_id}</p>
+              <p className="truncate text-sm text-slate-600">{[profile.program, profile.company].filter(Boolean).join(" · ") || "Placement not set yet"}</p>
+            </div>
+            <CompletionRing done={done} total={checks.length} />
+          </div>
+        )}
+      </Card>
+
+      <ProfileGroups groups={groups} onSignOut={() => setConfirmSignOut(true)} />
+
+      <ConfirmDialog
+        open={confirmSignOut}
+        title="Sign out?"
+        message="You will need your password to sign in again. Steps recorded offline and not yet sent are erased."
+        confirmLabel="Sign out"
+        cancelLabel="Stay signed in"
+        tone="danger"
+        onConfirm={() => {
+          endSession("student");
+          navigate("/", { replace: true });
+        }}
+        onCancel={() => setConfirmSignOut(false)}
+      />
     </StudentLayout>
   );
 }

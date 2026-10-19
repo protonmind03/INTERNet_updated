@@ -103,3 +103,12 @@ export function shiftAroundNow(): { start_time: string; end_time: string } {
   const hour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Manila", hour: "2-digit", hourCycle: "h23" }).format(new Date()));
   return hour < 12 ? { start_time: "00:00", end_time: "11:59" } : { start_time: "12:00", end_time: "23:59" };
 }
+
+/** Iteration 21: on a phone, Profile's groups open in a sheet; on a wider screen they are all on the page. */
+export async function openProfileGroup(page: Page, title: string): Promise<void> {
+  if ((page.viewportSize()?.width ?? 1280) >= 768) return;
+  const row = page.getByRole("list", { name: "Profile" }).getByRole("button", { name: new RegExp(`^${title}`) });
+  await row.waitFor();
+  await row.click();
+  await page.getByRole("dialog", { name: title }).waitFor();
+}

@@ -36,6 +36,20 @@ test.describe("the Resolution Center icon", () => {
     await expect(page.getByRole("button", { name: "Resolution Center" })).toHaveCount(0);
   });
 
+  // Iteration 21: the header is three tracks; below 360 px the role pill is a dot.
+  for (const width of [320, 360, 390]) {
+    test(`at ${width} px the role mark and the icon never overlap`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 800 });
+      await signIn(page, "student");
+      const icon = page.getByRole("link", { name: /^Resolution Center/ });
+      const role = width < 360 ? page.getByRole("img", { name: "Trainee" }) : page.locator(".role-pill").first();
+      await expect(role).toBeVisible();
+      const [a, b] = [(await role.boundingBox())!, (await icon.boundingBox())!];
+      const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+      expect(overlap).toBe(false);
+    });
+  }
+
   test("on a desktop it is the same icon, not a labelled button", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await signIn(page, "student");

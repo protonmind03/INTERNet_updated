@@ -48,6 +48,15 @@ export function registerProjectionRoutes(
 
       const kept = await storedProjection(pool, studentId);
       if (!kept) return res.json({ projection: null });
+      // Iteration 21: the expected end as it stood on each of the last 60 days,
+      // for "Projected finish moved N days" (student_projection_snapshots).
+      const history = await pool.query<{ date: string; projected_end_date: string | null; remaining_hours: number }>(
+        `SELECT TO_CHAR(snapshot_date, 'YYYY-MM-DD') AS date, TO_CHAR(projected_end_date, 'YYYY-MM-DD') AS projected_end_date,
+                remaining_hours::float AS remaining_hours
+         FROM student_projection_snapshots WHERE student_id = $1
+         ORDER BY snapshot_date DESC LIMIT 60`,
+        [studentId]
+      );
       const hours = (value: number) => `${Math.round(value * 100) / 100} h`;
       // The reasoning, in the order a person would check it.
       const steps = [
@@ -85,6 +94,7 @@ export function registerProjectionRoutes(
           },
           cause: kept.cause,
           computed_at: kept.computed_at,
+          history: history.rows.reverse(),
         },
       });
     } catch (error) {

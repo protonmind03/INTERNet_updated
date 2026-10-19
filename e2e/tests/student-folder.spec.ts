@@ -9,8 +9,9 @@ import { signIn } from "./helpers";
 | Roadmap 3.6 (Iteration 10). The label tab says whose folder it is: name,
 | program and company, verified hours. Its tabs are Today, Attendance,
 | Tasks, Documents, Schedule and Weekly report; Profile is under the
-| avatar. Every student address still opens its page. On a phone the tabs
-| scroll sideways and the floating time-in button keeps its rules.
+| avatar. Every student address still opens its page. On a phone the pages
+| are reached from the dock (Iteration 21) and the floating time-in button
+| keeps its rules.
 |
 */
 
@@ -57,36 +58,58 @@ test("on a desktop: the label tab, the six tabs, Profile from the avatar, and ev
   await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeVisible();
 });
 
-test("on a phone: the tabs scroll under the header, and the time-in button keeps its rules", async ({ page }) => {
+test("on a phone (Iteration 21): a floating dock of four and More, out of the way while scrolling down, and the time-in button keeps its rules", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, "student");
-  const tabs = page.getByRole("navigation", { name: "Main" });
-  await expect(tabs).toHaveAttribute("data-axis", "x");
-  // Six tabs do not fit a phone's width: more lie to the right.
-  await expect(tabs).toHaveAttribute("data-more-below", "");
-  // A tab far to the right is brought into view when its page opens.
-  await page.goto("/journal");
+  const dock = page.getByRole("navigation", { name: "Main" });
+  await expect(dock.getByRole("link")).toHaveCount(4);
+  for (const name of ["Today", "Attendance", "Schedule", "Tasks"]) {
+    await expect(dock.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
+  }
+  // 64 px tall, 12 px in from the sides.
+  const box = (await dock.boundingBox())!;
+  expect(Math.round(box.height)).toBe(64);
+  expect(Math.round(box.x)).toBe(12);
+  expect(Math.round(390 - box.x - box.width)).toBe(12);
+  // Only the current page's label is shown.
+  await expect(dock.locator(".student-dock-item--on")).toHaveCount(1);
+
+  // More: the rest, in a sheet.
+  await dock.getByRole("button", { name: /^More/ }).click();
+  const sheet = page.getByRole("dialog", { name: "More" });
+  for (const name of ["Documents", "Weekly report", "Resolution Center", "Help"]) {
+    await expect(sheet.getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
+  }
+  await sheet.getByRole("button", { name: /^Weekly report/ }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Weekly report" })).toBeVisible();
-  const row = (await page.getByRole("navigation", { name: "Main" }).boundingBox())!;
-  const lit = (await page.getByRole("navigation", { name: "Main" }).locator('a[aria-current="page"]').boundingBox())!;
-  expect(lit.x).toBeGreaterThanOrEqual(row.x);
-  expect(lit.x + lit.width).toBeLessThanOrEqual(row.x + row.width);
+  await expect(dock.getByRole("button", { name: /^More/ })).toHaveClass(/student-dock-item--on/);
+
+  // It steps aside while the page scrolls down, and comes back on the way up.
   await page.goto("/student/dashboard");
+  await page.locator("main").evaluate((element) => {
+    element.style.minHeight = "100%";
+    const filler = document.createElement("div");
+    filler.style.height = "3000px";
+    element.querySelector("div")?.appendChild(filler);
+  });
+  await page.locator("main").evaluate((element) => element.scrollTo({ top: 600 }));
+  await expect(page.locator(".student-dock")).toHaveClass(/student-dock--hidden/);
+  await page.locator("main").evaluate((element) => element.scrollTo({ top: 200 }));
+  await expect(page.locator(".student-dock")).not.toHaveClass(/student-dock--hidden/);
+
   const fab = page.locator("button.float-fab");
   await expect(fab).toBeVisible();
   // Not on Attendance (the full card is there) or Profile.
-  await tabs.getByRole("link", { name: "Attendance" }).click();
+  await dock.getByRole("link", { name: /^Attendance/ }).click();
   await expect(page).toHaveURL(/\/daily-log$/);
   await expect(fab).toHaveCount(0);
   await page.goto("/profile");
   await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeVisible();
   await expect(fab).toHaveCount(0);
-  // The tab row stays under the header while the page scrolls.
+
+  // Nothing runs off the side at 320 px.
+  await page.setViewportSize({ width: 320, height: 700 });
   await page.goto("/student/dashboard");
-  const before = (await page.getByRole("navigation", { name: "Main" }).boundingBox())!;
-  await page.locator("main").evaluate((element) => element.scrollTo({ top: 600 }));
-  await expect.poll(async () => (await page.getByRole("navigation", { name: "Main" }).boundingBox())!.y).toBeLessThan(before.y);
-  const header = (await page.locator("header").first().boundingBox())!;
-  const after = (await page.getByRole("navigation", { name: "Main" }).boundingBox())!;
-  expect(after.y).toBeGreaterThanOrEqual(header.y + header.height - 1);
+  await expect(dock).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
 });

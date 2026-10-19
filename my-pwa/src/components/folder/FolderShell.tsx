@@ -38,7 +38,10 @@ export default function FolderShell({
   current,
   tabsLabel,
   children,
+  phoneTabs = true,
 }: {
+  /** False when the portal reaches its pages another way on a phone (the trainee's dock): the row is then for wider screens only. */
+  phoneTabs?: boolean;
   /** Inside the label tab, after `leading`: a name and a line or two about it. */
   label: ReactNode;
   /** The label tab's mark: an avatar, a back link. */
@@ -100,7 +103,7 @@ export default function FolderShell({
           }}
           aria-label={tabsLabel}
           data-axis="x"
-          className="inb-scroll-pane sticky top-0 z-20 flex gap-1 border-b border-slate-200 bg-slate-50 p-1.5 shadow-[0_8px_12px_-12px_rgb(15_30_110/0.35)] md:static md:min-w-0 md:flex-1 md:items-center md:gap-1 md:border-0 md:bg-transparent md:py-1 md:pb-3 md:pl-[76px] md:pr-2 md:shadow-none group-data-[fit=stacked]/rim:md:order-first group-data-[fit=stacked]/rim:md:basis-full group-data-[fit=stacked]/rim:md:pl-1"
+          className={`${phoneTabs ? "" : "max-md:hidden "}inb-scroll-pane sticky top-0 z-20 flex gap-1 border-b border-slate-200 bg-slate-50 p-1.5 shadow-[0_8px_12px_-12px_rgb(15_30_110/0.35)] md:static md:min-w-0 md:flex-1 md:items-center md:gap-1 md:border-0 md:bg-transparent md:py-1 md:pb-3 md:pl-[76px] md:pr-2 md:shadow-none group-data-[fit=stacked]/rim:md:order-first group-data-[fit=stacked]/rim:md:basis-full group-data-[fit=stacked]/rim:md:pl-1`}
         >
           {tabs.map((tab) => {
             const on = tab.id === current;

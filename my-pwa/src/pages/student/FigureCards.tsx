@@ -164,6 +164,9 @@ export default function FigureCards({
           watch(element);
         }}
         data-axis="x"
+        tabIndex={0}
+        role="group"
+        aria-label="Attendance figures; swipe for more"
         className="inb-snap-row figure-cards gap-3"
         onScroll={(event) => {
           const pane = event.currentTarget;

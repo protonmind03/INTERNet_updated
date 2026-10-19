@@ -35,18 +35,18 @@ the new ones keep the brief's numbers 065 to 070.
 - [x] test run and commit
 
 ### Phase 21: shell, notifications, schedule, profile (`iter-21-shell`)
-- [ ] 21.1 header overlap
-- [ ] 21.2 tooltips
-- [ ] 21.3 notification kinds (migration 070), bell tabs, spotlight
-- [ ] 21.4 floating action button
-- [ ] 21.5 horizontal areas
-- [ ] 21.6 mobile dock
-- [ ] 21.7 month calendar
-- [ ] 21.8 day details sheet
-- [ ] 21.9 My progress
-- [ ] 21.10 Profile grouped
-- [ ] 21.11 phone pass and axe sweep
-- [ ] test run and commit
+- [x] 21.1 header overlap
+- [x] 21.2 tooltips
+- [x] 21.3 notification kinds (migration 070), bell tabs, spotlight
+- [x] 21.4 floating action button
+- [x] 21.5 horizontal areas
+- [x] 21.6 mobile dock
+- [x] 21.7 month calendar
+- [x] 21.8 day details sheet
+- [x] 21.9 My progress
+- [x] 21.10 Profile grouped
+- [x] 21.11 phone pass and axe sweep
+- [x] test run and commit
 
 ### Phase 22: passkeys (`iter-22-passkeys`)
 - [ ] 22.1 migration 069
@@ -151,6 +151,42 @@ the new ones keep the brief's numbers 065 to 070.
 - **docs/ARCHITECTURE.md** regenerated (CI's --check would fail after Phases 18 and 20 added
   routes).
 
+### Phase 21
+- **Notification kinds** are decided in one place (services/notificationKinds.ts) from the
+  title the server already writes; writers may override. "Action needed" is only for acts the
+  trainee does (retake, time out, submit, upload, resubmit, reply); a decision to read ("log
+  rejected", "times corrected", "appeal decided") is an action without the chip. acted_at is set by
+  the photo redo, time-out and missed time-out, task submission, document upload, weekly report
+  save, concern reply and message reply routes.
+- **Appeal decided** opens the log on Attendance: a trainee's appeals live on their logs
+  (pages/student/Appeals.tsx); the Resolution Center has no appeals tab.
+- **Spotlight** is one module (lib/spotlight.ts) reached by ?spot=<key> (data-focus) and by the
+  existing ?focus=<kind>-<id>; it focuses the target when it can take focus and never presses it.
+- **FAB second tap** opens the step's dialog at once on the current page (keeping the tap for the
+  camera) and goes to Attendance when the dialog closes; navigating first would unmount the dialog
+  and lose the tap.
+- **Dock badges** come from lib/navCounts.ts; More's badge is the sum of its items'.
+- **Calendar at 320 px**: 44 px cells and 16 px gutters cannot both fit seven columns, so the grid
+  alone runs nearly edge to edge (6 px) on phones; everything else keeps the gutters.
+- **Day sheet** uses its own focus trap and a portal; the old Modal is not used there. The shared
+  Modal gained a focus trap and the 8 px blurred backdrop for every dialog.
+- **My progress** draws the scheduled plan from the saved schedule and the projection from the
+  saved /projection answer, whose new `history` (the last 60 daily snapshots) gives "Change since
+  last week".
+- **Profile**: no route exists to sign out other devices alone; changing the password already does
+  it, so the Account group says so. Groups: Account, Contact, Placement, Signature, Security and
+  device (passkeys added in Phase 22), Notifications, Privacy and data, Completion, then Sign out.
+- **Day rules after validation**: the camera time-in now reads the photo and the camera check, then
+  applies the window, then spends the ticket; the offline time-in reads the attested record, then
+  the window, then spends the voucher. A time-in refused as too early keeps its ticket or voucher.
+- **Tests at night**: the existing "camera-check ticket is spent" test moved to a throwaway trainee
+  with no schedule; the attested offline test's trainee is scheduled all day (00:00 to 23:59, lunch
+  23:57). Three of my route tests skip between about 23:00 and 02:00 (they build a shift around
+  now); the pure rule test covers those times.
+- **Pre-existing, not changed**: between 00:00 and about 01:30 "a time-in recorded with no
+  connection ..." (API) and the pictures e2e tests fail because a time-in made "90 (or 60) minutes
+  ago" falls on the previous day. They passed in every daytime run.
+
 ## Phase reports
 
 ### Phase 18 (branch iter-18-rules)
@@ -224,3 +260,39 @@ horizontal scroll (a screen-reader summary inside the off-screen cards had widen
 card is now its containing block).
 
 **Skipped.** Nothing.
+
+### Phase 21 (branch iter-21-shell)
+
+**Changed.** Backend: migration 070_notification_kinds; services/notificationKinds.ts (new);
+server.ts (kinds written, ?kind= on the list, acted_at from the act routes, window checked after the
+camera check is read); routes/extensions.ts, messages.ts (acted_at); routes/offlineTimeIn.ts (window
+after the attested record); routes/projections.ts (history). App: brand/PortalHeader.tsx (grid, role
+dot); components/Tooltip.tsx (rebuilt), NotificationBell.tsx, TraineeAnnouncements.tsx (new),
+ui.tsx (Modal focus trap, blurred backdrop), StudentDock.tsx (new), MonthCalendar.tsx (rebuilt),
+DaySheet.tsx (new), folder/FolderShell.tsx (phoneTabs); lib/spotlight.ts (new),
+notificationTargets.ts (trainee routing table), useFocusRecord.ts, useNotificationFeed.ts,
+useNotifications.ts, studentCalendar.ts (Sunday weeks, half-day absences, dayStatus);
+layouts/StudentLayout.tsx (dock, order, spotlight); pages/student TimeInFab.tsx (two taps),
+ScheduleMonth.tsx, ScheduleProgress.tsx (rebuilt), sched.tsx, Profile.tsx (grouped),
+ProfileGroups.tsx (new), PhotoRedo.tsx, task.tsx, Journal.tsx, document.tsx, TodayAttendance.tsx,
+FigureCards.tsx (data-focus, focusable rows); brand.css. Tests: API (kinds, routing table, the
+bell's lists and acted_at); e2e shell.spec.ts (new: no tooltip after a tap, photo-rejected
+spotlight, info dialog), resolution-icon.spec.ts (no overlap at 320/360/390), sidebar-scroll.spec.ts
+(sideways rows), student-folder.spec.ts (the dock), and updates where screens moved (FAB two taps,
+dock, Profile groups via openProfileGroup, calendar sheet, progress panels). Docs: UX-PASS,
+PAPER-CORRECTIONS (menu note rewritten; bell; notifications ERD; calendar; FAB), ARCHITECTURE.md.
+
+**Migrations.** 070.
+
+**Tests.** backend lint and route check: passed. API: 257 run; 254 passed, 1 failed (the
+pre-existing midnight case above), 2 skipped (near midnight). App lint and build: passed.
+e2e: daytime-equivalent run 71 passed and 1 flaky before the last fixes; the last full run, which
+crossed midnight, had 4 failures, all the pre-existing midnight cases (pictures, the offline
+journey) and 1 flaky (capture, the day changed under it). The Phase 21 specs then passed with no
+retries (12 of 12). Axe sweep (WCAG 2.1 A and AA, 390 and 1280 px, 572 states with menus, tabs and
+dialogs open): 31 findings on Attendance and the calendar (the banner clock chip and pager switch
+contrast, the snap rows not focusable, other-month day numbers), all fixed; the sweep is re-run in
+the final verification. Phone pass: every student page at 320, 360, 390 and 430 px has no
+horizontal scroll.
+
+**Skipped.** Nothing in the brief; see the decisions above for the two judgement calls (FAB, gutters).

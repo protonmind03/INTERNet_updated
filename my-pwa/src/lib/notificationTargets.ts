@@ -152,6 +152,42 @@ function fromWording(role: NotificationRole, item: ResolvableNotification): Noti
   return null;
 }
 
+/*
+| Iteration 21: where each of a trainee's notifications opens, and what on
+| that page is spotlighted (the element marked data-focus="<key>"; see
+| lib/spotlight.ts). The page is opened with ?spot=<key>. Checked before the
+| stored link, so older notifications open the same way.
+|
+|   Photo rejected              Attendance        the Retake photo button
+|   Log rejected / corrected    Schedule › day    the decision block
+|   Forgot to time out          Attendance        the Time out tile
+|   Task assigned / released    Tasks             the task's card
+|   Task deadline               Tasks             its Submit button
+|   Requirement due / returned  Documents         the requirement's row
+|   Weekly report returned      Weekly report     the supervisor's note
+|   Appeal decided              Attendance        the log, with its appeal
+|   Concern reply / message     the thread        the newest reply
+*/
+type StudentRoute = { match: RegExp; path: (item: ResolvableNotification, id: string) => string | null; icon: IconName };
+
+const spot = (path: string, key: string) => `${path}${path.includes("?") ? "&" : "?"}spot=${encodeURIComponent(key)}`;
+
+export const STUDENT_ROUTES: StudentRoute[] = [
+  { match: /^time-in photo rejected|^retake your time-in photo/, icon: "camera", path: () => spot("/daily-log", "retake-photo") },
+  {
+    match: /^attendance log rejected|^attendance times corrected|^day marked absent/,
+    icon: "calendar",
+    path: (_item, id) => (id ? spot(`/schedule?view=month&log=${encodeURIComponent(id)}`, "day-decision") : spot("/schedule?view=month", "day-decision")),
+  },
+  { match: /forget to time out/, icon: "clock", path: () => spot("/daily-log", "time-out") },
+  { match: /^task past its deadline|^revisions requested/, icon: "tasks", path: (_item, id) => (id ? spot(`/task?focus=task-${encodeURIComponent(id)}`, `submit-${id}`) : "/task") },
+  { match: /^new task assigned|^task updated/, icon: "tasks", path: (_item, id) => (id ? spot(`/task?focus=task-${encodeURIComponent(id)}`, `task-${id}`) : "/task") },
+  { match: /^requirement due|^new document required|^document (rejected|returned)/, icon: "document", path: () => spot("/documents", "requirements") },
+  { match: /^weekly report returned/, icon: "note", path: () => spot("/journal", "supervisor-note") },
+  // A trainee's appeal lives on its log (pages/student/Appeals.tsx), so it opens there.
+  { match: /^appeal decided/, icon: "flag", path: (_item, id) => (id ? `/daily-log?focus=attendance-${encodeURIComponent(id)}` : "/daily-log") },
+];
+
 /** The icon a notification is drawn with: what it is about, else what it says. */
 function iconOf(role: NotificationRole, item: ResolvableNotification): IconName {
   const entity = (item.entity_type || "").toLowerCase();
@@ -170,6 +206,12 @@ export function resolveNotificationTarget(
   item: ResolvableNotification
 ): { icon: IconName; path: string | null } {
   const icon = iconOf(role, item);
+  if (role === "student") {
+    const route = STUDENT_ROUTES.find((each) => each.match.test(item.title.toLowerCase()));
+    const id = item.entity_id === null || item.entity_id === undefined ? "" : String(item.entity_id);
+    const path = route?.path(item, /^[\w-]{1,80}$/.test(id) ? id : "");
+    if (route && path) return { icon: route.icon, path };
+  }
   const link = typeof item.link === "string" ? item.link.trim() : "";
   if (link.startsWith("/") && !link.startsWith("//") && portalOf(link) === role && link !== NOTIFICATIONS_PAGE[role]) {
     return { icon, path: link };

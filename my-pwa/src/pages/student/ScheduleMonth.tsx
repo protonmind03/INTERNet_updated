@@ -1,5 +1,4 @@
-import { Link } from "react-router-dom";
-import Icon from "../../components/Icon";
+import { useSearchParams } from "react-router-dom";
 import MonthCalendar from "../../components/MonthCalendar";
 import type {
   CalendarAbsence,
@@ -8,13 +7,15 @@ import type {
   CalendarTask,
   ShiftPattern,
 } from "../../lib/studentCalendar";
+import { logDateKey } from "./useAttendance";
 import { useTimeIn } from "./timeInContext";
 
 /**
  * The student's own month. The calendar itself is shared with the
  * supervisor's intern page (components/MonthCalendar.tsx); this gives it
- * the logs the layout already holds, kept for offline use, and the way on
- * from a day's details.
+ * the logs the layout already holds, kept for offline use. Iteration 21: a
+ * notification about a log opens it as ?log=<id>, and its day's sheet opens
+ * by itself; the sheet no longer sends the trainee to Attendance.
  */
 export default function ScheduleMonth(props: {
   shifts: CalendarShift[];
@@ -26,25 +27,8 @@ export default function ScheduleMonth(props: {
   termStart: string | null;
 }) {
   const { attendance } = useTimeIn();
-  return (
-    <MonthCalendar
-      {...props}
-      logs={attendance.logs}
-      pictureRole="student"
-      dayFooter={(facts) => {
-        const toTasks = facts.due.length > 0 && !facts.log;
-        // A deliverable (its id is negative) is handed in on the Documents page.
-        const toDocuments = toTasks && facts.due.every((item) => item.id < 0);
-        return (
-          <Link
-            to={toDocuments ? "/documents" : toTasks ? "/task" : "/daily-log"}
-            className="inline-flex items-center gap-1 text-sm font-semibold text-psu-700 hover:underline"
-          >
-            {toDocuments ? "Go to documents" : toTasks ? "Go to tasks" : "Go to attendance"}
-            <Icon name="chevron-right" size={14} />
-          </Link>
-        );
-      }}
-    />
-  );
+  const [params] = useSearchParams();
+  const asked = params.get("log");
+  const log = asked ? attendance.logs.find((entry) => String(entry.id) === asked) : undefined;
+  return <MonthCalendar {...props} logs={attendance.logs} pictureRole="student" openDate={log ? logDateKey(log) : null} />;
 }

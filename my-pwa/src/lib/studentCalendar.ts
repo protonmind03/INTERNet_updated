@@ -25,6 +25,9 @@ export type CalendarShift = {
   end_time: string | null;
   hours: number | string | null;
   focus?: string | null;
+  /** The day's own lunch window (Iteration 18); missing when the default applies. */
+  lunch_start?: string | null;
+  lunch_end?: string | null;
   /** Which week of a two-week pattern the row is in (Iteration 11); 1 when missing. */
   week?: number | null;
   /** The pattern, when the row carries it (the supervisor's list does). */
@@ -75,9 +78,22 @@ export type CalendarLog = {
   id?: number;
   /** How many pictures are on the time-out note. Missing from an older server. */
   pictures?: number;
+  /** Iteration 18/21, for the day sheet: the server's rule fields and the decision. Missing on older data. */
+  session?: "full" | "am" | "pm" | null;
+  late_minutes?: number | null;
+  lunch_late_minutes?: number | null;
+  credited_from?: string | null;
+  scheduled_start?: string | null;
+  recorded_offline?: boolean;
+  offline_time_in?: boolean;
+  review_notes?: string | null;
+  time_correction_reason?: string | null;
+  verified_at?: string | null;
+  photo_rejection_reason?: string | null;
+  appeal?: { id: number; status: string; decision_note: string | null } | null;
 };
 
-export type CalendarAbsence = { date: string; status: string; reason?: string | null };
+export type CalendarAbsence = { date: string; status: string; reason?: string | null; part?: "day" | "am" | "pm" };
 export type CalendarTask = { id: number; title: string; status: string; due_date: string | null };
 export type CalendarHoliday = { date: string; name: string };
 
@@ -112,6 +128,22 @@ export function monthWeeks(month: string): string[][] {
   const last = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, "0")}`;
   const weeks: string[][] = [];
   for (let start = mondayOf(first); start <= last; start = addDays(start, 7)) {
+    weeks.push(Array.from({ length: 7 }, (_, offset) => addDays(start, offset)));
+  }
+  return weeks;
+}
+
+/**
+ * Iteration 21: the weeks a month's grid shows, Sunday first (the trainee's
+ * calendar). Two-week patterns are still looked up per date, Monday-anchored.
+ */
+export function monthWeeksSunday(month: string): string[][] {
+  const first = `${month}-01`;
+  const [year, index] = month.split("-").map(Number);
+  const last = `${month}-${String(new Date(Date.UTC(year, index, 0)).getUTCDate()).padStart(2, "0")}`;
+  const sunday = addDays(first, -new Date(`${first}T00:00:00Z`).getUTCDay());
+  const weeks: string[][] = [];
+  for (let start = sunday; start <= last; start = addDays(start, 7)) {
     weeks.push(Array.from({ length: 7 }, (_, offset) => addDays(start, offset)));
   }
   return weeks;
@@ -174,7 +206,9 @@ export type DayFacts = {
 export function calendarIndex(sources: CalendarSources): (date: string) => DayFacts {
   const holidayOn = new Map(sources.holidays.map((holiday) => [key(holiday.date), holiday.name]));
   const logOn = new Map(sources.logs.map((log) => [key(log.date), log]));
-  const absenceOn = new Map(sources.absences.map((absence) => [key(absence.date), absence]));
+  const absenceOn = new Map(sources.absences.filter((absence) => (absence.part ?? "day") === "day").map((absence) => [key(absence.date), absence]));
+  // A half-day absence stands beside the half that was worked (Iteration 18).
+  const halfOn = new Map(sources.absences.filter((absence) => absence.part === "am" || absence.part === "pm").map((absence) => [key(absence.date), absence]));
   const dueOn = new Map<string, CalendarTask[]>();
   for (const task of sources.tasks) {
     if (!task.due_date) continue;
@@ -190,7 +224,7 @@ export function calendarIndex(sources: CalendarSources): (date: string) => DayFa
       holiday: holidayOn.get(date) ?? null,
       log,
       // A day that was worked is not an absence, whatever was filed.
-      absence: log ? null : absenceOn.get(date) ?? null,
+      absence: log ? halfOn.get(date) ?? null : absenceOn.get(date) ?? halfOn.get(date) ?? null,
       due: dueOn.get(date) ?? [],
     };
   };
@@ -307,4 +341,24 @@ export function punctuality(
     if (arrived - start > LATE_AFTER_MINUTES) late += 1;
   }
   return { days, average: days > 0 ? Math.round(total / days) : 0, late };
+}
+
+/** Iteration 21: the one word a day is known by on the calendar and in its sheet (components/DaySheet.tsx). */
+export type DayStatus = "Verified" | "Pending" | "Late" | "Absent" | "Morning absent" | "Holiday" | "Weekend" | "Not scheduled" | "Rejected" | "Today";
+
+/** The one word a day is known by on the calendar and in its sheet. */
+export function dayStatus(facts: DayFacts, today: string): DayStatus {
+  const log = facts.log;
+  if (facts.holiday) return "Holiday";
+  if (log) {
+    if (facts.absence?.part === "am") return "Morning absent";
+    if (log.status === "Rejected" || log.status === "Flagged") return "Rejected";
+    if ((log.late_minutes ?? 0) > 0) return "Late";
+    return log.status === "Verified" ? "Verified" : "Pending";
+  }
+  if (facts.absence) return "Absent";
+  const weekend = ["Saturday", "Sunday"].includes(facts.weekday);
+  if (!facts.shift) return weekend ? "Weekend" : "Not scheduled";
+  if (facts.date < today) return "Absent";
+  return facts.date === today ? "Today" : "Not scheduled";
 }

@@ -231,7 +231,7 @@ export default function Documents() {
           </Card>
         )}
 
-        <Card>
+        <Card data-focus="requirements">
           <CardHeader
             title="OJT requirements"
             description={`${UPLOAD_HINT}, up to ${MAX_DOCUMENT_MB} MB each`}

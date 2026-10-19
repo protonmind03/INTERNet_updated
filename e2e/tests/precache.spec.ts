@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { signIn } from "./helpers";
+import { signIn, openProfileGroup } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -36,6 +36,7 @@ test("signing in as a student puts the face-tracking files in the phone's caches
 test("the Profile says when this phone is ready to time in with a photo and no signal", async ({ page }) => {
   await signIn(page, "student");
   await page.goto("/profile");
+  await openProfileGroup(page, "Security and device");
   const card = page.getByRole("heading", { name: "Timing in with no signal" }).locator("..");
   await expect(card).toBeVisible();
   // The demo student has scheduled days ahead, so once the files are kept it is ready.

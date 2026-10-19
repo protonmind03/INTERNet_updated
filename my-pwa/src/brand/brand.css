@@ -455,3 +455,191 @@
   .dtr-frame-viewport { overflow: visible; padding: 0; background: none; }
   .dtr-frame-viewport--zoom > * { zoom: 1; }
 }
+
+/* Iteration 21: the phone header (brand/PortalHeader.tsx). */
+.portal-header-grid { grid-template-columns: auto minmax(0, 1fr) auto; }
+.role-dot { display: none; background: var(--role-accent); box-shadow: 0 0 0 2px var(--role-on-chrome, currentColor); }
+@media (max-width: 359.98px) {
+  .role-pill { display: none; }
+  .role-dot { display: inline-block; }
+}
+
+/* Dialogs (components/ui.tsx Modal): the page behind is blurred 8 px; a solid wash where blur is not drawn. */
+.modal-backdrop { background: color-mix(in srgb, var(--inb-navy-deep) 50%, transparent); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+@supports not ((backdrop-filter: blur(8px)) or (-webkit-backdrop-filter: blur(8px))) {
+  .modal-backdrop { background: color-mix(in srgb, var(--inb-navy-deep) 82%, transparent); }
+}
+
+/* The spotlight (lib/spotlight.ts): the page dimmed to 40% around a cut-out, the target eased and pulsed. */
+.inb-spotlight-overlay {
+  position: fixed;
+  left: var(--spot-x);
+  top: var(--spot-y);
+  width: var(--spot-w);
+  height: var(--spot-h);
+  z-index: 60;
+  border-radius: 14px;
+  pointer-events: none;
+  box-shadow: 0 0 0 200vmax color-mix(in srgb, var(--inb-ink) 60%, transparent);
+  animation: inb-spot-dim 2400ms ease-out both;
+}
+.inb-spotlight { position: relative; z-index: 61; outline: 3px solid var(--role-accent); outline-offset: 3px; animation: inb-spot-pulse 800ms var(--inb-ease-in-out) 3; transform-origin: center; }
+.inb-spotlight-still { outline: 3px solid var(--role-accent); outline-offset: 3px; }
+@keyframes inb-spot-dim { 0% { opacity: 0; } 10%, 85% { opacity: 1; } 100% { opacity: 0; } }
+@keyframes inb-spot-pulse {
+  0% { transform: scale(1); outline-color: var(--role-accent); }
+  50% { transform: scale(1.03); outline-color: color-mix(in srgb, var(--role-accent) 35%, transparent); }
+  100% { transform: scale(1.03); outline-color: var(--role-accent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .inb-spotlight-overlay { display: none; }
+  .inb-spotlight { animation: none; transform: none; }
+}
+
+/* The trainee's dock (components/StudentDock.tsx), phones only. */
+.student-dock {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+  z-index: var(--z-tabbar);
+  display: flex;
+  height: 64px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 8px;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--role-chrome);
+  color: var(--role-on-chrome);
+  border: 1px solid color-mix(in srgb, var(--role-ink) 14%, transparent);
+  box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--role-ink) 45%, transparent);
+  transition: transform 220ms var(--inb-ease-out), opacity 220ms;
+}
+.student-dock--hidden { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; }
+.student-dock-item {
+  display: inline-flex;
+  min-width: 44px;
+  height: 44px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9999px;
+  padding: 0 10px;
+  color: inherit;
+  transition: background-color 200ms, padding 200ms;
+}
+.student-dock-label { max-width: 0; overflow: hidden; white-space: nowrap; font-size: 13px; font-weight: 600; transition: max-width 200ms var(--inb-ease-out); }
+.student-dock-item--on { background: var(--role-primary); color: var(--role-on-primary); padding: 0 14px; }
+.student-dock-item--on .student-dock-label { max-width: 7.5rem; }
+.student-dock-item:focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; }
+.student-dock-badge {
+  position: absolute;
+  right: -8px;
+  top: -6px;
+  display: grid;
+  min-width: 17px;
+  height: 17px;
+  place-items: center;
+  border-radius: 9999px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  background: var(--status-late-ink);
+  color: white;
+}
+@media (max-width: 359.98px) {
+  .student-dock { padding: 0 4px; gap: 2px; }
+  .student-dock-item { padding: 0 8px; }
+  .student-dock-item--on { padding: 0 10px; }
+  .student-dock-item--on .student-dock-label { max-width: 5.5rem; }
+}
+@media (min-width: 768px) { .student-dock { display: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .student-dock, .student-dock-item, .student-dock-label { transition: none; }
+}
+
+/* Iteration 21: status chips in every tone, the month calendar, the day sheet. */
+.status-chip--success { background: var(--status-success-bg); color: var(--status-success-ink); }
+.status-chip--warning { background: var(--status-warning-bg); color: var(--status-warning-ink); }
+.status-chip--info { background: var(--status-info-bg); color: var(--status-info-ink); }
+
+.cal-grid { display: grid; gap: 2px; }
+.cal-row { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; }
+.cal-head { padding: 4px 0; text-align: center; font-size: 11px; font-weight: 600; color: color-mix(in srgb, var(--role-ink, black) 75%, transparent); border-radius: 6px; }
+.cal-weekend { background: var(--weekend-tint); border-radius: 8px; }
+.cal-weekend-swatch { background: var(--weekend-tint); outline: 1px solid color-mix(in srgb, var(--role-ink, black) 15%, transparent); }
+.cal-cell {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  aspect-ratio: 1 / 1;
+  max-height: 88px;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border-radius: 10px;
+  color: var(--role-ink, black);
+}
+.cal-cell:hover { background: color-mix(in srgb, var(--role-primary) 8%, transparent); }
+.cal-cell:focus-visible { outline: 3px solid var(--role-primary); outline-offset: 1px; }
+.cal-num { font-size: 14px; font-weight: 600; line-height: 1; }
+.cal-cell--outside .cal-num { opacity: 0.45; }
+.cal-cell--today { box-shadow: inset 0 0 0 2px var(--role-primary); }
+.cal-cell--selected { background: var(--role-primary); color: var(--role-on-primary); }
+.cal-cell--selected:hover { background: var(--role-primary); }
+.cal-hours { font-size: 10px; line-height: 1; opacity: 0.8; }
+.cal-dot { width: 8px; height: 8px; flex-shrink: 0; border-radius: 9999px; }
+.cal-dot--none { visibility: hidden; }
+.cal-dot--verified { background: var(--status-success-ink); }
+.cal-dot--pending { background: var(--status-warning-ink); }
+.cal-dot--late { background: var(--status-late-ink); }
+.cal-dot--absent { background: transparent; box-shadow: inset 0 0 0 1.5px var(--status-absent-ink); }
+.cal-dot--holiday { background: var(--role-decor); box-shadow: inset 0 0 0 1px var(--role-ink, black); }
+.cal-cell--selected .cal-dot { box-shadow: 0 0 0 1.5px var(--role-on-primary); }
+/* Phones: nearly edge to edge, so every cell is at least 44 px square even at 320 px. */
+@media (max-width: 639.98px) {
+  .cal-grid { width: calc(100vw - 12px); max-width: 520px; position: relative; left: 50%; transform: translateX(-50%); }
+  .cal-row { gap: 0; }
+  .cal-cell { aspect-ratio: auto; height: 46px; }
+}
+
+.day-sheet { position: relative; width: 100%; background: white; color: var(--role-ink, black); outline: none; box-shadow: 0 -10px 40px -10px color-mix(in srgb, var(--inb-ink) 40%, transparent); }
+.day-sheet--bottom { border-radius: 20px 20px 0 0; padding: 8px 16px max(16px, env(safe-area-inset-bottom)); animation: inb-sheet-up 220ms var(--inb-ease-out); }
+.day-sheet--pop { max-width: 28rem; border-radius: 18px; padding: 16px; animation: inb-s2r-fade 160ms ease-out; }
+.day-sheet-handle { margin: 0 auto 10px; height: 5px; width: 40px; border-radius: 9999px; background: color-mix(in srgb, var(--role-ink, black) 25%, transparent); }
+.day-sheet-nav { display: inline-flex; height: 44px; width: 44px; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 10px; }
+.day-sheet-nav:hover { background: color-mix(in srgb, var(--role-ink, black) 6%, transparent); }
+.day-sheet-nav:focus-visible { outline: 3px solid var(--role-primary); outline-offset: 1px; }
+@keyframes inb-sheet-up { from { transform: translateY(40px); opacity: 0.6; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .day-sheet--bottom, .day-sheet--pop { animation: none; } }
+
+/* My progress (pages/student/ScheduleProgress.tsx). */
+.chart-grid { stroke: color-mix(in srgb, var(--role-ink, black) 10%, transparent); stroke-width: 1; }
+.chart-axis { fill: color-mix(in srgb, var(--role-ink, black) 75%, transparent); font-size: 11px; }
+.chart-target { stroke: var(--status-late-ink); stroke-width: 1.5; stroke-dasharray: 2 4; }
+.chart-plan { fill: none; stroke: color-mix(in srgb, var(--role-ink, black) 45%, transparent); stroke-width: 1; }
+.chart-pending { fill: none; stroke: var(--status-warning-ink); stroke-width: 2; stroke-dasharray: 6 4; }
+.chart-verified { fill: none; stroke: var(--role-primary); stroke-width: 3; stroke-linejoin: round; }
+.chart-today, .chart-hover { stroke: color-mix(in srgb, var(--role-ink, black) 30%, transparent); stroke-width: 1; }
+.chart-finish { fill: var(--role-accent); stroke: var(--role-ink, black); stroke-width: 1.5; }
+.legend-line { display: inline-block; width: 18px; height: 0; border-top-width: 3px; }
+.legend-line--verified { border-top: 3px solid var(--role-primary); }
+.legend-line--pending { border-top: 2px dashed var(--status-warning-ink); }
+.legend-line--plan { border-top: 1px solid color-mix(in srgb, var(--role-ink, black) 45%, transparent); }
+.legend-line--target { border-top: 2px dotted var(--status-late-ink); }
+.rhythm-empty { fill: color-mix(in srgb, var(--role-ink, black) 6%, transparent); }
+.rhythm-fill, .rhythm-swatch { fill: var(--role-primary); background: var(--role-primary); }
+.dot-late-mark { fill: var(--status-late-ink); }
+/* The wordmark gives way inside its track rather than running under the icons. */
+.portal-header-grid > .inb-mark { overflow: hidden; }
+.portal-header-grid > .inb-mark svg { flex-shrink: 1 !important; min-width: 0; max-width: 100%; height: auto; }
+/* Axe pass (Iteration 21): text on the banner's own colour, never on a lightened wash. */
+.day-banner-chip { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role-on-primary) 55%, transparent); }
+.day-banner-switch { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role-on-primary) 55%, transparent); }
+.cal-cell--outside .cal-num { opacity: 1; font-weight: 400; color: color-mix(in srgb, var(--role-ink, black) 72%, white); }
+.cal-cell--selected.cal-cell--outside .cal-num { color: var(--role-on-primary); }

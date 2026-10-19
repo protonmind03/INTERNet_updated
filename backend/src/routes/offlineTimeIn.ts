@@ -466,21 +466,22 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
       const existing = await existingFor();
       if (existing.rows.length > 0) return already(existing.rows);
 
-      // The day's rules (services/dayRules.ts), judged at the time it really
-      // happened: the phone's time less its measured clock gap. Checked before
-      // anything is spent, so a refused time-in keeps its voucher.
-      const rules = await loadDayRuleSettings(pool);
-      const plan = await loadDayPlan(pool, auth.id, phToday(stamp.occurredAt), rules);
-      const verdict = judgeTimeIn(plan, correctedTime(stamp.occurredAt, readClockSkew(req.body)), rules, stamp.occurredAt);
-      if (!verdict.ok) {
-        return res.status(409).json({ code: verdict.code, opensAt: verdict.opensAt, message: verdict.message, day: planForApp(plan) });
-      }
 
       // With a photo or a voucher, it is an attested time-in and every part is checked.
       const attested = Boolean(req.file) || req.body?.voucher !== undefined;
       const checked = attested ? await checkAttested(req, res, auth.id, stamp.occurredAt) : null;
       if (checked && "code" in checked) {
         return res.status(checked.status).json({ code: checked.code, message: checked.message });
+      }
+
+      // The day's rules (services/dayRules.ts), judged at the time it really
+      // happened: the phone's time less its measured clock gap. Checked after the attested
+      // record is read and before anything is spent, so a refused time-in keeps its voucher.
+      const rules = await loadDayRuleSettings(pool);
+      const plan = await loadDayPlan(pool, auth.id, phToday(stamp.occurredAt), rules);
+      const verdict = judgeTimeIn(plan, correctedTime(stamp.occurredAt, readClockSkew(req.body)), rules, stamp.occurredAt);
+      if (!verdict.ok) {
+        return res.status(409).json({ code: verdict.code, opensAt: verdict.opensAt, message: verdict.message, day: planForApp(plan) });
       }
 
       let created;

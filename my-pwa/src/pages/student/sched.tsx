@@ -242,17 +242,45 @@ export default function OjtSchedule() {
     [tasks]
   );
 
+  const [patternHelp, setPatternHelp] = useState(false);
+
   return (
     <StudentLayout title="Schedule" subtitle="Your OJT days, what happened on each, and how you are getting on.">
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-        <FilterChips
-          label="View"
-          value={view}
-          onChange={(next) => setParams(next === "week" ? {} : { view: next }, { replace: true })}
-          options={VIEWS}
-        />
+        <div>
+          <FilterChips
+            label="View"
+            value={view}
+            onChange={(next) => setParams(next === "week" ? {} : { view: next }, { replace: true })}
+            options={VIEWS}
+          />
+          {view === "month" && (
+            <div className="mt-1.5 flex items-center justify-end gap-1 text-xs text-slate-600">
+              <span>Tap a day for its details.</span>
+              {pattern.weeks === 2 && (
+                <button
+                  type="button"
+                  aria-expanded={patternHelp}
+                  aria-controls="pattern-help"
+                  aria-label="About week 1 and week 2"
+                  onClick={() => setPatternHelp((open) => !open)}
+                  className="inline-flex h-11 w-11 items-center justify-center rounded-full text-slate-600 hover:bg-slate-100"
+                >
+                  <Icon name="info" size={16} />
+                </button>
+              )}
+            </div>
+          )}
+          {view === "month" && pattern.weeks === 2 && patternHelp && (
+            <p id="pattern-help" className="mt-1 rounded-lg bg-slate-100 px-3 py-2 text-sm text-slate-700">
+              Your schedule repeats every two weeks. Week 1 and week 2 take turns, counted from the Monday
+              {pattern.anchor ? ` of ${formatPh(new Date(`${pattern.anchor}T12:00:00+08:00`), { month: "long", day: "numeric", year: "numeric" })}` : ""}. A day's
+              sheet says which week it is in.
+            </p>
+          )}
+        </div>
 
         {view === "month" && (
           <ScheduleMonth

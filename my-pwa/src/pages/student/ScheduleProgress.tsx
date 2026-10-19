@@ -1,76 +1,58 @@
-import { useId, useMemo, useState } from "react";
-import { ColumnChart } from "../../components/charts";
+import { useEffect, useMemo, useState } from "react";
 import { Card, CardHeader } from "../../components/ui";
-import { formatDate, formatHours, formatLongDate, phDateKey } from "../../lib/format";
+import ProjectionHow from "../../components/ProjectionHow";
+import { API_URL, withStudentAuth } from "../../lib/api";
+import { formatDayDate, formatHours, phDateKey } from "../../lib/format";
+import { savedFetch } from "../../lib/offlineStore";
+import { daysBetween } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
-  LATE_AFTER_MINUTES,
-  attendanceOnScheduledDays,
+  addDays,
+  calendarIndex,
   countedFrom,
-  punctuality,
-  weeklyHours,
   type CalendarHoliday,
   type CalendarShift,
   type ShiftPattern,
-  weeklyShiftHours,
 } from "../../lib/studentCalendar";
-import { useProjections } from "../../lib/useProjections";
+import { logDateKey } from "./useAttendance";
 import { useTimeIn } from "./timeInContext";
-import ProjectionHow from "../../components/ProjectionHow";
 
 /*
 |--------------------------------------------------------------------------
 | MY PROGRESS
 |--------------------------------------------------------------------------
 |
-| How the OJT is going, in the student's own figures: hours verified each
-| week against what was scheduled, how often they timed in on the days
-| they were scheduled, how their time-in compares with their shift's
-| start, how many hours are left, and when they will finish at this pace.
+| Iteration 21. Four panels, in this order:
 |
-| All of it but the projected finish is worked out here from the saved
-| lists (lib/studentCalendar.ts), so it is the same with no connection.
-| The projection is the server's; without a connection it is left out.
+|   1. Burn-up: cumulative verified hours (solid), pending (dashed), the
+|      scheduled plan (thin), the required hours (target line) and the
+|      projected finish. Tap or hover a day for its values. "If you keep to
+|      your schedule", with how the date was worked out.
+|   2. Milestones: 25, 50, 75 and 100%, each with the day it was reached or
+|      the day it is expected.
+|   3. Change since last week: how far the projected finish has moved,
+|      from the server's daily snapshots.
+|   4. Rhythm: weeks by days, shaded by the hours rendered, late days
+|      dotted, half days split.
+|
+| SVG in the brand's colours, each with an accessible name and a text
+| summary. Built from the saved lists and the saved projection, so it
+| works with no connection.
 |
 */
 
-/** A figure with a "?" that says exactly how it is counted. */
-function Figure({
-  label,
-  value,
-  note,
-  explain,
-}: {
-  label: string;
-  value: string;
-  note?: string;
-  explain: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const id = useId();
-  return (
-    <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-card">
-      <div className="flex items-start justify-between gap-2">
-        <p className="text-xs font-medium text-slate-600">{label}</p>
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-controls={id}
-          onClick={() => setOpen((shown) => !shown)}
-          className="-mr-1.5 -mt-1.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold text-slate-600 hover:bg-slate-100"
-        >
-          <span aria-hidden="true">?</span>
-          <span className="sr-only">How "{label}" is counted</span>
-        </button>
-      </div>
-      <p className="tabular mt-1 text-2xl font-semibold tracking-tight text-slate-900">{value}</p>
-      {note && <p className="mt-0.5 text-xs text-slate-600">{note}</p>}
-      <p id={id} hidden={!open} className="mt-2 rounded-lg bg-slate-100 px-3 py-2 text-xs leading-relaxed text-slate-700">
-        {explain}
-      </p>
-    </div>
-  );
-}
+type Projection = {
+  projected_end_date: string | null;
+  remaining_hours: number;
+  history?: { date: string; projected_end_date: string | null }[];
+};
+
+/** The chart is drawn narrower on a phone, so its labels stay legible when it is scaled to the screen. */
+const WIDE = 640;
+const NARROW = 360;
+const HEIGHT = 220;
+const PAD = { left: 40, right: 12, top: 12, bottom: 28 };
 
 export default function ScheduleProgress({
   shifts,
@@ -79,7 +61,6 @@ export default function ScheduleProgress({
   termStart,
 }: {
   shifts: CalendarShift[];
-  /** How the schedule repeats (Iteration 11); one week when missing. */
   pattern?: ShiftPattern | null;
   holidays: CalendarHoliday[];
   termStart: string | null;
@@ -87,151 +68,238 @@ export default function ScheduleProgress({
   const student = useAccount("student");
   const { attendance } = useTimeIn();
   const logs = attendance.logs;
-  const projection = [...useProjections("student").values()][0];
   const today = phDateKey(new Date());
-
-  const figures = useMemo(() => {
-    const since = countedFrom(logs, termStart);
-    const sources = { shifts, pattern, holidays, logs };
-    return {
-      since,
-      weeks: weeklyHours(today, since, sources),
-      attended: attendanceOnScheduledDays(today, since, sources),
-      punctual: punctuality(sources),
-    };
-  }, [logs, termStart, shifts, pattern, holidays, today]);
-
   const required = Number(student?.required_hours) || 0;
-  const verified = Math.round(logs.reduce((sum, log) => sum + (log.status === "Verified" ? Number(log.hours) || 0 : 0), 0) * 100) / 100;
-  const remaining = Math.max(0, Math.round((required - verified) * 100) / 100);
-  const waiting = Math.round(
-    logs.reduce((sum, log) => sum + (log.status === "Pending" && log.time_out ? Number(log.hours) || 0 : 0), 0) * 100
-  ) / 100;
-  // A two-week pattern's hours are an average week.
-  const weeklyScheduled = weeklyShiftHours(shifts, pattern);
+  const [projection, setProjection] = useState<Projection | null>(null);
+  const [hover, setHover] = useState<number | null>(null);
+  const WIDTH = useMediaQuery("(max-width: 639px)") ? NARROW : WIDE;
 
-  const { attended, punctual, weeks } = figures;
-  const rate = attended.scheduled > 0 ? Math.round((attended.attended / attended.scheduled) * 100) : null;
-  const average = punctual.average;
-  const anyHours = weeks.some((week) => week.verified > 0 || week.scheduled > 0);
+  useEffect(() => {
+    if (!student?.student_id) return;
+    let active = true;
+    savedFetch("student", "projection", `${API_URL}/api/students/${encodeURIComponent(student.student_id)}/projection`, withStudentAuth())
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => active && setProjection(data?.projection ?? null))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [student?.student_id]);
+
+  const series = useMemo(() => {
+    const since = countedFrom(logs, termStart) ?? today;
+    const finish = projection?.projected_end_date && projection.projected_end_date > today ? projection.projected_end_date : today;
+    const end = finish > today ? finish : addDays(today, 7);
+    const day = calendarIndex({ shifts, pattern, holidays, logs, absences: [], tasks: [] });
+    const byDate = new Map(logs.map((log) => [logDateKey(log), log]));
+    const points: { date: string; verified: number; pending: number; plan: number }[] = [];
+    let verified = 0;
+    let pending = 0;
+    let plan = 0;
+    for (let date = since, guard = 0; date <= end && guard < 800; date = addDays(date, 1), guard += 1) {
+      const facts = day(date);
+      if (facts.shift && !facts.holiday) plan += Number(facts.shift.hours) || 0;
+      const log = byDate.get(date);
+      if (date <= today && log) {
+        if (log.status === "Verified") verified += Number(log.hours) || 0;
+        else if (log.status === "Pending") pending += Number(log.hours) || 0;
+      }
+      points.push({ date, verified, pending: verified + pending, plan });
+    }
+    return { since, end, points, finish: projection?.projected_end_date ?? null };
+  }, [logs, termStart, shifts, pattern, holidays, projection, today]);
+
+  const verifiedNow = series.points.filter((point) => point.date <= today).at(-1)?.verified ?? 0;
+  const top = Math.max(required, series.points.at(-1)?.plan ?? 0, verifiedNow, 1);
+  const x = (index: number) => PAD.left + (index / Math.max(1, series.points.length - 1)) * (WIDTH - PAD.left - PAD.right);
+  const y = (hours: number) => HEIGHT - PAD.bottom - (hours / top) * (HEIGHT - PAD.top - PAD.bottom);
+  const line = (pick: (point: (typeof series.points)[number]) => number, until = series.points.length) =>
+    series.points
+      .slice(0, until)
+      .map((point, index) => `${index === 0 ? "M" : "L"}${x(index).toFixed(1)} ${y(pick(point)).toFixed(1)}`)
+      .join(" ");
+  const todayIndex = Math.max(0, series.points.findIndex((point) => point.date === today));
+  const pastCount = todayIndex + 1;
+  const finishIndex = series.finish ? series.points.findIndex((point) => point.date === series.finish) : -1;
+
+  // Milestones: reached (the day verified hours crossed it) or expected (the plan from today crosses it).
+  const milestones = [25, 50, 75, 100].map((share) => {
+    const target = (required * share) / 100;
+    const reached = series.points.find((point) => point.date <= today && point.verified >= target && target > 0);
+    if (reached) return { share, date: reached.date, reached: true };
+    const planToday = series.points[todayIndex]?.plan ?? 0;
+    const expected = series.points.find((point) => point.date > today && verifiedNow + (point.plan - planToday) >= target);
+    return { share, date: share === 100 && series.finish ? series.finish : expected?.date ?? null, reached: false };
+  });
+
+  // Change since last week, from the snapshots.
+  const history = projection?.history ?? [];
+  const weekAgo = [...history].reverse().find((entry) => entry.date <= addDays(today, -7) && entry.projected_end_date);
+  const moved = weekAgo?.projected_end_date && series.finish ? daysBetween(weekAgo.projected_end_date, series.finish) : null;
+
+  // Rhythm: the last 8 weeks, Sunday to Saturday.
+  const rhythm = useMemo(() => {
+    const byDate = new Map(logs.map((log) => [logDateKey(log), log]));
+    const lastSunday = addDays(today, -new Date(`${today}T00:00:00Z`).getUTCDay());
+    return Array.from({ length: 8 }, (_, week) => {
+      const start = addDays(lastSunday, -7 * (7 - week));
+      return Array.from({ length: 7 }, (_, offset) => {
+        const date = addDays(start, offset);
+        const log = byDate.get(date);
+        return {
+          date,
+          hours: log ? Number(log.hours) || 0 : 0,
+          late: (log?.late_minutes ?? 0) > 0,
+          half: log?.session === "am" || log?.session === "pm",
+          future: date > today,
+        };
+      });
+    });
+  }, [logs, today]);
+  const mostHours = Math.max(8, ...rhythm.flat().map((cell) => cell.hours));
+
+  const shown = hover !== null ? series.points[hover] : null;
+  const summary = `${formatHours(verifiedNow)} verified of ${formatHours(required)} required. ${
+    series.finish ? `Projected finish ${formatDayDate(series.finish)}.` : "No projected finish yet."
+  }`;
 
   return (
     <div className="space-y-5">
-      <Card className="min-w-0">
-        <CardHeader
-          title="Verified hours each week"
-          description={
-            weeklyScheduled > 0
-              ? `Against ${formatHours(weeklyScheduled)} scheduled in a full week. A darker column is a week that met its schedule.`
-              : "No schedule is set yet, so there is nothing to compare the weeks with."
-          }
-        />
-        <div className="px-4 pb-4 pt-7 sm:px-5">
-          {!anyHours ? (
-            <p className="py-8 text-center text-sm text-slate-600">
-              No hours yet. A week appears here once a log in it is verified.
-            </p>
-          ) : (
-            <ColumnChart
-              points={weeks.map((week) => ({
-                key: week.week_start,
-                label: `Week of ${formatDate(week.week_start).replace(/, \d{4}$/, "")}`,
-                axisLabel: formatDate(week.week_start).replace(/, \d{4}$/, ""),
-                value: week.verified,
-                detail:
-                  week.scheduled > 0
-                    ? `${formatHours(week.scheduled)} scheduled`
-                    : "Nothing scheduled that week",
-                // Darker when the week's schedule was met.
-                color: week.scheduled > 0 && week.verified >= week.scheduled ? "#0f1e6e" : "#637bf4",
-              }))}
-              label="Verified hours in each of the last eight weeks"
-              format={(value) => formatHours(value)}
-              height={150}
-            />
+      <Card>
+        <CardHeader title="Hours over time" description="If you keep to your schedule." />
+        <div className="px-4 pb-4 sm:px-5">
+          <svg
+            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            role="img"
+            aria-label={`Burn-up chart. ${summary}`}
+            className="h-auto w-full"
+            onPointerMove={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              const at = ((event.clientX - box.left) / box.width) * WIDTH;
+              const index = Math.round(((at - PAD.left) / (WIDTH - PAD.left - PAD.right)) * (series.points.length - 1));
+              setHover(Math.max(0, Math.min(series.points.length - 1, index)));
+            }}
+            onPointerLeave={() => setHover(null)}
+          >
+            {[0, 0.25, 0.5, 0.75, 1].map((share) => (
+              <g key={share}>
+                <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y(top * share)} y2={y(top * share)} className="chart-grid" />
+                <text x={PAD.left - 6} y={y(top * share) + 4} textAnchor="end" className="chart-axis">
+                  {Math.round(top * share)}
+                </text>
+              </g>
+            ))}
+            {required > 0 && <line x1={PAD.left} x2={WIDTH - PAD.right} y1={y(required)} y2={y(required)} className="chart-target" />}
+            <path d={line((point) => point.plan)} className="chart-plan" />
+            <path d={line((point) => point.pending, pastCount)} className="chart-pending" />
+            <path d={line((point) => point.verified, pastCount)} className="chart-verified" />
+            <line x1={x(todayIndex)} x2={x(todayIndex)} y1={PAD.top} y2={HEIGHT - PAD.bottom} className="chart-today" />
+            {finishIndex >= 0 && (
+              <g>
+                <circle cx={x(finishIndex)} cy={y(required)} r="6" className="chart-finish" />
+                <text x={x(finishIndex)} y={y(required) - 10} textAnchor="middle" className="chart-axis">
+                  Finish
+                </text>
+              </g>
+            )}
+            {shown && hover !== null && (
+              <line x1={x(hover)} x2={x(hover)} y1={PAD.top} y2={HEIGHT - PAD.bottom} className="chart-hover" />
+            )}
+          </svg>
+          <p className="mt-2 min-h-5 text-sm text-slate-700" aria-live="polite">
+            {shown
+              ? `${formatDayDate(shown.date)}: ${formatHours(shown.verified)} verified${shown.date <= today ? `, ${formatHours(shown.pending - shown.verified)} waiting` : ""}, ${formatHours(shown.plan)} planned.`
+              : summary}
+          </p>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700">
+            <li className="flex items-center gap-1.5"><span aria-hidden="true" className="legend-line legend-line--verified" />Verified</li>
+            <li className="flex items-center gap-1.5"><span aria-hidden="true" className="legend-line legend-line--pending" />Waiting</li>
+            <li className="flex items-center gap-1.5"><span aria-hidden="true" className="legend-line legend-line--plan" />Scheduled plan</li>
+            <li className="flex items-center gap-1.5"><span aria-hidden="true" className="legend-line legend-line--target" />Required hours</li>
+          </ul>
+          {student?.student_id && (
+            <div className="mt-3">
+              <ProjectionHow role="student" studentId={student.student_id} />
+            </div>
           )}
         </div>
       </Card>
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <Figure
-          label="Attendance on scheduled days"
-          value={rate === null ? "–" : `${rate}%`}
-          note={
-            attended.scheduled > 0
-              ? `${attended.attended} of ${attended.scheduled} scheduled ${attended.scheduled === 1 ? "day" : "days"}`
-              : "No scheduled day has passed yet"
-          }
-          explain={`Of the days you were scheduled to work${
-            figures.since ? ` since ${formatLongDate(figures.since)}` : ""
-          }, up to yesterday and leaving out holidays, the share on which you timed in. A day you filed an absence for still counts as a day you did not time in.`}
-        />
-        <Figure
-          label="Average time-in"
-          value={
-            punctual.days === 0
-              ? "–"
-              : average === 0
-                ? "On time"
-                : `${Math.abs(average)} min ${average > 0 ? "late" : "early"}`
-          }
-          note={
-            punctual.days === 0
-              ? "No time-in on a scheduled day yet"
-              : `Late on ${punctual.late} of ${punctual.days} ${punctual.days === 1 ? "day" : "days"}`
-          }
-          explain={`Your time-in compared with the start of your shift that day, averaged over the days you timed in on a scheduled day. A time-in more than ${LATE_AFTER_MINUTES} minutes after the shift starts counts as late. It is measured against your schedule as it is now.`}
-        />
-        <Figure
-          label="Hours still needed"
-          value={required > 0 ? formatHours(remaining) : "–"}
-          note={
-            required > 0
-              ? `${formatHours(verified)} of ${formatHours(required)} verified${
-                  waiting > 0 ? ` · ${formatHours(waiting)} waiting for your supervisor` : ""
-                }`
-              : "Your required hours are not set yet"
-          }
-          explain="Your required hours less the hours your supervisor has verified. Hours on a log that is still waiting, or was rejected, are not counted until it is verified."
-        />
+      <div className="grid gap-5 md:grid-cols-2">
+        <Card>
+          <CardHeader title="Milestones" />
+          <ol className="space-y-2 px-4 pb-4 sm:px-5" aria-label="Milestones">
+            {milestones.map((milestone) => (
+              <li key={milestone.share} className="flex items-center justify-between gap-3 text-sm">
+                <span className="flex items-center gap-2 font-semibold text-slate-900">
+                  <span aria-hidden="true" className={`cal-dot ${milestone.reached ? "cal-dot--verified" : "cal-dot--absent"}`} />
+                  {milestone.share}%
+                </span>
+                <span className="text-slate-700">
+                  {milestone.date ? `${milestone.reached ? "Reached" : "Expected"} ${formatDayDate(milestone.date)}` : "Not worked out yet"}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+
+        <Card>
+          <CardHeader title="Change since last week" />
+          <p className="px-4 pb-4 text-sm text-slate-700 sm:px-5">
+            {moved === null
+              ? "Not enough history yet: this shows once a week of daily projections is kept."
+              : moved === 0
+                ? "Your projected finish has not moved."
+                : `Your projected finish moved ${Math.abs(moved)} ${Math.abs(moved) === 1 ? "day" : "days"} ${moved < 0 ? "earlier" : "later"}.`}
+          </p>
+        </Card>
       </div>
 
-      <Card className="p-4 sm:p-5">
-        <h2 className="text-sm font-semibold text-slate-900">Projected finish</h2>
-        {!projection ? (
-          <p className="mt-2 text-sm text-slate-600">
-            The projection needs a connection. It is worked out from your schedule and your verified
-            hours.
-          </p>
-        ) : projection.remaining_hours === 0 ? (
-          <p className="mt-2 text-sm text-slate-800">
-            You have completed your required hours.
-          </p>
-        ) : projection.projected_finish ? (
-          <>
-            <p className="tabular mt-2 text-xl font-bold tracking-tight text-slate-900">
-              {formatLongDate(projection.projected_finish)}
-            </p>
-            <p className="mt-1 text-sm text-slate-700">
-              At your schedule of {formatHours(projection.weekly_hours)} a week, with{" "}
-              {formatHours(projection.remaining_hours)} still to verify. Holidays and approved absences
-              are already left out. It is an estimate from your schedule: working more or fewer hours
-              than scheduled moves it.
-            </p>
-            {student?.student_id && <ProjectionHow role="student" studentId={student.student_id} />}
-            {projection.at_risk && (
-              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
-                {projection.risk_reason} Talk to your supervisor or OJT coordinator about your
-                schedule.
-              </p>
-            )}
-          </>
-        ) : (
-          <p className="mt-2 text-sm text-slate-800">
-            {projection.risk_reason || "A finish date cannot be worked out yet."} You have{" "}
-            {formatHours(projection.remaining_hours)} still to verify.
-          </p>
-        )}
+      <Card>
+        <CardHeader title="Rhythm" description="The last eight weeks, Sunday to Saturday. Darker is more hours." />
+        <div className="px-4 pb-4 sm:px-5">
+          <svg viewBox="0 0 280 260" role="img" aria-label={`Rhythm of the last eight weeks: ${rhythm.flat().filter((cell) => cell.hours > 0).length} days with hours, ${rhythm.flat().filter((cell) => cell.late).length} late.`} className="h-auto w-full max-w-md">
+            {["S", "M", "T", "W", "T", "F", "S"].map((name, index) => (
+              <text key={index} x={36 + index * 34 + 14} y="12" textAnchor="middle" className="chart-axis">
+                {name}
+              </text>
+            ))}
+            {rhythm.map((week, row) => (
+              <g key={week[0].date}>
+                <text x="26" y={20 + row * 30 + 18} textAnchor="end" className="chart-axis">
+                  {formatDayDate(week[0].date).replace(/^\w+,\s*/, "").split(",")[0]}
+                </text>
+                {week.map((cell, column) => {
+                  const cx = 36 + column * 34;
+                  const cy = 20 + row * 30;
+                  const shade = cell.future ? 0 : Math.min(1, cell.hours / mostHours);
+                  return (
+                    <g key={cell.date}>
+                      <rect x={cx} y={cy} width="28" height="26" rx="5" className="rhythm-empty" />
+                      {shade > 0 && (
+                        <rect
+                          x={cx}
+                          y={cell.half ? cy + 13 : cy}
+                          width="28"
+                          height={cell.half ? 13 : 26}
+                          rx="5"
+                          className="rhythm-fill"
+                          style={{ opacity: 0.25 + shade * 0.75 }}
+                        />
+                      )}
+                      {cell.late && <circle cx={cx + 22} cy={cy + 6} r="3" className="dot-late-mark" />}
+                    </g>
+                  );
+                })}
+              </g>
+            ))}
+          </svg>
+          <ul className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-700">
+            <li className="flex items-center gap-1.5"><span aria-hidden="true" className="h-3 w-3 rounded-sm rhythm-swatch" />Hours rendered</li>
+            <li className="flex items-center gap-1.5"><span aria-hidden="true" className="cal-dot cal-dot--late" />Late</li>
+            <li>A half-filled square is a half day.</li>
+          </ul>
+        </div>
       </Card>
     </div>
   );

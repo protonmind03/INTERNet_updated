@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ACCOUNTS, API, SECOND_STUDENT, api, apiSession, signIn, timeInClosed, today, type Role } from "./helpers";
+import { ACCOUNTS, API, SECOND_STUDENT, api, apiSession, signIn, timeInClosed, today, type Role, openProfileGroup } from "./helpers";
 
 /*
 | The journeys a real person takes, start to finish, in a real browser.
@@ -51,6 +51,7 @@ test.describe("time-in", () => {
     );
 
     await signIn(page, "student");
+    await page.goto("/daily-log");
     await page.getByRole("button", { name: "Time in", exact: true }).click();
     if (!privacy.body.current) {
       const notice = page.getByRole("dialog", { name: "Privacy notice" });
@@ -93,8 +94,8 @@ test.describe("the floating next-step button", () => {
     const main = page.getByRole("navigation", { name: "Main" });
     const button = page.locator("button.float-fab");
     await expect(button).toBeVisible();
-    await expect(button).toHaveAccessibleName("Time in");
-    // 56 px tall, in the bottom right corner, clear of the screen's edge (Iteration 10: no tab bar below it).
+    await expect(button).toHaveAccessibleName(/^Time in, opens the camera check/);
+    // 56 px tall, in the bottom right corner, above the dock (Iteration 21).
     const box = (await button.boundingBox())!;
     const screen = page.viewportSize()!;
     expect(box.height).toBe(56);
@@ -112,6 +113,10 @@ test.describe("the floating next-step button", () => {
     await expect(button).toHaveCount(0);
 
     await main.getByRole("link", { name: "Today" }).click();
+    // Iteration 21: the first tap opens it into "Time in · Tap again"; the second acts.
+    await button.click();
+    await expect(button).toHaveAttribute("aria-expanded", "true");
+    await expect(button).toContainText("Tap again");
     await button.click();
     if (!privacy.body.current) {
       const notice = page.getByRole("dialog", { name: "Privacy notice" });
@@ -233,13 +238,13 @@ test.describe("completion", () => {
 test.describe("the student's menu", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone: the folder's six tabs in one row that scrolls sideways, and the Resolution Center as the icon beside the bell", async ({ page }) => {
+  test("on a phone: the dock of four and More, and the Resolution Center as the icon beside the bell", async ({ page }) => {
     await signIn(page, "student");
-    // Iteration 10: the portal is a folder; its tabs replace the tab bar and the More sheet.
+    // Iteration 21: the dock (components/StudentDock.tsx): Today, Attendance, Schedule, Tasks, More.
     const tabs = page.getByRole("navigation", { name: "Main" });
-    await expect(tabs.getByRole("link")).toHaveText([/^Today/, /^Attendance/, /^Tasks/, /^Documents/, /^Schedule/, /^Weekly report/]);
-    await expect(tabs.getByRole("link", { name: "Today" })).toHaveAttribute("aria-current", "page");
-    await expect(tabs).toHaveAttribute("data-more-below", "");
+    await expect(tabs.getByRole("link")).toHaveCount(4);
+    await expect(tabs.getByRole("link", { name: /^Today/ })).toHaveAttribute("aria-current", "page");
+    await expect(tabs.getByRole("button", { name: /^More/ })).toBeVisible();
     await tabs.getByRole("link", { name: "Schedule" }).click();
     await expect(page).toHaveURL(/\/schedule$/);
     await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
@@ -274,7 +279,10 @@ test.describe("the student's menu", () => {
     }
     // The checklist itself is on Profile.
     await page.goto("/profile");
+    await openProfileGroup(page, "Completion");
     await expect(page.getByRole("heading", { name: "Completion checklist" })).toBeVisible();
+    await page.keyboard.press("Escape");
+    await openProfileGroup(page, "Placement");
     await expect(page.getByRole("link", { name: "Report a concern" })).toHaveAttribute(
       "href",
       "/student/resolution?tab=concerns"
@@ -522,8 +530,11 @@ test.describe("what a student reads about their days", () => {
     await todayCell.click();
     const sheet = page.getByRole("dialog");
     await expect(sheet).toBeVisible();
-    await expect(sheet.getByText("Shift", { exact: true })).toBeVisible();
-    await expect(sheet.getByText(/^Today$|· Today$|Today/).first()).toBeVisible();
+    // Iteration 21: the day's sheet, its heading and status, and its schedule.
+    await expect(sheet.getByRole("heading")).toBeVisible();
+    await expect(sheet.getByRole("region", { name: "Schedule" }).or(sheet.getByLabel("Schedule"))).toBeVisible();
+    await expect(sheet.getByRole("button", { name: "Day after" })).toBeVisible();
+    await expect(page.getByText("Tap a day for its details.")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(sheet).toBeHidden();
     // The arrow keys move between days, and Enter opens the one they land on.
@@ -537,16 +548,14 @@ test.describe("what a student reads about their days", () => {
     await page.getByRole("button", { name: "This month" }).click();
     await expect(todayCell).toHaveCount(1);
 
-    // My progress: the figures, and the rule for "late" behind the "?".
+    // My progress (Iteration 21): the burn-up chart, milestones, the change since last week, the rhythm.
     await page.getByRole("tab", { name: "My progress" }).click();
     await expect(page).toHaveURL(/view=progress$/);
-    for (const name of ["Verified hours each week", "Projected finish"]) {
+    for (const name of ["Hours over time", "Milestones", "Change since last week", "Rhythm"]) {
       await expect(page.getByRole("heading", { name })).toBeVisible();
     }
-    await expect(page.getByText("Attendance on scheduled days", { exact: true })).toBeVisible();
-    await expect(page.getByText("Hours still needed", { exact: true })).toBeVisible();
-    await page.getByRole("button", { name: 'How "Average time-in" is counted' }).click();
-    await expect(page.getByText(/more than 15 minutes after the shift starts counts as late/)).toBeVisible();
+    await expect(page.getByRole("img", { name: /^Burn-up chart/ })).toBeVisible();
+    await expect(page.getByText("If you keep to your schedule.")).toBeVisible();
 
     // The time record: the Civil Service columns.
     await page.goto("/time-record");
@@ -565,7 +574,9 @@ test.describe("what a student reads about their days", () => {
     test.skip(existing?.status === "Reviewed", "This week's report is already reviewed and closed.");
 
     await signIn(page, "student");
-    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Weekly report" }).click();
+    // Iteration 21: on a phone the weekly report is under the dock's More.
+    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: /^More/ }).click();
+    await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: /^Weekly report/ }).click();
     await expect(page).toHaveURL(/\/journal$/);
     await page.getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing }).first().click();
     const form = page.getByRole("dialog");
@@ -1100,6 +1111,7 @@ test.describe("time-in with no connection", () => {
     // offer that instead, and whether it got there first was down to timing.
     await page.route(/\/api\/attendance\/offline-vouchers/, (route) => route.abort());
     await signIn(page, "student", SECOND_STUDENT);
+    await page.goto("/daily-log");
     await expect(page.getByRole("button", { name: /^Time in/ }).first()).toBeVisible();
 
     // No connection: the camera check cannot run, and the app says so and offers the other way.
@@ -1337,6 +1349,7 @@ test.describe("sounds and vibration", () => {
   test("sounds start off and vibration on; the choice is kept on the device; each cue can be heard", async ({ page }) => {
     await signIn(page, "student");
     await page.goto("/profile");
+    await openProfileGroup(page, "Notifications");
     const card = page.locator("section, div").filter({ has: page.getByRole("heading", { name: "Sounds and vibration" }) }).last();
     const sound = card.getByRole("switch", { name: "Sounds" });
     await expect(sound).not.toBeChecked();
@@ -1356,6 +1369,7 @@ test.describe("sounds and vibration", () => {
 
     await sound.check();
     await page.reload();
+    await openProfileGroup(page, "Notifications");
     await expect(page.getByRole("switch", { name: "Sounds" })).toBeChecked();
     await page.getByRole("switch", { name: "Sounds" }).uncheck();
   });
