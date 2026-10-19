@@ -894,3 +894,13 @@ describe; the earlier notes it replaces are marked there.
   - New `institution_profile` (one row: republic_line, university_name,
     campus_name, locality_line, seal_asset), and `programs` gains
     `formal_name`. The coordinator edits both.
+- **The seal and the role colours (brand kit v4).** The app shows the
+  Pangasinan State University seal on the splash, the sign-in screens, Help,
+  printed reports and the Time Record, and says "A system proposal for
+  Pangasinan State University – Lingayen Campus". Each role has its own
+  colour layer (Trainee: Sunpath, Supervisor: Laurel Ledger, Coordinator:
+  Royal Seal) over the shared INTERNet navy; every text colour pair meets
+  WCAG AA contrast, and a test checks it. If the paper's figures show the
+  old all-navy screens, they are out of date.
+- **Splash.** The splash shows only when the installed app is opened cold,
+  for at most 1.2 seconds; in a browser tab there is none.

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PortalHeader } from "../brand";
+import { useRoleTheme } from "../brand/useRoleTheme";
 import FolderShell, { type FolderTab } from "../components/folder/FolderShell";
 import Icon, { type IconName } from "../components/Icon";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -74,6 +75,7 @@ type LayoutProps = {
  * offer the next step.
  */
 export default function StudentLayout(props: LayoutProps) {
+  useRoleTheme("student");
   return (
     <TimeInProvider>
       <StudentChrome {...props} />

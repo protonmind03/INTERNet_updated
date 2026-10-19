@@ -1,5 +1,7 @@
 import { jsPDF } from "jspdf";
 import { autoTable } from "jspdf-autotable";
+// The PSU seal on the cover (Iteration 19), kept inside this lazily loaded chunk.
+import sealPng from "../brand/assets/psu-seal-192.png?inline";
 
 export type ReportSection = {
   title: string;
@@ -8,6 +10,8 @@ export type ReportSection = {
 };
 
 const MARGIN = 14;
+/** The seal on the cover: 14 mm across, above the 12 mm the brand asks for in print. */
+const SEAL_MM = 14;
 
 /**
  * Builds a report of titled tables as an A4 PDF document: the coordinator's
@@ -22,16 +26,20 @@ export function buildAnalyticsPdf(
   const pageHeight = doc.internal.pageSize.getHeight();
   const pageWidth = doc.internal.pageSize.getWidth();
 
+  // The cover: the seal, drawn as it is, with the title and the campus beside it.
+  doc.addImage(sealPng, "PNG", MARGIN, 10, SEAL_MM, SEAL_MM);
+  const textLeft = MARGIN + SEAL_MM + 4;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(16);
-  doc.text(title, MARGIN, 18);
+  doc.text(title, textLeft, 16);
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   doc.setTextColor(100);
-  doc.text(`Generated ${generatedAt}`, MARGIN, 24);
+  doc.text("Pangasinan State University · Lingayen Campus", textLeft, 21);
+  doc.text(`Generated ${generatedAt}`, textLeft, 25.5);
   doc.setTextColor(0);
 
-  let y = 32;
+  let y = 36;
   for (const section of sections) {
     // Keep a section heading together with at least its first rows.
     if (y > pageHeight - 40) {

@@ -11778,3 +11778,75 @@ test("a program's formal name is saved with it, and audited", async () => {
   assert.ok(audit.body.entries.some((entry) => entry.details.formal_name === "Bachelor of Science in Testing"));
   await put(before);
 });
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 19: brand kit v4
+|--------------------------------------------------------------------------
+*/
+
+test("every text pair in the role palettes and the status colours meets WCAG contrast", () => {
+  require("tsx/cjs");
+  const { paletteTextPairs, contrastRatio, ROLE_PALETTES, STATUS_COLORS } = require("../../my-pwa/src/brand/tokens.ts");
+  // The formula, against known values: black on white is 21:1, a colour on itself 1:1.
+  assert.equal(Math.round(contrastRatio("#000000", "#FFFFFF") * 100) / 100, 21);
+  assert.equal(contrastRatio("#A84B0B", "#A84B0B"), 1);
+  const pairs = paletteTextPairs();
+  assert.equal(pairs.filter((pair) => pair.role !== "all").length, Object.keys(ROLE_PALETTES).length * 5);
+  assert.ok(pairs.filter((pair) => pair.role === "all").length >= Object.keys(STATUS_COLORS).length);
+  for (const pair of pairs) {
+    const needed = pair.large ? 3 : 4.5;
+    const ratio = contrastRatio(pair.text, pair.background);
+    assert.ok(ratio >= needed, `${pair.role} ${pair.pair}: ${pair.text} on ${pair.background} is ${ratio.toFixed(2)}:1, under ${needed}:1`);
+  }
+  // Status colours are the same for every role: one set, not one per role.
+  for (const palette of Object.values(ROLE_PALETTES)) {
+    assert.ok(!("late" in palette) && !("success" in palette), "no role redefines a status colour");
+  }
+});
+
+test("brand.css carries the role palettes exactly as tokens.ts has them", () => {
+  require("tsx/cjs");
+  const { ROLE_PALETTES, STATUS_COLORS, WEEKEND_TINT } = require("../../my-pwa/src/brand/tokens.ts");
+  const css = fs.readFileSync(nodePath.join(__dirname, "..", "..", "my-pwa", "src", "brand", "brand.css"), "utf8").toLowerCase();
+  const names = { primary: "primary", onPrimary: "on-primary", accent: "accent", onAccent: "on-accent", surface: "surface", ink: "ink", chrome: "chrome", onChrome: "on-chrome", decor: "decor" };
+  for (const [role, palette] of Object.entries(ROLE_PALETTES)) {
+    const block = css.match(new RegExp(String.raw`\[data-role="${role}"\] \{([^}]+)\}`))?.[1];
+    assert.ok(block, `brand.css has a [data-role="${role}"] block`);
+    for (const [key, variable] of Object.entries(names)) {
+      assert.match(block, new RegExp(`--role-${variable}: ${palette[key].toLowerCase()};`), `${role} --role-${variable}`);
+    }
+  }
+  for (const [status, colours] of Object.entries(STATUS_COLORS)) {
+    assert.ok(css.includes(`--status-${status}-bg: ${colours.bg.toLowerCase()};`), `--status-${status}-bg`);
+    assert.ok(css.includes(`--status-${status}-ink: ${colours.ink.toLowerCase()};`), `--status-${status}-ink`);
+  }
+  assert.ok(css.includes(`--weekend-tint: ${WEEKEND_TINT.toLowerCase()};`));
+  // The brief's late and weekend values.
+  assert.equal(STATUS_COLORS.late.bg, "#FDE8E7");
+  assert.equal(STATUS_COLORS.late.ink, "#B42318");
+  assert.equal(WEEKEND_TINT, "#FFF5F5");
+});
+
+test("the seal's smaller copies are the seal, shrunk: square, the sizes named, and the rules in one place", () => {
+  require("tsx/cjs");
+  const { SEAL } = require("../../my-pwa/src/brand/tokens.ts");
+  const assets = nodePath.join(__dirname, "..", "..", "my-pwa", "src", "brand", "assets");
+  const size = (file) => {
+    const data = fs.readFileSync(nodePath.join(assets, file));
+    return [data.readUInt32BE(16), data.readUInt32BE(20)];
+  };
+  assert.deepEqual(size("psu-seal.png"), [447, 447]);
+  assert.deepEqual(size("psu-seal-96.png"), [96, 96]);
+  assert.deepEqual(size("psu-seal-192.png"), [192, 192]);
+  assert.equal(SEAL.clearSpace, 0.25);
+  assert.equal(SEAL.minPx, 24);
+  assert.equal(SEAL.minPrintMm, 12);
+  assert.equal(SEAL.discRatio, 1.12);
+  assert.equal(SEAL.lockupToCap, 1.6);
+  // The component never draws the seal smaller than the minimum, and gives it its alt text.
+  const component = fs.readFileSync(nodePath.join(assets, "..", "PsuSeal.tsx"), "utf8");
+  assert.match(component, /Math\.max\(SEAL\.minPx/);
+  assert.match(component, /alt=\{decorative \? "" : "Pangasinan State University seal"\}/);
+  assert.match(component, /decoding="async"/);
+});

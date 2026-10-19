@@ -5,6 +5,7 @@ import { BrandIcon, BrandLoader, BrandLockup, PortalBrand, PortalHeader, ROLE_TH
 import { ActionButton, BrandToastProvider } from "./feedback";
 import type { Role } from ".";
 import { PrototypeRun } from "./LoadingPrototypes";
+import { PalettesPanel, SealPanel } from "./BrandV4Panels";
 import { PROTOTYPES, TIMINGS, useReducedMotion, type Timing } from "./loadingPrototypeData";
 
 const ROLES: Role[] = ["student", "supervisor", "coordinator"];
@@ -226,6 +227,9 @@ function PreviewInner() {
           </div>
         </header>
 
+        <SealPanel />
+        <PalettesPanel />
+
         <section className="flex flex-wrap items-center gap-6 rounded-2xl bg-white p-6 ring-1 ring-slate-200" aria-label="Real sizes">
           <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: "#1A237E" }}><PortalBrand role="student" showTag /></div>
           <div className="flex items-center gap-3 rounded-xl px-4 py-3 ring-1 ring-slate-200"><PortalBrand role="coordinator" /></div>
@@ -300,7 +304,7 @@ function PreviewInner() {
             </div>
           </div>
           <div className="relative h-[760px] w-[370px] max-w-full overflow-hidden rounded-[40px] ring-[10px] ring-slate-900" style={{ transform: "translateZ(0)" }}>
-            <SplashScreen role={role} />
+            <SplashScreen key={role} role={role} inline />
           </div>
           <div className="flex flex-col gap-6">
             <div className="flex items-end gap-4">

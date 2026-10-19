@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
 import { PortalBrand } from "../brand";
+import { useRoleTheme } from "../brand/useRoleTheme";
 import ComposeMessage from "../components/ComposeMessage";
 import Icon from "../components/Icon";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -53,6 +54,7 @@ export default function SupervisorLayout({
   actions?: ReactNode;
   children: ReactNode;
 }) {
+  useRoleTheme("supervisor");
   const navigate = useNavigate();
   const supervisor = useAccount("supervisor");
   const counts = useNavCounts("supervisor");

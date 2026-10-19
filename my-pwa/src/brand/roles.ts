@@ -313,3 +313,15 @@ export function getActiveRole(): BrandRole {
     return "guest";
   }
 }
+
+/**
+ * Iteration 19: the role palette layer. Sets data-role on <html>, which
+ * brand.css turns into the --role-* colours (values in tokens.ts,
+ * ROLE_PALETTES). "guest" removes it: the brand's own navy and amber.
+ */
+export function applyRoleTheme(role: BrandRole): void {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  if (role === "guest") delete root.dataset.role;
+  else root.dataset.role = role;
+}

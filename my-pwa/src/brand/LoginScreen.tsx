@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
 import BrandIcon from "./BrandIcon";
 import Wordmark from "./Wordmark";
+import PsuSeal from "./PsuSeal";
 import RoadGlyph, { CheckGlyph } from "./RoadGlyph";
 import { BRAND } from "./geometry";
 import { errorText } from "./roles";
@@ -187,11 +188,16 @@ export default function LoginScreen({ onSubmit, onSignedIn, initialRole = "stude
         <DecoRoad opacity={0.09} />
         {/* phone: stacked mark */}
         <div className="relative flex flex-col items-center gap-3.5 md:hidden">
-          <BrandIcon size={58} tile={r.tile} />
+          <span className="flex items-center gap-4">
+            <PsuSeal size={44} onDark clearSpace={false} />
+            <BrandIcon size={58} tile={r.tile} />
+          </span>
           <Wordmark height={24} tone="onDark" />
         </div>
         {/* tablet + desktop: lockup */}
         <div className="relative hidden items-center gap-4 md:flex">
+          <PsuSeal size={46} onDark clearSpace={false} />
+          <span aria-hidden="true" className="h-12 w-px bg-white/30" />
           <BrandIcon size={56} tile={r.tile} />
           <Wordmark height={28} tone="onDark" />
         </div>

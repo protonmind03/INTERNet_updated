@@ -8,6 +8,14 @@
 //
 // Run it again when the icon or the background colour changes; the images are kept in
 // public/startup/. Plain Node only: the PNG is read and written here, with no image library.
+//
+// Iteration 19: one set per role as well, for the role apps (Iteration 23):
+//
+//   node scripts/make-startup-images.mjs student      (or supervisor, coordinator)
+//
+// writes public/startup/<role>/: the role's chrome colour (ROLE_PALETTES in
+// src/brand/tokens.ts), the PSU seal in the top third (on a white disc when the chrome is
+// dark) and the app icon in the middle: the splash's own end frame.
 import fs from "node:fs";
 import path from "node:path";
 import zlib from "node:zlib";
@@ -156,7 +164,54 @@ function render(icon, width, height) {
 
 export const fileFor = (screen) => `startup/apple-splash-${screen.width * screen.ratio}x${screen.height * screen.ratio}.png`;
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+/** A role's chrome colour and whether it is dark, read from ROLE_PALETTES in src/brand/tokens.ts. */
+function roleChrome(role) {
+  const tokens = fs.readFileSync(path.join(root, "src", "brand", "tokens.ts"), "utf8");
+  const block = tokens.match(new RegExp(`\\n  ${role}: \\{([^}]+)\\}`))?.[1];
+  const chrome = block?.match(/\bchrome: "(#[0-9A-Fa-f]{6})"/)?.[1];
+  const darkList = tokens.match(/ROLE_CHROME_DARK = \{([^}]+)\}/)?.[1] ?? "";
+  const dark = new RegExp(`${role}: true`).test(darkList);
+  if (!chrome) throw new Error(`No chrome colour for ${role} in tokens.ts.`);
+  return { chrome, dark };
+}
+
+/** One role's screen: its chrome, the seal in the top third, the icon in the middle. */
+async function renderRole(icon, seal, role, width, height, ratio) {
+  const { canvasOf, drawDisc, drawOver, rgbOf, shrink, writePng: write } = await import("./png.mjs");
+  const { chrome, dark } = roleChrome(role);
+  const canvas = canvasOf(width, height, rgbOf(chrome));
+  const sealSide = Math.round(40 * ratio * 1.5);
+  const sealTop = Math.round(height / 3 - sealSide / 2) - Math.round(height * 0.08);
+  if (dark) drawDisc(canvas, width / 2, sealTop + sealSide / 2, (sealSide * 1.12) / 2, [255, 255, 255]);
+  const round = shrink(seal, sealSide);
+  // The white outside the seal's circle is background: only the circle is drawn.
+  for (let y = 0; y < sealSide; y += 1) {
+    for (let x = 0; x < sealSide; x += 1) {
+      if (Math.hypot(x + 0.5 - sealSide / 2, y + 0.5 - sealSide / 2) > sealSide / 2) round.pixels[(y * sealSide + x) * 4 + 3] = 0;
+    }
+  }
+  drawOver(canvas, round, Math.round((width - sealSide) / 2), sealTop);
+  const iconSide = Math.round(Math.min(width, height) * 0.3);
+  drawOver(canvas, shrink(icon, iconSide), Math.round((width - iconSide) / 2), Math.round((height - iconSide) / 2));
+  return write(width, height, canvas.pixels, { alpha: false });
+}
+
+const ROLE = process.argv[2];
+const RUN = Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
+
+if (RUN && ROLE) {
+  if (!["student", "supervisor", "coordinator"].includes(ROLE)) throw new Error("The role is student, supervisor or coordinator.");
+  const { readPng: read } = await import("./png.mjs");
+  const icon = read(path.join(root, "public", "icon-512.png"));
+  const seal = read(path.join(root, "src", "brand", "assets", "psu-seal.png"));
+  fs.mkdirSync(path.join(root, "public", "startup", ROLE), { recursive: true });
+  for (const screen of SCREENS) {
+    const file = fileFor(screen).replace("startup/", `startup/${ROLE}/`);
+    const png = await renderRole(icon, seal, ROLE, screen.width * screen.ratio, screen.height * screen.ratio, screen.ratio);
+    fs.writeFileSync(path.join(root, "public", file), png);
+    console.log(`${file}  ${Math.round(png.length / 1024)} kB`);
+  }
+} else if (RUN) {
   const icon = readPng(path.join(root, "public", "icon-512.png"));
   fs.mkdirSync(path.join(root, "public", "startup"), { recursive: true });
   for (const screen of SCREENS) {

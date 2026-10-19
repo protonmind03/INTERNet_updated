@@ -235,3 +235,118 @@
 @media (prefers-reduced-motion: reduce) {
   .inb-proto-shimmer, .inb-proto-pulse, .inb-proto-rise, .inb-proto-fade { animation: none !important; }
 }
+
+/* =====================================================================
+   Brand kit v4 (Iteration 19): role palettes, status colours, the seal.
+   The values are ROLE_PALETTES, STATUS_COLORS and WEEKEND_TINT in
+   brand/tokens.ts; a test checks the two agree. roles.ts sets data-role
+   on <html>; the shared brand navy stays the icon's colour everywhere.
+   ===================================================================== */
+:root {
+  --status-success-bg: #e6f4ea;
+  --status-success-ink: #1b5e34;
+  --status-warning-bg: #fef3c7;
+  --status-warning-ink: #7a4a00;
+  --status-late-bg: #fde8e7;
+  --status-late-ink: #b42318;
+  --status-absent-bg: #f2f4f7;
+  --status-absent-ink: #475467;
+  --status-info-bg: #e8eefd;
+  --status-info-ink: #1d3fb0;
+  --weekend-tint: #fff5f5;
+  /* Before a role is known (sign-in, help): the brand's own navy and amber. */
+  --role-primary: #1a237e;
+  --role-on-primary: #ffffff;
+  --role-accent: #facc15;
+  --role-on-accent: #0f172a;
+  --role-surface: #f8fafc;
+  --role-ink: #0f172a;
+  --role-chrome: #1a237e;
+  --role-on-chrome: #ffffff;
+  --role-decor: #c7cdf0;
+}
+[data-role="student"] {
+  --role-primary: #a84b0b;
+  --role-on-primary: #ffffff;
+  --role-accent: #ffe047;
+  --role-on-accent: #3a2a12;
+  --role-surface: #fff8e8;
+  --role-ink: #3a2a12;
+  --role-chrome: #fff8e8;
+  --role-on-chrome: #3a2a12;
+  --role-decor: #f7ab15;
+}
+[data-role="supervisor"] {
+  --role-primary: #0f6b5c;
+  --role-on-primary: #ffffff;
+  --role-accent: #7fd1ae;
+  --role-on-accent: #0e2a26;
+  --role-surface: #eef6f2;
+  --role-ink: #0e2a26;
+  --role-chrome: #ffffff;
+  --role-on-chrome: #0e2a26;
+  --role-decor: #f7ab15;
+}
+[data-role="coordinator"] {
+  --role-primary: #0a28dd;
+  --role-on-primary: #ffffff;
+  --role-accent: #ffe047;
+  --role-on-accent: #0b1440;
+  --role-surface: #f1f3fb;
+  --role-ink: #0b1440;
+  --role-chrome: #0b1440;
+  --role-on-chrome: #ffffff;
+  --role-decor: #b8c2ff;
+}
+
+/* The seal (brand/PsuSeal.tsx): drawn as it is. No filter, shadow, outline or transform may reach it. */
+.psu-seal-frame { display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center; border-radius: 9999px; }
+.psu-seal-frame--disc { background: #ffffff; }
+.psu-seal { display: block; border-radius: 9999px; filter: none !important; box-shadow: none !important; outline: none !important; transform: none !important; }
+@media print { .psu-seal-frame { break-inside: avoid; } }
+
+/* The splash, "Seal to Route" (brand/SplashScreen.tsx): 1.1 s, then a 160 ms fade. */
+.inb-s2r {
+  display: grid;
+  grid-template-rows: 1fr auto 1fr;
+  justify-items: center;
+  overflow: hidden;
+  padding: max(24px, env(safe-area-inset-top)) 24px max(20px, env(safe-area-inset-bottom));
+  background: var(--role-chrome);
+  color: var(--role-on-chrome);
+  animation: inb-s2r-fill 300ms var(--inb-ease-out) both;
+}
+.inb-s2r-seal { align-self: center; animation: inb-s2r-fade 300ms var(--inb-ease-out) both; }
+.inb-s2r-centre { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.inb-s2r-route { overflow: visible; }
+.inb-s2r-path {
+  fill: none;
+  stroke: var(--role-primary);
+  stroke-width: 150;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 100;
+  animation: inb-s2r-draw 500ms var(--inb-ease-in-out) 300ms forwards;
+}
+.inb-s2r-pin { fill: var(--role-accent); transform-box: fill-box; transform-origin: center; transform: scale(0); animation: inb-s2r-pin 160ms var(--inb-ease-spring) 720ms forwards; }
+.inb-s2r-word { opacity: 0; transform: translateY(6px); animation: inb-s2r-settle 300ms var(--inb-ease-out) 800ms forwards; }
+.inb-s2r-role { margin: 0; font-size: 15px; font-weight: 600; letter-spacing: 0.02em; opacity: 0; animation: inb-s2r-fade 200ms var(--inb-ease-out) 900ms forwards; }
+.inb-s2r-footer { align-self: end; margin: 0; max-width: 22rem; text-align: center; font-size: 11px; line-height: 1.4; opacity: 0.8; }
+.inb-s2r--leave { animation: inb-s2r-out 160ms ease-out forwards; }
+.inb-s2r--still *, .inb-s2r--still { animation: none !important; }
+.inb-s2r--still .inb-s2r-path { stroke-dashoffset: 0; }
+.inb-s2r--still .inb-s2r-pin { transform: scale(1); }
+.inb-s2r--still .inb-s2r-word, .inb-s2r--still .inb-s2r-role { opacity: 1; transform: none; }
+@keyframes inb-s2r-fill { from { opacity: 0.6; } to { opacity: 1; } }
+@keyframes inb-s2r-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes inb-s2r-draw { to { stroke-dashoffset: 0; } }
+@keyframes inb-s2r-pin { to { transform: scale(1); } }
+@keyframes inb-s2r-settle { to { opacity: 1; transform: none; } }
+@keyframes inb-s2r-out { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .inb-s2r, .inb-s2r * { animation: none !important; }
+  .inb-s2r-path { stroke-dashoffset: 0; }
+  .inb-s2r-pin { transform: scale(1); }
+  .inb-s2r-word, .inb-s2r-role { opacity: 1; transform: none; }
+}

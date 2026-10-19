@@ -1,7 +1,8 @@
 import BrandIcon from "./BrandIcon";
 import Wordmark from "./Wordmark";
+import PsuSeal from "./PsuSeal";
 import { BRAND } from "./geometry";
-import { LOCKUP } from "./tokens";
+import { LOCKUP, SEAL } from "./tokens";
 
 type BrandLockupProps = {
   layout?: "horizontal" | "stacked";
@@ -12,14 +13,41 @@ type BrandLockupProps = {
   tagline?: string | null;
   /** Splash/about screens: the icon plays its story and the word assembles. */
   animated?: boolean;
+  /**
+   * Iteration 19, the co-brand lockup: the PSU seal, a 1 px hairline, then the
+   * wordmark with "Pangasinan State University · Lingayen Campus" under it.
+   * The seal is 1.6 times the wordmark's cap height, with a quarter of its
+   * diameter clear on each side of the hairline. `tagline` is not shown.
+   */
+  withSeal?: boolean;
   className?: string;
 };
 
+/** The caption of the co-brand lockup. */
+export const CO_BRAND_CAPTION = "Pangasinan State University · Lingayen Campus";
+
 /** Icon + wordmark (+ tagline) with the same proportions as the exported lockup files. */
-export default function BrandLockup({ layout = "horizontal", tone = "onLight", size = 40, tagline = "OJT monitoring & analytics", animated = false, className = "" }: BrandLockupProps) {
+export default function BrandLockup({ layout = "horizontal", tone = "onLight", size = 40, tagline = "OJT monitoring & analytics", animated = false, withSeal = false, className = "" }: BrandLockupProps) {
   const dark = tone === "onDark";
   const tile = dark ? BRAND.deep : BRAND.navy;
   const sub = dark ? BRAND.periwinkle : "#475569";
+
+  if (withSeal) {
+    const seal = Math.max(SEAL.minPx, Math.round(size * SEAL.lockupToCap));
+    const space = Math.round(seal * SEAL.clearSpace);
+    return (
+      <div className={`flex items-center ${className}`}>
+        <PsuSeal size={seal} onDark={dark} clearSpace={false} />
+        <span aria-hidden="true" className="self-stretch" style={{ width: 1, minHeight: seal, margin: `0 ${space}px`, background: "currentColor", opacity: 0.35 }} />
+        <span className="flex min-w-0 flex-col" style={{ gap: Math.max(3, size * 0.18) }}>
+          <Wordmark height={size} tone={tone} reveal={animated} />
+          <span className="font-medium leading-tight" style={{ fontSize: Math.max(11, Math.round(size * 0.42)), color: sub }}>
+            {CO_BRAND_CAPTION}
+          </span>
+        </span>
+      </div>
+    );
+  }
 
   if (layout === "stacked") {
     return (

@@ -1,175 +1,143 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import BrandIcon from "./BrandIcon";
 import Wordmark from "./Wordmark";
-import { CheckGlyph } from "./RoadGlyph";
-import { BRAND } from "./geometry";
-import { ROLE_THEMES, getActiveRole } from "./roles";
+import PsuSeal from "./PsuSeal";
+import { GLYPH } from "./geometry";
+import { ROLE_THEMES, applyRoleTheme, getActiveRole } from "./roles";
 import type { BrandRole } from "./roles";
+import { ROLE_CHROME_DARK } from "./tokens";
+
+/*
+|--------------------------------------------------------------------------
+| THE SPLASH: "SEAL TO ROUTE"
+|--------------------------------------------------------------------------
+|
+| Iteration 19. 1.1 s in all, on the role's own chrome (brand.css
+| [data-role]):
+|
+|   0 to 300 ms     the chrome fills the screen; the PSU seal fades in,
+|                   40 px, in the top third (on its white disc when the
+|                   chrome is dark);
+|   300 to 800 ms   the INTERNet route draws itself (the road glyph's own
+|                   path) in --role-primary and ends on a --role-accent pin;
+|   800 to 1100 ms  the wordmark settles and the role's name appears under
+|                   it; then a 160 ms cross-fade into the app.
+|
+| Shown only on a cold start of the installed app (standalone display), at
+| most once a session, and never for longer than 1.2 s. Under reduced
+| motion the end frame is shown for 300 ms instead. The timings are the
+| CSS in brand.css (.inb-s2r-*).
+|
+*/
+
+/** The route of the INTERNet "N": the road glyph's polyline (brand/RoadGlyph.tsx). */
+const ROUTE_POINTS = GLYPH.road.markup.match(/points="([^"]+)"/)?.[1] ?? "158,-72 214,-588 590,-72 646,-588";
+const ROUTE_END = ROUTE_POINTS.trim().split(/\s+/).pop()!.split(",").map(Number);
 
 type SplashScreenProps = {
   role: BrandRole;
-  /** 0–100. When omitted the splash advances through the role's launch steps by itself. */
-  progress?: number;
-  /** Plays the exit (fade + slight zoom). */
+  /** Plays the 160 ms cross-fade out. */
   leaving?: boolean;
+  /** The end frame at once, without motion (reduced motion). */
+  still?: boolean;
+  /** Drawn in place inside a frame instead of over the whole screen (brand preview). */
+  inline?: boolean;
 };
 
-/** Decorative road that crosses the background — the OJT journey, lanes flowing. */
-function BackgroundRoad({ color, lane }: { color: string; lane: string }) {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 400 800" preserveAspectRatio="xMidYMid slice" className="pointer-events-none absolute inset-0 h-full w-full">
-      <path d="M-40 820 C 80 640, 40 520, 170 430 S 380 300, 330 120 S 300 -20, 440 -60" fill="none" stroke={color} strokeWidth="70" strokeLinecap="round" />
-      <path className="inb-bg-lane" d="M-40 820 C 80 640, 40 520, 170 430 S 380 300, 330 120 S 300 -20, 440 -60" fill="none" stroke={lane} strokeWidth="6" strokeDasharray="130 90" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-/** Prelaunch screen: the mark tells its story while INTERNet loads what this role needs. */
-export function SplashScreen({ role, progress, leaving = false }: SplashScreenProps) {
-  const t = ROLE_THEMES[role];
-  const dark = t.surface === "dark";
-  const steps = t.launchSteps;
-  const [auto, setAuto] = useState(0);
-
-  useEffect(() => {
-    if (progress !== undefined) return;
-    const id = window.setInterval(() => setAuto((p) => Math.min(p + 3, 100)), 60);
-    return () => window.clearInterval(id);
-  }, [progress]);
-
-  const pct = Math.round(progress ?? auto);
-  const stage = pct >= 100 ? steps.length : Math.floor((pct / 100) * steps.length);
-  // Local edit: one steady line while the steps fill in below it. A sentence
-  // that changed with every step was gone before anyone could read it.
-  const msg = stage >= steps.length ? "You’re all set." : `Opening your ${t.portal.toLowerCase()}…`;
-  const bg = dark ? t.colors.surface : "#F8FAFC";
-  const accent = dark ? BRAND.amber : t.colors.accent;
-
+export function SplashScreen({ role, leaving = false, still = false, inline = false }: SplashScreenProps) {
+  const theme = ROLE_THEMES[role];
+  const dark = role !== "guest" ? ROLE_CHROME_DARK[role] : true;
+  const name = role === "student" ? "Trainee" : role === "guest" ? "OJT monitoring and analytics" : theme.tag;
   return (
     <div
-      className={`fixed inset-0 z-[100] flex flex-col justify-between overflow-hidden px-7 pb-9 pt-16 ${leaving ? "inb-fade-out" : ""}`}
-      style={{ background: dark ? `radial-gradient(120% 70% at 50% 32%, ${t.colors.surfaceRaised} 0%, ${bg} 62%)` : `radial-gradient(120% 70% at 50% 32%, #FFFFFF 0%, ${bg} 62%)` }}
+      data-role={role === "guest" ? undefined : role}
+      className={`inb-s2r ${inline ? "relative h-full min-h-[480px] w-full" : "fixed inset-0 z-[100]"} ${still ? "inb-s2r--still" : ""} ${leaving ? "inb-s2r--leave" : ""}`}
       role="status"
       aria-live="polite"
-      aria-label={`Loading INTERNet ${t.portal}`}
+      aria-label={`Loading INTERNet ${theme.portal}`}
     >
-      <div className="absolute inset-0 opacity-[0.07]">
-        <BackgroundRoad color={dark ? "#FFFFFF" : BRAND.navy} lane={dark ? BRAND.navy : "#FFFFFF"} />
+      <div className="inb-s2r-seal">
+        <PsuSeal size={40} onDark={dark} clearSpace={false} />
       </div>
-      <div />
-      <div className="relative mx-auto flex flex-col items-center gap-7 text-center">
-        <span className="inb-pop inb-tile-sheen" style={{ display: "inline-flex", borderRadius: "22.5%", boxShadow: dark ? "0 24px 48px -16px rgba(0,0,0,.55)" : "0 24px 48px -18px rgba(26,35,126,.45)" }}>
-          <BrandIcon size={132} tile={dark ? t.colors.surfaceRaised : BRAND.navy} animated />
-        </span>
-        <div className="flex flex-col items-center gap-3.5">
-          <Wordmark height={40} tone={dark ? "onDark" : "onLight"} reveal />
-          <span className="inb-fade-up inline-flex h-7 items-center rounded-full px-3 text-xs font-semibold" style={{ background: t.colors.tagBg, color: t.colors.tagText, animationDelay: "0.75s" }}>
-            {t.portal}
-          </span>
-          <p className="inb-fade-up max-w-xs text-[15px] font-medium leading-snug" style={{ color: t.colors.muted, animationDelay: "0.85s" }}>
-            {t.tagline}
-          </p>
+      <div className="inb-s2r-centre">
+        <svg className="inb-s2r-route" viewBox={GLYPH.road.viewBox} width="120" height="125" aria-hidden="true">
+          <polyline points={ROUTE_POINTS} pathLength={100} className="inb-s2r-path" />
+          <circle cx={ROUTE_END[0]} cy={ROUTE_END[1]} r="70" className="inb-s2r-pin" />
+        </svg>
+        <div className="inb-s2r-word">
+          <Wordmark height={30} tone={dark ? "onDark" : "onLight"} />
         </div>
+        <p className="inb-s2r-role">{name}</p>
       </div>
-      <div className="inb-fade-up relative mx-auto flex w-full max-w-sm flex-col gap-4" style={{ animationDelay: "0.95s" }}>
-        <ul className="flex flex-wrap justify-center gap-2">
-          {steps.map((s, i) => {
-            const done = i < stage;
-            const active = i === stage;
-            const style = done
-              ? { background: t.colors.accent, color: t.colors.accentText }
-              : active
-                ? { background: t.colors.tagBg, color: dark ? BRAND.amber : t.colors.tagText, boxShadow: `inset 0 0 0 1.5px ${accent}` }
-                : { background: dark ? "rgba(255,255,255,.07)" : "#E2E8F0", color: dark ? "#9AA3E0" : "#64748B" };
-            return (
-              <li key={s.label} className="inline-flex h-8 items-center gap-1.5 rounded-full px-3 text-xs font-semibold transition-colors duration-200" style={style}>
-                {done && <CheckGlyph size={13} />}
-                {active && <span className="inb-live h-1.5 w-1.5 rounded-full" style={{ background: "currentColor" }} aria-hidden="true" />}
-                {s.label}
-              </li>
-            );
-          })}
-        </ul>
-        <div className="h-1.5 overflow-hidden rounded-full" style={{ background: dark ? "rgba(255,255,255,.14)" : "#E2E8F0" }}>
-          <div className="inb-sheen h-full rounded-full transition-[width] duration-150" style={{ width: `${pct}%`, background: accent }} />
-        </div>
-        <p className="text-center text-xs font-medium" style={{ color: t.colors.muted }}>
-          {msg}
-        </p>
-        <p className="pt-2 text-center text-xs" style={{ color: dark ? "#9AA3E0" : "#64748B" }}>
-          Pangasinan State University · Lingayen Campus
-        </p>
-      </div>
+      <p className="inb-s2r-footer">A system proposal for Pangasinan State University – Lingayen Campus</p>
     </div>
   );
 }
 
+/** Whether the app was opened from the Home Screen or as an installed app. */
+function isStandalone(): boolean {
+  if (typeof window === "undefined") return false;
+  try {
+    return (
+      window.matchMedia?.("(display-mode: standalone)").matches ||
+      window.matchMedia?.("(display-mode: fullscreen)").matches ||
+      (navigator as Navigator & { standalone?: boolean }).standalone === true
+    );
+  } catch {
+    return false;
+  }
+}
+
+/** The fade starts at 1040 ms and ends at 1200: the most the splash may hold the app. The end frame alone under reduced motion. */
+const FADE_START_MS = 1040;
+const STILL_MS = 300;
+const FADE_MS = 160;
+
 type LaunchGateProps = {
   children: ReactNode;
-  /** Longest the splash stays up when no page reports that it is ready, ms. */
-  minDuration?: number;
-  /** Show only once per browser session (sessionStorage). */
-  oncePerSession?: boolean;
 };
 
 /**
- * Wrap <App /> with this in main.tsx. Shows the role-aware splash on a cold start, then fades into the app.
- * Pages can end it early: window.dispatchEvent(new Event("inb:ready")).
- *
- * Local edit: the landing pages now send "inb:ready" once their first data is
- * in (lib/launch.ts), so the wait is as long as the load. minDuration is the
- * fallback for pages that never send it (the login page), lowered from 2300.
- * A ready signal that arrives almost at once is held to MIN_VISIBLE so the
- * screen does not flash.
+ * Wrap <App /> with this in main.tsx. On a cold start of the installed app
+ * it shows the splash over the app for at most 1.2 s, then fades it out.
+ * In a browser tab, and after the first time in a session, it shows nothing.
  */
-const MIN_VISIBLE = 450;
-
-export function LaunchGate({ children, minDuration = 1200, oncePerSession = true }: LaunchGateProps) {
-  const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-  const seen = (() => {
-    try {
-      return oncePerSession && sessionStorage.getItem("inb_splash_seen") === "1";
-    } catch {
-      return false;
-    }
-  })();
-  const [phase, setPhase] = useState<"show" | "leave" | "done">(seen ? "done" : "show");
+export function LaunchGate({ children }: LaunchGateProps) {
   const [role] = useState<BrandRole>(getActiveRole);
-
-  useEffect(() => {
-    if (phase !== "show") return;
-    const shownAt = performance.now();
-    let early = 0;
-    const finish = () => setPhase("leave");
-    const ready = () => {
-      window.clearTimeout(early);
-      early = window.setTimeout(finish, Math.max(0, MIN_VISIBLE - (performance.now() - shownAt)));
-    };
-    const timer = window.setTimeout(finish, reduce ? 500 : minDuration);
-    window.addEventListener("inb:ready", ready);
-    return () => {
-      window.clearTimeout(timer);
-      window.clearTimeout(early);
-      window.removeEventListener("inb:ready", ready);
-    };
-  }, [phase, minDuration, reduce]);
-
-  useEffect(() => {
-    if (phase !== "leave") return;
+  const [still] = useState(() => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches));
+  const [phase, setPhase] = useState<"show" | "leave" | "done">(() => {
+    if (!isStandalone()) return "done";
     try {
-      sessionStorage.setItem("inb_splash_seen", "1");
+      return sessionStorage.getItem("inb_splash_seen") === "1" ? "done" : "show";
     } catch {
-      /* private mode: show again next time */
+      return "show";
     }
-    const timer = window.setTimeout(() => setPhase("done"), 330);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
+  });
+
+  useEffect(() => {
+    applyRoleTheme(role);
+  }, [role]);
+
+  useEffect(() => {
+    if (phase === "show") {
+      const timer = window.setTimeout(() => setPhase("leave"), still ? STILL_MS : FADE_START_MS);
+      return () => window.clearTimeout(timer);
+    }
+    if (phase === "leave") {
+      try {
+        sessionStorage.setItem("inb_splash_seen", "1");
+      } catch {
+        /* private mode: shown again next time */
+      }
+      const timer = window.setTimeout(() => setPhase("done"), FADE_MS);
+      return () => window.clearTimeout(timer);
+    }
+  }, [phase, still]);
 
   return (
     <>
       {children}
-      {phase !== "done" && <SplashScreen role={role} leaving={phase === "leave"} progress={phase === "leave" ? 100 : undefined} />}
+      {phase !== "done" && <SplashScreen role={role} still={still} leaving={phase === "leave"} />}
     </>
   );
 }

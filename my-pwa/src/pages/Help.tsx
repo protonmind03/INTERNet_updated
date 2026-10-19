@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
-import { BrandLockup } from "../brand";
+import { BrandLockup, PsuSeal } from "../brand";
 import { ATTENDANCE_RULES_HELP, DECIDED_FIRST, OFFLINE_TABLE, type OfflineRow } from "../lib/offlineHelp";
 
 /*
@@ -127,6 +127,19 @@ export default function Help() {
 
           <h3 className="mt-6 font-semibold text-slate-900">When two people decide the same record</h3>
           <p className="mt-1 text-sm text-slate-700">{DECIDED_FIRST}</p>
+        </section>
+
+        <section aria-labelledby="about" className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:flex-row sm:items-center sm:p-7">
+          <PsuSeal size={64} clearSpace={false} />
+          <div>
+            <h2 id="about" className="text-lg font-semibold text-slate-900">
+              About INTERNet
+            </h2>
+            <p className="mt-1 text-sm text-slate-700">
+              A system proposal for Pangasinan State University – Lingayen Campus: attendance, tasks, requirements and
+              records for on-the-job training, for trainees, their supervisors and the OJT coordinator.
+            </p>
+          </div>
         </section>
       </div>
     </main>

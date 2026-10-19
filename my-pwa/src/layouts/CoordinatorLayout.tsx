@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { BrandIcon, BrandLoader, LOGO_SIZES, PortalBrand, ROLE_THEMES, SIDEBAR } from "../brand";
+import { useRoleTheme } from "../brand/useRoleTheme";
 import Icon, { type IconName } from "../components/Icon";
 import ComposeMessage from "../components/ComposeMessage";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -91,6 +92,7 @@ export default function CoordinatorLayout({
   hideHeading?: boolean;
   children: ReactNode;
 }) {
+  useRoleTheme("coordinator");
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const coordinator = useAccount("coordinator");

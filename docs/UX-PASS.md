@@ -68,3 +68,8 @@ One line per UI change, in the form screen - change - design principle.
 - Coordinator · Programs, program editor - an optional "Formal name" field, printed on the Time Record - *Recognition over recall: the full name is entered once, where the program is defined.*
 - Coordinator · Profile - an "Institution details" card for the lines printed above every Time Record - *Single source of truth: one place to change what every record prints.*
 - Help - an "Attendance times" section: when a time-in opens, when hours count, what late means, the afternoon-only day - *Visibility of system status: the rules the server applies are written down where trainees look.*
+- Splash (installed app) - "Seal to Route": the PSU seal, the route drawn in the role's colour, the wordmark and the role's name, 1.1 s, cold starts of the installed app only, the end frame alone under reduced motion - *Aesthetic and minimalist design: one short story that says whose app this is, never in the way.*
+- Sign-in - the PSU seal beside the INTERNet mark, on its white disc on the navy panel - *Recognition: the university's mark where people decide whether to trust the page.*
+- Help - an "About INTERNet" section with the seal and "A system proposal for Pangasinan State University – Lingayen Campus" - *Honesty: say plainly what the system is.*
+- Coordinator analytics and performance PDFs - the seal and the campus line on the cover - *Consistency: printed reports carry the same identity as the app.*
+- Brand preview - "Seal" and "v4 palettes" panels: the seal's rules shown by the component that enforces them; the three role palettes with every text pair's contrast - *Error prevention: the rules sit where designers look, and a test holds them.*

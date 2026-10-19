@@ -22,10 +22,10 @@ the new ones keep the brief's numbers 065 to 070.
 - [x] test run and commit
 
 ### Phase 19: brand kit v4 with the seal (`iter-19-brand`)
-- [ ] 19.1 seal assets, PsuSeal, co-brand lockup, Seal panel
-- [ ] 19.2 role palettes, contrast test, v4 palettes panel
-- [ ] 19.3 splash "Seal to Route", start-up images per role
-- [ ] test run and commit
+- [x] 19.1 seal assets, PsuSeal, co-brand lockup, Seal panel
+- [x] 19.2 role palettes, contrast test, v4 palettes panel
+- [x] 19.3 splash "Seal to Route", start-up images per role
+- [x] test run and commit
 
 ### Phase 20: trainee attendance and Time Record (`iter-20-attendance`)
 - [ ] 20.1 day banner
@@ -99,6 +99,25 @@ the new ones keep the brief's numbers 065 to 070.
 - **Institution endpoint** lives in routes/institution.ts; the seal_asset stays 'psu-seal' (not
   editable).
 
+### Phase 19
+- **No image library** (sharp is not in the project). scripts/png.mjs reads and writes PNG in
+  plain Node (it also reads palette PNGs, which the seal is); make-seal-sizes.mjs wrote
+  psu-seal-96.png and psu-seal-192.png once and they are committed.
+- **The seal's white corners** are background, not seal: the image is clipped to its circle
+  (CSS border-radius) so the white disc on dark chrome shows the seal's own edge. Nothing else
+  is done to the image.
+- **Role layer applied** by each portal layout (useRoleTheme) and by the splash; the sign-in page
+  stays on the brand navy until the three doors (Phase 23). Existing components keep their
+  colours; the --role-* properties are used by the new work from Phase 20 on.
+- **Status colours**: the brief gave only late; success, warning, absent and info were chosen to
+  pass 4.5:1 on their tints (6.7 to 7.6:1).
+- **Splash timing**: the fade starts at 1040 ms and ends at 1200 ms, so the 1.1 s story plus the
+  160 ms fade stays inside the 1.2 s limit. It no longer waits for the first page ("inb:ready"
+  events are now ignored by it). Under reduced motion: the end frame, 300 ms.
+- **Seal on the current sign-in screen** already (beside the INTERNet mark), before the doors.
+- **Per-role start-up images** are in public/startup/<role>/ (not precached, like the others);
+  the role apps link them in Phase 23.
+
 ## Phase reports
 
 ### Phase 18 (branch iter-18-rules)
@@ -124,5 +143,25 @@ UX-PASS, DEVELOPING (offline table row).
 afternoon-only day, offline judged at the corrected time, two-week pattern day, half-day
 absences, institution, formal names). App lint and build: passed. check:pwa: 58 passed.
 e2e: 67 passed (run at about 19:00 Philippine time on a Monday).
+
+**Skipped.** Nothing.
+
+### Phase 19 (branch iter-19-brand)
+
+**Changed.** my-pwa/src/brand: PsuSeal.tsx (new), BrandV4Panels.tsx (new: Seal and v4 palettes
+panels), useRoleTheme.ts (new), assets/psu-seal-96.png and -192.png (new), tokens.ts
+(ROLE_PALETTES, STATUS_COLORS, WEEKEND_TINT, SEAL, contrast helpers), brand.css (role and
+status custom properties, seal classes, splash), roles.ts (applyRoleTheme), BrandLockup.tsx
+(withSeal), SplashScreen.tsx ("Seal to Route" and the new LaunchGate), BrandPreview.tsx,
+LoginScreen.tsx (seal), index.ts. Layouts: the three portal layouts set the role layer.
+lib/analyticsPdf.ts (seal on the cover). pages/Help.tsx (About with the seal). Scripts: png.mjs,
+make-seal-sizes.mjs (new), make-startup-images.mjs (takes a role); public/startup/<role>/ (33
+images). Tests: three new API-suite tests (contrast of every pair, brand.css matches tokens.ts,
+the seal's sizes and rules). Docs: UX-PASS, PAPER-CORRECTIONS.
+
+**Migrations.** None.
+
+**Tests.** backend lint, route check: passed. API: 251 passed. App lint, build: passed.
+check:pwa: 58 passed. e2e: 67 passed.
 
 **Skipped.** Nothing.
