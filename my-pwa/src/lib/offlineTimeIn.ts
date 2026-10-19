@@ -1,3 +1,4 @@
+import { keepOfflineChallenges, rememberHasPasskey } from "./passkeys";
 import type { Prompt } from "./liveness/engine";
 import { faceTrackerKept, precacheFaceTracker } from "./liveness/trackerFiles";
 import { API_URL, withStudentAuth } from "./api";
@@ -100,6 +101,15 @@ export function prepareOfflineTimeIn(studentId: string, force = false): Promise<
         continue;
       }
       if (issued.status !== 200 || !Array.isArray(issued.data.vouchers)) return;
+      // Iteration 22: the passkey challenges that came with each day, kept to sign with no connection.
+      let anyChallenges = false;
+      for (const entry of issued.data.vouchers as Array<Record<string, unknown>>) {
+        if (entry.step_challenges && typeof entry.step_challenges === "object") {
+          anyChallenges = true;
+          keepOfflineChallenges(String(entry.date), entry.step_challenges as Parameters<typeof keepOfflineChallenges>[1]);
+        }
+      }
+      if ((issued.data.vouchers as unknown[]).length > 0) rememberHasPasskey(anyChallenges);
       const vouchers: OfflineVoucher[] = (issued.data.vouchers as Array<Record<string, unknown>>).map((entry) => {
         const claims = claimsOf(String(entry.token));
         return {

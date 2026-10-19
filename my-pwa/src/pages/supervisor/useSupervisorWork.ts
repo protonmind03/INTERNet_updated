@@ -38,7 +38,11 @@ export type Intern = {
   block_name?: string | null;
 };
 
+import type { StepVerifications } from "../../components/StepMarks";
+
 export type AttendanceEntry = {
+  /** Iteration 22: how each later step was made. */
+  step_verifications?: StepVerifications | null;
   id: number;
   student_id: string;
   student_name: string;

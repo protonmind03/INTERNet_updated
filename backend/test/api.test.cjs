@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -12125,6 +12125,295 @@ test("the bell's two lists, and an act marking its notification done", async (t)
     assert.equal(out.response.status, 200, JSON.stringify(out.body));
     const after = (await list("action")).body.notifications.find((item) => item.title === "Did you forget to time out?");
     assert.ok(after.acted_at, "timing out is the act the reminder asked for");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 22: passkeys for Lunch break, End break and Time out
+|--------------------------------------------------------------------------
+*/
+
+/**
+ * A software passkey for the tests: a real P-256 key, a "none" attestation
+ * in CBOR, and assertions signed the way a phone signs them. The origin and
+ * the relying party are the ones the server is set up with (FRONTEND_URL).
+ */
+function virtualAuthenticator() {
+  const crypto = require("node:crypto");
+  const origin = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
+  const rpId = new URL(origin).hostname;
+  const { privateKey, publicKey } = crypto.generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const jwk = publicKey.export({ format: "jwk" });
+  const credentialId = crypto.randomBytes(16);
+  let counter = 0;
+  const b64 = (buffer) => Buffer.from(buffer).toString("base64url");
+
+  // The smallest CBOR the attestation needs: maps, byte and text strings, small integers.
+  const head = (major, length) => {
+    if (length < 24) return Buffer.from([(major << 5) | length]);
+    if (length < 256) return Buffer.from([(major << 5) | 24, length]);
+    return Buffer.from([(major << 5) | 25, length >> 8, length & 255]);
+  };
+  const cbor = (value) => {
+    if (Buffer.isBuffer(value)) return Buffer.concat([head(2, value.length), value]);
+    if (typeof value === "string") return Buffer.concat([head(3, Buffer.byteLength(value)), Buffer.from(value)]);
+    if (typeof value === "number") return value >= 0 ? head(0, value) : head(1, -1 - value);
+    if (value instanceof Map) {
+      const parts = [head(5, value.size)];
+      for (const [key, item] of value) parts.push(cbor(key), cbor(item));
+      return Buffer.concat(parts);
+    }
+    throw new Error("cbor: unsupported value");
+  };
+  const coseKey = cbor(new Map([[1, 2], [3, -7], [-1, 1], [-2, Buffer.from(jwk.x, "base64url")], [-3, Buffer.from(jwk.y, "base64url")]]));
+  const rpIdHash = crypto.createHash("sha256").update(rpId).digest();
+  const count = () => {
+    const value = Buffer.alloc(4);
+    value.writeUInt32BE(counter, 0);
+    return value;
+  };
+
+  return {
+    id: b64(credentialId),
+    /** The answer to registration options. */
+    register(options) {
+      const clientData = Buffer.from(JSON.stringify({ type: "webauthn.create", challenge: options.challenge, origin, crossOrigin: false }));
+      const length = Buffer.alloc(2);
+      length.writeUInt16BE(credentialId.length, 0);
+      const authData = Buffer.concat([rpIdHash, Buffer.from([0x45]), count(), Buffer.alloc(16), length, credentialId, coseKey]);
+      const attestationObject = cbor(new Map([["fmt", "none"], ["attStmt", new Map()], ["authData", authData]]));
+      return {
+        id: b64(credentialId),
+        rawId: b64(credentialId),
+        type: "public-key",
+        response: { clientDataJSON: b64(clientData), attestationObject: b64(attestationObject), transports: ["internal"] },
+        clientExtensionResults: {},
+        authenticatorAttachment: "platform",
+      };
+    },
+    /** The answer to step (authentication) options. `counterStep` 0 is a synced passkey's. */
+    sign(options, counterStep = 1) {
+      counter += counterStep;
+      const clientData = Buffer.from(JSON.stringify({ type: "webauthn.get", challenge: options.challenge, origin, crossOrigin: false }));
+      const authData = Buffer.concat([rpIdHash, Buffer.from([0x05]), count()]);
+      const signature = crypto.sign("sha256", Buffer.concat([authData, crypto.createHash("sha256").update(clientData).digest()]), privateKey);
+      return {
+        id: b64(credentialId),
+        rawId: b64(credentialId),
+        type: "public-key",
+        response: { clientDataJSON: b64(clientData), authenticatorData: b64(authData), signature: b64(signature) },
+        clientExtensionResults: {},
+        authenticatorAttachment: "platform",
+      };
+    },
+    setCounter(value) {
+      counter = value;
+    },
+  };
+}
+
+test("passkeys: registered with the phone's screen lock, listed, removed; for the student alone", async (t) => {
+  for (const [method, path] of [["POST", "/api/passkeys/register/options"], ["POST", "/api/passkeys/register"], ["GET", "/api/passkeys"], ["DELETE", "/api/passkeys/1"], ["POST", "/api/passkeys/step-challenge"]]) {
+    assert.equal((await jsonRequest(path, { method })).response.status, 401, path);
+    assert.equal((await jsonRequest(path, { method, headers: authHeaders(coordinatorToken) })).response.status, 403, path);
+  }
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("PASSKEY");
+  const as = (method, path, body) => jsonRequest(path, jsonBody(f.mine.token, method, body ?? {}));
+  try {
+    const device = virtualAuthenticator();
+    const options = (await as("POST", "/api/passkeys/register/options")).body.options;
+    assert.equal(options.authenticatorSelection.userVerification, "required");
+    assert.equal(options.authenticatorSelection.residentKey, "preferred");
+    assert.equal(options.authenticatorSelection.authenticatorAttachment, "platform");
+    const saved = await as("POST", "/api/passkeys/register", { response: device.register(options), label: "Test phone" });
+    assert.equal(saved.response.status, 201, JSON.stringify(saved.body));
+    // The same registration answer again: its challenge is spent.
+    assert.equal((await as("POST", "/api/passkeys/register", { response: device.register(options), label: "Again" })).response.status, 400);
+    const listed = (await jsonRequest("/api/passkeys", { headers: authHeaders(f.mine.token) })).body.passkeys;
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].device_label, "Test phone");
+    assert.ok(!("public_key" in listed[0]), "the key itself stays on the server");
+    assert.equal((await jsonRequest(`/api/passkeys/${listed[0].id}`, { method: "DELETE", headers: authHeaders(studentToken) })).response.status, 404, "not another student's");
+    assert.equal((await jsonRequest(`/api/passkeys/${listed[0].id}`, { method: "DELETE", headers: authHeaders(f.mine.token) })).response.status, 200);
+    assert.equal((await jsonRequest("/api/passkeys", { headers: authHeaders(f.mine.token) })).body.passkeys.length, 0);
+    assert.equal((await as("POST", "/api/passkeys/step-challenge", { step: "break" })).body.options, null, "no passkey, no challenge");
+  } finally {
+    await f.pool.query(`DELETE FROM webauthn_challenges WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM webauthn_credentials WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("a step is confirmed with a passkey once per challenge, never blocked, and recorded as it happened", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("PKSTEP");
+  const as = (method, path, body) => jsonRequest(path, jsonBody(f.mine.token, method, body ?? {}));
+  try {
+    const device = virtualAuthenticator();
+    const registerOptions = (await as("POST", "/api/passkeys/register/options")).body.options;
+    assert.equal((await as("POST", "/api/passkeys/register", { response: device.register(registerOptions), label: "Phone" })).response.status, 201);
+    // A log today with no schedule (the day's rules do not apply).
+    const log = (await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, NOW() - INTERVAL '3 hours', 'Pending') RETURNING id`,
+      [f.sid, f.phToday()]
+    )).rows[0].id;
+    const row = async () => (await f.pool.query(`SELECT step_verifications FROM attendance WHERE id = $1`, [log])).rows[0].step_verifications;
+
+    // Lunch break, confirmed.
+    const challenge = (await as("POST", "/api/passkeys/step-challenge", { step: "break" })).body.options;
+    assert.equal(challenge.userVerification, "required");
+    const signed = device.sign(challenge);
+    const lunch = await as("PUT", `/api/attendance/${log}/break`, { passkey: signed });
+    assert.equal(lunch.response.status, 200, JSON.stringify(lunch.body));
+    let kept = await row();
+    assert.equal(kept.break.method, "passkey");
+    assert.equal(kept.break.credentialId, device.id);
+
+    // The same assertion again (a replay) is refused as a confirmation, but the step goes on: End break, failed.
+    const replayed = await as("PUT", `/api/attendance/${log}/break-end`, { passkey: signed });
+    assert.equal(replayed.response.status, 200, "never blocked");
+    kept = await row();
+    assert.equal(kept["break-end"].method, "failed");
+
+    // Time out with no confirmation at all: 'none'. A synced passkey's counter of 0 is fine.
+    const out = await as("PUT", `/api/attendance/${log}/time-out`, {});
+    assert.equal(out.response.status, 200, JSON.stringify(out.body));
+    kept = await row();
+    assert.equal(kept["time-out"].method, "none");
+
+    // A counter that goes back on a non-zero count fails; the challenge was still spent.
+    const second = (await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, NOW() - INTERVAL '30 hours', 'Pending') RETURNING id`,
+      [f.sid, shiftDay(f.phToday(), -1)]
+    )).rows[0].id;
+    await f.pool.query(`UPDATE webauthn_credentials SET sign_count = 50 WHERE student_id = $1`, [f.sid]);
+    const back = (await as("POST", "/api/passkeys/step-challenge", { step: "break" })).body.options;
+    device.setCounter(3);
+    await as("PUT", `/api/attendance/${second}/break`, { passkey: device.sign(back) });
+    const wrong = (await f.pool.query(`SELECT step_verifications FROM attendance WHERE id = $1`, [second])).rows[0].step_verifications;
+    assert.equal(wrong.break.method, "failed");
+    assert.match(wrong.break.reason, /counter/);
+
+    // The supervisor's list shows how each step was made.
+    const supervisorList = await jsonRequest(`/api/supervisor/attendance/${encodeURIComponent(f.supervisor.supervisor.supervisor_id)}`, { headers: authHeaders(f.supervisor.token) });
+    const seen = supervisorList.body.attendance.find((entry) => entry.id === log);
+    assert.equal(seen.step_verifications.break.method, "passkey");
+  } finally {
+    await f.pool.query(`DELETE FROM webauthn_challenges WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM webauthn_credentials WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+test("offline: vouchers carry a step challenge per step, signed on the phone and checked on arrival; an expired one still records the step", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("PKOFF");
+  const as = (method, path, body) => jsonRequest(path, jsonBody(f.mine.token, method, body ?? {}));
+  const uuid = () => require("node:crypto").randomUUID();
+  try {
+    const device = virtualAuthenticator();
+    const registerOptions = (await as("POST", "/api/passkeys/register/options")).body.options;
+    assert.equal((await as("POST", "/api/passkeys/register", { response: device.register(registerOptions), label: "Phone" })).response.status, 201);
+    // Vouchers for scheduled days: every day of the week, so today is one.
+    for (const day of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]) {
+      await f.pool.query(`INSERT INTO ojt_schedule (student_id, day, start_time, end_time, hours, is_active) VALUES ($1, $2, '00:00', '23:59', 8, TRUE)`, [f.sid, day]);
+    }
+    const { publicKey } = require("node:crypto").generateKeyPairSync("ec", { namedCurve: "P-256" });
+    const jwk = publicKey.export({ format: "jwk" });
+    const key = await as("POST", "/api/attendance/device-key", { public_key_jwk: { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y } });
+    assert.equal(key.response.status, 200, JSON.stringify(key.body));
+    const vouchers = await as("POST", "/api/attendance/offline-vouchers", { key_id: key.body.key_id, client_sent_at: new Date().toISOString() });
+    assert.equal(vouchers.response.status, 200, JSON.stringify(vouchers.body));
+    const today = vouchers.body.vouchers.find((voucher) => voucher.date === f.phToday());
+    assert.ok(today, "a voucher for today");
+    for (const step of ["break", "break-end", "time-out"]) assert.ok(today.step_challenges[step].challenge, step);
+    // Asked again (the connection came back): the same voucher, with fresh step challenges.
+    const again = (await as("POST", "/api/attendance/offline-vouchers", { key_id: key.body.key_id, client_sent_at: new Date().toISOString() })).body.vouchers.find((voucher) => voucher.date === f.phToday());
+
+    const log = (await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, NOW() - INTERVAL '3 hours', 'Pending') RETURNING id`,
+      [f.sid, f.phToday()]
+    )).rows[0].id;
+    // Signed with no connection, sent later with the step.
+    const lunch = await as("PUT", `/api/attendance/${log}/break`, {
+      occurred_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+      client_request_id: uuid(),
+      client_sent_at: new Date().toISOString(),
+      passkey: device.sign(today.step_challenges.break),
+    });
+    assert.equal(lunch.response.status, 200, JSON.stringify(lunch.body));
+    const ledger = await f.pool.query(`SELECT verification FROM offline_action_ledger WHERE attendance_id = $1 AND action = 'break'`, [log]);
+    assert.equal(ledger.rows[0].verification.method, "passkey");
+
+    // A voucher-day challenge (asked for again: a fresh one) used on another day's log: refused as a
+    // confirmation, the step still recorded.
+    const yesterday = (await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, NOW() - INTERVAL '20 hours', 'Pending') RETURNING id`,
+      [f.sid, shiftDay(f.phToday(), -1)]
+    )).rows[0].id;
+    const late = await as("PUT", `/api/attendance/${yesterday}/break`, {
+      occurred_at: new Date(Date.now() - 10 * 60 * 60_000).toISOString(),
+      client_request_id: uuid(),
+      client_sent_at: new Date().toISOString(),
+      passkey: device.sign(again.step_challenges.break),
+    });
+    assert.equal(late.response.status, 200, JSON.stringify(late.body));
+    const lateRow = (await f.pool.query(`SELECT verification FROM offline_action_ledger WHERE attendance_id = $1`, [yesterday])).rows[0];
+    assert.equal(lateRow.verification.method, "failed");
+  } finally {
+    await f.pool.query(`DELETE FROM offline_action_ledger WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM offline_vouchers WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM device_keys WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM webauthn_challenges WHERE student_id = $1`, [f.sid]);
+    await f.pool.query(`DELETE FROM webauthn_credentials WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
+});
+
+
+test("on the strict level End break also runs the camera check (standard prompts), recorded and never refused for", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("ENDCAM");
+  const as = (method, path, body) => jsonRequest(path, jsonBody(f.mine.token, method, body ?? {}));
+  try {
+    // Not on the strict level: no check is asked for.
+    assert.deepEqual((await as("POST", "/api/attendance/liveness-challenge", { purpose: "break-end" })).body, { needed: false });
+    await f.pool.query(`UPDATE students SET liveness_strict = TRUE WHERE student_id = $1`, [f.sid]);
+    const challenge = (await as("POST", "/api/attendance/liveness-challenge", { purpose: "break-end" })).body;
+    assert.equal(challenge.needed, true);
+    assert.equal(challenge.level, "standard", "the standard prompts, not the strict ones");
+    // Its ticket cannot be used for a time-in.
+    const form = new FormData();
+    form.set("student_id", f.sid);
+    form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "photo.jpg");
+    form.set("liveness_ticket", challenge.ticket);
+    form.set("liveness_report", JSON.stringify({ completed: [...challenge.prompts, ...(challenge.spare ? [challenge.spare] : [])], flash: "passed" }));
+    assert.equal((await jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(f.mine.token), body: form })).response.status, 400);
+
+    const day = async (daysAgo) =>
+      (await f.pool.query(
+        `INSERT INTO attendance (student_id, date, time_in, break_time, status) VALUES ($1, $2::date, NOW() - INTERVAL '3 hours', NOW() - INTERVAL '1 hour', 'Pending') RETURNING id`,
+        [f.sid, shiftDay(f.phToday(), -daysAgo)]
+      )).rows[0].id;
+    const camera = async (id) => (await f.pool.query(`SELECT step_verifications->'break-end'->>'camera' AS camera FROM attendance WHERE id = $1`, [id])).rows[0].camera;
+
+    // With the check passed.
+    const passed = await day(0);
+    const done = await as("PUT", `/api/attendance/${passed}/break-end`, {
+      liveness_ticket: challenge.ticket,
+      liveness_report: JSON.stringify({ completed: [...challenge.prompts, ...(challenge.spare ? [challenge.spare] : [])], flash: "passed" }),
+    });
+    assert.equal(done.response.status, 200, JSON.stringify(done.body));
+    assert.equal(await camera(passed), "passed");
+    // Without it (skipped): still recorded, marked not run.
+    const skipped = await day(1);
+    assert.equal((await as("PUT", `/api/attendance/${skipped}/break-end`, {})).response.status, 200);
+    assert.equal(await camera(skipped), "missing");
   } finally {
     await f.cleanup();
   }

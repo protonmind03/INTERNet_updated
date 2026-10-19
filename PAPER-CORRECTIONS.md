@@ -935,3 +935,16 @@ describe; the earlier notes it replaces are marked there.
 - **Floating button.** On a phone the next-step button takes two taps: the
   first shows the step's name, the second opens it. A keyboard or screen
   reader opens it at once.
+- **Passkeys (Iteration 22, migration 069).** A trainee may register a passkey (the phone's screen
+  lock) and Lunch break, End break and Time out ask for it. It is never required: a step without it
+  is recorded as not confirmed and the supervisor sees how each step was made. With no connection,
+  challenges collected beforehand are signed on the phone and checked when the step arrives. ERD:
+  `webauthn_credentials` (student_id, credential_id, public_key, sign_count, transports, backed_up,
+  device_label, created_at, last_used_at, revoked_at), `webauthn_challenges` (challenge, student_id,
+  purpose, valid_date, step, issued_at, used_at), `attendance.step_verifications`,
+  `offline_action_ledger.verification`. The paper may say a step "can be confirmed with the
+  phone's biometric lock"; it may not say biometrics are stored or required: the server never sees
+  a fingerprint or face, only a signature.
+- **End break camera check.** On the strict level (after a rejected time-in photo) End break also
+  runs the camera check online; no photo is kept and skipping it does not stop the step.
+

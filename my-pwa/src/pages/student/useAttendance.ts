@@ -541,11 +541,12 @@ export function useAttendance(studentId: string | undefined) {
     offlineVoucher,
     timeInOfflineAttested,
     redoPhoto,
-    startBreak: () => step("break", "Could not record your lunch break."),
-    endBreak: () => step("break-end", "Could not record the end of your break."),
+    // `confirmation` (Iteration 22): the passkey's answer, or passkey_status, sent with the step.
+    startBreak: (confirmation: Record<string, unknown> = {}) => step("break", "Could not record your lunch break.", confirmation),
+    endBreak: (confirmation: Record<string, unknown> = {}) => step("break-end", "Could not record the end of your break.", confirmation),
     /** Times out, with the student's note of what they did today. */
     /** `taskIds`: the tasks worked on today, if the student chose any. */
-    timeOut: (accomplishments: string, taskIds: number[] = [], onQueued?: (kept: QueuedStep) => Promise<void>) =>
+    timeOut: (accomplishments: string, taskIds: number[] = [], onQueued?: (kept: QueuedStep) => Promise<void>, confirmation: Record<string, unknown> = {}) =>
       step(
         "time-out",
         "Could not record your time-out.",
@@ -553,6 +554,7 @@ export function useAttendance(studentId: string | undefined) {
           accomplishments: accomplishments.trim(),
           // Left out when none is chosen, so the request is what it always was.
           ...(taskIds.length > 0 ? { task_ids: taskIds } : {}),
+          ...confirmation,
         },
         onQueued
       ),

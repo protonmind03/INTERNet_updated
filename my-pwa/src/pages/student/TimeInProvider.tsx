@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { confirmStep, prepareStep, type PasskeyStep } from "../../lib/passkeys";
+import { phToday } from "../../lib/phTime";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import EndBreakCheck, { type EndBreakChallenge } from "./EndBreakCheck";
 import PicturePicker from "../../components/PicturePicker";
 import { ConfirmDialog } from "../../components/ui";
 import { API_URL, withStudentAuth } from "../../lib/api";
@@ -40,6 +43,9 @@ const ACCOMPLISHMENT_MIN = 15;
 
 type OpenTask = { id: number; title: string; status: string };
 
+/** The server's name for each step a passkey confirms. */
+const PASSKEY_STEP: Record<TimeInStep, PasskeyStep> = { break: "break", back: "break-end", out: "time-out" };
+
 export default function TimeInProvider({ children }: { children: ReactNode }) {
   // Already inside one (a page mounted it above the layout): use that.
   const outer = useOptionalTimeIn();
@@ -67,7 +73,38 @@ function TimeInActions({ children }: { children: ReactNode }) {
     else setTimeInOpen(true);
   }, [mustConsent, online]);
   const [pending, setPending] = useState<TimeInStep | null>(null);
-  const openStep = useCallback((step: TimeInStep) => setPending(step), []);
+  // The passkey's challenge is fetched as the dialog opens, so the screen lock is asked for
+  // in the same tap as Confirm (a phone may refuse it after a slower round trip).
+  // Iteration 22: End break on the strict level runs the camera check first (EndBreakCheck);
+  // what it found is sent with the step. Without a connection, or if skipped, the step goes on.
+  const [breakCheck, setBreakCheck] = useState<EndBreakChallenge | null>(null);
+  const breakCheckResult = useRef<Record<string, unknown>>({});
+  const askBreakCheck = useCallback(async (): Promise<EndBreakChallenge | null> => {
+    try {
+      const response = await fetch(`${API_URL}/api/attendance/liveness-challenge`, withStudentAuth({
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purpose: "break-end" }),
+      }));
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || !data.needed) return null;
+      return { ticket: data.ticket, prompts: data.prompts ?? [], spare: data.spare ?? null, expiresAt: Date.now() + ((Number(data.expires_in) || 600) - 5) * 1000 };
+    } catch {
+      return null;
+    }
+  }, []);
+  const openStep = useCallback(
+    (step: TimeInStep) => {
+      prepareStep(PASSKEY_STEP[step]);
+      breakCheckResult.current = {};
+      if (step === "back" && navigator.onLine) {
+        void askBreakCheck().then((challenge) => (challenge ? setBreakCheck(challenge) : setPending(step)));
+        return;
+      }
+      setPending(step);
+    },
+    [askBreakCheck]
+  );
   // What the student did today, asked for at time-out and kept as a draft
   // until it is sent.
   const [accomplishment, setAccomplishment] = useState("");
@@ -141,16 +178,24 @@ function TimeInActions({ children }: { children: ReactNode }) {
           }
         : undefined;
     try {
+      // Iteration 22: the passkey, when this trainee has one. Asked for, never required:
+      // a cancelled or failed prompt still sends the step, marked as not confirmed.
+      const confirmation = {
+        ...(await confirmStep(PASSKEY_STEP[action], phToday(), online)),
+        ...(action === "back" ? breakCheckResult.current : {}),
+      };
+      breakCheckResult.current = {};
       const outcome =
         action === "break"
-          ? await attendance.startBreak()
+          ? await attendance.startBreak(confirmation)
           : action === "back"
-            ? await attendance.endBreak()
+            ? await attendance.endBreak(confirmation)
             : await attendance.timeOut(
                 accomplishment,
                 // Only tasks still on the list: one finished meanwhile is not sent.
                 openTasks.filter((task) => workedOn.has(task.id)).map((task) => task.id),
-                withPictures
+                withPictures,
+                confirmation
               );
       if (action === "out") {
         discardAccomplishment();
@@ -208,7 +253,7 @@ function TimeInActions({ children }: { children: ReactNode }) {
   };
 
   const worked = todayLog ? workedMinutes(todayLog, now) : 0;
-  const dialogOpen = timeInOpen || consentOpen || pending !== null;
+  const dialogOpen = timeInOpen || consentOpen || pending !== null || breakCheck !== null;
 
   const value = useMemo<TimeInValue>(
     () => ({ attendance, now, online, openTimeIn, openStep, dialogOpen }),
@@ -218,6 +263,22 @@ function TimeInActions({ children }: { children: ReactNode }) {
   return (
     <TimeInContext.Provider value={value}>
       {children}
+
+      {breakCheck && (
+        <EndBreakCheck
+          challenge={breakCheck}
+          onPassed={(report) => {
+            breakCheckResult.current = { liveness_ticket: breakCheck.ticket, liveness_report: JSON.stringify(report) };
+            setBreakCheck(null);
+            setPending("back");
+          }}
+          onSkip={() => {
+            setBreakCheck(null);
+            setPending("back");
+          }}
+          onRenew={() => void askBreakCheck().then(setBreakCheck)}
+        />
+      )}
 
       <TimeInDialog
         open={timeInOpen}

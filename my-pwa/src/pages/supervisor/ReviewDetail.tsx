@@ -1,3 +1,4 @@
+import StepMarks from "../../components/StepMarks";
 import { useEffect, useState, type ReactNode } from "react";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import ComposeMessage from "../../components/ComposeMessage";
@@ -227,6 +228,8 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         </p>
       )}
 
+      {/* Iteration 22: how the later steps were made; a description, not a verdict. */}
+      <StepMarks verifications={entry.step_verifications} sentLater={entry.recorded_offline && !entry.offline_time_in} />
       <PhotoRedoNote entry={entry} />
       {(!entry.offline_time_in || entry.offline_attestation) && (
         <AttendancePhoto path={entry.image_url} role="supervisor" />

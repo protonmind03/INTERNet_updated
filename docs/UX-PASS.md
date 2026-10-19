@@ -90,3 +90,7 @@ One line per UI change, in the form screen - change - design principle.
 - Student · Schedule, day sheet - a bottom sheet on phones (handle, swipe down) and a popover on desktop: the day, its status, schedule, times, hours, context and decision, with an appeal link; arrows or a swipe for the next day - *Progressive disclosure: everything about a day, one tap away.*
 - Student · Schedule, My progress - a burn-up chart, milestones, the change since last week, and an eight-week rhythm strip, each with a text summary - *Recognition: progress shown as a path to the goal.*
 - Student · Profile - grouped like a phone's settings (a row per group opening a sheet; on desktop two columns with a sticky index); every form unchanged - *Chunking: ten groups instead of one long page.*
+- Student · Profile, Security and device - Passkeys: add one with the phone's screen lock, see each with when it was added and last used, remove one - *User control: a stronger check the trainee chooses.*
+- Student · Lunch break, End break, Time out - the phone's screen lock is asked for when the trainee has a passkey; cancelling it never stops the step; on the strict level End break runs the camera check first, with a Skip - *Error tolerance: a failed check is recorded, not punished.*
+- Supervisor · log detail and attendance list - per step: "Confirmed with passkey", "Not confirmed", "Sent later", and the End break camera check - *Visibility: how a record was made, stated plainly.*
+

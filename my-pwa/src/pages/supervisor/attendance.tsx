@@ -1,3 +1,4 @@
+import StepMarks from "../../components/StepMarks";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
@@ -126,6 +127,8 @@ function LogMarks({ entry }: { entry: AttendanceEntry }) {
           </span>
         )
       )}
+      {/* Iteration 22: how each later step was made. */}
+      <StepMarks verifications={entry.step_verifications} compact />
     </span>
   );
 }

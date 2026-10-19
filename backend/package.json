@@ -39,6 +39,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "3.1151.0",
     "@azure/storage-blob": "^12.34.0",
+    "@simplewebauthn/server": "13.3.3",
     "age-encryption": "0.3.1",
     "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",

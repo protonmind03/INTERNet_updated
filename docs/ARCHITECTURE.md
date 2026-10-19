@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-241 routes in 15 files; 44 services in use.
+246 routes in 16 files; 45 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -26,6 +26,7 @@ flowchart LR
     routes_institution["routes/institution.ts<br/>2 routes: /api/coordinator"]
     routes_messages["routes/messages.ts<br/>4 routes: /api/messages"]
     routes_offlineTimeIn["routes/offlineTimeIn.ts<br/>4 routes: /api/attendance, /api/offline"]
+    routes_passkeys["routes/passkeys.ts<br/>5 routes: /api/passkeys"]
     routes_programme["routes/programme.ts<br/>10 routes: /api/coordinator"]
     routes_projections["routes/projections.ts<br/>1 routes: /api/students"]
     routes_supervisorDesk["routes/supervisorDesk.ts<br/>13 routes: /api/supervisor, /api/tasks, /api/student-notes"]
@@ -59,6 +60,7 @@ flowchart LR
     services_notificationPreferences["notificationPreferences.ts"]
     services_offlineActions["offlineActions.ts"]
     services_offlineAttestation["offlineAttestation.ts"]
+    services_passkeys["passkeys.ts"]
     services_performance["performance.ts"]
     services_phTime["phTime.ts"]
     services_photoPurge["photoPurge.ts"]
@@ -134,8 +136,10 @@ flowchart LR
   routes_offlineTimeIn --> services_liveness
   routes_offlineTimeIn --> services_offlineActions
   routes_offlineTimeIn --> services_offlineAttestation
+  routes_offlineTimeIn --> services_passkeys
   routes_offlineTimeIn --> services_phTime
   routes_offlineTimeIn --> services_privacy
+  routes_passkeys --> services_passkeys
   routes_programme --> services_academics
   routes_programme --> services_documentZip
   routes_programme --> services_ids
@@ -180,6 +184,7 @@ flowchart LR
   server --> services_notificationLinks
   server --> services_notificationPreferences
   server --> services_offlineActions
+  server --> services_passkeys
   server --> services_phTime
   server --> services_photoPurge
   server --> services_photoRedo
@@ -250,6 +255,7 @@ flowchart LR
   routes_institution -.-> ext_postgres
   routes_messages -.-> ext_postgres
   routes_offlineTimeIn -.-> ext_postgres
+  routes_passkeys -.-> ext_postgres
   routes_programme -.-> ext_postgres
   routes_projections -.-> ext_postgres
   routes_supervisorDesk -.-> ext_postgres
@@ -274,6 +280,7 @@ flowchart LR
   services_mailer -.-> ext_email_api
   services_mailer -.-> ext_smtp
   services_notificationPreferences -.-> ext_postgres
+  services_passkeys -.-> ext_postgres
   services_performance -.-> ext_postgres
   services_photoPurge -.-> ext_postgres
   services_privateFileStore -.-> ext_azure
@@ -302,6 +309,7 @@ flowchart LR
 | `routes/institution.ts` | 2 | `/api/coordinator` |
 | `routes/messages.ts` | 4 | `/api/messages` |
 | `routes/offlineTimeIn.ts` | 4 | `/api/attendance`, `/api/offline` |
+| `routes/passkeys.ts` | 5 | `/api/passkeys` |
 | `routes/programme.ts` | 10 | `/api/coordinator` |
 | `routes/projections.ts` | 1 | `/api/students` |
 | `routes/supervisorDesk.ts` | 13 | `/api/supervisor`, `/api/tasks`, `/api/student-notes`, `/api/coordinator` |
@@ -338,6 +346,7 @@ flowchart LR
 | `notificationPreferences.ts` | `routes/extensions.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
 | `offlineActions.ts` | `routes/attachments.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
+| `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
 | `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
 | `photoPurge.ts` | `routes/console.ts`, `server.ts` |

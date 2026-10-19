@@ -1009,3 +1009,36 @@ and `npm run photos:purge` cover time-in photos only. Pictures attached
 to entries are kept with no limit, like documents. If they should also
 expire, say after how long and whether a concern's pictures are an
 exception, and the purge can be extended.
+
+## Phone checks for passkeys
+
+Iteration 22. A trainee may add a passkey (their phone's screen lock) in Profile, Security and
+device; Lunch break, End break and Time out then ask for it. It never stops a step: without it the
+step is recorded as "Not confirmed", and the supervisor sees which. The relying party is
+`FRONTEND_URL`'s host, so run these on the deployed address (HTTPS), not on localhost.
+
+Nothing new is set on Railway or Vercel for this: `FRONTEND_URL` (and `CORS_ORIGINS`, if a second
+domain is in use) are already set.
+
+On an Android phone (Chrome) and on an iPhone (Safari), each with the app **installed from the Home
+Screen** and opened from its icon:
+
+1. Sign in as a test trainee. Profile, Security and device, Passkeys: **Add a passkey**. The phone
+   asks for its fingerprint, face or PIN. The passkey is listed with today's date.
+2. Time in. Attendance: **Lunch break**, **Confirm**. The phone asks for the screen lock; give it.
+   As the supervisor, open that log: it says "Lunch break: Confirmed with passkey".
+3. **End break**, **Confirm**, and this time **cancel** the screen-lock prompt. The step is still
+   recorded. The supervisor's log says "End break: Not confirmed".
+4. With a connection, open the app once (it collects the next days' vouchers and their passkey
+   challenges). Turn on airplane mode. **Time out**: the phone asks for the screen lock and the
+   time-out waits under "Waiting to send". Turn airplane mode off: it is sent, and the supervisor's
+   log says "Time out: Confirmed with passkey" and "Sent later".
+5. On a second device signed in as the same trainee, add another passkey; both are listed. Remove
+   one; steps on that device stop asking for it.
+6. iPhone only: if the passkey was saved to iCloud Keychain, confirm a step on another Apple device
+   signed in to the same Apple ID: it is accepted (a synced passkey's counter stays 0, which is
+   expected).
+7. A trainee on the strict level (a rejected time-in photo): End break opens the camera check first;
+   **Skip the camera check** still records End break, and the supervisor sees "camera check not
+   run".
+

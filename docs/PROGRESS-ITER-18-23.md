@@ -49,9 +49,9 @@ the new ones keep the brief's numbers 065 to 070.
 - [x] test run and commit
 
 ### Phase 22: passkeys (`iter-22-passkeys`)
-- [ ] 22.1 migration 069
-- [ ] 22.2 registration, step assertions, offline challenges, supervisor marks, tests, DEPLOY.md
-- [ ] test run and commit
+- [x] 22.1 migration 069
+- [x] 22.2 registration, step assertions, offline challenges, supervisor marks, tests, DEPLOY.md
+- [x] test run and commit
 
 ### Phase 23: landing, doors, downloads, onboarding (`iter-23-landing`)
 - [ ] 23.1 second Vite entry, vercel.json, service worker
@@ -187,6 +187,35 @@ the new ones keep the brief's numbers 065 to 070.
   connection ..." (API) and the pictures e2e tests fail because a time-in made "90 (or 60) minutes
   ago" falls on the previous day. They passed in every daytime run.
 
+### Phase 22
+- **Package versions**: @simplewebauthn/server 13.3.3 and @simplewebauthn/browser 13.3.0, exact.
+  14.x (2 September 2026 onward) is newer than I can vouch for; 13.x has the same flow.
+- **Relying party**: rpID is FRONTEND_URL's host; expected origins are FRONTEND_URL and every
+  CORS_ORIGINS entry. Documented in backend/.env.example and DEPLOY.md.
+- **Challenges**: register 5 minutes; online step 5 minutes; voucher-day step challenges are good
+  for their day (valid_date must equal the log's date) and up to 72 hours. A fresh set of three is
+  handed out each time the phone asks for vouchers (it asks again when the connection returns).
+  The purpose check allows 'login' too, kept for the doors in Phase 23.
+- **Verification failures** are recorded as method 'failed' with a short reason (shown to the
+  supervisor as a tooltip); the step is never refused.
+- **The prompt's timing**: the step's challenge is fetched as its confirm dialog opens, so the
+  screen lock is asked for within the same tap as Confirm.
+- **Whether to ask**: the phone remembers that the trainee has a passkey (Profile's list, or the
+  vouchers carrying challenges), so it asks only then, online or offline.
+- **End break on the strict level** runs the camera check online with the standard prompts, using a
+  ticket whose purpose (break-end-check) cannot time anyone in; no photo is kept. The result is
+  stored in step_verifications['break-end'].camera: passed, failed, missing (skipped online) or
+  offline. **Not done: the offline End break camera check** with a voucher prompt set. The time-in
+  voucher is spent by the time-in, and reusing its prompts would let one recording pass both; a
+  second per-day voucher for End break would need its own attestation path. Offline End break on
+  the strict level is recorded as camera "offline" and the supervisor sees "not run (no
+  connection)". Listed under Steps for me as a decision.
+- **Tests**: a software authenticator in the API tests (a real P-256 key, a CBOR "none"
+  attestation, signed assertions) covers registration, a confirmed step, a replayed assertion
+  (failed, step kept), no passkey ('none'), a counter that goes back, the supervisor's list, an
+  offline step with a voucher challenge (accepted on arrival) and a voucher challenge used on
+  another day (failed, step kept), and the End break camera check.
+
 ## Phase reports
 
 ### Phase 18 (branch iter-18-rules)
@@ -296,3 +325,26 @@ the final verification. Phone pass: every student page at 320, 360, 390 and 430 
 horizontal scroll.
 
 **Skipped.** Nothing in the brief; see the decisions above for the two judgement calls (FAB, gutters).
+
+### Phase 22 (branch iter-22-passkeys)
+
+**Changed.** Backend: migration 069_passkeys; services/passkeys.ts and routes/passkeys.ts (new);
+server.ts (routes registered; Lunch break, End break and Time out record how they were confirmed;
+End break camera check; the supervisor's list returns step_verifications);
+routes/offlineTimeIn.ts (voucher-day step challenges); .env.example. App: lib/passkeys.ts (new),
+pages/student/PasskeysCard.tsx and EndBreakCheck.tsx (new), TimeInProvider.tsx (confirmation sent
+with each step, challenge fetched as the dialog opens, End break camera check), useAttendance.ts,
+lib/offlineTimeIn.ts (keeps the challenges), Profile.tsx; components/StepMarks.tsx (new) on the
+supervisor's ReviewDetail and attendance list. Packages: @simplewebauthn/server 13.3.3,
+@simplewebauthn/browser 13.3.0. Docs: DEPLOY.md "Phone checks for passkeys", UX-PASS,
+PAPER-CORRECTIONS, ARCHITECTURE.md.
+
+**Migrations.** 069.
+
+**Tests.** backend lint, route check (246 routes): passed. API: 261 run, 258 passed, 1 failed (the
+pre-existing midnight case), 2 skipped (near midnight); the 4 new passkey and camera tests pass.
+App lint and build: passed. e2e (run at 00:47 to 00:57): 65 passed, 1 flaky (capture, retried
+green), 4 failed: the pre-existing midnight cases in pictures.spec.ts and journeys "pictures on a
+time-out note" (a log made "an hour ago" falls on the day before).
+
+**Skipped.** The offline End break camera check (see the decision above).

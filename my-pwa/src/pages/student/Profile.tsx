@@ -7,7 +7,8 @@ import CueSettingsCard from "../../components/CueSettingsCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ConfirmDialog, ErrorNotice } from "../../components/ui";
-import ProfileGroups, { CompletionRing, PasskeySlot, type ProfileGroup } from "./ProfileGroups";
+import ProfileGroups, { CompletionRing, type ProfileGroup } from "./ProfileGroups";
+import PasskeysCard from "./PasskeysCard";
 import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
@@ -224,7 +225,7 @@ export default function StudentProfilePage() {
       hint: "Passkeys, this device, offline use",
       content: (
         <>
-          <PasskeySlot />
+          <PasskeysCard />
           <InstallApp />
           {studentId && <OfflineReadyCard studentId={studentId} />}
         </>

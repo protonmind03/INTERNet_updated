@@ -18,6 +18,7 @@ import {
 import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, type LivenessLevel } from "../services/liveness";
 import { consentRequired, hasCurrentConsent } from "../services/privacy";
 import { phSql, phToday } from "../services/phTime";
+import { PASSKEY_STEPS, stepOptions } from "../services/passkeys";
 import { correctedTime, judgeTimeIn, loadDayPlan, loadDayRuleSettings, planForApp } from "../services/dayRules";
 
 /*
@@ -258,7 +259,14 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
           jwtSecret,
           { subject: auth.id, jwtid: jti }
         );
-        vouchers.push({ token, date: day, ...given });
+        // Iteration 22: a single-use passkey challenge per step for the day, signed on the
+        // phone with no connection and checked when the step arrives. None without a passkey.
+        const stepChallenges: Record<string, unknown> = {};
+        for (const each of PASSKEY_STEPS) {
+          const options = await stepOptions(client, auth.id, each, day);
+          if (options) stepChallenges[each] = options;
+        }
+        vouchers.push({ token, date: day, ...given, ...(Object.keys(stepChallenges).length > 0 ? { step_challenges: stepChallenges } : {}) });
       }
       await client.query("COMMIT");
       return res.json({ vouchers, offset_ms: offsetMs });

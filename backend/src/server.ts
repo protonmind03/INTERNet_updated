@@ -66,6 +66,8 @@ import { registerAttachmentRoutes } from "./routes/attachments";
 import { registerInstitutionRoutes } from "./routes/institution";
 import { registerTimeRecordRoutes } from "./routes/timeRecord";
 import { markActed, notificationKind, type NotificationKind } from "./services/notificationKinds";
+import { registerPasskeyRoutes } from "./routes/passkeys";
+import { recordStepVerification, verifyStep, type PasskeyStep } from "./services/passkeys";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
   bindFilters,
@@ -2377,7 +2379,9 @@ type LivenessReport = {
 function readLivenessReport(
   studentId: string,
   ticket: unknown,
-  rawReport: unknown
+  rawReport: unknown,
+  /** "liveness" for a time-in; "break-end-check" for End break on the strict level (Iteration 22). */
+  purpose = "liveness"
 ): { report: LivenessReport; ticketId: string } | { problem: string } {
   const refusal = {
     problem:
@@ -2395,7 +2399,7 @@ function readLivenessReport(
       problem: "The camera check expired. Run it again to time in.",
     };
   }
-  if (claims.purpose !== "liveness" || claims.sub !== studentId) return refusal;
+  if (claims.purpose !== purpose || claims.sub !== studentId) return refusal;
 
   let parsed: Record<string, unknown>;
   try {
@@ -2452,6 +2456,18 @@ app.post(
         `SELECT liveness_strict FROM students WHERE student_id = $1`,
         [auth.id]
       );
+      // Iteration 22: on the strict level, End break also runs the camera check, with the
+      // standard prompts. A ticket for it cannot be used for a time-in (its purpose differs).
+      if (req.body?.purpose === "break-end") {
+        if (!student.rows[0]?.liveness_strict) return res.json({ needed: false });
+        const picked = pickLivenessPrompts("standard");
+        const ticket = jwt.sign({ purpose: "break-end-check", level: "standard", ...picked }, JWT_SECRET, {
+          subject: auth.id,
+          expiresIn: `${LIVENESS_TICKET_MINUTES}m`,
+          jwtid: randomUUID(),
+        });
+        return res.json({ needed: true, ticket, level: "standard", ...picked, expires_in: LIVENESS_TICKET_MINUTES * 60 });
+      }
       const level: LivenessLevel = student.rows[0]?.liveness_strict ? "strict" : "standard";
       const { prompts, spare } = pickLivenessPrompts(level);
       const ticket = jwt.sign({ purpose: "liveness", level, prompts, spare }, JWT_SECRET, {
@@ -2937,6 +2953,58 @@ async function lunchRulesFor(
   return { plan };
 }
 
+/**
+ * Iteration 22: how a step was confirmed (services/passkeys.ts), written on
+ * its log and, for a step sent later, on its ledger row. Never refuses the
+ * step and never fails it: a passkey is asked for, not required (D7).
+ */
+async function confirmStepMade(
+  req: express.Request,
+  step: PasskeyStep,
+  log: { id: number; student_id: string; date: string },
+  sent: AttendanceStep
+): Promise<void> {
+  try {
+    const verification = await verifyStep(pool, String(log.student_id), step, String(log.date).slice(0, 10), (req.body ?? {}) as Record<string, unknown>);
+    await recordStepVerification(pool, Number(log.id), step, verification);
+    if (sent.requestId) {
+      await pool.query(`UPDATE offline_action_ledger SET verification = $2::jsonb WHERE client_request_id = $1`, [sent.requestId, JSON.stringify(verification)]);
+    }
+  } catch (error) {
+    console.error("STEP VERIFICATION ERROR:", error);
+  }
+}
+
+/**
+ * Iteration 22: on the strict level, End break also runs the camera check
+ * (standard prompts). Recorded beside the step, never refused for: 'passed'
+ * with a used ticket, 'missing' online without one, 'offline' for a step
+ * sent later (the check is not run with no connection).
+ */
+async function recordEndBreakCamera(req: express.Request, log: { id: number; student_id: string }, sent: AttendanceStep): Promise<void> {
+  try {
+    const strict = await pool.query<{ liveness_strict: boolean }>(`SELECT liveness_strict FROM students WHERE student_id = $1`, [log.student_id]);
+    if (!strict.rows[0]?.liveness_strict) return;
+    let camera = sent.at ? "offline" : "missing";
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    if (body.liveness_ticket) {
+      const read = readLivenessReport(String(log.student_id), body.liveness_ticket, body.liveness_report, "break-end-check");
+      if ("problem" in read) camera = "failed";
+      else {
+        const spent = await pool.query(`INSERT INTO liveness_ticket_uses (jti) VALUES ($1) ON CONFLICT (jti) DO NOTHING RETURNING jti`, [read.ticketId]);
+        camera = spent.rows.length > 0 ? "passed" : "failed";
+      }
+    }
+    await pool.query(
+      `UPDATE attendance SET step_verifications = jsonb_set(COALESCE(step_verifications, '{}'::jsonb), '{break-end,camera}', to_jsonb($2::text), true)
+       WHERE id = $1 AND step_verifications ? 'break-end'`,
+      [log.id, camera]
+    );
+  } catch (error) {
+    console.error("END BREAK CAMERA ERROR:", error);
+  }
+}
+
 /** Remembers an offline action by its id, so sending it again changes nothing. */
 /** The most tasks one day's log can be linked to. */
 const MAX_WORKED_TASKS = 20;
@@ -3060,6 +3128,7 @@ app.put(
       }
 
       await rememberOfflineStep(step, "break", result.rows[0]);
+      await confirmStepMade(req, "break", result.rows[0], step);
 
       return res.json({
         message:
@@ -3153,6 +3222,8 @@ app.put(
       }
 
       await rememberOfflineStep(step, "break-end", result.rows[0]);
+      await confirmStepMade(req, "break-end", result.rows[0], step);
+      await recordEndBreakCamera(req, result.rows[0], step);
 
       // A rejected photo not yet retaken: the window closes at "Back from
       // lunch" (services/photoRedo.ts); the minute job then closes the day.
@@ -3375,6 +3446,7 @@ app.put(
       }
 
       await rememberOfflineStep(step, "time-out", result.rows[0]);
+      await confirmStepMade(req, "time-out", result.rows[0], step);
       await markActed(pool, String(result.rows[0].student_id), { titles: ["Did you forget to time out?"] });
 
       // A day the supervisor recorded in person is already verified: count its
@@ -4085,6 +4157,8 @@ app.get(
             a.corrected_at,
             a.capture_method,
             a.recorded_offline,
+            -- Iteration 22: how each later step was made (passkey, not confirmed).
+            a.step_verifications,
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
             a.clock_skew_seconds,
             a.offline_attestation,
@@ -10167,6 +10241,7 @@ registerConsoleRoutes(app, {
 });
 registerAcademicRoutes(app, { pool, requireCoordinator });
 registerInstitutionRoutes(app, { pool, requireCoordinator });
+registerPasskeyRoutes(app, { pool, requireRole });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });

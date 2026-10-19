@@ -119,13 +119,3 @@ export function CompletionRing({ done, total }: { done: number; total: number })
     </span>
   );
 }
-
-/** Where passkeys are managed (Iteration 22 fills it in). */
-export function PasskeySlot() {
-  return (
-    <Card className="p-4 sm:p-5" data-passkeys="">
-      <h3 className="text-sm font-semibold text-slate-900">Passkeys</h3>
-      <p className="mt-1 text-sm text-slate-600">Confirm your lunch break, end of break and time-out with this phone's screen lock.</p>
-    </Card>
-  );
-}
