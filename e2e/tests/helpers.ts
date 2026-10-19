@@ -39,8 +39,8 @@ export const SECOND_STUDENT = {
 
 /** Signs in through the real sign-in page. */
 export async function signIn(page: Page, role: Role, account = ACCOUNTS[role]): Promise<void> {
-  await page.goto("/");
-  await page.getByRole("group", { name: "Role" }).getByRole("button", { name: account.tab }).click();
+  // Iteration 23: each role signs in at its own door.
+  await page.goto(`/${role}/sign-in`);
   await page.locator("#inb-login-id").fill(account.email);
   await page.locator("#inb-login-pw").fill(account.password);
   await page.locator('button[type="submit"]').click();

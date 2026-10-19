@@ -103,7 +103,13 @@ type LaunchGateProps = {
  * In a browser tab, and after the first time in a session, it shows nothing.
  */
 export function LaunchGate({ children }: LaunchGateProps) {
-  const [role] = useState<BrandRole>(getActiveRole);
+  // Iteration 23: the palette is put on at the first render, not in an effect: a parent's
+  // effect runs after its children's, and would undo the palette a door has just set.
+  const [role] = useState<BrandRole>(() => {
+    const active = getActiveRole();
+    applyRoleTheme(active);
+    return active;
+  });
   const [still] = useState(() => typeof window !== "undefined" && Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches));
   const [phase, setPhase] = useState<"show" | "leave" | "done">(() => {
     if (!isStandalone()) return "done";
@@ -113,10 +119,6 @@ export function LaunchGate({ children }: LaunchGateProps) {
       return "show";
     }
   });
-
-  useEffect(() => {
-    applyRoleTheme(role);
-  }, [role]);
 
   useEffect(() => {
     if (phase === "show") {

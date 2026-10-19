@@ -1,5 +1,6 @@
 import { API_URL } from "./api";
 import { clearSession, type SessionRole } from "./session";
+import { doorOf } from "./doors";
 
 type Role = SessionRole;
 const roles: Role[] = ["coordinator", "student", "supervisor"];
@@ -57,7 +58,9 @@ export function installSessionGuard(): void {
           "session_notice",
           "Your session has ended. Please log in again."
         );
-        if (window.location.pathname !== "/") window.location.assign("/");
+        // Iteration 23: back to the role's own door.
+        const door = doorOf(role);
+        if (window.location.pathname !== door) window.location.assign(door);
       } else if (
         body?.code === "PASSWORD_CHANGE_REQUIRED" &&
         window.location.pathname !== "/change-password"

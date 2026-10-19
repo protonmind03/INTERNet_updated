@@ -1,0 +1,90 @@
+{
+  "id": "/coordinator/",
+  "name": "INTERNet Coordinator",
+  "short_name": "Coordinator",
+  "description": "Monitoring, records and settings for the OJT program at PSU Lingayen.",
+  "lang": "en-PH",
+  "dir": "ltr",
+  "start_url": "/coordinator/sign-in?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F1F3FB",
+  "theme_color": "#0B1440",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "icons": [
+    {
+      "src": "/icons/coordinator-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/coordinator-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/coordinator-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/coordinator-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Action list",
+      "short_name": "Actions",
+      "description": "What needs the coordinator today.",
+      "url": "/coordinator/dashboard",
+      "icons": [
+        {
+          "src": "/icons/coordinator-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Monitoring",
+      "short_name": "Monitoring",
+      "description": "Flagged logs and attendance across the program.",
+      "url": "/coordinator/monitoring",
+      "icons": [
+        {
+          "src": "/icons/coordinator-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Students",
+      "short_name": "Students",
+      "description": "Every trainee and their placement.",
+      "url": "/coordinator/students",
+      "icons": [
+        {
+          "src": "/icons/coordinator-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

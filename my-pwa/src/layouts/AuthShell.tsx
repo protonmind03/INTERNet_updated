@@ -19,13 +19,13 @@ export default function AuthShell({
     <main className="app-canvas flex min-h-[calc(100dvh-var(--inb-top-inset))] flex-col items-center justify-center px-4 py-10">
       <div className="w-full max-w-md animate-page-in">
         <div className="mb-6">
-          <BrandLockup size={24} tagline={null} />
+          <BrandLockup withSeal size={18} />
         </div>
         <section className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-raised">
-          {/* The brand's blue and gold, as a thin band across the top of the card. */}
+          {/* The role's own colours (the brand's blue and gold before a role is known), as a thin band. */}
           <div aria-hidden="true" className="flex h-1">
-            <span className="surface-brand-bar flex-1" />
-            <span className="w-16 bg-gold-400" />
+            <span className="flex-1 bg-(--role-primary)" />
+            <span className="w-16 bg-(--role-accent)" />
           </div>
           <div className="p-6 sm:p-7">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">{title}</h1>

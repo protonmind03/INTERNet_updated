@@ -5,31 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
-    <!-- What an iPhone shows while the app opens from the Home Screen (scripts/make-startup-images.mjs). -->
-    <link rel="apple-touch-startup-image" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1320x2868.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 402px) and (device-height: 874px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1206x2622.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1290x2796.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1179x2556.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1284x2778.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1170x2532.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1125x2436.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1242x2688.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/startup/apple-splash-828x1792.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 3) and (orientation: portrait)" href="/startup/apple-splash-1242x2208.png" />
-    <link rel="apple-touch-startup-image" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2) and (orientation: portrait)" href="/startup/apple-splash-750x1334.png" />
-    <link rel="manifest" href="/manifest.json" />
-    <meta name="theme-color" content="#1A237E" />
-    <meta name="mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="INTERNet" />
-    <meta name="description" content="INTERNet — a data-driven monitoring and analytics system for On-the-Job Training." />
-    <title>INTERNet — OJT Monitoring &amp; Analytics</title>
+    <meta name="theme-color" content="#ffffff" />
+    <meta name="description" content="INTERNet: attendance, tasks and records for on-the-job training at Pangasinan State University, Lingayen Campus." />
+    <title>INTERNet · OJT for PSU Lingayen</title>
+    <!--
+      Iteration 23: the public landing page. Its body is rendered to plain HTML
+      when the site is built (vite.config.ts, src/landing/render.tsx); its one
+      script (src/landing/main.ts) never loads the signed-in app. Each role's
+      app and its manifest live behind its door: /student/sign-in,
+      /supervisor/sign-in, /coordinator/sign-in (app.html).
+    -->
   </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body class="land-body-root">
+    <!--landing-->
+    <script type="module" src="/src/landing/main.ts"></script>
   </body>
 </html>

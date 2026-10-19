@@ -129,6 +129,30 @@ export default function Help() {
           <p className="mt-1 text-sm text-slate-700">{DECIDED_FIRST}</p>
         </section>
 
+        {/* Iteration 23: the landing page's footer links here. */}
+        <section aria-labelledby="privacy" className="mt-6 scroll-mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+          <h2 id="privacy" className="text-lg font-semibold text-slate-900">
+            Privacy notice
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-700">
+            The privacy notice is shown in the Trainee app before the first time-in, the moment the app first takes a photo,
+            and again whenever it changes. It says what is kept and why. A trainee can read it again at any time in{" "}
+            <strong>Profile, Privacy and data</strong>, where <strong>Download my data</strong> gives a copy of their own records. Time-in
+            photos are seen by the trainee&rsquo;s supervisor and the OJT coordinator.
+          </p>
+        </section>
+
+        <section aria-labelledby="contact" className="mt-6 scroll-mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+          <h2 id="contact" className="text-lg font-semibold text-slate-900">
+            Contact the OJT office
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-700">
+            Ask your program&rsquo;s OJT coordinator at the OJT office, Pangasinan State University – Lingayen Campus. The
+            coordinator creates every account, so a supervisor or trainee without one asks there. A forgotten password can be
+            reset from each role&rsquo;s sign-in page.
+          </p>
+        </section>
+
         <section aria-labelledby="about" className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:flex-row sm:items-center sm:p-7">
           <PsuSeal size={64} clearSpace={false} />
           <div>

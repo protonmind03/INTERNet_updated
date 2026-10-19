@@ -643,3 +643,89 @@
 .day-banner-switch { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role-on-primary) 55%, transparent); }
 .cal-cell--outside .cal-num { opacity: 1; font-weight: 400; color: color-mix(in srgb, var(--role-ink, black) 72%, white); }
 .cal-cell--selected.cal-cell--outside .cal-num { color: var(--role-on-primary); }
+
+/* Iteration 23: the landing page's neutrals (LANDING in brand/tokens.ts; a test checks they agree). */
+:root {
+  --land-paper: #ffffff;
+  --land-paper-warm: #f7f5ef;
+  --land-ink: #0f172a;
+  --land-muted: #475569;
+  --land-line: #e2e8f0;
+  --land-night: #0b1440;
+  --land-on-night: #ffffff;
+  --land-on-night-muted: #c7cdf0;
+}
+
+/* =====================================================================
+   The three doors (Iteration 23, pages/Door.tsx). Colours are the role
+   palette (--role-*), set by the door's data-role; the coordinator's door
+   sits on the Royal Seal's dark chrome.
+   ===================================================================== */
+.door { background: var(--role-surface); color: var(--role-ink); }
+.door-title { margin: 0; font-family: "Bricolage Grotesque Variable", "Public Sans Variable", system-ui, sans-serif; font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.door-sub { margin: 6px 0 0; font-size: 15px; line-height: 1.45; }
+.door-kicker { margin: 0; font-size: 12.5px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; }
+.door-muted { color: color-mix(in srgb, var(--role-ink) 78%, var(--land-paper)); }
+.door-muted-dark { color: var(--land-on-night-muted); }
+.door-link { color: var(--role-primary); text-decoration: underline; text-underline-offset: 3px; }
+.door-link--dark { color: var(--role-on-chrome); }
+.door-field { border-color: color-mix(in srgb, var(--role-ink) 30%, var(--land-paper)); }
+.door-field:focus { border-color: var(--role-primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--role-primary) 25%, transparent); }
+.door-field[data-invalid] { border-color: var(--status-late-ink); }
+.door-submit { background: var(--role-primary); color: var(--role-on-primary); }
+.door-install { border: 1.5px solid var(--role-primary); background: var(--land-paper); color: var(--role-primary); }
+.door-install-help { background: var(--land-paper); color: var(--land-ink); box-shadow: inset 0 0 0 1px var(--land-line); }
+.door :focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; }
+
+/* Trainee: "Badge-in", an ID card with the seal at its corner. */
+.door-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 28px 20px 20px;
+  border-radius: 20px;
+  border-top: 10px solid var(--role-primary);
+  background: var(--land-paper);
+  color: var(--role-ink);
+  box-shadow: var(--inb-shadow-3);
+}
+.door-card-slot { position: absolute; top: 10px; left: 50%; width: 56px; height: 8px; translate: -50% 0; border-radius: 999px; background: var(--role-surface); box-shadow: inset 0 1px 2px color-mix(in srgb, var(--role-ink) 25%, transparent); }
+.door-card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding-bottom: 16px; border-bottom: 1px dashed color-mix(in srgb, var(--role-ink) 25%, var(--land-paper)); }
+.door-card .door-kicker { color: var(--role-primary); }
+/* The button stays in the thumb's reach on a phone. */
+@media (max-width: 767px) {
+  .door-thumb { position: sticky; bottom: 0; z-index: 2; margin: 0 -20px -20px; padding: 12px 20px max(16px, env(safe-area-inset-bottom)); border-radius: 0 0 20px 20px; background: var(--land-paper); }
+}
+
+/* Supervisor: "Desk", the review queue beside the form. */
+.door-desk-preview {
+  flex-direction: column;
+  gap: 32px;
+  min-height: 100dvh;
+  padding: 40px;
+  background: var(--role-primary);
+  color: var(--role-on-primary);
+}
+.door-queue { margin: 20px 0 0; padding: 0; list-style: none; border-radius: var(--inb-r-card); background: var(--land-paper); color: var(--role-ink); overflow: hidden; }
+.door-queue li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 12px; padding: 12px 14px; font-size: 14px; border-top: 1px solid var(--land-line); }
+.door-queue li:first-child { border-top: 0; }
+.door-queue-what { color: color-mix(in srgb, var(--role-ink) 80%, var(--land-paper)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.door-queue-tag { padding: 2px 10px; border-radius: var(--inb-r-chip); background: var(--role-surface); font-size: 12px; font-weight: 700; }
+.door--desk .door-help { color: color-mix(in srgb, var(--role-ink) 82%, var(--land-paper)); }
+
+/* Coordinator: "Console", dark chrome; the seal on its white disc. */
+.door--console { background: var(--role-chrome); color: var(--role-on-chrome); }
+.door--console :focus-visible { outline-color: var(--role-accent); }
+.door-console-lockup { color: var(--role-on-chrome); }
+.door-console-panel { padding: 24px; border-radius: 18px; background: color-mix(in srgb, var(--role-on-chrome) 7%, var(--role-chrome)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role-on-chrome) 16%, transparent); }
+.door-console-panel .door-kicker { color: var(--role-accent); }
+.door--console .door-submit { background: var(--role-accent); color: var(--role-on-accent); }
+.door--console .door-link { color: var(--role-on-chrome); }
+.door--console .door-install { background: transparent; border-color: var(--role-on-chrome); color: var(--role-on-chrome); }
+.door-status { display: inline-flex; min-height: 28px; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.door-status-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--role-accent); }
+
+/* The first-open slides (Iteration 23, components/Onboarding.tsx): one slide per width. */
+.onboarding-row { gap: 0; }
+.onboarding-slide { padding: 2px; }

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { BrandIcon, BrandLoader, LOGO_SIZES, PortalBrand, ROLE_THEMES, SIDEBAR } from "../brand";
 import { useRoleTheme } from "../brand/useRoleTheme";
+import Onboarding from "../components/Onboarding";
 import Icon, { type IconName } from "../components/Icon";
 import ComposeMessage from "../components/ComposeMessage";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -191,6 +192,8 @@ export default function CoordinatorLayout({
 
   return (
     <div className="flex h-[calc(100dvh-var(--inb-top-inset))] bg-slate-50 print:block print:h-auto print:bg-white">
+      {/* Iteration 23: the first open of the installed app. */}
+      <Onboarding role="coordinator" />
       <aside className={`${SIDEBAR.surface} hidden w-64 shrink-0 flex-col lg:flex print:hidden`}>
         {sidebar(deskPane)}
       </aside>

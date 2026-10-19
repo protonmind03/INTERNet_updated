@@ -89,13 +89,21 @@ Up to three pictures on a time-out note, a weekly report or a concern
   build is no longer an installable, offline-capable PWA: a manifest field
   an install needs, an icon size (192 and 512, "any" and "maskable"), an
   icon or screenshot that is missing or not the size it says, the service
-  worker (or it is the kill switch, or it does not keep `index.html` and
-  `offline.html`), `offline.html`, the Home Screen icon, `lang="en-PH"`, or an
-  iPhone start-up image (`npm run startup-images` makes them). CI runs it in
-  the frontend job.
+  worker (or it is the kill switch, or it does not keep `index.html`,
+  `app.html` and `offline.html`), `offline.html`, the Home Screen icon,
+  `lang="en-PH"`, or an iPhone start-up image (`npm run startup-images` makes
+  them). Since Iteration 23 it also checks the three role apps' manifests
+  (`public/manifest-{role}.webmanifest`, made by
+  `scripts/make-role-manifests.mjs`, icons by `scripts/make-role-icons.mjs`)
+  and the landing page: rendered into `index.html`, not loading the app, and
+  its script under 90 kB compressed. CI runs it in the frontend job.
+- Two pages since Iteration 23: `index.html` is the public landing page at
+  "/" (rendered at build from `src/landing/`), `app.html` is the app for every
+  other address. `npm run dev` and `npm run preview` serve them the way
+  Vercel does (`vercel.json`).
 - `npm run lighthouse` (in `e2e`, with the site and API running) runs
-  Lighthouse with its mobile settings on the sign-in page and each portal's
-  first page, the same pages as the Iteration 0 baseline
+  Lighthouse with its mobile settings on the landing page, the trainee's
+  door and each portal's first page, the same pages as the Iteration 0 baseline
   (`docs/baseline/`). It writes `e2e/lighthouse-reports/` (an HTML and a JSON
   report per page, and `summary.md`). CI runs it after the end-to-end tests,
   shows the summary on the run's page and keeps the reports as the

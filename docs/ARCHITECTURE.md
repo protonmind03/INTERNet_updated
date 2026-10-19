@@ -12,8 +12,14 @@ Solid arrows are imports; dotted arrows reach a system outside the code.
 ```mermaid
 flowchart LR
   subgraph client["my-pwa, the React PWA"]
-    pwa["Student, supervisor and coordinator portals<br/>offline queue, service worker"]
+    landing["index.html, the landing page<br/>pre-rendered at build, src/landing"]
+    doors["The doors<br/>/student/sign-in, /supervisor/sign-in, /coordinator/sign-in"]
+    pwa["Student, supervisor and coordinator portals<br/>app.html, offline queue, service worker"]
+    apps["Installable apps<br/>INTERNet Coordinator, INTERNet Trainee, INTERNet Supervisor, INTERNet: OJT Monitoring & Analytics"]
   end
+  landing --> doors
+  doors --> pwa
+  apps --> doors
   subgraph api["backend, the Express API"]
     server["server.ts<br/>94 routes: /api/coordinator, /api/attendance, /api/notifications"]
     routes_academics["routes/academics.ts<br/>11 routes: /api/coordinator"]
@@ -89,6 +95,7 @@ flowchart LR
     ext_push["Browser push services"]
     ext_bucket["Object storage R2 or S3"]
     ext_azure["Azure Blob Storage"]
+    ext_webauthn["The phone's screen lock, WebAuthn passkeys"]
   end
   pwa -->|"HTTPS JSON and the /api/events stream"| api
   routes_academics --> services_academics
@@ -281,6 +288,7 @@ flowchart LR
   services_mailer -.-> ext_smtp
   services_notificationPreferences -.-> ext_postgres
   services_passkeys -.-> ext_postgres
+  services_passkeys -.-> ext_webauthn
   services_performance -.-> ext_postgres
   services_photoPurge -.-> ext_postgres
   services_privateFileStore -.-> ext_azure
@@ -314,6 +322,17 @@ flowchart LR
 | `routes/projections.ts` | 1 | `/api/students` |
 | `routes/supervisorDesk.ts` | 13 | `/api/supervisor`, `/api/tasks`, `/api/student-notes`, `/api/coordinator` |
 | `routes/timeRecord.ts` | 5 | `/api/student`, `/api/students`, `/api/time-record` |
+
+## The app's pages and installable apps
+
+Pages built: `index.html`, `app.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`.
+
+| Manifest | App | id |
+|---|---|---|
+| `public/manifest-coordinator.webmanifest` | INTERNet Coordinator | `/coordinator/` |
+| `public/manifest-student.webmanifest` | INTERNet Trainee | `/student/` |
+| `public/manifest-supervisor.webmanifest` | INTERNet Supervisor | `/supervisor/` |
+| `public/manifest.json` | INTERNet: OJT Monitoring & Analytics | `/` |
 
 ## Services and who uses them
 

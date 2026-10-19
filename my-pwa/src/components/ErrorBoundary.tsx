@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
 import { BrandLockup } from "../brand";
 import { reportClientError } from "../lib/clientErrors";
 import { signOut, type SessionRole } from "../lib/session";
+import { doorOf } from "../lib/doors";
 
 const ROLES: SessionRole[] = ["student", "supervisor", "coordinator"];
 
@@ -89,7 +90,7 @@ export default class ErrorBoundary extends Component<{ children: ReactNode }, St
                     type="button"
                     onClick={() => {
                       // Leave only once the offline data has been erased.
-                      void signOut(role).finally(() => window.location.assign("/"));
+                      void signOut(role).finally(() => window.location.assign(doorOf(role)));
                     }}
                     className="inline-flex min-h-11 items-center justify-center rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                   >

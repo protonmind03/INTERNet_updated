@@ -165,7 +165,8 @@ try {
               await sleep(800);
             }
             // Signed out by accident: put the session back.
-            if (portal && new URL(page.url()).pathname === "/") {
+            // Sent back to sign in ("/" before Iteration 23, a door since).
+            if (portal && /^\/$|\/sign-in$/.test(new URL(page.url()).pathname)) {
               await signInPage(page, portal, sessions[portal]);
               await page.goto(SITE + path, { waitUntil: "networkidle2", timeout: 20_000 }).catch(() => undefined);
               await sleep(800);

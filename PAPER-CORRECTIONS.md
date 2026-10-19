@@ -947,4 +947,16 @@ describe; the earlier notes it replaces are marked there.
   a fingerprint or face, only a signature.
 - **End break camera check.** On the strict level (after a rejected time-in photo) End break also
   runs the camera check online; no photo is kept and skipping it does not stop the step.
+- **The landing page and the three doors (Iteration 23).** The address "/" is now a public page
+  (made when the site is built, no sign-in) that explains the system and leads to three doors:
+  /student/sign-in, /supervisor/sign-in and /coordinator/sign-in. The paper's "login page with a role
+  selector" becomes "each role signs in at its own door"; the sign-in rules are unchanged (one
+  endpoint per role, as before). The old /login address goes to the landing page's doors.
+- **Three installable apps.** Besides the original manifest, each role has its own: "INTERNet
+  Trainee", "INTERNet Supervisor" and "INTERNet Coordinator", each with its own id, colours, icon and
+  shortcuts. Describe them as installable web apps (PWAs) added from the browser; not as app-store
+  apps. No database change.
+- **First-open slides.** The installed app shows four slides per role the first time it is opened
+  from the Home Screen. The paper may say permissions are asked for only after a tap.
+- **Passkey sign-in** was not added: the doors use the password only (see the progress log).
 

@@ -34,8 +34,7 @@ for (const role of ["student", "supervisor", "coordinator"] as Role[]) {
       }).observe({ type: "layout-shift", buffered: true });
     });
     const account = ACCOUNTS[role];
-    await page.goto("/");
-    await page.getByRole("group", { name: "Role" }).getByRole("button", { name: account.tab }).click();
+    await page.goto(`/${role}/sign-in`);
     await page.locator("#inb-login-id").fill(account.email);
     await page.locator("#inb-login-pw").fill(account.password);
 

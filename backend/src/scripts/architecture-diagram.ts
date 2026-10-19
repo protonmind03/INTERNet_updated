@@ -15,8 +15,12 @@ import { registeredRoutes } from "./check-route-tests";
 // - every import of backend/src/services/ from the route files, server.ts,
 //   the services themselves and the scheduled backup script;
 // - the outside systems, from the packages those files import (pg,
-//   nodemailer, web-push, the storage SDKs, age-encryption) and the email
-//   provider setting in the mailer.
+//   nodemailer, web-push, the storage SDKs, @simplewebauthn/server) and the
+//   email provider setting in the mailer;
+// - Iteration 23, the app's side: its pages (the build inputs in
+//   my-pwa/vite.config.ts: the landing page and the app), the doors (the
+//   "/{role}/sign-in" routes in my-pwa/src/App.tsx) and the installable
+//   apps (the manifests in my-pwa/public).
 
 const backendRoot = path.resolve(__dirname, "..", "..");
 const repoRoot = path.resolve(backendRoot, "..");
@@ -66,7 +70,29 @@ const EXTERNAL: { id: string; label: string; packages: string[]; text?: RegExp }
   { id: "ext_push", label: "Browser push services", packages: ["web-push"] },
   { id: "ext_bucket", label: "Object storage R2 or S3", packages: ["@aws-sdk/client-s3"] },
   { id: "ext_azure", label: "Azure Blob Storage", packages: ["@azure/storage-blob"] },
+  { id: "ext_webauthn", label: "The phone's screen lock, WebAuthn passkeys", packages: ["@simplewebauthn/server"] },
 ];
+
+const pwaRoot = path.join(repoRoot, "my-pwa");
+
+/** The app's pages, doors and installable apps, read from its files. */
+function clientParts(): { pages: string[]; doors: string[]; manifests: { file: string; name: string; id: string }[] } {
+  const config = read(path.join(pwaRoot, "vite.config.ts"));
+  const inputs = config.match(/input:\s*\{([^}]*)\}/)?.[1] ?? "";
+  const pages = [...inputs.matchAll(/path\.resolve\('([^']+)'\)/g)].map((match) => match[1]);
+  const app = read(path.join(pwaRoot, "src", "App.tsx"));
+  const doors = [...app.matchAll(/path="(\/[a-z]+\/sign-in)"/g)].map((match) => match[1]);
+  const publicDir = path.join(pwaRoot, "public");
+  const manifests = fs
+    .readdirSync(publicDir)
+    .filter((name) => name === "manifest.json" || name.endsWith(".webmanifest"))
+    .sort()
+    .map((file) => {
+      const manifest = JSON.parse(read(path.join(publicDir, file)));
+      return { file, name: String(manifest.name), id: String(manifest.id) };
+    });
+  return { pages, doors, manifests };
+}
 
 function build(): string {
   const routeFiles = [path.join(src, "server.ts"), ...tsIn(path.join(src, "routes"))];
@@ -120,11 +146,18 @@ function build(): string {
     }
   }
 
+  const client = clientParts();
   const lines: string[] = [];
   lines.push("flowchart LR");
   lines.push('  subgraph client["my-pwa, the React PWA"]');
-  lines.push('    pwa["Student, supervisor and coordinator portals<br/>offline queue, service worker"]');
+  if (client.pages.includes("index.html")) lines.push('    landing["index.html, the landing page<br/>pre-rendered at build, src/landing"]');
+  if (client.doors.length > 0) lines.push(`    doors["The doors<br/>${client.doors.join(", ")}"]`);
+  lines.push('    pwa["Student, supervisor and coordinator portals<br/>app.html, offline queue, service worker"]');
+  lines.push(`    apps["Installable apps<br/>${client.manifests.map((item) => item.name).join(", ")}"]`);
   lines.push("  end");
+  if (client.pages.includes("index.html")) lines.push("  landing --> doors");
+  if (client.doors.length > 0) lines.push("  doors --> pwa");
+  lines.push("  apps --> doors");
   lines.push('  subgraph api["backend, the Express API"]');
   for (const file of routeFiles.filter((candidate) => byFile.has(candidate))) {
     const info = byFile.get(file)!;
@@ -153,6 +186,7 @@ function build(): string {
   const routeRows = routeFiles
     .filter((file) => byFile.has(file))
     .map((file) => `| \`${rel(file)}\` | ${byFile.get(file)!.count} | ${prefixText(file, 8).map((prefix) => `\`${prefix}\``).join(", ")} |`);
+  const manifestRows = client.manifests.map((item) => `| \`public/${item.file}\` | ${item.name} | \`${item.id}\` |`);
   const serviceRows = shownServices.map(
     (file) => `| \`${rel(file).replace(/^services\//, "")}\` | ${[...(users.get(file) ?? [])].sort().map((user) => `\`${user}\``).join(", ")} |`
   );
@@ -178,6 +212,14 @@ function build(): string {
     "| File | Routes | Address families (most routes first) |",
     "|---|---|---|",
     ...routeRows,
+    "",
+    "## The app's pages and installable apps",
+    "",
+    `Pages built: ${client.pages.map((page) => "`" + page + "`").join(", ")}. Doors: ${client.doors.map((door) => "`" + door + "`").join(", ")}.`,
+    "",
+    "| Manifest | App | id |",
+    "|---|---|---|",
+    ...manifestRows,
     "",
     "## Services and who uses them",
     "",

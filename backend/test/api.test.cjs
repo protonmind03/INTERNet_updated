@@ -10837,7 +10837,7 @@ test("the loading prototypes P1 to P3 are reached only from the brand preview, n
   const app = fs.readFileSync(path.join(src, "App.tsx"), "utf8");
   assert.match(app, /import\.meta\.env\.DEV \|\| import\.meta\.env\.VITE_BRAND_PREVIEW === "true" \? lazy\(\(\) => import\("\.\/brand\/BrandPreview"\)\) : null/);
   // Nothing on the sign-in path names them.
-  for (const file of ["pages/Login.tsx", "brand/LoginScreen.tsx", "brand/SplashScreen.tsx"]) {
+  for (const file of ["pages/Door.tsx", "brand/LoginScreen.tsx", "brand/SplashScreen.tsx"]) {
     assert.doesNotMatch(fs.readFileSync(path.join(src, file), "utf8"), /BrandPreview|LoadingPrototypes|PrototypeRun/, file);
   }
 });
@@ -12417,4 +12417,88 @@ test("on the strict level End break also runs the camera check (standard prompts
   } finally {
     await f.cleanup();
   }
+});
+
+/*
+|--------------------------------------------------------------------------
+| ITERATION 23: THE LANDING PAGE, THE DOORS, THE ROLE APPS
+|--------------------------------------------------------------------------
+*/
+
+const pwaRoot = nodePath.join(__dirname, "..", "..", "my-pwa");
+
+test("the landing page imports only the brand kit and its own files, and writes no colour by hand", () => {
+  const dir = nodePath.join(pwaRoot, "src", "landing");
+  const allowed = [/^\.\//, /^\.\.\/brand\/(BrandLockup|PsuSeal|tokens|Wordmark|BrandIcon|geometry)$/, /^react-dom\/server$/, /^qrcode$/, /^tailwindcss$/, /^@fontsource-variable\//, /^\.\.\/brand\/brand\.css$/];
+  for (const file of fs.readdirSync(dir)) {
+    const source = fs.readFileSync(nodePath.join(dir, file), "utf8");
+    for (const [, from] of source.matchAll(/(?:import|from)\s*\(?\s*["']([^"']+)["']/g)) {
+      assert.ok(allowed.some((rule) => rule.test(from)), `${file} imports ${from}`);
+    }
+    if (file !== "qrcode.d.ts") assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b(?![\w-])/, `${file} has a colour written by hand`);
+    assert.doesNotMatch(source, /WCAG compliant|works fully offline|\bAI\b|gradient\(/i, `${file} makes a claim or uses a style the brief rules out`);
+  }
+  // The doors and the first-open slides use the tokens too.
+  for (const file of ["src/pages/Door.tsx", "src/components/Onboarding.tsx", "src/lib/doors.ts"]) {
+    assert.doesNotMatch(fs.readFileSync(nodePath.join(pwaRoot, file), "utf8"), /#[0-9a-fA-F]{6}\b/, `${file} has a colour written by hand`);
+  }
+});
+
+test("brand.css carries the landing page's neutrals as tokens.ts has them", () => {
+  require("tsx/cjs");
+  const { LANDING } = require("../../my-pwa/src/brand/tokens.ts");
+  const css = fs.readFileSync(nodePath.join(pwaRoot, "src", "brand", "brand.css"), "utf8").toLowerCase();
+  const kebab = (key) => key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`);
+  for (const [key, value] of Object.entries(LANDING)) {
+    assert.ok(css.includes(`--land-${kebab(key)}: ${value.toLowerCase()};`), `--land-${kebab(key)}`);
+  }
+});
+
+test("three role apps beside the original: their own ids, names, colours, icons and shortcuts", () => {
+  require("tsx/cjs");
+  const { ROLE_PALETTES } = require("../../my-pwa/src/brand/tokens.ts");
+  const read = (name) => JSON.parse(fs.readFileSync(nodePath.join(pwaRoot, "public", name), "utf8"));
+  assert.equal(read("manifest.json").id, "/", "the original manifest keeps its id");
+  const names = { student: "INTERNet Trainee", supervisor: "INTERNet Supervisor", coordinator: "INTERNet Coordinator" };
+  const png = (src) => {
+    const data = fs.readFileSync(nodePath.join(pwaRoot, "public", src));
+    return [data.readUInt32BE(16), data.readUInt32BE(20)];
+  };
+  for (const [role, name] of Object.entries(names)) {
+    const manifest = read(`manifest-${role}.webmanifest`);
+    assert.equal(manifest.id, `/${role}/`);
+    assert.equal(manifest.name, name);
+    assert.ok(manifest.short_name);
+    assert.ok(manifest.start_url.startsWith(`/${role}/sign-in`));
+    assert.ok(manifest.start_url.startsWith(manifest.scope));
+    assert.equal(manifest.display, "standalone");
+    assert.equal(manifest.theme_color, ROLE_PALETTES[role].chrome);
+    assert.equal(manifest.background_color, ROLE_PALETTES[role].surface);
+    for (const purpose of ["any", "maskable"]) {
+      for (const side of [192, 512]) {
+        const icon = manifest.icons.find((item) => item.purpose === purpose && item.sizes === `${side}x${side}`);
+        assert.ok(icon, `${role} ${purpose} ${side}`);
+        assert.deepEqual(png(icon.src), [side, side]);
+      }
+    }
+    assert.ok(manifest.shortcuts.length >= 3);
+  }
+});
+
+test("Vercel: the landing page at /, the app everywhere else, /login to the doors, the security headers kept", () => {
+  const vercel = JSON.parse(fs.readFileSync(nodePath.join(pwaRoot, "vercel.json"), "utf8"));
+  assert.deepEqual(vercel.rewrites, [{ source: "/(.*)", destination: "/app.html" }]);
+  assert.deepEqual(vercel.redirects, [{ source: "/login", destination: "/#doors", permanent: false }]);
+  const all = vercel.headers.find((rule) => rule.source === "/(.*)").headers;
+  const csp = all.find((header) => header.key === "Content-Security-Policy").value;
+  assert.match(csp, /script-src 'self'/);
+  assert.doesNotMatch(csp, /script-src[^;]*unsafe-inline/);
+  // The landing page needs nothing from another site.
+  const landing = fs.readFileSync(nodePath.join(pwaRoot, "index.html"), "utf8");
+  assert.doesNotMatch(landing, /https?:\/\//);
+  assert.match(landing, /<!--landing-->/);
+  assert.doesNotMatch(landing, /main\.tsx/);
+  // The password-reset link still lands on the app's page.
+  const server = fs.readFileSync(nodePath.join(__dirname, "..", "src", "server.ts"), "utf8");
+  assert.match(server, /new URL\("\/reset-password", /);
 });

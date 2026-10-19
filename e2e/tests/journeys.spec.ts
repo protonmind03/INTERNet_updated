@@ -17,17 +17,18 @@ test.describe("signing in and out", () => {
   }
 
   test("a wrong password is refused, and says so", async ({ page }) => {
-    await page.goto("/");
+    await page.goto("/student/sign-in");
     await page.locator("#inb-login-id").fill(ACCOUNTS.student.email);
     await page.locator("#inb-login-pw").fill("not-the-password");
     await page.locator('button[type="submit"]').click();
     await expect(page.getByRole("alert").first()).toBeVisible();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/student\/sign-in$/);
   });
 
   test("a signed-out visitor cannot open a portal page", async ({ page }) => {
     await page.goto("/coordinator/students");
-    await expect(page).toHaveURL(/\/$/);
+    // Iteration 23: to a door (the trainee's on a device that has used none).
+    await expect(page).toHaveURL(/\/sign-in$/);
   });
 });
 
@@ -1054,7 +1055,7 @@ test.describe("attendance steps recorded offline and not sent yet", () => {
     // The app sends the student to the sign-in page as soon as a request is
     // refused, which can cut this reload short.
     await page.reload({ waitUntil: "commit" }).catch(() => undefined);
-    await expect(page).toHaveURL(/\/$/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/student\/sign-in$/, { timeout: 20_000 });
     await expect(page.locator("#inb-login-id")).toBeVisible();
     expect(await waiting(page)).toBe(1);
 
@@ -1079,7 +1080,7 @@ test.describe("attendance steps recorded offline and not sent yet", () => {
 
     await askToSignOut();
     await dialog.getByRole("button", { name: "Sign out and erase" }).click();
-    await expect(page).toHaveURL(/\/$/);
+    await expect(page).toHaveURL(/\/student\/sign-in$/);
     await expect.poll(() => waiting(page)).toBe(0);
   });
 });
@@ -1278,6 +1279,7 @@ test.describe("pictures on a time-out note and on a concern", () => {
     let log = await todays();
     test.skip(Boolean(log?.time_out), "The second demo student has already timed out today.");
     if (!log) {
+      test.skip(await timeInClosed(student.token, student.id), "Today's time-in window is closed at this hour (the day's rules).");
       // No log yet today: start one the way a phone with no connection would have.
       const started = await api(student.token, "POST", "/api/attendance/offline-time-in", {
         occurred_at: new Date(Date.now() - 60_000).toISOString(),

@@ -1,0 +1,90 @@
+{
+  "id": "/student/",
+  "name": "INTERNet Trainee",
+  "short_name": "Trainee",
+  "description": "Time in, log the day and follow your OJT hours: Pangasinan State University, Lingayen Campus.",
+  "lang": "en-PH",
+  "dir": "ltr",
+  "start_url": "/student/sign-in?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FFF8E8",
+  "theme_color": "#FFF8E8",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "icons": [
+    {
+      "src": "/icons/student-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/student-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/student-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/student-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Today's attendance",
+      "short_name": "Today",
+      "description": "Time in, lunch break and time out.",
+      "url": "/go/today",
+      "icons": [
+        {
+          "src": "/icons/student-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Daily log",
+      "short_name": "Log",
+      "description": "Write today's log.",
+      "url": "/daily-log",
+      "icons": [
+        {
+          "src": "/icons/student-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Tasks",
+      "short_name": "Tasks",
+      "description": "Assigned tasks and their deadlines.",
+      "url": "/task",
+      "icons": [
+        {
+          "src": "/icons/student-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

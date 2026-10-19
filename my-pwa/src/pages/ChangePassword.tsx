@@ -1,6 +1,7 @@
 import { toast } from "../lib/toast";
 import { useState } from "react";
 import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
+import { useRoleTheme } from "../brand/useRoleTheme";
 import { Button, FormError, FormField } from "../components/ui";
 import AuthShell from "../layouts/AuthShell";
 import {
@@ -29,6 +30,8 @@ export default function ChangePassword() {
   const [params] = useSearchParams();
   const roleParam = params.get("role");
   const role = roleParam && roleParam in roles ? (roleParam as Role) : null;
+  // Iteration 23: themed as the role's door.
+  useRoleTheme(role ?? "guest");
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");

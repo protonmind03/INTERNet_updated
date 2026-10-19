@@ -1,0 +1,90 @@
+{
+  "id": "/supervisor/",
+  "name": "INTERNet Supervisor",
+  "short_name": "Supervisor",
+  "description": "Verify your trainees' days, tasks and documents from one review queue.",
+  "lang": "en-PH",
+  "dir": "ltr",
+  "start_url": "/supervisor/sign-in?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EEF6F2",
+  "theme_color": "#FFFFFF",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "icons": [
+    {
+      "src": "/icons/supervisor-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/supervisor-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/supervisor-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/supervisor-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Review queue",
+      "short_name": "Review",
+      "description": "The days waiting for your review.",
+      "url": "/supervisor/attendance",
+      "icons": [
+        {
+          "src": "/icons/supervisor-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Interns",
+      "short_name": "Interns",
+      "description": "Your trainees and their hours.",
+      "url": "/supervisor/interns",
+      "icons": [
+        {
+          "src": "/icons/supervisor-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Notifications",
+      "short_name": "Notifications",
+      "description": "What has changed since you last looked.",
+      "url": "/supervisor/notifications",
+      "icons": [
+        {
+          "src": "/icons/supervisor-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

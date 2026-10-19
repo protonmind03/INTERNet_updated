@@ -195,3 +195,18 @@ export function paletteTextPairs(): Array<{ role: string; pair: string; text: st
   pairs.push({ role: "all", pair: "late ink on the weekend tint", text: STATUS_COLORS.late.ink, background: WEEKEND_TINT, large: false });
   return pairs;
 }
+
+/**
+ * Iteration 23: the landing page's neutrals (paper, ink, rules). The role
+ * palettes above colour its three doors; brand.css carries these as --land-*.
+ */
+export const LANDING = {
+  paper: "#FFFFFF",
+  paperWarm: "#F7F5EF",
+  ink: "#0F172A",
+  muted: "#475569",
+  line: "#E2E8F0",
+  night: "#0B1440",
+  onNight: "#FFFFFF",
+  onNightMuted: "#C7CDF0",
+} as const;

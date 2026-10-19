@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { PortalHeader } from "../brand";
 import { useRoleTheme } from "../brand/useRoleTheme";
+import Onboarding from "../components/Onboarding";
 import FolderShell, { type FolderTab } from "../components/folder/FolderShell";
 import StudentDock from "../components/StudentDock";
 import { useSpotlightParam } from "../lib/spotlight";
@@ -82,6 +83,8 @@ export default function StudentLayout(props: LayoutProps) {
   useRoleTheme("student");
   return (
     <TimeInProvider>
+      {/* Iteration 23: the first open of the installed app. */}
+      <Onboarding role="student" />
       <StudentChrome {...props} />
     </TimeInProvider>
   );

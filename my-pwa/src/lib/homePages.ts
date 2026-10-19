@@ -7,7 +7,7 @@ import type { ComponentType } from "react";
 |
 | Iteration 14, prototype P2 (the shaped skeleton), chosen for after sign-in.
 | The file of the page a role lands on is asked for the moment Sign in is
-| tapped (pages/Login.tsx), at the same time as the sign-in itself, so the
+| tapped (pages/Door.tsx), at the same time as the sign-in itself, so the
 | page's own shape is ready to draw when the answer comes. App.tsx loads the
 | same files, so they are fetched once.
 |

@@ -1,6 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { defineConfig, loadEnv, type Plugin } from 'vite'
+import { createServer, defineConfig, loadEnv, type Connect, type Plugin, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import basicSsl from '@vitejs/plugin-basic-ssl'
@@ -44,6 +44,79 @@ function killSwitch(): Plugin {
   }
 }
 
+/**
+ * Iteration 23: two pages. index.html is the public landing page at "/",
+ * rendered to plain HTML when the site is built (src/landing/render.tsx,
+ * marked <!--landing--> in index.html) and enhanced by a small script of its
+ * own. app.html is the app: every other address that is not a file. Vercel
+ * does the same (vercel.json); this does it for `npm run dev` and `preview`.
+ */
+const APP_VERSION = (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'local'
+
+function isAppAddress(url: string): boolean {
+  const pathname = url.split(/[?#]/)[0]
+  if (pathname === '/' || pathname === '/index.html') return false
+  if (/^\/(@|src\/|node_modules\/|api\/)/.test(pathname)) return false
+  return !/\.[a-z0-9]+$/i.test(pathname)
+}
+
+const appPages: Connect.NextHandleFunction = (req, res, next) => {
+  const url = req.url || '/'
+  if (url.split(/[?#]/)[0] === '/login') {
+    res.statusCode = 307
+    res.setHeader('Location', '/#doors')
+    return res.end()
+  }
+  if ((req.method === 'GET' || req.method === 'HEAD') && isAppAddress(url)) {
+    req.url = '/app.html' + (url.includes('?') ? url.slice(url.indexOf('?')) : '')
+  }
+  next()
+}
+
+function landingPage(): Plugin {
+  let root = process.cwd()
+  let dev: ViteDevServer | null = null
+  let renderer: ViteDevServer | null = null
+  return {
+    name: 'internet-landing',
+    configResolved(config) {
+      root = config.root
+    },
+    configureServer(server) {
+      dev = server
+      server.middlewares.use(appPages)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(appPages)
+    },
+    transformIndexHtml: {
+      // Before Vite reads the page for its files, so the seal's <img> in the
+      // rendered markup is bundled like any other.
+      order: 'pre',
+      async handler(html) {
+        if (!html.includes('<!--landing-->')) return html
+        const loader =
+          dev ??
+          (renderer ??= await createServer({
+            configFile: false,
+            root,
+            logLevel: 'error',
+            appType: 'custom',
+            server: { middlewareMode: true, hmr: false, ws: false },
+            define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
+            plugins: [react(), tailwindcss()],
+          }))
+        const module = (await loader.ssrLoadModule('/src/landing/render.tsx')) as { render: () => string }
+        return html.replace('<!--landing-->', module.render())
+      },
+    },
+    async closeBundle() {
+      await renderer?.close()
+      renderer = null
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const phone = mode === 'phone'
   // Where the backend runs on this computer: the address normal development uses.
@@ -80,6 +153,8 @@ export default defineConfig(({ mode }) => {
               'screenshots/**',
               // Only an iPhone opening from the Home Screen uses these, once each.
               'startup/**',
+              // Only the install dialog and the Home Screen use the role apps' icons.
+              'icons/**',
             ],
           },
         })
@@ -88,11 +163,15 @@ export default defineConfig(({ mode }) => {
     // Shown in crash reports so a fault can be tied to a build. Vercel supplies
     // the commit; a local build says "local".
     define: {
-      __APP_VERSION__: JSON.stringify(
-        (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'local'
-      ),
+      __APP_VERSION__: JSON.stringify(APP_VERSION),
     },
-    plugins: [react(), tailwindcss(), serviceWorker, ...(phone ? [basicSsl()] : [])],
+    plugins: [react(), tailwindcss(), landingPage(), serviceWorker, ...(phone ? [basicSsl()] : [])],
+    build: {
+      rollupOptions: {
+        // The landing page (index.html) and the app (app.html): two pages, two scripts.
+        input: { index: path.resolve('index.html'), app: path.resolve('app.html') },
+      },
+    },
     server: phone
       ? { host: true, proxy: { '/api': { target: backend, changeOrigin: true } } }
       : undefined,

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Navigate, NavLink, useNavigate } from "react-router-dom";
 import { PortalBrand } from "../brand";
 import { useRoleTheme } from "../brand/useRoleTheme";
+import Onboarding from "../components/Onboarding";
 import ComposeMessage from "../components/ComposeMessage";
 import Icon from "../components/Icon";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -105,6 +106,8 @@ export default function SupervisorLayout({
 
   return (
     <div className="app-canvas flex min-h-[calc(100dvh-var(--inb-top-inset))] flex-col print:bg-white">
+      {/* Iteration 23: the first open of the installed app. */}
+      <Onboarding role="supervisor" />
       <header className="surface-brand-bar sticky top-(--inb-top-inset) z-30 text-white shadow-raised print:hidden">
         <div className="mx-auto flex h-14 w-full max-w-7xl items-center gap-6 px-4 md:px-8">
           <NavLink to="/supervisor/dashboard" className="flex shrink-0 items-center gap-2.5">

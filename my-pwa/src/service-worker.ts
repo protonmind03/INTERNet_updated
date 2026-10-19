@@ -52,8 +52,11 @@ async function loadPage(request: Request): Promise<Response> {
   try {
     return await fetch(request, { signal: controller.signal });
   } catch {
+    // Iteration 23: "/" is the landing page (index.html); every other
+    // address is the app (app.html). Neither is answered with the other.
+    const page = new URL(request.url).pathname === "/" ? "/index.html" : "/app.html";
     return (
-      (await matchPrecache("/index.html")) ??
+      (await matchPrecache(page)) ??
       (await matchPrecache("/offline.html")) ??
       Response.error()
     );

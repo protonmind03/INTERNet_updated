@@ -54,12 +54,12 @@ the new ones keep the brief's numbers 065 to 070.
 - [x] test run and commit
 
 ### Phase 23: landing, doors, downloads, onboarding (`iter-23-landing`)
-- [ ] 23.1 second Vite entry, vercel.json, service worker
-- [ ] 23.2 landing content
-- [ ] 23.3 role manifests and download module
-- [ ] 23.4 three sign-in doors
-- [ ] 23.5 onboarding carousel
-- [ ] 23.6 architecture diagram and PR notes
+- [x] 23.1 second Vite entry, vercel.json, service worker
+- [x] 23.2 landing content
+- [x] 23.3 role manifests and download module
+- [x] 23.4 three sign-in doors
+- [x] 23.5 onboarding carousel
+- [x] 23.6 architecture diagram and PR notes
 - [ ] final verification and report
 
 ## Decisions made during the run
@@ -216,6 +216,59 @@ the new ones keep the brief's numbers 065 to 070.
   offline step with a voucher challenge (accepted on arrival) and a voucher challenge used on
   another day (failed, step kept), and the End break camera check.
 
+### Phase 23
+- **The landing page is index.html; the app moved to app.html.** The brief names a second entry
+  `landing.html` with "/" serving it. On Vercel the file system is checked before rewrites, so "/"
+  would always serve index.html (the app) and a rewrite of "/" to landing.html would never apply.
+  So the landing page is index.html and the app is app.html; every other address that is not a file
+  is rewritten to /app.html. `vite dev` and `vite preview` do the same through a small middleware in
+  vite.config.ts, and the axe/Lighthouse server (docs/baseline/tools/serve-like-vercel.mjs) too.
+- **Pre-rendering**: a Vite plugin renders src/landing/render.tsx with `renderToStaticMarkup` (a
+  temporary Vite server's ssrLoadModule) into index.html before Vite reads the page for its files,
+  so the seal's <img> is bundled with a hashed name. The browser gets plain HTML and one 4.2 kB
+  (compressed) script; React is not shipped to the landing page. check-pwa.mjs measures it (budget
+  90 kB) and fails if the landing page loads the app's script.
+- **Service worker**: the landing page registers the same worker (production builds only), which
+  keeps index.html and app.html. With no connection "/" is answered with index.html and every
+  other address with app.html, never one for the other.
+- **Role manifests' scope is "/"**, not /student/ etc. The trainee's pages (/daily-log, /task,
+  /schedule, ...) are not under /student/, and a narrower scope would open them outside the installed
+  app's window. Each has its own id (/student/, /supervisor/, /coordinator/), so the three install
+  side by side. start_url is the role's door, which opens the portal for someone signed in.
+  public/manifest.json and its id "/" are unchanged.
+- **Which manifest a page links**: app.html links manifest.json; the doors and each portal swap the
+  link to the role's manifest (brand/useRoleTheme.ts, with the palette). The landing page links
+  none: installing happens at a door. The Download module's Install sends Android and desktop
+  browsers to the door with ?install=1, where the browser's own Install is offered (or its menu
+  steps shown).
+- **Role icons**: the app icon with its navy tile recoloured to the role's primary colour
+  (scripts/make-role-icons.mjs); kept in public/icons and left out of the offline precache.
+- **Door redirect for a different role**: each door posts to its own role's endpoint, as before.
+  Trying the other roles' endpoints after a failure was not done: it would triple the failed-login
+  count per attempt and could tell someone which role an address has. Someone already signed in (any
+  role) who opens any door is taken to their own portal. The failure message is the role
+  endpoint's own ("Invalid supervisor email or password."), which says nothing about other roles.
+- **Passkey sign-in: not added, nothing shown.** A sign-in challenge has no trainee yet, and
+  webauthn_challenges.student_id is NOT NULL with a foreign key to students (migration 069). Issuing
+  a login challenge would need a schema change (a migration 071 making it nullable, or a separate
+  table), which the brief's condition rules out. The doors show no "Use passkey".
+- **"/" inside the app** (sign-out, an expired session, a portal page opened signed out) goes to the
+  door used last on this device (the trainee's when none), or to the portal of whoever is signed in.
+  The session guard and the error screen send people to their role's door.
+- **Supervisor slide title** shortened to "Verify, or reject photo or day" (six words); the brief's
+  "Verify, or reject the photo or the day" is eight, and the brief also asks for six at most.
+- **Coordinator door status**: only "Service reachable", shown once /api/health answers; nothing is
+  shown while it is unreachable (the brief allows only that one line).
+- **Contact and privacy**: no office phone or email is invented. The footer's "Privacy notice" and
+  "Contact the OJT office" open two new Help sections that say where each thing is.
+- **qrcode 1.5.4** (exact), loaded only when the Computer device is chosen. It ships no types; a
+  small declaration (src/landing/qrcode.d.ts) covers the one call used, so no @types package.
+- **Onboarding** shows only in standalone mode. The e2e tests make the page report standalone
+  (matchMedia) to test it; the Playwright test also counts Notification.requestPermission calls (0).
+- **Architecture diagram**: the generator also reads the app's pages (vite.config.ts inputs), the
+  doors (App.tsx) and the manifests, and shows passkeys' outside system (the phone's screen lock).
+  There was no older gitdiagram image in docs/ to remove.
+
 ## Phase reports
 
 ### Phase 18 (branch iter-18-rules)
@@ -348,3 +401,30 @@ green), 4 failed: the pre-existing midnight cases in pictures.spec.ts and journe
 time-out note" (a log made "an hour ago" falls on the day before).
 
 **Skipped.** The offline End break camera check (see the decision above).
+
+### Phase 23 (branch iter-23-landing)
+
+**Changed.** App: index.html (now the landing page), app.html (the app, moved from index.html),
+src/landing/ (new: Landing.tsx, render.tsx, content.ts, main.ts, download.ts, landing.css,
+qrcode.d.ts), vite.config.ts (two pages, pre-render plugin, dev/preview rewrites),
+service-worker.ts (landing vs app fallback), vercel.json (rewrite to /app.html, /login redirect,
+manifest headers), pages/Door.tsx and lib/doors.ts (new; pages/Login.tsx removed), App.tsx (doors,
+"/" and /login), components/Onboarding.tsx and lib/onboarding.ts (new) in the three layouts,
+brand/useRoleTheme.ts (role manifests), brand/SplashScreen.tsx (palette applied at first render),
+brand/tokens.ts and brand.css (LANDING neutrals, door and slide styles), ForgotPassword.tsx,
+ChangePassword.tsx, AuthShell.tsx (themed per door), Help.tsx (Privacy notice, Contact),
+sessionGuard.ts and ErrorBoundary.tsx (to the role's door). public/manifest-{role}.webmanifest and
+public/icons/ (new), scripts/make-role-icons.mjs and make-role-manifests.mjs (new),
+scripts/check-pwa.mjs (four manifests, both pages, landing script budget). Package: qrcode 1.5.4.
+Backend: scripts/architecture-diagram.ts. e2e: tests/landing.spec.ts (new), sidebar-scroll.spec.ts
+(the slides' row), helpers.ts, first-page.spec.ts, journeys.spec.ts (doors instead of "/");
+lighthouse/run-lighthouse.mjs ("/" is the landing page; the trainee door added);
+docs/baseline/tools/serve-like-vercel.mjs and axe-sweep.mjs. Docs: ARCHITECTURE.md, UX-PASS,
+PAPER-CORRECTIONS, docs/pr/.
+
+**Migrations.** None.
+
+**Tests.** See the final run below.
+
+**Skipped.** Passkey sign-in at the doors (see the decision above).
+

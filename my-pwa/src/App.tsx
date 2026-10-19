@@ -6,7 +6,7 @@ import PushNotificationSettings from "./components/PushNotificationSettings";
 import RealtimeNotificationBridge from "./components/RealtimeNotificationBridge";
 import Toaster from "./components/Toaster";
 
-import Login from "./pages/Login";
+import Door, { DoorRedirect } from "./pages/Door";
 import ForgotPassword from "./pages/ForgotPassword";
 import ChangePassword from "./pages/ChangePassword";
 import Go from "./pages/Go";
@@ -114,6 +114,14 @@ function ToResolutionTab({ tab }: { tab: "concerns" | "evaluations" }) {
   return <Navigate to={{ pathname: "/student/resolution", search: `?${params}`, hash }} replace />;
 }
 
+/** The old sign-in address: the landing page's doors (Vercel redirects it before the app loads). */
+function ToDoors() {
+  useEffect(() => {
+    window.location.replace("/#doors");
+  }, []);
+  return null;
+}
+
 /*
 |--------------------------------------------------------------------------
 | STUDENT PAGES
@@ -210,10 +218,16 @@ function App() {
         |--------------------------------------------------------------------------
         */}
 
+        {/* Iteration 23: "/" is the landing page (index.html); inside the app it
+            opens the portal of whoever is signed in, or the door used last. */}
         <Route
           path="/"
-          element={<Login />}
+          element={<DoorRedirect />}
         />
+        <Route path="/student/sign-in" element={<Door role="student" />} />
+        <Route path="/supervisor/sign-in" element={<Door role="supervisor" />} />
+        <Route path="/coordinator/sign-in" element={<Door role="coordinator" />} />
+        <Route path="/login" element={<ToDoors />} />
         <Route
           path="/forgot-password"
           element={<ForgotPassword />}

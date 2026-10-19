@@ -111,4 +111,29 @@ test.describe("sideways rows", () => {
     await expect(cards).not.toHaveAttribute("data-more-above", "");
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
+
+  test("the first-open slides are the same kind of row (Iteration 23)", async ({ page }) => {
+    // Opened as an installed app, so the slides show.
+    await page.addInitScript(() => {
+      const real = window.matchMedia.bind(window);
+      window.matchMedia = (query: string) =>
+        query.includes("display-mode: standalone")
+          ? ({ matches: true, media: query, onchange: null, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {}, dispatchEvent: () => false } as unknown as MediaQueryList)
+          : real(query);
+    });
+    await signIn(page, "coordinator");
+    const row = page.locator(".onboarding-row");
+    await expect(row).toBeVisible();
+    const styles = await row.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { snap: style.scrollSnapType, bar: style.scrollbarWidth, overscroll: style.overscrollBehaviorX, axis: element.getAttribute("data-axis"), tab: element.getAttribute("tabindex") };
+    });
+    expect(styles.snap).toContain("mandatory");
+    expect(styles.bar).toBe("none");
+    expect(styles.overscroll).toBe("contain");
+    expect(styles.axis).toBe("x");
+    expect(styles.tab).toBe("0");
+    await expect(row).toHaveAttribute("data-more-below", "");
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
 });

@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import Icon from "../components/Icon";
 import { Button, FormError, FormField } from "../components/ui";
 import AuthShell from "../layouts/AuthShell";
+import { useRoleTheme } from "../brand/useRoleTheme";
 import { API_URL, PASSWORD_POLICY_HINT, passwordPolicyError } from "../lib/api";
 
 type Role = "student" | "supervisor" | "coordinator";
@@ -19,6 +20,8 @@ export default function ForgotPassword() {
   const [role, setRole] = useState<Role>(
     initialRole === "supervisor" || initialRole === "coordinator" ? initialRole : "student"
   );
+  // Iteration 23: themed as the door it was opened from.
+  useRoleTheme(role);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
@@ -83,7 +86,7 @@ export default function ForgotPassword() {
             {done}
           </p>
           <Link
-            to="/"
+            to={`/${role}/sign-in`}
             className="mt-5 inline-flex h-10 w-full items-center justify-center rounded-lg bg-psu-700 text-sm font-semibold text-white hover:bg-psu-800"
           >
             Back to sign in
@@ -159,7 +162,7 @@ export default function ForgotPassword() {
           </Button>
 
           <Link
-            to="/"
+            to={`/${role}/sign-in`}
             className="block text-center text-sm font-semibold text-psu-700 hover:underline"
           >
             Back to sign in

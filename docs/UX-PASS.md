@@ -93,4 +93,15 @@ One line per UI change, in the form screen - change - design principle.
 - Student · Profile, Security and device - Passkeys: add one with the phone's screen lock, see each with when it was added and last used, remove one - *User control: a stronger check the trainee chooses.*
 - Student · Lunch break, End break, Time out - the phone's screen lock is asked for when the trainee has a passkey; cancelling it never stops the step; on the strict level End break runs the camera check first, with a Skip - *Error tolerance: a failed check is recorded, not punished.*
 - Supervisor · log detail and attendance list - per step: "Confirmed with passkey", "Not confirmed", "Sent later", and the End break camera check - *Visibility: how a record was made, stated plainly.*
+- Public · Landing page (/) - one page that says what INTERNet is, routes each role to its door, and explains installing; the day's four steps drawn once as the page opens, at rest with reduced motion - *Match with the real world: the trainee's own four steps tell the story.*
+- Public · Landing page, phone - the menu is a sheet (native dialog: focus kept inside, Escape and a tap beside it close it) - *User control and freedom.*
+- Public · Landing page, Get the app - choose the app and the device (guessed from the browser), one set of steps at a time, a QR code to open the door on a phone; plainly an installable web app, no app store - *Recognition over recall.*
+- Public · Landing page, Questions - native details/summary, readable without a script - *Help and documentation.*
+- Trainee · door (/student/sign-in, "Badge-in") - an ID card in the Sunpath palette, the seal at its corner, one field for Student ID or email, the button kept in the thumb's reach on a phone - *Aesthetic and minimalist design.*
+- Supervisor · door (/supervisor/sign-in, "Desk") - on a tablet or computer, a static example of the review queue beside the form; a help line naming the OJT coordinator for accounts - *Help users recognise where they are.*
+- Coordinator · door (/coordinator/sign-in, "Console") - the Royal Seal's dark chrome, the large co-brand lockup with the seal on its white disc, and "Service reachable" once /api/health answers - *Visibility of system status.*
+- All · doors - someone already signed in is taken to their own portal; a wrong password says only that door's message; links to the other two doors - *Error prevention.*
+- All · Forgot password and Change password - themed as the door they came from; "Back to sign in" returns to that door - *Consistency.*
+- All · installed app, first open - four slides per role, once per role on each device, Skip on every slide, swipe or Next and Back, dots; the notification slide asks only when its button is tapped - *User control; no surprise permission prompts.*
+- All · Help - new Privacy notice and Contact the OJT office sections, linked from the landing page's footer - *Help and documentation.*
 

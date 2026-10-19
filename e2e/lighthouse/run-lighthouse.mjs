@@ -28,7 +28,9 @@ for (const address of [SITE, API]) {
 const OUT = path.resolve(process.env.LIGHTHOUSE_OUT || path.join(here, "..", "lighthouse-reports"));
 const RUNS = Number(process.env.LIGHTHOUSE_RUNS || 1);
 const PAGES = [
-  { slug: "sign-in", name: "Sign-in", role: null, path: "/" },
+  // Iteration 23: "/" is the landing page (it was the sign-in page); each role signs in at its door.
+  { slug: "landing", name: "Landing page", role: null, path: "/" },
+  { slug: "student-door", name: "Trainee door (sign-in)", role: null, path: "/student/sign-in" },
   { slug: "student-today", name: "Student: Today", role: "student", path: "/student/dashboard" },
   { slug: "supervisor-review", name: "Supervisor: Review", role: "supervisor", path: "/supervisor/dashboard" },
   { slug: "coordinator-dashboard", name: "Coordinator: Dashboard", role: "coordinator", path: "/coordinator/dashboard" },
