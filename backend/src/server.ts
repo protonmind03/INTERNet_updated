@@ -63,6 +63,7 @@ import { registerMessageRoutes } from "./routes/messages";
 import { registerAccountDetailRoutes } from "./routes/accountDetails";
 import { registerProjectionRoutes } from "./routes/projections";
 import { registerAttachmentRoutes } from "./routes/attachments";
+import { registerInstitutionRoutes } from "./routes/institution";
 import { loadCatalogue, resolvePlacement } from "./services/academics";
 import {
   bindFilters,
@@ -90,10 +91,19 @@ import {
   type OfflineAction,
 } from "./services/offlineActions";
 import { registerExtensionRoutes } from "./routes/extensions";
-import { PH_PG_OPTIONS, PH_TIME_ZONE, phToday, usePhilippineProcessTime } from "./services/phTime";
+import { PH_PG_OPTIONS, PH_TIME_ZONE, phMoment, phToday, usePhilippineProcessTime } from "./services/phTime";
 import { cleanId, sameId, sqlSameId } from "./services/ids";
 import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, syncLivenessStrict, type LivenessLevel, type LivenessPrompt } from "./services/liveness";
 import { REDO_UNDO_MINUTES, redoWindow, removeMissedRedoAbsence } from "./services/photoRedo";
+import {
+  correctedTime,
+  judgeLunch,
+  judgeTimeIn,
+  loadDayPlan,
+  loadDayRuleSettings,
+  lunchLateMinutes,
+  planForApp,
+} from "./services/dayRules";
 
 // Attendance timestamps are stored as Philippine wall-clock time. Node must
 // read them in the same zone, or a host running on UTC shifts every
@@ -2264,6 +2274,7 @@ app.get(
             photo_rejected_at,
             photo_redo_status,
             photo_redo_due_at,
+            ${DAY_RULE_COLUMNS},
             -- The latest appeal on this log, if any.
             (SELECT JSON_BUILD_OBJECT('id', p.id, 'kind', p.kind, 'status', p.status, 'decision_note', p.decision_note)
                FROM attendance_appeals p WHERE p.attendance_id = attendance.id
@@ -2281,9 +2292,14 @@ app.get(
           [studentId]
         );
 
+      // Today's rules, so the app shows when the time-in opens and when the
+      // day becomes afternoon-only without working either out itself.
+      const today = planForApp(await loadDayPlan(pool, String(studentId), phToday()));
+
       return res.json({
         attendance:
           result.rows,
+        today,
       });
     } catch (error) {
       console.error(
@@ -2434,6 +2450,15 @@ app.post(
   }
 );
 
+/** What the day's rules wrote on a log (migration 065), for every answer the app reads. */
+const DAY_RULE_COLUMNS = `
+  session,
+  credited_from,
+  late_minutes,
+  TO_CHAR(scheduled_start, 'HH24:MI') AS scheduled_start,
+  lunch_late_minutes
+`;
+
 /*
 |--------------------------------------------------------------------------
 | RECORD TIME IN
@@ -2491,6 +2516,21 @@ app.post(
       if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
         return res.status(400).json({
           message: "Attendance photo must be a JPG or PNG image.",
+        });
+      }
+
+      // The day's rules (services/dayRules.ts), before the camera check is
+      // spent: a time-in before the window opens is refused with when it opens.
+      const timedInAt = new Date();
+      const dayRules = await loadDayRuleSettings(pool);
+      const dayPlan = await loadDayPlan(pool, String(student_id), phToday(timedInAt), dayRules);
+      const verdict = judgeTimeIn(dayPlan, timedInAt, dayRules);
+      if (!verdict.ok) {
+        return res.status(409).json({
+          code: verdict.code,
+          opensAt: verdict.opensAt,
+          message: verdict.message,
+          day: planForApp(dayPlan),
         });
       }
 
@@ -2642,13 +2682,17 @@ app.post(
             status,
             image_url,
             capture_method,
-            liveness_checks
+            liveness_checks,
+            session,
+            credited_from,
+            late_minutes,
+            scheduled_start
           )
           VALUES
           (
             $1,
-            CURRENT_DATE,
-            NOW(),
+            $5::date,
+            $6::timestamptz,
             NULL,
             NULL,
             NULL,
@@ -2657,7 +2701,11 @@ app.post(
             'Pending',
             $3,
             'liveness',
-            $4::jsonb
+            $4::jsonb,
+            $7,
+            $8::timestamptz,
+            $9,
+            $10::time
           )
           RETURNING
             id,
@@ -2674,15 +2722,23 @@ app.post(
             note,
             status,
             image_url,
-            capture_method
+            capture_method,
+            ${DAY_RULE_COLUMNS}
           `,
           [
             student_id,
             cleanNote,
             imageUrl,
             JSON.stringify(liveness.report),
+            dayPlan.date,
+            timedInAt,
+            verdict.session,
+            verdict.creditedFrom,
+            verdict.lateMinutes,
+            verdict.scheduledStart,
           ]
         );
+        result.rows[0].day = planForApp(dayPlan);
 
       // Feature 7: alert the assigned supervisor that a new log is waiting
       // for verification. A notification failure must not undo the log.
@@ -2834,6 +2890,32 @@ async function attendanceStepFor(
     : { at: null, requestId: null };
 }
 
+/**
+ * The day's rules for a lunch step (services/dayRules.ts): refused on an
+ * afternoon-only or a morning-only day, answered here. Otherwise the day's
+ * plan, for marking a late return. A log from before the rules (no session)
+ * has no plan and is never refused.
+ */
+async function lunchRulesFor(
+  res: express.Response,
+  logId: string,
+  studentId: string
+): Promise<{ plan: Awaited<ReturnType<typeof loadDayPlan>> | null } | null> {
+  const log = await pool.query<{ session: string | null; date: string }>(
+    `SELECT session, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM attendance WHERE id = $1 AND student_id = $2`,
+    [logId, studentId]
+  );
+  const row = log.rows[0];
+  if (!row || !row.session) return { plan: null };
+  const plan = await loadDayPlan(pool, studentId, row.date);
+  const lunch = judgeLunch(row.session, plan);
+  if (!lunch.ok) {
+    res.status(409).json({ code: lunch.code, message: lunch.message });
+    return null;
+  }
+  return { plan };
+}
+
 /** Remembers an offline action by its id, so sending it again changes nothing. */
 /** The most tasks one day's log can be linked to. */
 const MAX_WORKED_TASKS = 20;
@@ -2913,6 +2995,7 @@ app.put(
       } = req.params;
       const step = await attendanceStepFor(req, res, "break");
       if (!step) return;
+      if (!(await lunchRulesFor(res, String(id), String(auth?.id)))) return;
 
       const result =
         await pool.query(
@@ -2940,7 +3023,8 @@ app.put(
             note,
             status,
             image_url,
-            recorded_offline
+            recorded_offline,
+            ${DAY_RULE_COLUMNS}
           `,
           [id, auth?.id, step.at]
         );
@@ -2998,6 +3082,11 @@ app.put(
       const auth = (req as AuthedRequest).auth;
       const step = await attendanceStepFor(req, res, "break-end");
       if (!step) return;
+      const rules = await lunchRulesFor(res, String(id), String(auth?.id));
+      if (!rules) return;
+      // Back after the lunch end is marked, judged at the real time of a step sent later.
+      const backAt = step.at ? correctedTime(step.at, step.skewSeconds) : new Date();
+      const lunchLate = lunchLateMinutes(rules.plan, backAt, await loadDayRuleSettings(pool));
 
       const result =
         await pool.query(
@@ -3005,7 +3094,8 @@ app.put(
           UPDATE attendance
           SET
             break_end_time = COALESCE($3::timestamptz, NOW()),
-            recorded_offline = recorded_offline OR $3::timestamptz IS NOT NULL
+            recorded_offline = recorded_offline OR $3::timestamptz IS NOT NULL,
+            lunch_late_minutes = CASE WHEN session IS NULL THEN lunch_late_minutes ELSE $4::int END
           WHERE id = $1
           AND student_id = $2
           AND break_time IS NOT NULL
@@ -3026,9 +3116,10 @@ app.put(
             note,
             status,
             image_url,
-            recorded_offline
+            recorded_offline,
+            ${DAY_RULE_COLUMNS}
           `,
-          [id, auth?.id, step.at]
+          [id, auth?.id, step.at, lunchLate]
         );
 
       if (
@@ -3148,7 +3239,7 @@ app.put(
               ROUND(
                 (
                   (
-                    EXTRACT(EPOCH FROM (COALESCE($4::timestamptz, NOW()) - time_in))
+                    EXTRACT(EPOCH FROM (COALESCE($4::timestamptz, NOW()) - COALESCE(credited_from, time_in)))
                     - CASE
                         WHEN break_time IS NOT NULL
                         THEN EXTRACT(
@@ -3482,7 +3573,7 @@ app.put(
             ROUND(
               (
                 (
-                  EXTRACT(EPOCH FROM ($3::timestamp - time_in))
+                  EXTRACT(EPOCH FROM ($3::timestamp - COALESCE(credited_from, time_in)))
                   - CASE
                       WHEN break_time IS NOT NULL
                       THEN EXTRACT(
@@ -4110,18 +4201,35 @@ app.post(
         });
       }
 
+      // The day's rules apply (services/dayRules.ts): hours count from the
+      // start, and late is marked. The supervisor is there in person, so a
+      // time-in before the window opens is not refused; it counts from the start.
+      const recordedAt = new Date();
+      const recordRules = await loadDayRuleSettings(pool);
+      const recordPlan = await loadDayPlan(pool, studentId, phToday(recordedAt), recordRules);
+      const recordVerdict = judgeTimeIn(recordPlan, recordedAt, recordRules);
+      const credited = recordVerdict.ok
+        ? recordVerdict
+        : judgeTimeIn(recordPlan, new Date(Date.parse(recordVerdict.opensAt)), recordRules, recordedAt);
+      if (!credited.ok) throw new Error("The day's rules refused the window's own opening.");
+
       uploadedFileName = await savePrivateFile(req.file);
 
       const result = await pool.query(
         `
         INSERT INTO attendance
           (student_id, date, time_in, note, status, image_url,
-           capture_method, recorded_by, capture_reason)
+           capture_method, recorded_by, capture_reason,
+           session, credited_from, late_minutes, scheduled_start)
         VALUES
-          ($1, CURRENT_DATE, NOW(), $2, 'Pending', $3, 'supervisor', $4, $5)
-        RETURNING ${ATTENDANCE_COLUMNS}
+          ($1, $6::date, $7::timestamptz, $2, 'Pending', $3, 'supervisor', $4, $5,
+           $8, $9::timestamptz, $10, $11::time)
+        RETURNING ${ATTENDANCE_COLUMNS}, ${DAY_RULE_COLUMNS}
         `,
-        [studentId, note, `/uploads/${uploadedFileName}`, auth?.id, reason]
+        [
+          studentId, note, `/uploads/${uploadedFileName}`, auth?.id, reason,
+          recordPlan.date, recordedAt, credited.session, credited.creditedFrom, credited.lateMinutes, credited.scheduledStart,
+        ]
       );
 
       try {
@@ -4508,6 +4616,13 @@ app.patch(
         return res.status(400).json({ message: "Those are the times already on the log." });
       }
 
+      // The day's rules follow the corrected times (services/dayRules.ts): on a
+      // log they applied to, hours count from the later of the time-in and the
+      // start it was measured against, and late is measured again.
+      const correctionRules = await loadDayRuleSettings(pool);
+      const correctionPlan = await loadDayPlan(pool, log.student_id, log.date, correctionRules);
+      const correctedLunchLate = breakEnd ? lunchLateMinutes(correctionPlan, phMoment(log.date, breakEnd), correctionRules) : null;
+
       const result = await pool.query(
         `
         UPDATE attendance a
@@ -4515,12 +4630,23 @@ app.patch(
             break_time = a.date + $3::time,
             break_end_time = a.date + $4::time,
             time_out = a.date + $5::time,
+            credited_from = CASE
+              WHEN a.session IS NULL THEN NULL
+              ELSE a.date + GREATEST($2::time, COALESCE(a.scheduled_start, $2::time))
+            END,
+            late_minutes = CASE
+              WHEN a.session IS NULL OR a.scheduled_start IS NULL THEN a.late_minutes
+              WHEN $2::time > a.scheduled_start + make_interval(mins => $9::int)
+                THEN FLOOR(EXTRACT(EPOCH FROM ($2::time - a.scheduled_start)) / 60)::int
+              ELSE 0
+            END,
+            lunch_late_minutes = CASE WHEN a.session IS NULL THEN a.lunch_late_minutes ELSE $10::int END,
             -- Rendered hours exclude the break; an open log has none yet.
             hours = CASE WHEN $5::time IS NULL THEN NULL ELSE GREATEST(
               ROUND(
                 (
                   (
-                    EXTRACT(EPOCH FROM ($5::time - $2::time))
+                    EXTRACT(EPOCH FROM ($5::time - CASE WHEN a.session IS NULL THEN $2::time ELSE GREATEST($2::time, COALESCE(a.scheduled_start, $2::time)) END))
                     - COALESCE(EXTRACT(EPOCH FROM ($4::time - $3::time)), 0)
                   ) / 3600.0
                 )::numeric,
@@ -4538,7 +4664,7 @@ app.patch(
                   a.time_in, a.break_time, a.break_end_time, a.time_out, a.hours, a.status,
                   a.time_corrected_at, a.time_correction_reason
         `,
-        [id, timeIn, breakStart, breakEnd, timeOut, auth?.id, reason, JSON.stringify(before)]
+        [id, timeIn, breakStart, breakEnd, timeOut, auth?.id, reason, JSON.stringify(before), correctionRules.lateGraceMin, correctedLunchLate]
       );
       if (result.rows.length === 0) {
         return res.status(409).json({
@@ -5803,6 +5929,8 @@ app.get(
             day,
             start_time,
             end_time,
+            TO_CHAR(lunch_start, 'HH24:MI') AS lunch_start,
+            TO_CHAR(lunch_end, 'HH24:MI') AS lunch_end,
             focus,
             hours,
             is_active
@@ -9289,6 +9417,8 @@ app.get(
         SELECT id, student_id, COALESCE(week, 1)::int AS week, day,
                TO_CHAR(start_time, 'HH24:MI') AS start_time,
                TO_CHAR(end_time, 'HH24:MI') AS end_time,
+               TO_CHAR(lunch_start, 'HH24:MI') AS lunch_start,
+               TO_CHAR(lunch_end, 'HH24:MI') AS lunch_end,
                focus, hours, is_active
         FROM ojt_schedule
         WHERE student_id = $1 AND is_active = TRUE
@@ -9337,10 +9467,10 @@ app.put(
       for (const item of clean) {
         await client.query(
           `
-          INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, focus, hours, is_active)
-          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE)
+          INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, focus, hours, is_active, lunch_start, lunch_end)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, $8::time, $9::time)
           `,
-          [studentId, item.week, item.day, item.start, item.end, item.focus, item.hours]
+          [studentId, item.week, item.day, item.start, item.end, item.focus, item.hours, item.lunchStart ?? null, item.lunchEnd ?? null]
         );
       }
       await client.query("COMMIT");
@@ -10007,6 +10137,7 @@ registerConsoleRoutes(app, {
   createRateLimiter,
 });
 registerAcademicRoutes(app, { pool, requireCoordinator });
+registerInstitutionRoutes(app, { pool, requireCoordinator });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });

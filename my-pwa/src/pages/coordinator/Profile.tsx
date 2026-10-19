@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import AccountDetailsForm from "../../components/AccountDetailsForm";
 import InstallApp from "../../components/InstallApp";
 import CueSettingsCard from "../../components/CueSettingsCard";
+import InstitutionCard from "./InstitutionCard";
 import NotificationPreferences from "../../components/NotificationPreferences";
 import PasswordForm from "../../components/PasswordForm";
 import { Button, Card, ErrorNotice, FormError, FormField } from "../../components/ui";
@@ -152,6 +153,8 @@ export default function CoordinatorProfilePage() {
         />
 
         {coordinatorId && <PasswordForm role="coordinator" accountId={coordinatorId} />}
+
+        <InstitutionCard />
 
         <NotificationPreferences role="coordinator" />
 

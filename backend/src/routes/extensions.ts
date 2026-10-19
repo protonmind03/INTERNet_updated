@@ -158,15 +158,23 @@ export function registerExtensionRoutes(
   */
 
   const ABSENCE_COLUMNS = `
-    a.id, a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date, a.reason,
+    a.id, a.student_id, TO_CHAR(a.date, 'YYYY-MM-DD') AS date, a.part, a.reason,
     a.status, a.review_notes, a.reviewed_at, a.created_at, a.version
   `;
 
+  /** How each part of a day is named to people. */
+  const PART_NAMES: Record<string, string> = { day: "", am: " (morning)", pm: " (afternoon)" };
+
   app.post("/api/absences", requireRole("student"), async (req, res) => {
+    // Migration 066: a whole day, or the morning or afternoon alone.
+    const part = req.body?.part === undefined || req.body?.part === null || req.body?.part === "" ? "day" : text(req.body.part);
     try {
       const auth = (req as AuthedRequest).auth!;
       const date = text(req.body?.date);
       const reason = text(req.body?.reason);
+      if (!["day", "am", "pm"].includes(part)) {
+        return res.status(400).json({ message: "An absence is for the whole day, the morning or the afternoon." });
+      }
 
       if (!DATE_PATTERN.test(date) || Number.isNaN(Date.parse(date))) {
         return res.status(400).json({ message: "Choose the date of the absence." });
@@ -181,23 +189,29 @@ export function registerExtensionRoutes(
         });
       }
 
-      const logged = await pool.query(
-        `SELECT 1 FROM attendance WHERE student_id = $1 AND date = $2::date`,
+      // A day with a log is not absent; only the half the log did not cover
+      // can be (an afternoon-only log leaves the morning, a morning-only shift
+      // the afternoon).
+      const logged = await pool.query<{ session: string | null }>(
+        `SELECT session FROM attendance WHERE student_id = $1 AND date = $2::date`,
         [auth.id, date]
       );
-      if (logged.rows.length > 0) {
+      const loggedSession = logged.rows[0]?.session ?? null;
+      if (logged.rows.length > 0 && !((part === "am" && loggedSession === "pm") || (part === "pm" && loggedSession === "am"))) {
         return res.status(409).json({
-          message: "You have an attendance log for that day, so it is not an absence.",
+          message: part === "day"
+            ? "You have an attendance log for that day, so it is not an absence."
+            : `You have an attendance log for that ${part === "am" ? "morning" : "afternoon"}, so it is not an absence.`,
         });
       }
 
       const result = await pool.query(
         `
-        INSERT INTO absences AS a (student_id, date, reason)
-        VALUES ($1, $2::date, $3)
+        INSERT INTO absences AS a (student_id, date, reason, part)
+        VALUES ($1, $2::date, $3, $4)
         RETURNING ${ABSENCE_COLUMNS}
         `,
-        [auth.id, date, reason.slice(0, 1000)]
+        [auth.id, date, reason.slice(0, 1000), part]
       );
 
       await quietly("ABSENCE NOTIFICATION ERROR", async () => {
@@ -209,7 +223,7 @@ export function registerExtensionRoutes(
           await createNotification({
             supervisorId: owner.rows[0].supervisor_id,
             title: "Absence filed for review",
-            message: `${owner.rows[0].name} filed an absence for ${date}.`,
+            message: `${owner.rows[0].name} filed an absence for ${date}${PART_NAMES[part]}.`,
             type: "attendance",
             entity: { type: "absence", id: result.rows[0]?.id },
           });
@@ -220,7 +234,9 @@ export function registerExtensionRoutes(
     } catch (error) {
       if ((error as { code?: string }).code === "23505") {
         return res.status(409).json({
-          message: "You have already filed an absence for that day.",
+          message: part === "day"
+            ? "You have already filed an absence for that day, or for part of it."
+            : "You have already filed an absence for that part of the day, or for the whole day.",
         });
       }
       console.error("FILE ABSENCE ERROR:", error);
@@ -735,7 +751,8 @@ export function registerExtensionRoutes(
         }
         const result = await pool.query(
           `
-          SELECT id, COALESCE(week, 1)::int AS week, day, start_time, end_time, focus, hours
+          SELECT id, COALESCE(week, 1)::int AS week, day, start_time, end_time,
+                 TO_CHAR(lunch_start, 'HH24:MI') AS lunch_start, TO_CHAR(lunch_end, 'HH24:MI') AS lunch_end, focus, hours
           FROM ojt_schedule
           WHERE student_id = $1 AND is_active = TRUE
           ORDER BY COALESCE(week, 1), CASE day

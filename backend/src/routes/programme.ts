@@ -447,8 +447,9 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
        FROM students WHERE block_id = $1 AND is_active = TRUE ORDER BY name${lock ? " FOR UPDATE" : ""}`,
       [blockId]
     );
-    const rows = await db.query<{ student_id: string; week: number; day: string; start: string; end: string }>(
-      `SELECT student_id, COALESCE(week, 1)::int AS week, INITCAP(TRIM(day)) AS day, TO_CHAR(start_time, 'HH24:MI') AS start, TO_CHAR(end_time, 'HH24:MI') AS "end"
+    const rows = await db.query<{ student_id: string; week: number; day: string; start: string; end: string; lunchStart: string | null; lunchEnd: string | null }>(
+      `SELECT student_id, COALESCE(week, 1)::int AS week, INITCAP(TRIM(day)) AS day, TO_CHAR(start_time, 'HH24:MI') AS start, TO_CHAR(end_time, 'HH24:MI') AS "end",
+              TO_CHAR(lunch_start, 'HH24:MI') AS "lunchStart", TO_CHAR(lunch_end, 'HH24:MI') AS "lunchEnd"
        FROM ojt_schedule WHERE is_active = TRUE AND student_id = ANY($1::text[])`,
       [students.rows.map((row) => row.student_id)]
     );
@@ -521,9 +522,9 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
         );
         for (const day of read.days) {
           await client.query(
-            `INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, focus, hours, is_active)
-             SELECT student, $2, $3, $4, $5, $6, $7, TRUE FROM UNNEST($1::text[]) AS student`,
-            [ids, day.week, day.day, day.start, day.end, day.focus, day.hours]
+            `INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, focus, hours, is_active, lunch_start, lunch_end)
+             SELECT student, $2, $3, $4, $5, $6, $7, TRUE, $8::time, $9::time FROM UNNEST($1::text[]) AS student`,
+            [ids, day.week, day.day, day.start, day.end, day.focus, day.hours, day.lunchStart ?? null, day.lunchEnd ?? null]
           );
         }
       }

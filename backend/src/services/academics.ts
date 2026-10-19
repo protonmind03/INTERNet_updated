@@ -31,6 +31,8 @@ export type Program = {
   college_id: number;
   name: string;
   short_code: string;
+  /** The full name for the Time Record (migration 068); null prints `name`. */
+  formal_name: string | null;
   ojt_applies: boolean;
   is_active: boolean;
 };
@@ -58,7 +60,7 @@ export async function loadCatalogue(db: Db): Promise<Catalogue> {
   const [colleges, programs, majors, blocks] = await Promise.all([
     db.query<College>(`SELECT id, name, short_name, is_active FROM colleges ORDER BY name`),
     db.query<Program>(
-      `SELECT id, college_id, name, short_code, ojt_applies, is_active FROM programs ORDER BY name`
+      `SELECT id, college_id, name, short_code, formal_name, ojt_applies, is_active FROM programs ORDER BY name`
     ),
     db.query<Major>(`SELECT id, program_id, name, is_active FROM majors ORDER BY name`),
     db.query<Block>(

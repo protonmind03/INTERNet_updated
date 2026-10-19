@@ -60,3 +60,11 @@ component or a class already in the app.
   bar both closed and open: no violations.
 - The end-to-end tests that read these screens (one checked the old chip
   wording and was updated).
+
+## Iterations 18 to 23 (October 2026)
+
+One line per UI change, in the form screen - change - design principle.
+
+- Coordinator · Programs, program editor - an optional "Formal name" field, printed on the Time Record - *Recognition over recall: the full name is entered once, where the program is defined.*
+- Coordinator · Profile - an "Institution details" card for the lines printed above every Time Record - *Single source of truth: one place to change what every record prints.*
+- Help - an "Attendance times" section: when a time-in opens, when hours count, what late means, the afternoon-only day - *Visibility of system status: the rules the server applies are written down where trainees look.*

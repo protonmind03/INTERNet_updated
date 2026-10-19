@@ -84,9 +84,12 @@ export async function closeMissedRedos(db: Queryable, notify: Notify): Promise<n
   for (const log of closed.rows) {
     try {
       await db.query(
-        `INSERT INTO absences (student_id, date, reason, status, review_notes, reviewed_at)
-         VALUES ($1, $2::date, $3, 'Unexcused', $4, NOW())
-         ON CONFLICT (student_id, date) DO NOTHING`,
+        // A whole day (migration 066). Any absence already filed for the day,
+        // whole or half, stands instead, as one did before parts existed.
+        `INSERT INTO absences (student_id, date, reason, status, review_notes, reviewed_at, part)
+         SELECT $1::varchar, $2::date, $3::text, 'Unexcused', $4::text, NOW(), 'day'
+         WHERE NOT EXISTS (SELECT 1 FROM absences b WHERE b.student_id = $1::varchar AND b.date = $2::date)
+         ON CONFLICT (student_id, date, part) DO NOTHING`,
         [log.student_id, log.date, REDO_MISSED_ABSENCE_REASON, REDO_MISSED_REASON]
       );
       const owner = await db.query(`SELECT name, supervisor_id FROM students WHERE student_id = $1`, [log.student_id]);
@@ -150,7 +153,7 @@ export async function remindRedoDeadlines(db: Queryable, notify: Notify): Promis
 /** Takes the absence the job added away again (the day was verified or the rejection overturned). */
 export async function removeMissedRedoAbsence(db: Queryable, studentId: string, date: string): Promise<void> {
   await db.query(
-    `DELETE FROM absences WHERE student_id = $1 AND date = $2::date AND reason = $3 AND status = 'Unexcused'`,
+    `DELETE FROM absences WHERE student_id = $1 AND date = $2::date AND part = 'day' AND reason = $3 AND status = 'Unexcused'`,
     [studentId, date, REDO_MISSED_ABSENCE_REASON]
   );
 }

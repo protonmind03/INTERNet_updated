@@ -230,10 +230,11 @@ export async function loadStudents(
       [ids]
     ),
     pool.query<{ date: string }>(`SELECT TO_CHAR(holiday_date, 'YYYY-MM-DD') AS date FROM holidays`),
-    // Approved absences still to come: the projection does not count those days.
+    // Approved whole-day absences still to come: the projection does not
+    // count those days (a half-day absence still leaves half a day worked).
     pool.query<{ student_id: string; date: string }>(
       `SELECT student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date FROM absences
-       WHERE student_id = ANY($1::text[]) AND status = 'Excused' AND date > ${phSql.today}`,
+       WHERE student_id = ANY($1::text[]) AND status = 'Excused' AND part = 'day' AND date > ${phSql.today}`,
       [ids]
     ),
   ]);

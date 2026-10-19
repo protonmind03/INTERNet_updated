@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -2158,12 +2158,19 @@ test("offline steps are validated before anything is changed, and live requests 
 });
 
 test("an offline break, return and time-out are recorded once, in order, and marked", async (t) => {
-  // This one writes a real log for the demo student, so it runs only where
-  // that is wanted (the throwaway database in CI), never by default.
+  // This one writes a real log, so it runs only where that is wanted (the
+  // throwaway database in CI), never by default.
   if (process.env.ALLOW_TEST_WRITES !== "true") {
     t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
     return;
   }
+  // Iteration 18: the day's rules refuse lunch steps on an afternoon-only
+  // day, so a student of the demo supervisor with no schedule (where the
+  // rules do not apply) takes the steps, whatever time the test runs at.
+  const f = await dayRulesFixture("OFFSTEPS");
+  const student = { student_id: f.sid };
+  const studentToken = f.mine.token;
+  try {
   const supervisor = await supervisorSession();
   const form = new FormData();
   form.set("student_id", student.student_id);
@@ -2174,10 +2181,6 @@ test("an offline break, return and time-out are recorded once, in order, and mar
     headers: authHeaders(supervisor.token),
     body: form,
   });
-  if (recorded.response.status === 409) {
-    t.skip("the demo student already has a log today");
-    return;
-  }
   assert.ok(recorded.response.ok, JSON.stringify(recorded.body));
   const logId = recorded.body.attendance.id;
   const timeIn = new Date(recorded.body.attendance.time_in).getTime();
@@ -2250,6 +2253,10 @@ test("an offline break, return and time-out are recorded once, in order, and mar
     headers: authHeaders(studentToken),
   });
   assert.equal(own.body.attendance.find((log) => log.id === logId).recorded_offline, true);
+  } finally {
+    await f.pool.query(`DELETE FROM offline_action_ledger WHERE student_id = $1`, [f.sid]);
+    await f.cleanup();
+  }
 });
 
 
@@ -11274,4 +11281,500 @@ test("Railway checks the readiness route when it deploys the backend", () => {
   const fs = require("node:fs");
   const config = JSON.parse(fs.readFileSync(nodePath.join(__dirname, "..", "railway.json"), "utf8"));
   assert.equal(config.deploy.healthcheckPath, "/api/health/ready");
+});
+
+
+/*
+|--------------------------------------------------------------------------
+| Iteration 18: the day's rules, half-day absences, the institution's lines
+|--------------------------------------------------------------------------
+*/
+
+/** The rules at exact times, on Monday 19 October 2026 (an 08:00 to 17:00 shift unless said). */
+test("the day's rules: the window, the credited start, late from the minute, and the afternoon-only day", () => {
+  require("tsx/cjs");
+  const { planDay, judgeTimeIn, judgeLunch, lunchLateMinutes, correctedTime, DEFAULT_DAY_RULES, readDayRuleSettings } = require("../src/services/dayRules.ts");
+  const { phMoment } = require("../src/services/phTime.ts");
+  const day = "2026-10-19";
+  const at = (time) => phMoment(day, time);
+  const plan = planDay(day, { start: "08:00", end: "17:00" }, null);
+  assert.equal(plan.kind, "full");
+  assert.equal(plan.lunchStart, "12:00", "a shift over noon takes the default lunch");
+  assert.equal(plan.lunchEnd, "13:00");
+  assert.equal(plan.opensAt, at("07:30").toISOString());
+  assert.equal(plan.pmCutoff, at("12:00").toISOString());
+  assert.equal(plan.pmOpensAt, at("12:30").toISOString());
+
+  // Refused before the window, with when it opens.
+  const early = judgeTimeIn(plan, at("07:29:59"));
+  assert.equal(early.ok, false);
+  assert.equal(early.code, "TOO_EARLY");
+  assert.equal(early.opensAt, at("07:30").toISOString());
+  assert.match(early.message, /7:30 AM/);
+
+  // 07:30 to 07:59: hours count from 08:00, and it is on time.
+  for (const time of ["07:30", "07:45", "07:59:59"]) {
+    const verdict = judgeTimeIn(plan, at(time));
+    assert.equal(verdict.ok, true, time);
+    assert.equal(verdict.session, "full");
+    assert.equal(verdict.creditedFrom.toISOString(), at("08:00").toISOString(), `${time} is credited from 08:00`);
+    assert.equal(verdict.lateMinutes, 0);
+    assert.equal(verdict.scheduledStart, "08:00");
+  }
+
+  // Late from the start minute, seconds ignored.
+  assert.equal(judgeTimeIn(plan, at("08:00:59")).lateMinutes, 0, "08:00:59 is on time");
+  const late = judgeTimeIn(plan, at("08:01:00"));
+  assert.equal(late.lateMinutes, 1, "08:01 is late");
+  assert.equal(late.creditedFrom.toISOString(), at("08:01").toISOString(), "a late time-in counts from itself");
+  assert.equal(judgeTimeIn(plan, at("09:15:30")).lateMinutes, 75);
+
+  // A grace setting moves "late", not what late_minutes counts from.
+  const graced = { ...DEFAULT_DAY_RULES, lateGraceMin: 5 };
+  assert.equal(judgeTimeIn(plan, at("08:05:59"), graced).lateMinutes, 0);
+  assert.equal(judgeTimeIn(plan, at("08:06"), graced).lateMinutes, 6);
+  // Seconds counted when the rule says so.
+  assert.equal(judgeTimeIn(plan, at("08:00:01"), { ...DEFAULT_DAY_RULES, lateIgnoresSeconds: false }).lateMinutes, 1);
+
+  // No log by 12:00: the afternoon only. 12:10 is refused (opens 12:30).
+  const noon = judgeTimeIn(plan, at("12:10"));
+  assert.equal(noon.ok, false);
+  assert.equal(noon.code, "TOO_EARLY");
+  assert.equal(noon.opensAt, at("12:30").toISOString());
+  assert.match(noon.message, /afternoon/);
+  assert.equal(judgeTimeIn(plan, at("12:00")).ok, false, "from the lunch start, the morning is gone");
+  const pm = judgeTimeIn(plan, at("12:40"));
+  assert.equal(pm.ok, true);
+  assert.equal(pm.session, "pm");
+  assert.equal(pm.creditedFrom.toISOString(), at("13:00").toISOString(), "12:40 counts from 13:00");
+  assert.equal(pm.lateMinutes, 0);
+  assert.equal(pm.scheduledStart, "13:00");
+  const pmLate = judgeTimeIn(plan, at("13:05"));
+  assert.equal(pmLate.session, "pm");
+  assert.equal(pmLate.lateMinutes, 5, "13:05 is late against the lunch end");
+  assert.equal(judgeTimeIn(plan, at("11:59:59")).session, "full", "just before the lunch start, still the full day");
+
+  // No lunch on an afternoon-only day; a full day or a log from before the rules has one.
+  assert.equal(judgeLunch("pm", plan).code, "NO_LUNCH_ON_PM");
+  assert.equal(judgeLunch("full", plan).ok, true);
+  assert.equal(judgeLunch(null, null).ok, true);
+  // Back after 13:00 is marked, for display only.
+  assert.equal(lunchLateMinutes(plan, at("12:58")), 0);
+  assert.equal(lunchLateMinutes(plan, at("13:12:40")), 12);
+
+  // A 13:00 to 17:00 shift is the afternoon from the start: never a morning to miss.
+  const afternoon = planDay(day, { start: "13:00", end: "17:00" }, null);
+  assert.equal(afternoon.kind, "pm");
+  assert.equal(afternoon.pmCutoff, null);
+  assert.equal(afternoon.lunchStart, null, "no lunch");
+  assert.equal(judgeTimeIn(afternoon, at("12:29")).code, "TOO_EARLY");
+  const afternoonIn = judgeTimeIn(afternoon, at("12:30"));
+  assert.equal(afternoonIn.session, "pm");
+  assert.equal(afternoonIn.creditedFrom.toISOString(), at("13:00").toISOString());
+  assert.equal(judgeLunch("pm", afternoon).code, "NO_LUNCH_ON_PM");
+
+  // An 08:00 to 12:00 shift is the morning: two steps, no lunch.
+  const morning = planDay(day, { start: "08:00", end: "12:00" }, null);
+  assert.equal(morning.kind, "am");
+  assert.equal(morning.lunchStart, null);
+  assert.equal(morning.pmCutoff, null);
+  const morningIn = judgeTimeIn(morning, at("11:00"));
+  assert.equal(morningIn.session, "am");
+  assert.equal(morningIn.lateMinutes, 180);
+  assert.equal(judgeLunch("am", morning).code, "NO_LUNCH_ON_AM");
+
+  // A schedule's own lunch window replaces the default.
+  const own = planDay(day, { start: "07:00", end: "16:00", lunchStart: "11:00", lunchEnd: "11:30" }, null);
+  assert.equal(own.lunchStart, "11:00");
+  assert.equal(own.pmOpensAt, at("11:00").toISOString(), "opens 30 minutes before its own lunch end");
+  assert.equal(judgeTimeIn(own, at("11:10")).session, "pm");
+
+  // A holiday, and a day off the schedule: any time, nothing late, counted from the time-in.
+  for (const [label, holidayPlan] of [
+    ["holiday", planDay(day, { start: "08:00", end: "17:00" }, "Bonifacio Day")],
+    ["unscheduled", planDay(day, null, null)],
+  ]) {
+    assert.equal(holidayPlan.kind, label);
+    assert.equal(holidayPlan.opensAt, null);
+    const verdict = judgeTimeIn(holidayPlan, at("05:10"));
+    assert.equal(verdict.ok, true, label);
+    assert.equal(verdict.session, "full");
+    assert.equal(verdict.lateMinutes, null);
+    assert.equal(verdict.creditedFrom.toISOString(), at("05:10").toISOString());
+    assert.equal(lunchLateMinutes(holidayPlan, at("15:00")), null);
+  }
+
+  // A step sent later is judged at its real time: 07:20 on a phone 5 minutes
+  // ahead was really 07:15, before the 07:30 opening, so it is refused.
+  const real = correctedTime(at("07:20"), 300);
+  assert.equal(real.toISOString(), at("07:15").toISOString());
+  assert.equal(judgeTimeIn(plan, real, DEFAULT_DAY_RULES, at("07:20")).code, "TOO_EARLY");
+  // A phone 5 minutes behind at 07:27 was really at 07:32: allowed, credited from 08:00.
+  const behind = judgeTimeIn(plan, correctedTime(at("07:27"), -300), DEFAULT_DAY_RULES, at("07:27"));
+  assert.equal(behind.ok, true);
+  assert.equal(behind.creditedFrom.toISOString(), at("08:00").toISOString());
+
+  // The numbers come from attendance_rules; nonsense keeps the default.
+  const read = readDayRuleSettings([
+    { key: "early_window_min", value: "45" },
+    { key: "late_grace_min", value: "-3" },
+    { key: "late_ignores_seconds", value: "false" },
+    { key: "default_lunch_start", value: "12:30" },
+    { key: "default_lunch_end", value: "12:00" },
+  ]);
+  assert.equal(read.earlyWindowMin, 45);
+  assert.equal(read.lateGraceMin, 0);
+  assert.equal(read.lateIgnoresSeconds, false);
+  assert.equal(read.defaultLunchStart, "12:00", "a lunch that ends before it starts falls back to the defaults");
+  assert.equal(planDay(day, { start: "08:00", end: "17:00" }, null, read).opensAt, at("07:15").toISOString());
+});
+
+test("a schedule day may carry its own lunch window, inside the shift", () => {
+  require("tsx/cjs");
+  const { readSchedule, scheduleKey } = require("../src/services/schedules.ts");
+  const ok = readSchedule([{ day: "Monday", start_time: "08:00", end_time: "17:00", lunch_start: "11:30", lunch_end: "12:30" }]);
+  assert.equal(ok.days[0].lunchStart, "11:30");
+  assert.equal(ok.days[0].lunchEnd, "12:30");
+  assert.match(scheduleKey(ok.days), /lunch 11:30-12:30/);
+  assert.equal("lunchStart" in readSchedule([{ day: "Monday", start_time: "08:00", end_time: "17:00" }]).days[0], false, "a day without one keeps its old shape");
+  assert.match(readSchedule([{ day: "Monday", start_time: "08:00", end_time: "17:00", lunch_start: "11:30" }]).problem, /both lunch times/);
+  assert.match(readSchedule([{ day: "Monday", start_time: "08:00", end_time: "12:00", lunch_start: "12:00", lunch_end: "13:00" }]).problem, /inside the shift/);
+});
+
+/** A throwaway student of the demo supervisor, signed in, with today's shift set around the current time. */
+async function dayRulesFixture(label) {
+  require("tsx/cjs");
+  const { phClock, phToday } = require("../src/services/phTime.ts");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const sid = `${label}-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+  const email = `${sid.toLowerCase()}@dayrules.test`;
+  await pool.query(
+    `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id) VALUES ($1, $2, $3, $4, TRUE, $5)`,
+    [sid, email, await bcrypt.hash("DayRules123!", 4), `Rules ${label}`, supervisor.supervisor.supervisor_id]
+  );
+  const mine = await login("student", email, "DayRules123!");
+  const privacy = await jsonRequest(`/api/students/${encodeURIComponent(sid)}/privacy`, { headers: authHeaders(mine.token) });
+  await jsonRequest(`/api/students/${encodeURIComponent(sid)}/privacy/consent`, jsonBody(mine.token, "POST", { version: privacy.body.notice?.version }));
+  const clock = phClock();
+  const nowMinutes = Number(clock.time.slice(0, 2)) * 60 + Number(clock.time.slice(3, 5));
+  const hhmm = (minutes) => `${String(Math.floor(minutes / 60)).padStart(2, "0")}:${String(minutes % 60).padStart(2, "0")}`;
+  const weekday = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"][clock.weekday];
+  /**
+   * Today's shift, as minutes from now (or "HH:MM" strings, fixed), with an
+   * optional lunch window; false when it would not fit in today.
+   */
+  const shift = async (fromNow, toNow, lunch) => {
+    const at = (offset) => (typeof offset === "string" ? Number(offset.slice(0, 2)) * 60 + Number(offset.slice(3, 5)) : nowMinutes + offset);
+    const times = [fromNow, toNow, ...(lunch || [])].map(at);
+    if (times.some((minutes) => minutes < 0 || minutes > 23 * 60 + 59)) return false;
+    await pool.query(`DELETE FROM ojt_schedule WHERE student_id = $1`, [sid]);
+    await pool.query(
+      `INSERT INTO ojt_schedule (student_id, day, start_time, end_time, hours, is_active, lunch_start, lunch_end)
+       VALUES ($1, $2, $3::time, $4::time, 4, TRUE, $5::time, $6::time)`,
+      [sid, weekday, hhmm(times[0]), hhmm(times[1]), lunch ? hhmm(times[2]) : null, lunch ? hhmm(times[3]) : null]
+    );
+    return { start: hhmm(times[0]), end: hhmm(times[1]), lunchStart: lunch ? hhmm(times[2]) : null, lunchEnd: lunch ? hhmm(times[3]) : null };
+  };
+  const recordInPerson = () => {
+    const form = new FormData();
+    form.set("student_id", sid);
+    form.set("reason", "Day rules test");
+    form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "intern.jpg");
+    return jsonRequest("/api/supervisor/attendance/record", { method: "POST", headers: authHeaders(supervisor.token), body: form });
+  };
+  const cameraTimeIn = () => {
+    const form = new FormData();
+    form.set("student_id", sid);
+    form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "photo.jpg");
+    return jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(mine.token), body: form });
+  };
+  const clearLogs = () => pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+  const cleanup = async () => {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 OR message LIKE $2`, [sid, `%Rules ${label}%`]);
+    await pool.query(`DELETE FROM absences WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM ojt_schedule WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  };
+  return { pool, supervisor, sid, mine, shift, recordInPerson, cameraTimeIn, clearLogs, cleanup, phToday, nowMinutes, hhmm };
+}
+
+test("time-in routes follow the day's rules: refused before the window, credited from the start, late marked, and the day's times returned", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("RULES");
+  try {
+    // A shift two hours away: the camera time-in is refused before the camera check is spent.
+    // Each shift here has its lunch after now, so the morning is never gone yet.
+    const far = await f.shift(120, 240, [200, 210]);
+    if (!far) return t.skip("too near midnight to build a shift around now");
+    const refused = await f.cameraTimeIn();
+    assert.equal(refused.response.status, 409, JSON.stringify(refused.body));
+    assert.equal(refused.body.code, "TOO_EARLY");
+    assert.equal(new Date(refused.body.opensAt).getTime(), new Date(refused.body.day.opensAt).getTime());
+    assert.equal(refused.body.day.shiftStart, far.start);
+
+    // The student's attendance list carries today's times, worked out by the server.
+    const listed = await jsonRequest(`/api/attendance/${encodeURIComponent(f.sid)}`, { headers: authHeaders(f.mine.token) });
+    assert.equal(listed.response.status, 200);
+    assert.equal(listed.body.today.date, f.phToday());
+    assert.equal(listed.body.today.shiftStart, far.start);
+    assert.equal(typeof listed.body.today.opensAt, "string");
+
+    // Inside the window (start in 10 minutes): past the rules, to the camera check.
+    const near = await f.shift(10, 200, [150, 160]);
+    if (!near) return t.skip("too near midnight");
+    const toCheck = await f.cameraTimeIn();
+    assert.equal(toCheck.response.status, 400, "refused only for the missing camera check");
+    assert.match(toCheck.body.message, /camera check/);
+
+    // In person, early: credited from the start, on time.
+    const early = await f.recordInPerson();
+    assert.equal(early.response.status, 201, JSON.stringify(early.body));
+    assert.equal(early.body.attendance.late_minutes, 0);
+    assert.equal(early.body.attendance.scheduled_start, near.start);
+    const credited = await f.pool.query(`SELECT TO_CHAR(credited_from, 'HH24:MI') AS credited, session FROM attendance WHERE id = $1`, [early.body.attendance.id]);
+    assert.equal(credited.rows[0].credited, near.start, "hours count from the start, not the early arrival");
+    // Timing out before the start renders no hours, never fewer than none.
+    const out = await jsonRequest(`/api/attendance/${early.body.attendance.id}/time-out`, jsonBody(f.mine.token, "PUT", {}));
+    assert.equal(out.response.status, 200, JSON.stringify(out.body));
+    assert.equal(Number(out.body.attendance.hours), 0);
+    await f.clearLogs();
+
+    // In person, 61 minutes after the start: late, counted from the time-in.
+    const started = await f.shift(-61, 120, [100, 110]);
+    if (!started) return t.skip("too near midnight");
+    const lateIn = await f.recordInPerson();
+    assert.equal(lateIn.response.status, 201, JSON.stringify(lateIn.body));
+    assert.ok(lateIn.body.attendance.late_minutes >= 61 && lateIn.body.attendance.late_minutes <= 62, String(lateIn.body.attendance.late_minutes));
+    const lateRow = await f.pool.query(`SELECT credited_from = time_in AS from_time_in FROM attendance WHERE id = $1`, [lateIn.body.attendance.id]);
+    assert.equal(lateRow.rows[0].from_time_in, true);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a day with no time-in by the lunch start is afternoon-only: its own window, credited from the lunch end, and no lunch steps", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("PMDAY");
+  try {
+    // A shift over noon (from before 12:00 to after 13:00), whose lunch began
+    // an hour ago and ends in 45 minutes: the afternoon opens in 15.
+    const from = f.hhmm(Math.min(f.nowMinutes - 120, 11 * 60));
+    const to = f.hhmm(Math.max(f.nowMinutes + 180, 13 * 60));
+    if (f.nowMinutes < 120 || f.nowMinutes > 20 * 60 + 59) return t.skip("too near midnight to build a shift around now");
+    const before = await f.shift(from, to, [-60, 45]);
+    const refused = await f.cameraTimeIn();
+    assert.equal(refused.response.status, 409, JSON.stringify(refused.body));
+    assert.equal(refused.body.code, "TOO_EARLY");
+    assert.match(refused.body.message, /afternoon/);
+    assert.equal(refused.body.opensAt, refused.body.day.pmOpensAt);
+
+    // Lunch ends in 20 minutes: the afternoon is open, credited from the lunch end.
+    const open = await f.shift(from, to, [-60, 20]);
+    const pm = await f.recordInPerson();
+    assert.equal(pm.response.status, 201, JSON.stringify(pm.body));
+    assert.equal(pm.body.attendance.session, "pm");
+    assert.equal(pm.body.attendance.scheduled_start, open.lunchEnd);
+    assert.equal(pm.body.attendance.late_minutes, 0);
+    const lunch = await jsonRequest(`/api/attendance/${pm.body.attendance.id}/break`, jsonBody(f.mine.token, "PUT", {}));
+    assert.equal(lunch.response.status, 409);
+    assert.equal(lunch.body.code, "NO_LUNCH_ON_PM");
+    await f.clearLogs();
+
+    // Lunch ended 10 minutes ago: late by 10, against the lunch end.
+    await f.shift(from, to, [-60, -10]);
+    const late = await f.recordInPerson();
+    assert.equal(late.body.attendance.session, "pm");
+    assert.ok([10, 11].includes(late.body.attendance.late_minutes), String(late.body.attendance.late_minutes));
+    await f.clearLogs();
+
+    // A log from before the rules (no session) keeps its lunch steps, as before.
+    const old = (await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, NOW() - INTERVAL '2 hours', 'Pending') RETURNING id`,
+      [f.sid, f.phToday()]
+    )).rows[0].id;
+    const oldLunch = await jsonRequest(`/api/attendance/${old}/break`, jsonBody(f.mine.token, "PUT", {}));
+    assert.equal(oldLunch.response.status, 200, JSON.stringify(oldLunch.body));
+    const back = await jsonRequest(`/api/attendance/${old}/break-end`, jsonBody(f.mine.token, "PUT", {}));
+    assert.equal(back.response.status, 200);
+    assert.equal(back.body.attendance.lunch_late_minutes, null, "nothing is marked on a log from before the rules");
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("an offline time-in is judged at its real time: the phone's time less its clock gap", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("OFFRULE");
+  try {
+    // The shift opens in 4 minutes. Pressed a minute ago on a phone 5 minutes
+    // ahead: really 6 minutes ago, 10 before the opening. Refused.
+    const shift = await f.shift(34, 200, [180, 190]);
+    if (!shift) return t.skip("too near midnight to build a shift around now");
+    const now = Date.now();
+    const refused = await jsonRequest("/api/attendance/offline-time-in", jsonBody(f.mine.token, "POST", {
+      occurred_at: new Date(now - 60_000).toISOString(),
+      client_sent_at: new Date(now + 5 * 60_000).toISOString(),
+      client_request_id: require("node:crypto").randomUUID(),
+    }));
+    assert.equal(refused.response.status, 409, JSON.stringify(refused.body));
+    assert.equal(refused.body.code, "TOO_EARLY");
+    // Pressed just now on a phone whose clock is right: 4 minutes early, refused too.
+    const rightClock = await jsonRequest("/api/attendance/offline-time-in", jsonBody(f.mine.token, "POST", {
+      occurred_at: new Date(now).toISOString(),
+      client_sent_at: new Date(now).toISOString(),
+      client_request_id: require("node:crypto").randomUUID(),
+    }));
+    assert.equal(rightClock.body.code, "TOO_EARLY");
+    // Once open (the start 20 minutes away), it is added and credited from the start.
+    const open = await f.shift(20, 200, [180, 190]);
+    const added = await jsonRequest("/api/attendance/offline-time-in", jsonBody(f.mine.token, "POST", {
+      occurred_at: new Date(now).toISOString(),
+      client_sent_at: new Date(now).toISOString(),
+      client_request_id: require("node:crypto").randomUUID(),
+    }));
+    assert.equal(added.response.status, 201, JSON.stringify(added.body));
+    assert.equal(added.body.attendance.session, open.start >= "12:00" ? "pm" : open.end <= "12:00" ? "am" : "full", "its lunch is still to come");
+    assert.equal(added.body.attendance.scheduled_start, open.start);
+    assert.equal(added.body.attendance.late_minutes, 0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("a two-week pattern's day is read by its week", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { loadDayPlan } = require("../src/services/dayRules.ts");
+  const { mondayOf } = require("../src/services/schedulePattern.ts");
+  const pool = localTestPool();
+  const sid = `PATTERN-${Date.now()}`;
+  try {
+    const anchor = mondayOf("2026-10-19");
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, schedule_weeks, schedule_anchor) VALUES ($1, $2, 'x', 'Pattern Rules', TRUE, 2, $3::date)`,
+      [sid, `${sid.toLowerCase()}@dayrules.test`, anchor]
+    );
+    await pool.query(
+      `INSERT INTO ojt_schedule (student_id, week, day, start_time, end_time, hours, is_active) VALUES
+         ($1, 1, 'Monday', '08:00', '17:00', 8, TRUE), ($1, 2, 'Monday', '13:00', '17:00', 4, TRUE)`,
+      [sid]
+    );
+    const weekOne = await loadDayPlan(pool, sid, "2026-10-19");
+    assert.equal(weekOne.kind, "full");
+    assert.equal(weekOne.shiftStart, "08:00");
+    const weekTwo = await loadDayPlan(pool, sid, "2026-10-26");
+    assert.equal(weekTwo.kind, "pm", "week 2's Monday is an afternoon shift");
+    assert.equal(weekTwo.shiftStart, "13:00");
+    assert.equal((await loadDayPlan(pool, sid, "2026-11-02")).kind, "full", "week 1 again");
+    assert.equal((await loadDayPlan(pool, sid, "2026-10-20")).kind, "unscheduled", "Tuesday is not on it");
+  } finally {
+    await pool.query(`DELETE FROM ojt_schedule WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+test("absences by part of a day: a morning and an afternoon may both be filed; a whole day may not sit beside either", async (t) => {
+  if (needsWrites(t)) return;
+  const f = await dayRulesFixture("HALF");
+  const file = (date, part, reason = "Medical appointment in town") =>
+    jsonRequest("/api/absences", jsonBody(f.mine.token, "POST", { date, reason, ...(part ? { part } : {}) }));
+  try {
+    const first = shiftDay(f.phToday(), 3);
+    const second = shiftDay(f.phToday(), 4);
+    const am = await file(first, "am");
+    assert.equal(am.response.status, 201, JSON.stringify(am.body));
+    assert.equal(am.body.absence.part, "am");
+    assert.equal((await file(first, "pm")).response.status, 201, "the afternoon beside the morning");
+    const whole = await file(first);
+    assert.equal(whole.response.status, 409, "a whole day beside its halves");
+    assert.equal((await file(second)).body.absence.part, "day", "no part is the whole day, as before");
+    assert.equal((await file(second, "am")).response.status, 409, "a half beside the whole day");
+    assert.equal((await file(second, "noon")).response.status, 400);
+
+    // The database refuses it too, whatever writes it.
+    await assert.rejects(
+      f.pool.query(`INSERT INTO absences (student_id, date, reason, part) VALUES ($1, $2::date, 'Direct', 'day')`, [f.sid, first]),
+      (error) => error.code === "23505"
+    );
+
+    // An afternoon-only log leaves the morning to file; a full-day log leaves nothing.
+    const today = f.phToday();
+    const log = (await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, status, session) VALUES ($1, $2::date, NOW(), 'Pending', 'pm') RETURNING id`,
+      [f.sid, today]
+    )).rows[0].id;
+    assert.equal((await file(today, "am")).response.status, 201, "the missed morning of an afternoon-only day");
+    assert.equal((await file(today, "pm")).response.status, 409, "not the afternoon that was worked");
+    await f.pool.query(`UPDATE attendance SET session = 'full' WHERE id = $1`, [log]);
+    await f.pool.query(`DELETE FROM absences WHERE student_id = $1 AND date = $2::date`, [f.sid, today]);
+    assert.equal((await file(today, "am")).response.status, 409, "a full day worked has no absent half");
+
+    // A missed photo redo still adds a whole-day Unexcused absence, and not beside a half filed already.
+    const { closeMissedRedos } = require("../src/services/photoRedo.ts");
+    const redoDay = shiftDay(today, -2);
+    await f.pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, status, photo_redo_status) VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + TIME '17:00', 'Pending', 'required')`,
+      [f.sid, redoDay]
+    );
+    await closeMissedRedos(f.pool, async () => undefined);
+    const added = await f.pool.query(`SELECT part, status FROM absences WHERE student_id = $1 AND date = $2::date`, [f.sid, redoDay]);
+    assert.deepEqual(added.rows, [{ part: "day", status: "Unexcused" }]);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test("the institution's lines: coordinator only, checked, audited, and restored", async () => {
+  const path = "/api/coordinator/institution";
+  assert.equal((await jsonRequest(path)).response.status, 401);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
+  const read = await jsonRequest(path, { headers: authHeaders(coordinatorToken) });
+  assert.equal(read.response.status, 200);
+  const original = read.body.institution;
+  for (const field of ["republic_line", "university_name", "campus_name", "locality_line", "seal_asset"]) {
+    assert.equal(typeof original[field], "string", field);
+  }
+  const put = (body, token = coordinatorToken) => jsonRequest(path, jsonBody(token, "PUT", body));
+  assert.equal((await put({ ...original }, studentToken)).response.status, 403);
+  assert.equal((await put({ ...original, campus_name: " " })).response.status, 400);
+  const changed = await put({ ...original, campus_name: "LINGAYEN  CAMPUS (TEST)" });
+  assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
+  assert.equal(changed.body.institution.campus_name, "LINGAYEN CAMPUS (TEST)", "spaces tidied");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const audit = await jsonRequest("/api/coordinator/audit?action=institution.edit&limit=5", { headers: authHeaders(coordinatorToken) });
+  assert.ok(audit.body.entries.some((entry) => String(entry.details.campus_name).includes("CAMPUS (TEST)")), "the change is audited");
+  const restored = await put({
+    republic_line: original.republic_line,
+    university_name: original.university_name,
+    campus_name: original.campus_name,
+    locality_line: original.locality_line,
+  });
+  assert.equal(restored.body.institution.campus_name, original.campus_name);
+});
+
+test("a program's formal name is saved with it, and audited", async () => {
+  const academics = await jsonRequest("/api/coordinator/academics", { headers: authHeaders(coordinatorToken) });
+  assert.equal(academics.response.status, 200);
+  const program = academics.body.programs.find((row) => row.short_code === "BSIT") ?? academics.body.programs[0];
+  assert.ok(program, "the seeded catalogue has a program");
+  assert.ok("formal_name" in program);
+  if (program.short_code === "BSIT") {
+    assert.equal(program.formal_name, "Bachelor of Science in Information Technology", "filled in by migration 068");
+  }
+  const before = program.formal_name;
+  const put = (formal) => jsonRequest(`/api/coordinator/programs/${program.id}`, jsonBody(coordinatorToken, "PUT", { formal_name: formal }));
+  assert.equal((await put("x".repeat(201))).response.status, 400);
+  const saved = await put("Bachelor of Science in Testing");
+  assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+  assert.equal(saved.body.program.formal_name, "Bachelor of Science in Testing");
+  assert.equal(saved.body.program.name, program.name, "nothing else changes");
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  const audit = await jsonRequest("/api/coordinator/audit?action=program.edit&limit=5", { headers: authHeaders(coordinatorToken) });
+  assert.ok(audit.body.entries.some((entry) => entry.details.formal_name === "Bachelor of Science in Testing"));
+  await put(before);
 });

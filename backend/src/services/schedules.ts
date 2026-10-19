@@ -11,7 +11,16 @@
 
 export const SCHEDULE_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
-export type ScheduleDay = { day: string; start: string; end: string; focus: string | null; hours: number };
+export type ScheduleDay = {
+  day: string;
+  start: string;
+  end: string;
+  focus: string | null;
+  hours: number;
+  /** The day's own lunch window (migration 065); null for the default (services/dayRules.ts). */
+  lunchStart?: string | null;
+  lunchEnd?: string | null;
+};
 
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -31,7 +40,18 @@ export function readSchedule(value: unknown): { problem: string } | { days: Sche
     const minutes = eh * 60 + em - (sh * 60 + sm);
     if (minutes <= 0) return { problem: `End time must be after start time on ${day}.` };
     if (days.some((item) => item.day === day)) return { problem: `${day} is listed more than once.` };
+    // A lunch window of the day's own is optional: both times, inside the shift, in order.
+    const lunchStart = String(entry.lunch_start || "").slice(0, 5);
+    const lunchEnd = String(entry.lunch_end || "").slice(0, 5);
+    if (lunchStart || lunchEnd) {
+      if (!TIME.test(lunchStart) || !TIME.test(lunchEnd)) return { problem: `Enter both lunch times (HH:MM) for ${day}, or neither.` };
+      if (!(start <= lunchStart && lunchStart < lunchEnd && lunchEnd <= end)) {
+        return { problem: `The lunch on ${day} must be inside the shift, its end after its start.` };
+      }
+    }
     days.push({
+      // Only a day with a lunch of its own carries one, so a day without keeps its old shape.
+      ...(lunchStart && lunchEnd ? { lunchStart, lunchEnd } : {}),
       day,
       start,
       end,
@@ -43,10 +63,10 @@ export function readSchedule(value: unknown): { problem: string } | { days: Sche
 }
 
 /** A schedule's days and times as one comparable line; the focus is not part of it. */
-export function scheduleKey(days: { day: string; start: string; end: string }[]): string {
+export function scheduleKey(days: { day: string; start: string; end: string; lunchStart?: string | null; lunchEnd?: string | null }[]): string {
   return [...days]
     .sort((a, b) => SCHEDULE_DAYS.indexOf(a.day) - SCHEDULE_DAYS.indexOf(b.day))
-    .map((item) => `${item.day} ${item.start.slice(0, 5)}-${item.end.slice(0, 5)}`)
+    .map((item) => `${item.day} ${item.start.slice(0, 5)}-${item.end.slice(0, 5)}${item.lunchStart && item.lunchEnd ? ` (lunch ${item.lunchStart.slice(0, 5)}-${item.lunchEnd.slice(0, 5)})` : ""}`)
     .join("; ");
 }
 

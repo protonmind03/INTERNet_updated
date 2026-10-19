@@ -143,6 +143,10 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     }
     if ((creating || has(body, "college_id")) && optionalId(entry.college_id) === "bad") return "That is not a college.";
     if (creating && optionalId(entry.college_id) === null) return "Choose the program's college.";
+    // The full name printed on the Time Record (migration 068); optional.
+    if (has(body, "formal_name") && entry.formal_name !== null && (typeof entry.formal_name !== "string" || entry.formal_name.trim().length > 200)) {
+      return "A program's formal name must be at most 200 characters.";
+    }
     for (const flag of ["ojt_applies", "is_active"]) {
       if (has(body, flag) && typeof entry[flag] !== "boolean") return `${flag === "ojt_applies" ? "OJT applies" : "Active"} must be yes or no.`;
     }
@@ -162,11 +166,11 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       const college = await pool.query(`SELECT 1 FROM colleges WHERE id = $1`, [Number(req.body.college_id)]);
       if (college.rows.length === 0) return res.status(400).json({ message: "That college does not exist." });
       const saved = await pool.query(
-        `INSERT INTO programs (college_id, name, short_code, ojt_applies)
-         VALUES ($1, $2, $3, COALESCE($4::boolean, TRUE))
-         RETURNING id, college_id, name, short_code, ojt_applies, is_active`,
+        `INSERT INTO programs (college_id, name, short_code, ojt_applies, formal_name)
+         VALUES ($1, $2, $3, COALESCE($4::boolean, TRUE), NULLIF($5, ''))
+         RETURNING id, college_id, name, short_code, formal_name, ojt_applies, is_active`,
         [Number(req.body.college_id), text(req.body.name), text(req.body.short_code),
-          has(req.body, "ojt_applies") ? req.body.ojt_applies : null]
+          has(req.body, "ojt_applies") ? req.body.ojt_applies : null, text(req.body.formal_name)]
       );
       return res.status(201).json({ message: "Program added.", program: saved.rows[0] });
     } catch (error) {
@@ -195,13 +199,15 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
            college_id = COALESCE($6::int, college_id),
            ojt_applies = COALESCE($7::boolean, ojt_applies),
            is_active = COALESCE($8::boolean, is_active),
+           formal_name = CASE WHEN $9::boolean THEN NULLIF($10, '') ELSE formal_name END,
            updated_at = NOW()
          WHERE id = $1
-         RETURNING id, college_id, name, short_code, ojt_applies, is_active`,
+         RETURNING id, college_id, name, short_code, formal_name, ojt_applies, is_active`,
         [programId, has(req.body, "name"), text(req.body?.name), has(req.body, "short_code"), text(req.body?.short_code),
           has(req.body, "college_id") ? Number(req.body.college_id) : null,
           has(req.body, "ojt_applies") ? req.body.ojt_applies : null,
-          has(req.body, "is_active") ? req.body.is_active : null]
+          has(req.body, "is_active") ? req.body.is_active : null,
+          has(req.body, "formal_name"), text(req.body?.formal_name)]
       );
       if (saved.rows.length === 0) return res.status(404).json({ message: "Program not found." });
       return res.json({ message: "Program saved.", program: saved.rows[0] });

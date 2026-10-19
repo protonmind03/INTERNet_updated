@@ -260,8 +260,13 @@ export function registerAppealRoutes(app: express.Express, deps: Dependencies): 
                  break_time = a.date + ($2::jsonb->>'break_time')::time,
                  break_end_time = a.date + ($2::jsonb->>'break_end_time')::time,
                  time_out = a.date + ($2::jsonb->>'time_out')::time,
+                 -- On a log the day's rules applied to, hours count from the later
+                 -- of the time-in and its scheduled start (services/dayRules.ts).
+                 credited_from = CASE WHEN a.session IS NULL THEN NULL
+                   ELSE a.date + GREATEST(($2::jsonb->>'time_in')::time, COALESCE(a.scheduled_start, ($2::jsonb->>'time_in')::time)) END,
                  hours = CASE WHEN $2::jsonb->>'time_out' IS NULL THEN NULL ELSE GREATEST(ROUND((
-                   (EXTRACT(EPOCH FROM (($2::jsonb->>'time_out')::time - ($2::jsonb->>'time_in')::time))
+                   (EXTRACT(EPOCH FROM (($2::jsonb->>'time_out')::time - CASE WHEN a.session IS NULL THEN ($2::jsonb->>'time_in')::time
+                      ELSE GREATEST(($2::jsonb->>'time_in')::time, COALESCE(a.scheduled_start, ($2::jsonb->>'time_in')::time)) END))
                     - COALESCE(EXTRACT(EPOCH FROM (($2::jsonb->>'break_end_time')::time - ($2::jsonb->>'break_time')::time)), 0)
                    ) / 3600.0)::numeric, 2), 0) END,
                  time_corrected_at = NOW(),

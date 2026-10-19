@@ -17,7 +17,8 @@ import {
 } from "../services/offlineAttestation";
 import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, type LivenessLevel } from "../services/liveness";
 import { consentRequired, hasCurrentConsent } from "../services/privacy";
-import { phSql } from "../services/phTime";
+import { phSql, phToday } from "../services/phTime";
+import { correctedTime, judgeTimeIn, loadDayPlan, loadDayRuleSettings, planForApp } from "../services/dayRules";
 
 /*
 |--------------------------------------------------------------------------
@@ -77,7 +78,8 @@ type Dependencies = {
 const LOG_COLUMNS = `
   id, student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
   time_out, hours, note, status, image_url, capture_method, recorded_offline,
-  (offline_time_in_request IS NOT NULL) AS offline_time_in
+  (offline_time_in_request IS NOT NULL) AS offline_time_in,
+  session, credited_from, late_minutes, TO_CHAR(scheduled_start, 'HH24:MI') AS scheduled_start, lunch_late_minutes
 `;
 
 /** A refusal: the status, a code the app can act on, and a sentence for the student. */
@@ -464,6 +466,16 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
       const existing = await existingFor();
       if (existing.rows.length > 0) return already(existing.rows);
 
+      // The day's rules (services/dayRules.ts), judged at the time it really
+      // happened: the phone's time less its measured clock gap. Checked before
+      // anything is spent, so a refused time-in keeps its voucher.
+      const rules = await loadDayRuleSettings(pool);
+      const plan = await loadDayPlan(pool, auth.id, phToday(stamp.occurredAt), rules);
+      const verdict = judgeTimeIn(plan, correctedTime(stamp.occurredAt, readClockSkew(req.body)), rules, stamp.occurredAt);
+      if (!verdict.ok) {
+        return res.status(409).json({ code: verdict.code, opensAt: verdict.opensAt, message: verdict.message, day: planForApp(plan) });
+      }
+
       // With a photo or a voucher, it is an attested time-in and every part is checked.
       const attested = Boolean(req.file) || req.body?.voucher !== undefined;
       const checked = attested ? await checkAttested(req, res, auth.id, stamp.occurredAt) : null;
@@ -476,14 +488,19 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
         if (!checked) {
           created = await pool.query(
             `INSERT INTO attendance
-               (student_id, date, time_in, note, status, image_url, capture_method, recorded_offline, offline_time_in_request, clock_skew_seconds)
+               (student_id, date, time_in, note, status, image_url, capture_method, recorded_offline, offline_time_in_request, clock_skew_seconds,
+                session, credited_from, late_minutes, scheduled_start)
              VALUES
                ($1,
                 ${phSql.date("$2::timestamptz")},
                 ${phSql.wallTime("$2::timestamptz")},
-                $3, 'Pending', NULL, NULL, TRUE, $4, $5)
+                $3, 'Pending', NULL, NULL, TRUE, $4, $5,
+                $6, ${phSql.wallTime("$7::timestamptz")}, $8, $9::time)
              RETURNING ${LOG_COLUMNS}, TO_CHAR(time_in, 'HH12:MI AM') AS at`,
-            [auth.id, stamp.occurredAt.toISOString(), rawNote || null, stamp.requestId, readClockSkew(req.body)]
+            [
+              auth.id, stamp.occurredAt.toISOString(), rawNote || null, stamp.requestId, readClockSkew(req.body),
+              verdict.session, verdict.creditedFrom.toISOString(), verdict.lateMinutes, verdict.scheduledStart,
+            ]
           );
         } else {
           // Spent together or not at all: the voucher, the counter, the log.
@@ -509,12 +526,14 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
           created = await client.query(
             `INSERT INTO attendance
                (student_id, date, time_in, note, status, image_url, capture_method, liveness_checks,
-                recorded_offline, offline_time_in_request, clock_skew_seconds, offline_attestation)
+                recorded_offline, offline_time_in_request, clock_skew_seconds, offline_attestation,
+                session, credited_from, late_minutes, scheduled_start)
              VALUES
                ($1,
                 ${phSql.date("$2::timestamptz")},
                 ${phSql.wallTime("$2::timestamptz")},
-                $3, 'Pending', $4, 'liveness', $5::jsonb, TRUE, $6, $7, $8::jsonb)
+                $3, 'Pending', $4, 'liveness', $5::jsonb, TRUE, $6, $7, $8::jsonb,
+                $9, ${phSql.wallTime("$10::timestamptz")}, $11, $12::time)
              RETURNING ${LOG_COLUMNS}, TO_CHAR(time_in, 'HH12:MI AM') AS at`,
             [
               auth.id,
@@ -525,6 +544,10 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
               stamp.requestId,
               checked.skewSeconds,
               JSON.stringify(checked.attestation),
+              verdict.session,
+              verdict.creditedFrom.toISOString(),
+              verdict.lateMinutes,
+              verdict.scheduledStart,
             ]
           );
           await client.query(`UPDATE offline_vouchers SET attendance_id = $2 WHERE jti = $1`, [checked.voucher.jti, created.rows[0].id]);

@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
 import { BrandLockup } from "../brand";
-import { DECIDED_FIRST, OFFLINE_TABLE, type OfflineRow } from "../lib/offlineHelp";
+import { ATTENDANCE_RULES_HELP, DECIDED_FIRST, OFFLINE_TABLE, type OfflineRow } from "../lib/offlineHelp";
 
 /*
 |--------------------------------------------------------------------------
@@ -49,6 +49,20 @@ export default function Help() {
         </div>
 
         <h1 className="text-2xl font-bold tracking-tight text-slate-900">Help</h1>
+
+        <section aria-labelledby="attendance-times" className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+          <h2 id="attendance-times" className="text-lg font-semibold text-slate-900">
+            Attendance times
+          </h2>
+          <p className="mt-1.5 text-sm text-slate-700">
+            For trainees. Your Attendance page always shows the times worked out for your own day.
+          </p>
+          <ul className="mt-3 list-disc space-y-1.5 pl-5 text-sm text-slate-700">
+            {ATTENDANCE_RULES_HELP.map((line) => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+        </section>
 
         <section aria-labelledby="offline" className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
           <h2 id="offline" className="text-lg font-semibold text-slate-900">

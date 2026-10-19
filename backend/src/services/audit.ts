@@ -178,7 +178,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "program.create",
     entityType: "program",
     entityId: (source) => nested(source.result.program, "id"),
-    keep: ["name", "short_code", "college_id", "ojt_applies"],
+    keep: ["name", "short_code", "college_id", "ojt_applies", "formal_name"],
   },
   {
     method: "PUT",
@@ -186,7 +186,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "program.edit",
     entityType: "program",
     entityId: param("id"),
-    keep: ["name", "short_code", "college_id", "ojt_applies", "is_active"],
+    keep: ["name", "short_code", "college_id", "ojt_applies", "is_active", "formal_name"],
   },
   {
     method: "POST",
@@ -797,6 +797,15 @@ export const AUDIT_RULES: Rule[] = [
     entityType: "journal",
     entityId: param("id"),
     keep: ["notes"],
+  },
+  // The institution's lines on the Time Record (Iteration 18)
+  {
+    method: "PUT",
+    path: "/api/coordinator/institution",
+    action: "institution.edit",
+    entityType: "institution",
+    entityId: () => "1",
+    keep: ["republic_line", "university_name", "campus_name", "locality_line"],
   },
   // Holidays
   {

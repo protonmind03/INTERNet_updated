@@ -556,12 +556,14 @@ are true of the system today, for a scope section:
   until the students are linked.
 - A supervisor whose interns are of more than one program or block can
   narrow their pages to one. This is a view of their own interns only.
-- **Feature 3 (attendance), wording.** The four steps of a day are called
-  "Time in", "Out for lunch", "Back from lunch" and "Time out" on every
-  screen. If the paper says "break", "start break" or "end break", use
-  these. The time record is printed with the columns Day, AM In, AM Out,
-  PM In, PM Out, Hours, Status: time in is AM In, out for lunch AM Out,
-  back from lunch PM In, time out PM Out. The system does not ask for four
+- **Feature 3 (attendance), wording (rewritten October 2026).** The four
+  steps of a day are called "Time in", "Lunch break", "End break" and
+  "Time out" on every screen. The paper may use "break": "Lunch break" is
+  the start of the break and "End break" its end. (The earlier note here
+  told the paper not to say "break"; that no longer holds.) The time
+  record is printed with the columns Day, AM In, AM Out, PM In, PM Out,
+  Hours, Status: Time in is AM In, Lunch break AM Out, End break PM In,
+  Time out PM Out. The system does not ask for four
   times: lunch is optional. A day worked without one prints "No break" in
   place of AM Out and PM In, and a morning-only or afternoon-only day
   fills only its two columns. The system never prints a time that was not
@@ -583,10 +585,10 @@ are true of the system today, for a scope section:
 - The student's Schedule page has three views: the week, a month
   calendar, and "My progress". The calendar and the progress figures are
   put together on the student's device from records already loaded, and
-  work from the saved copies without a connection. "Late" on that page
-  means a time-in more than 15 minutes after the scheduled start; that
-  number is a default chosen for the system, not a university rule, and
-  nothing happens to a student who is late: it is only shown to them.
+  work from the saved copies without a connection. "Late" is worked out
+  by the server since October 2026 (see "After the Trainee portal and
+  brand expansion" below): a time-in after the start minute, seconds
+  ignored. Nothing happens to a student who is late: it is only shown.
 - **Use cases: teams (new).** A supervisor can name a team of their own
   interns and assign one task to the team. Add to the supervisor's use
   cases: "Manage teams" (create, rename, change members, remove) and
@@ -838,3 +840,57 @@ ones wherever the paper gives them:
   dimensions and SHA-256, a caption, its position, and when it was taken
   off the entry if it was. Foreign key to `students`, not validated.
 - **Retention.** Pictures on entries have no retention period yet.
+
+## After the Trainee portal and brand expansion (October 2026)
+
+Iterations 18 to 23. Each item below changes something the paper may
+describe; the earlier notes it replaces are marked there.
+
+- **Step names.** On screen the four steps are Time in, Lunch break, End
+  break and Time out. The printed time record keeps its columns AM In,
+  AM Out, PM In and PM Out.
+- **When a time-in opens.** A time-in opens 30 minutes before the
+  scheduled start. Earlier, it is refused and the trainee is told when it
+  opens. On a holiday or a day not on the schedule it is allowed at any
+  time.
+- **Hours start at the scheduled start.** A trainee who times in early is
+  credited from the start of the shift, not from their arrival. Hours are
+  time out less that start, less the lunch taken. Logs recorded before
+  this change keep the hours they had: nothing was worked out again.
+- **Late (replaces "more than 15 minutes").** Late means a time-in after
+  the start minute, seconds ignored: 08:00:59 is on time for an 08:00
+  start and 08:01 is late. A grace period can be set (it is 0). Coming
+  back after the lunch end is also marked late, for display only; the
+  hours already leave lunch out. These numbers are settings chosen for the
+  system, not a university rule.
+- **Afternoon-only days.** If a trainee has not timed in by the start of
+  lunch, the day becomes afternoon-only: the time-in opens 30 minutes
+  before lunch ends, hours count from the lunch end, lateness is measured
+  against the lunch end, and the day has no lunch steps. The morning is
+  shown as absent but is not filed as an absence by the system; the
+  trainee may file a reason for the morning. A shift that starts at noon
+  or later is an afternoon shift and never has a morning to miss; one
+  that ends by noon is a morning shift with only Time in and Time out.
+- **Steps sent later** are judged at the time they happened on the phone,
+  corrected by the measured gap between the phone's clock and the
+  server's.
+- **Half-day absences.** An absence is for the whole day, the morning or
+  the afternoon. A morning and an afternoon may both be filed for one day;
+  a whole day may not sit beside either. The paper should not say
+  "one absence per day" any more.
+- **Lunch window.** A schedule day may carry its own lunch window. Without
+  one, a shift over noon takes 12:00 to 13:00.
+- **ERD, migrations 065 to 068.**
+  - `ojt_schedule` gains `lunch_start`, `lunch_end`.
+  - `attendance` gains `session` ('full', 'am', 'pm'), `credited_from`,
+    `late_minutes`, `scheduled_start`, `lunch_late_minutes`.
+  - New `attendance_rules` (key, value, updated_by, updated_at): the
+    numbers above.
+  - `absences` gains `part` ('day', 'am', 'pm'); one absence per student,
+    day and part.
+  - New `student_signatures` (student_id, file_path, svg_paths, sha256,
+    width, height, created_at, revoked_at), and `dtr_certifications`
+    gains `trainee_signature_id`.
+  - New `institution_profile` (one row: republic_line, university_name,
+    campus_name, locality_line, seal_asset), and `programs` gains
+    `formal_name`. The coordinator edits both.

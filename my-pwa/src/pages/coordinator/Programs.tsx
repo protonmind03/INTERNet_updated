@@ -43,6 +43,8 @@ type Program = {
   college_id: number;
   name: string;
   short_code: string;
+  /** Printed on the Time Record; null prints the name. */
+  formal_name?: string | null;
   ojt_applies: boolean;
   is_active: boolean;
   students: number;
@@ -458,6 +460,7 @@ function EditDialog({
   const [name, setName] = useState(row && "name" in row && kind !== "block" ? row.name : "");
   const [shortName, setShortName] = useState(kind === "college" ? editing.row?.short_name || "" : "");
   const [shortCode, setShortCode] = useState(kind === "program" ? editing.row?.short_code || "" : "");
+  const [formalName, setFormalName] = useState(kind === "program" ? editing.row?.formal_name || "" : "");
   const [collegeId, setCollegeId] = useState(
     kind === "program" ? String(editing.row?.college_id ?? editing.collegeId ?? "") : ""
   );
@@ -488,7 +491,7 @@ function EditDialog({
       if (shortCode.trim().length < 2 || /\s/.test(shortCode.trim())) {
         return setError("The short code is 2 to 20 characters with no spaces, such as BSIT.");
       }
-      body = { college_id: Number(collegeId), name: name.trim(), short_code: shortCode.trim() };
+      body = { college_id: Number(collegeId), name: name.trim(), short_code: shortCode.trim(), formal_name: formalName.trim() || null };
     } else if (kind === "major") {
       if (name.trim().length < 2) return setError("Give the major a name.");
       body = row ? { name: name.trim() } : { program_id: editing.programId, name: name.trim() };
@@ -578,6 +581,24 @@ function EditDialog({
               maxLength={20}
               value={shortCode}
               onChange={(event) => setShortCode(event.target.value)}
+              className="field"
+            />
+          </FormField>
+        )}
+
+        {kind === "program" && (
+          <FormField
+            label="Formal name"
+            htmlFor="academic-formal-name"
+            optional
+            hint="Printed on the Time Record, as in Bachelor of Science in Information Technology."
+          >
+            <input
+              id="academic-formal-name"
+              type="text"
+              maxLength={200}
+              value={formalName}
+              onChange={(event) => setFormalName(event.target.value)}
               className="field"
             />
           </FormField>
