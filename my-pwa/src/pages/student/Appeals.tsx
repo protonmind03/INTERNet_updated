@@ -4,6 +4,7 @@ import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDayDate } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { logDateKey, type AttendanceLog } from "./useAttendance";
+import { appealableKinds, type AppealKind } from "./appealRules";
 
 /*
 |--------------------------------------------------------------------------
@@ -17,28 +18,11 @@ import { logDateKey, type AttendanceLog } from "./useAttendance";
 |
 */
 
-const APPEAL_DAYS = 7;
-
-export type AppealKind = "time_correction" | "time_in_rejection" | "attendance_rejection";
-
 const KIND_LABEL: Record<AppealKind, string> = {
   time_correction: "The corrected times",
   time_in_rejection: "The rejected time-in photo",
   attendance_rejection: "The rejected attendance",
 };
-
-const within = (moment: string | null | undefined, now: number) =>
-  Boolean(moment) && now - Date.parse(String(moment)) <= APPEAL_DAYS * 86_400_000;
-
-/** What on this log can still be appealed, most serious first. */
-function appealableKinds(log: AttendanceLog, now = Date.now()): AppealKind[] {
-  if (log.appeal?.status === "open") return [];
-  const kinds: AppealKind[] = [];
-  if (log.status === "Rejected" && within(log.verified_at, now)) kinds.push("attendance_rejection");
-  if (within(log.photo_rejected_at, now)) kinds.push("time_in_rejection");
-  if (within(log.time_corrected_at, now)) kinds.push("time_correction");
-  return kinds;
-}
 
 async function post(path: string, body: unknown): Promise<Record<string, unknown>> {
   const response = await fetch(
@@ -82,12 +66,14 @@ export function AppealActions({ log, onChanged }: { log: AttendanceLog; onChange
   if (kinds.length === 0) return null;
   return (
     <>
+      {/* PSU redesign: Appeal is an outlined button, never like the solid Retake. */}
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-2 inline-flex min-h-11 items-center text-sm font-semibold text-psu-700 hover:underline"
+        aria-label="Appeal to the coordinator"
+        className="inline-flex min-h-11 items-center rounded-lg border-[1.5px] border-psu-600 bg-white px-4 text-sm font-bold text-psu-700 hover:bg-psu-50"
       >
-        Appeal to the coordinator
+        Appeal
       </button>
       {open && <AppealDialog log={log} kinds={kinds} onClose={() => setOpen(false)} onSent={onChanged} />}
     </>

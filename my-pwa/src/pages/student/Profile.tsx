@@ -19,6 +19,7 @@ import CompletionChecklist from "./CompletionChecklist";
 import ContactDetails, { CoordinatorCard, SupervisorCard, type Contact, type Coordinator, type Supervisor } from "./ContactDetails";
 import { PrivacyCard } from "./Privacy";
 import OfflineReadyCard from "./OfflineReadyCard";
+import { ProgramMark } from "../../brand/MarkImages";
 import SignatureCard from "./SignatureCard";
 import { resolutionPath } from "./resolutionTabs";
 
@@ -29,7 +30,22 @@ type StudentProfile = {
   program: string | null;
   company: string | null;
   required_hours: number;
+  /** PSU redesign: the program's (or a BSEd major's) student organisation, from the server. */
+  program_code?: string | null;
+  major?: string | null;
+  org_mark_key?: string | null;
+  org_name?: string | null;
 } & Contact;
+
+/** "BS Information Technology" → "BSIT": a program with no short code still gets a monogram. */
+const initialsOf = (text: string | null | undefined) =>
+  (text || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => (/^[A-Z]{2,}$/.test(word) ? word : word[0]))
+    .join("")
+    .toUpperCase()
+    .slice(0, 5);
 
 export default function StudentProfilePage() {
   const account = useAccount("student");
@@ -266,6 +282,24 @@ export default function StudentProfilePage() {
               <p className="truncate text-sm text-slate-600">{[profile.program, profile.company].filter(Boolean).join(" · ") || "Placement not set yet"}</p>
             </div>
             <CompletionRing done={done} total={checks.length} />
+          </div>
+        )}
+        {profile && (profile.program_code || profile.program) && (
+          // PSU redesign, Section 2: the program's organisation mark (a BSEd major's when set), with its name.
+          <div className="mt-4 flex items-center gap-3 border-t border-(--role-hairline) pt-4">
+            <ProgramMark
+              shortCode={profile.program_code || initialsOf(profile.program)}
+              major={profile.major}
+              markKey={profile.org_mark_key}
+              size={44}
+              alt={profile.org_name ? `${profile.org_name} logo` : `${profile.program_code || profile.program} monogram`}
+            />
+            <span className="min-w-0">
+              <span className="block truncate text-[14.5px] font-semibold text-slate-900">{profile.org_name || profile.program}</span>
+              <span className="block truncate text-[13px] text-slate-600">
+                {[profile.program, profile.major].filter(Boolean).join(", ")}
+              </span>
+            </span>
           </div>
         )}
       </Card>

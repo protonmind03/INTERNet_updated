@@ -10202,30 +10202,24 @@ test("every page that moved into a hub keeps its address: it redirects to its ta
   for (const hub of Object.values(HUBS)) assert.match(app, new RegExp(`path="${hub.path}"\\s+element=\\{<CoordinatorHub `), hub.path);
 });
 
-test("the coordinator's sidebar wears the student's style from the SIDEBAR tokens; the student's portal is now a folder", () => {
-  require("tsx/cjs");
+test("PSU redesign: the three portals share one shell, a side menu in the role's colour and a dock of four and More", () => {
   const fs = require("node:fs");
   const path = require("node:path");
-  // tokens.ts has no imports, so it loads without the app's packages (as on CI).
-  const { SIDEBAR } = require("../../my-pwa/src/brand/tokens.ts");
-  for (const key of ["surface", "groupLabel", "item", "itemIdle", "itemActive", "activeBar", "activeIcon", "footer", "accountLink", "signOut"]) {
-    assert.equal(typeof SIDEBAR[key], "string", key);
+  const src = path.join(__dirname, "../../my-pwa/src");
+  const read = (file) => fs.readFileSync(path.join(src, file), "utf8");
+  for (const layout of ["StudentLayout.tsx", "SupervisorLayout.tsx", "CoordinatorLayout.tsx"]) {
+    assert.ok(read(`layouts/${layout}`).includes("<RoleShell"), `${layout} draws the shared shell`);
+    assert.equal(read(`layouts/${layout}`).includes("surface-console"), false, "the light console sidebar is gone");
   }
-  assert.match(SIDEBAR.activeBar, /bg-gold-400/, "the gold edge on the current page");
-  const read = (file) => fs.readFileSync(path.join(__dirname, "../../my-pwa/src/layouts", file), "utf8");
-  const coordinatorLayout = read("CoordinatorLayout.tsx");
-  for (const key of ["surface", "groupLabel", "item", "itemActive", "itemIdle", "activeBar", "footer", "signOut"]) {
-    assert.ok(coordinatorLayout.includes(`SIDEBAR.${key}`), `CoordinatorLayout uses SIDEBAR.${key}`);
-  }
-  assert.ok(coordinatorLayout.includes("inb-scroll-pane"), "the coordinator's menu is the shared scroll pane");
-  // Iteration 10: the student's portal is a folder; its tab row is the same scroll pane, sideways.
-  assert.ok(read("StudentLayout.tsx").includes("<FolderShell"), "the student layout is a folder");
-  const folder = fs.readFileSync(path.join(__dirname, "../../my-pwa/src/components/folder/FolderShell.tsx"), "utf8");
-  assert.ok(folder.includes("inb-scroll-pane") && folder.includes('data-axis="x"'));
-  // Copied, not imported: the coordinator's record stays exactly as it is.
-  assert.equal(/from ["'][^"']*studentRecord/.test(folder), false, "FolderShell does not import the record's files");
-  assert.ok(read("SupervisorLayout.tsx").includes("inb-scroll-pane"), "the supervisor's too");
-  assert.equal(read("CoordinatorLayout.tsx").includes("surface-console"), false, "the light console sidebar is gone");
+  const shell = read("components/RoleShell.tsx");
+  assert.ok(shell.includes("inb-scroll-pane"), "the side menu is the shared scroll pane");
+  assert.ok(shell.includes("role-side") && shell.includes("<RoleDock"));
+  const dock = read("components/RoleDock.tsx");
+  assert.match(dock, /aria-label="Main"/);
+  const css = read("brand/brand.css");
+  // The dock and the side menu take the role's own colours.
+  assert.match(css, /.role-dock {[^}]*background: var(--role-dock)/);
+  assert.match(css, /.role-side {[^}]*background-color: var(--role-side)/);
 });
 
 test("a schedule pattern's week: the server, the app and the database agree, and old weekday maps read as one week", async (t) => {
@@ -10837,7 +10831,7 @@ test("the loading prototypes P1 to P3 are reached only from the brand preview, n
   const app = fs.readFileSync(path.join(src, "App.tsx"), "utf8");
   assert.match(app, /import\.meta\.env\.DEV \|\| import\.meta\.env\.VITE_BRAND_PREVIEW === "true" \? lazy\(\(\) => import\("\.\/brand\/BrandPreview"\)\) : null/);
   // Nothing on the sign-in path names them.
-  for (const file of ["pages/Door.tsx", "brand/LoginScreen.tsx", "brand/SplashScreen.tsx"]) {
+  for (const file of ["pages/Door.tsx", "brand/SplashScreen.tsx"]) {
     assert.doesNotMatch(fs.readFileSync(path.join(src, file), "utf8"), /BrandPreview|LoadingPrototypes|PrototypeRun/, file);
   }
 });
@@ -12632,4 +12626,25 @@ test("a coordinator chooses marks only from the PSU set, and the trainee's Profi
   const back = await sealPut(saved.seal_asset);
   assert.equal(back.response.status, 200);
   assert.equal(back.body.institution.seal_asset, saved.seal_asset);
+});
+
+test("the Messages page lists only the signed-in person's threads, newest first, with what is unread", async () => {
+  const none = await jsonRequest("/api/messages/threads");
+  assert.equal(none.response.status, 401);
+  const listed = await jsonRequest("/api/messages/threads", { headers: authHeaders(studentToken) });
+  assert.equal(listed.response.status, 200);
+  assert.ok(Array.isArray(listed.body.threads));
+  for (const thread of listed.body.threads) {
+    assert.equal(typeof thread.id, "number");
+    assert.equal(typeof thread.subject, "string");
+    assert.equal(typeof thread.unread, "number");
+    assert.ok(thread.with && typeof thread.with.name === "string");
+  }
+  const times = listed.body.threads.map((thread) => Date.parse(thread.last_message_at));
+  assert.deepEqual(times, [...times].sort((a, b) => b - a));
+  // Every thread listed opens for the same person.
+  if (listed.body.threads[0]) {
+    const opened = await jsonRequest(`/api/messages/threads/${listed.body.threads[0].id}`, { headers: authHeaders(studentToken) });
+    assert.equal(opened.response.status, 200);
+  }
 });

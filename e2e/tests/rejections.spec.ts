@@ -68,9 +68,9 @@ test("a rejected time-in photo: the supervisor's choice, the student's banner, a
     const page = await studentContext.newPage();
     await signIn(page, "student", { ...ACCOUNTS.student, email, password: "RejectCheck456!" });
     const banner = page.getByRole("status").filter({ hasText: "Retake your time-in photo" });
-    await expect(banner).toContainText("before you tap End break");
+    await expect(banner).toContainText("due before End break");
     await expect(banner).toContainText("The photo is too dark to see your face.");
-    await expect(banner.getByRole("button", { name: "Retake photo" })).toBeVisible();
+    await expect(banner.getByRole("button", { name: "Retake now" })).toBeVisible();
 
     // An appeal instead, from the Attendance page.
     await page.goto("/daily-log");

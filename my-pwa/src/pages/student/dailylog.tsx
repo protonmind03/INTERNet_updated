@@ -1,57 +1,56 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import DateRangeFilter from "../../components/DateRangeFilter";
 import EntryPictures from "../../components/EntryPictures";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
-import {
-  Card,
-  EmptyState,
-  ErrorNotice,
-  FilterChips,
-  Modal,
-  SkeletonRows,
-  StatusBadge,
-} from "../../components/ui";
+import { Button, Card, EmptyState, ErrorNotice, FilterChips, Modal, SkeletonRows, StatusBadge } from "../../components/ui";
 import { BrandLoader } from "../../brand";
 import StudentLayout from "../../layouts/StudentLayout";
 import { getProtectedUploadUrl } from "../../lib/api";
 import { isWithinDateRange } from "../../lib/dateRange";
-import {
-  formatDayDate,
-  formatHours,
-  formatLongDate,
-  formatTime,
-  phDateKey,
-} from "../../lib/format";
+import { formatDayDate, formatDuration, formatHours, formatLongDate, formatTime, phDateKey } from "../../lib/format";
+import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
 import { focusId, recordId, useFocus, useFocusRecord } from "../../lib/useFocusRecord";
-import { useMediaQuery } from "../../lib/useMediaQuery";
 import { usePagination } from "../../lib/usePagination";
 import Absences from "./Absences";
-import {
-  LateTimeOutDialog,
-  MissedTimeOutNotice,
-  ResubmitDialog,
-} from "./AttendanceCorrections";
+import { AppealActions } from "./Appeals";
+import { appealableKinds } from "./appealRules";
+import { LateTimeOutDialog, MissedTimeOutNotice, ResubmitDialog } from "./AttendanceCorrections";
 import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
-import TodayAttendance from "./TodayAttendance";
-import FigureCards, { type FigureAction } from "./FigureCards";
-import { useStudentProgress } from "./useStudentProgress";
-import { addDays } from "../../lib/studentCalendar";
-import { logDateKey, type AttendanceLog } from "./useAttendance";
-import { AppealActions } from "./Appeals";
+import { logDateKey, workedMinutes, type AttendanceLog } from "./useAttendance";
 import { sameId } from "../../lib/ids";
 
-type Filter = "All" | "Verified" | "Pending" | "Rejected" | "Late";
+/*
+|--------------------------------------------------------------------------
+| ATTENDANCE (PSU redesign, 7A2)
+|--------------------------------------------------------------------------
+|
+| Time record and Report absence first; this week as bars; then the days,
+| filtered All, To fix, Pending or Verified. Each day is one row: the date
+| as a stamp, its hours and times, and on the right either its status (a
+| word with a mark, never colour alone) or what can be done about it.
+| Retake is a solid amber button with a camera; Appeal is outlined: they
+| never look alike. A rejected day's note, the supervisor's correction and
+| an appeal's answer sit under the row.
+|
+*/
 
-/** Supervisors may mark a log "Flagged" or "Rejected"; students see one group. */
-function matchesFilter(log: AttendanceLog, filter: Filter): boolean {
+type Filter = "All" | "Fix" | "Pending" | "Verified";
+
+/** Something the trainee can do about this day. */
+function needsFixing(log: AttendanceLog, today: string): boolean {
+  if (!log.time_out && log.time_in && logDateKey(log) < today) return true;
+  if (log.photo_redo_status === "required" && !log.time_out) return true;
+  if (log.status === "Rejected" || log.status === "Flagged") return true;
+  return appealableKinds(log).length > 0;
+}
+
+function matchesFilter(log: AttendanceLog, filter: Filter, today: string): boolean {
   if (filter === "All") return true;
-  // Late as the server judged it (Iteration 18): the time-in, or the end of the break.
-  if (filter === "Late") return (log.late_minutes ?? 0) > 0 || (log.lunch_late_minutes ?? 0) > 0;
-  if (filter === "Rejected") return log.status === "Rejected" || log.status === "Flagged";
+  if (filter === "Fix") return needsFixing(log, today);
   return log.status === filter;
 }
 
@@ -66,83 +65,47 @@ export default function DailyLog() {
 
 function DailyLogPage() {
   const student = useAccount("student");
-  const { attendance } = useTimeIn();
+  const { attendance, now, online } = useTimeIn();
   const { logs, loading } = attendance;
+  const [params, setParams] = useSearchParams();
 
-  const [filter, setFilter] = useState<Filter>("All");
+  const [filter, setFilter] = useState<Filter>(params.get("filter") === "fix" ? "Fix" : "All");
   const [search, setSearch] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [photoLog, setPhotoLog] = useState<AttendanceLog | null>(null);
   const [resubmitting, setResubmitting] = useState<AttendanceLog | null>(null);
   const [closing, setClosing] = useState<AttendanceLog | null>(null);
 
   const today = phDateKey(new Date());
-  /** What the student can do about a log that is not in order, if anything. */
-  const fixFor = (log: AttendanceLog): { label: string; run: () => void } | null => {
-    if (!log.time_out && logDateKey(log) < today) {
-      return { label: "Enter time-out", run: () => setClosing(log) };
-    }
-    if (log.status === "Rejected") {
-      return { label: "Ask for another review", run: () => setResubmitting(log) };
-    }
-    return null;
-  };
 
   const counts = useMemo(
     () => ({
       All: logs.length,
-      Verified: logs.filter((log) => matchesFilter(log, "Verified")).length,
-      Pending: logs.filter((log) => matchesFilter(log, "Pending")).length,
-      Rejected: logs.filter((log) => matchesFilter(log, "Rejected")).length,
-      Late: logs.filter((log) => matchesFilter(log, "Late")).length,
+      Fix: logs.filter((log) => matchesFilter(log, "Fix", today)).length,
+      Pending: logs.filter((log) => log.status === "Pending").length,
+      Verified: logs.filter((log) => log.status === "Verified").length,
     }),
-    [logs]
+    [logs, today]
   );
-
-  const progress = useStudentProgress(student?.student_id);
-  const historyRef = useRef<HTMLDivElement | null>(null);
-  /** A figure card's action: narrow the list below to what it counts, and bring the list into view. */
-  const figureAction = (action: FigureAction) => {
-    setSearch("");
-    if (action === "week") {
-      const sunday = addDays(today, -new Date(`${today}T00:00:00Z`).getUTCDay());
-      setFilter("All");
-      setDateFrom(sunday);
-      setDateTo(addDays(sunday, 6));
-    } else {
-      setFilter(action === "pending" ? "Pending" : "Late");
-      setDateFrom("");
-      setDateTo("");
-    }
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    historyRef.current?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-  };
 
   const visibleLogs = useMemo(() => {
     const text = search.trim().toLowerCase();
     return logs.filter((log) => {
-      if (!matchesFilter(log, filter)) return false;
+      if (!matchesFilter(log, filter, today)) return false;
       const key = logDateKey(log);
       if (!isWithinDateRange(key, dateFrom, dateTo)) return false;
       if (!text) return true;
-      return [key, formatDayDate(key), log.note, log.review_notes, log.status]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(text));
+      return [key, formatDayDate(key), log.note, log.review_notes, log.status].filter(Boolean).some((value) => String(value).toLowerCase().includes(text));
     });
-  }, [logs, filter, search, dateFrom, dateTo]);
-
+  }, [logs, filter, search, dateFrom, dateTo, today]);
   const filtered = filter !== "All" || search.trim() !== "" || dateFrom !== "" || dateTo !== "";
-
   const pager = usePagination(visibleLogs, 15);
 
   // A notification about one log: turn to the page it is on, then outline it.
-  // Each log is drawn twice, as a card and as a table row; only the one in view is marked.
-  const desktop = useMediaQuery("(min-width: 768px)");
   const focusedLog = focusId(useFocus(), "attendance");
-  const focusedAt = focusedLog
-    ? visibleLogs.findIndex((log) => sameId(log.id, focusedLog))
-    : -1;
+  const focusedAt = focusedLog ? visibleLogs.findIndex((log) => sameId(log.id, focusedLog)) : -1;
   const turnTo = pager.setPage;
   const [turned, setTurned] = useState(false);
   useEffect(() => {
@@ -159,76 +122,65 @@ function DailyLogPage() {
   }, [focusedAt, turned, turnTo]);
   useFocusRecord(turned);
 
+  const pickFilter = (next: Filter) => {
+    setFilter(next);
+    if (params.get("filter")) {
+      const copy = new URLSearchParams(params);
+      copy.delete("filter");
+      setParams(copy, { replace: true });
+    }
+  };
   const clearFilters = () => {
-    setFilter("All");
+    pickFilter("All");
     setSearch("");
     setDateFrom("");
     setDateTo("");
   };
 
   return (
-    <StudentLayout
-      title="Attendance"
-      subtitle="Time in and out each day, and follow what your supervisor has verified."
-      actions={
-        <Link
-          to="/time-record"
-          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-        >
-          <Icon name="printer" size={16} />
-          Time record
-        </Link>
-      }
-    >
-      <div className="space-y-5">
-        {attendance.error && (
-          <ErrorNotice message={attendance.error} onRetry={() => void attendance.reload()} />
-        )}
+    <StudentLayout title="Attendance">
+      <div className="space-y-4">
+        {attendance.error && <ErrorNotice message={attendance.error} onRetry={() => void attendance.reload()} />}
+
+        <div className="grid grid-cols-2 gap-2.5">
+          <Link to="/time-record" className="card-hairline flex min-h-12 items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-psu-700 hover:bg-psu-50">
+            <Icon name="printer" size={18} />
+            Time record
+          </Link>
+          <a href="#absences" className="card-hairline flex min-h-12 items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-psu-700 hover:bg-psu-50">
+            <Icon name="calendar" size={18} />
+            Report absence
+          </a>
+        </div>
 
         <MissedTimeOutNotice attendance={attendance} />
 
-        <TodayAttendance />
+        <WeekBars logs={logs} now={now} loading={loading} />
 
-        <FigureCards
-          studentId={student?.student_id}
-          logs={logs}
-          loading={loading}
-          required={progress ? progress.required : null}
-          onAction={figureAction}
-        />
-
-        <Card>
-          <div ref={historyRef} className="scroll-mt-20 space-y-3 border-b border-slate-100 p-4 sm:p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-sm font-semibold text-slate-900">Attendance history</h2>
-              <label className="relative block w-full sm:w-64">
-                <span className="sr-only">Search attendance</span>
-                <Icon
-                  name="search"
-                  size={16}
-                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500"
-                />
-                <input
-                  type="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Search notes or dates"
-                  className="field pl-9"
-                />
-              </label>
-            </div>
-            <FilterChips
-              label="Filter by status"
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: "All", label: "All", count: counts.All },
-                { value: "Verified", label: "Verified", count: counts.Verified },
-                { value: "Pending", label: "Pending", count: counts.Pending },
-                { value: "Rejected", label: "Rejected", count: counts.Rejected },
-                { value: "Late", label: "Late", count: counts.Late },
-              ]}
-            />
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <FilterChips
+            label="Show"
+            value={filter}
+            onChange={pickFilter}
+            options={[
+              { value: "All", label: "All" },
+              { value: "Fix", label: "To fix", count: counts.Fix || undefined },
+              { value: "Pending", label: "Pending" },
+              { value: "Verified", label: "Verified" },
+            ]}
+          />
+          <button type="button" onClick={() => setShowFilters((value) => !value)} aria-expanded={showFilters} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-slate-600 hover:bg-white">
+            <Icon name="search" size={16} />
+            Search
+          </button>
+        </div>
+        {showFilters && (
+          <div className="card-hairline space-y-3 rounded-xl p-3">
+            <label className="relative block">
+              <span className="sr-only">Search attendance</span>
+              <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes or dates" className="field pl-9" />
+            </label>
             <DateRangeFilter
               from={dateFrom}
               to={dateTo}
@@ -238,276 +190,250 @@ function DailyLogPage() {
               }}
             />
           </div>
+        )}
 
+        <Card>
           {loading ? (
             <SkeletonRows rows={5} />
           ) : visibleLogs.length === 0 ? (
             filtered ? (
               <EmptyState
                 icon="search"
-                title="No logs match these filters"
+                title={filter === "Fix" ? "Nothing to fix" : "No days match"}
                 action={
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="text-sm font-semibold text-psu-700 hover:underline"
-                  >
-                    Clear filters
+                  <button type="button" onClick={clearFilters} className="min-h-11 text-sm font-semibold text-psu-700 hover:underline">
+                    Show every day
                   </button>
                 }
               />
             ) : (
-              <EmptyState
-                icon="clock"
-                title="No attendance yet"
-                description="Time in above to record your first day."
-              />
+              <EmptyState icon="clock" title="No attendance yet" description="Your days appear here once you time in." />
             )
           ) : (
             <>
-              {/* Phones: one card per day */}
-              <ul className="divide-y divide-slate-100 md:hidden">
+              <ul className="divide-y divide-(--role-hairline)">
                 {pager.pageItems.map((log) => (
-                  <li key={log.id} id={desktop ? undefined : recordId("attendance", log.id)} className="px-4 py-4">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {formatDayDate(logDateKey(log))}
-                        </p>
-                        <p className="tabular mt-0.5 text-sm text-slate-600">
-                          {formatTime(log.time_in)} – {formatTime(log.time_out)}
-                        </p>
-                      </div>
-                      <StatusBadge status={log.status} />
-                    </div>
-                    <div className="mt-3 flex items-end gap-6 text-sm">
-                      <dl className="flex gap-6">
-                        <div>
-                          <dt className="text-xs text-slate-500">Hours</dt>
-                          <dd className="tabular font-medium text-slate-900">
-                            {formatHours(log.hours)}
-                          </dd>
-                        </div>
-                        <div>
-                          <dt className="text-xs text-slate-500">Lunch</dt>
-                          <dd className="tabular whitespace-nowrap text-slate-700">
-                            {breakText(log)}
-                          </dd>
-                        </div>
-                      </dl>
-                      {log.image_url && (
-                        <div className="ml-auto">
-                          <PhotoButton onClick={() => setPhotoLog(log)} />
-                        </div>
-                      )}
-                    </div>
-                    <LogNotes log={log} />
-                    {log.id > 0 && (
-                      <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} />
-                    )}
-                    <FixButton fix={fixFor(log)} />
-<AppealActions log={log} onChanged={() => void attendance.reload()} />
+                  <li key={log.id} id={recordId("attendance", log.id)} className="px-3.5 py-3.5 sm:px-4">
+                    <DayRow
+                      log={log}
+                      now={now}
+                      today={today}
+                      online={online}
+                      onRetake={() => {
+                        const banner = document.querySelector<HTMLButtonElement>('[data-focus="retake-photo"]');
+                        if (banner) {
+                          banner.scrollIntoView({ block: "center" });
+                          banner.click();
+                        }
+                      }}
+                      onClose={() => setClosing(log)}
+                      onResubmit={() => setResubmitting(log)}
+                      onPhoto={() => setPhotoLog(log)}
+                      onChanged={() => void attendance.reload()}
+                    />
                   </li>
                 ))}
               </ul>
-
-              {/* Larger screens: a table */}
-              <div className="hidden overflow-x-auto md:block">
-                <table className="w-full text-left text-sm">
-                  <thead>
-                    <tr className="table-head border-b border-slate-100 text-xs font-medium text-slate-500">
-                      <th scope="col" className="px-5 py-3 font-medium">Date</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Time in</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Lunch</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Time out</th>
-                      <th scope="col" className="px-3 py-3 text-right font-medium">Hours</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Notes</th>
-                      <th scope="col" className="px-3 py-3 font-medium">Status</th>
-                      <th scope="col" className="px-5 py-3 font-medium">
-                        <span className="sr-only">Photo</span>
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {pager.pageItems.map((log) => (
-                      <tr key={log.id} id={desktop ? recordId("attendance", log.id) : undefined} className="align-top hover:bg-slate-50">
-                        <td className="whitespace-nowrap px-5 py-3.5 font-medium text-slate-900">
-                          {formatDayDate(logDateKey(log))}
-                        </td>
-                        <td className="tabular whitespace-nowrap px-3 py-3.5 text-slate-700">
-                          {formatTime(log.time_in)}
-                        </td>
-                        <td className="tabular whitespace-nowrap px-3 py-3.5 text-slate-700">
-                          {breakText(log)}
-                        </td>
-                        <td className="tabular whitespace-nowrap px-3 py-3.5 text-slate-700">
-                          {formatTime(log.time_out)}
-                        </td>
-                        <td className="tabular whitespace-nowrap px-3 py-3.5 text-right font-medium text-slate-900">
-                          {formatHours(log.hours)}
-                        </td>
-                        <td className="max-w-xs px-3 py-3.5">
-                          <LogNotes log={log} inline />
-                          {log.id > 0 && (
-                            <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} className="mt-2" />
-                          )}
-                          <FixButton fix={fixFor(log)} />
-<AppealActions log={log} onChanged={() => void attendance.reload()} />
-                        </td>
-                        <td className="px-3 py-3.5">
-                          <StatusBadge status={log.status} />
-                        </td>
-                        <td className="px-5 py-3.5 text-right">
-                          {log.image_url && <PhotoButton onClick={() => setPhotoLog(log)} />}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <Pagination state={pager} noun="log" />
+              <Pagination state={pager} noun="day" />
             </>
           )}
         </Card>
 
-        <div id="absences" className="scroll-mt-20">
+        <div id="absences" className="scroll-mt-24">
           <Absences studentId={student?.student_id} />
         </div>
       </div>
 
       <PhotoDialog log={photoLog} onClose={() => setPhotoLog(null)} />
-      {resubmitting && (
-        <ResubmitDialog
-          log={resubmitting}
-          attendance={attendance}
-          onClose={() => setResubmitting(null)}
-        />
-      )}
-      {closing && (
-        <LateTimeOutDialog
-          log={closing}
-          attendance={attendance}
-          onClose={() => setClosing(null)}
-        />
-      )}
+      {resubmitting && <ResubmitDialog log={resubmitting} attendance={attendance} onClose={() => setResubmitting(null)} />}
+      {closing && <LateTimeOutDialog log={closing} attendance={attendance} onClose={() => setClosing(null)} />}
     </StudentLayout>
   );
 }
 
-function breakText(log: AttendanceLog): string {
-  if (!log.break_time) return "None";
-  return `${formatTime(log.break_time)} – ${
-    log.break_end_time ? formatTime(log.break_end_time) : "…"
-  }`;
-}
+/* ---------- This week, as bars ---------- */
 
-function FixButton({ fix }: { fix: { label: string; run: () => void } | null }) {
-  if (!fix) return null;
+function WeekBars({ logs, now, loading }: { logs: AttendanceLog[]; now: Date; loading: boolean }) {
+  const today = phToday();
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const monday = phAddDays(today, -((weekday + 6) % 7));
+  const days = Array.from({ length: 5 }, (_, index) => {
+    const key = phAddDays(monday, index);
+    const log = logs.find((item) => logDateKey(item) === key);
+    const working = Boolean(log?.time_in && !log.time_out && key === today);
+    const minutes = log ? (working ? workedMinutes(log, now) : (Number(log.hours) || 0) * 60) : 0;
+    return { key, minutes, working, logged: Boolean(log?.time_in), label: formatPhDay(key, { weekday: "short" }) };
+  });
+  const total = days.reduce((sum, day) => sum + day.minutes, 0);
+  const logged = days.filter((day) => day.logged).length;
+  const scale = Math.max(8 * 60, ...days.map((day) => day.minutes));
   return (
-    <button
-      type="button"
-      onClick={fix.run}
-      className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-lg border border-psu-200 bg-psu-50 px-3 text-sm font-semibold text-psu-800 hover:bg-psu-100"
-    >
-      <Icon name="refresh" size={15} />
-      {fix.label}
-    </button>
+    <Card className="p-4">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-[16px] font-bold text-slate-900">This week</h2>
+        <p className="tabular text-[13.5px] text-slate-600">
+          {formatDuration(total)} · {logged} of 5 days
+        </p>
+      </div>
+      {loading ? (
+        <SkeletonRows rows={1} />
+      ) : (
+        <div className="mt-3 grid grid-cols-5 gap-2" role="list" aria-label="Hours each day this week">
+          {days.map((day) => (
+            <div key={day.key} role="listitem" className="flex flex-col items-center gap-1.5" aria-label={`${day.label}: ${day.minutes > 0 ? formatDuration(day.minutes) : "no hours"}${day.working ? ", working now" : ""}`}>
+              <div className="flex h-16 w-full items-end" aria-hidden="true">
+                <div
+                  className={`w-full rounded-md ${day.working ? "bg-psu-600" : day.minutes > 0 ? "bg-psu-100" : "h-1 bg-slate-200"}`}
+                  style={day.minutes > 0 ? { height: `${Math.max(10, Math.round((day.minutes / scale) * 64))}px` } : undefined}
+                />
+              </div>
+              <span className={`text-[12.5px] ${day.key === today ? "font-bold text-slate-900" : "text-slate-600"}`}>{day.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   );
 }
 
-function PhotoButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-psu-50"
-    >
-      <Icon name="image" size={15} />
-      Photo
-    </button>
-  );
-}
+/* ---------- One day ---------- */
 
-function LogNotes({ log, inline = false }: { log: AttendanceLog; inline?: boolean }) {
-  const bySupervisor = log.capture_method === "supervisor";
-  const offlineTimeIn = Boolean(log.offline_time_in);
-  if (
-    !offlineTimeIn &&
-    !log.note &&
-    !log.review_notes &&
-    !log.correction_note &&
-    !log.time_correction_reason &&
-    !log.photo_rejection_reason &&
-    !log.appeal &&
-    !bySupervisor
-  ) {
-    return inline ? <span className="text-slate-500">—</span> : null;
-  }
+function DayRow({
+  log,
+  now,
+  today,
+  online,
+  onRetake,
+  onClose,
+  onResubmit,
+  onPhoto,
+  onChanged,
+}: {
+  log: AttendanceLog;
+  now: Date;
+  today: string;
+  online: boolean;
+  onRetake: () => void;
+  onClose: () => void;
+  onResubmit: () => void;
+  onPhoto: () => void;
+  onChanged: () => void;
+}) {
+  const key = logDateKey(log);
+  const working = Boolean(log.time_in && !log.time_out && key === today);
+  const missedOut = Boolean(log.time_in && !log.time_out && key < today);
   const rejected = log.status === "Rejected" || log.status === "Flagged";
+  const retake = log.photo_redo_status === "required" && !log.time_out;
+  const lunch = log.break_time
+    ? ` · lunch ${log.break_end_time ? formatDuration((Date.parse(log.break_end_time) - Date.parse(log.break_time)) / 60_000) : "now"}`
+    : "";
+
+  let title: string;
+  let line: string;
+  let lineBad = false;
+  if (working) {
+    title = "Working now";
+    line = retake ? `Photo rejected · retake ${log.photo_redo_due_at ? `by ${formatTime(log.photo_redo_due_at)}` : "before End break"}` : `In at ${formatTime(log.time_in)} · ${formatDuration(workedMinutes(log, now))}`;
+    lineBad = retake;
+  } else if (rejected) {
+    title = "Day rejected";
+    line = log.review_notes ? `“${log.review_notes}”` : "Your supervisor rejected this day";
+    lineBad = true;
+  } else if (missedOut) {
+    title = "No time-out";
+    line = `In at ${formatTime(log.time_in)} · enter the time you left`;
+    lineBad = true;
+  } else {
+    title = formatHours(log.hours);
+    line = `${formatTime(log.time_in)} – ${formatTime(log.time_out)}${lunch}`;
+  }
+
   return (
-    <div className={inline ? "space-y-1.5" : "mt-3 space-y-1.5"}>
-      {bySupervisor && (
-        <p className="flex items-center gap-1.5 text-sm text-slate-600">
-          <Icon name="camera" size={14} className="shrink-0 text-slate-400" />
-          Time-in recorded by your supervisor
-        </p>
-      )}
-      {offlineTimeIn && (
-        <p className="flex items-start gap-1.5 text-sm text-amber-900">
-          <Icon name="clock" size={14} className="mt-0.5 shrink-0 text-amber-600" />
-          {log.waiting?.includes("time-in")
-            ? "Time-in recorded on this phone with no connection. Waiting to be sent."
-            : log.status === "Pending"
-              ? "Time-in recorded with no connection, so there is no photo. Your supervisor has to confirm it."
-              : "Time-in recorded with no connection, so there is no photo."}
-        </p>
-      )}
-      {log.note && <p className="text-sm text-slate-600">{log.note}</p>}
-      {log.correction_note && (
-        <p className="rounded-md bg-psu-50 px-2.5 py-1.5 text-sm text-psu-900">
-          <span className="font-semibold">You:</span> {log.correction_note}
-        </p>
-      )}
-      {log.time_correction_reason && (
-        <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
-          <span className="font-semibold">Times corrected by your supervisor:</span>{" "}
-          {log.time_correction_reason}
-        </p>
-      )}
-      {log.review_notes && (
-        <p
-          className={`rounded-md px-2.5 py-1.5 text-sm ${
-            rejected ? "bg-red-50 text-red-800" : "bg-slate-100 text-slate-700"
-          }`}
-        >
-          <span className="font-semibold">Supervisor:</span> {log.review_notes}
-        </p>
-      )}
-      {log.photo_rejection_reason && (
-        <p className="rounded-md bg-slate-100 px-2.5 py-1.5 text-sm text-slate-700">
-          <span className="font-semibold">Time-in photo rejected:</span> {log.photo_rejection_reason}{" "}
-          {log.photo_redo_status === "submitted"
-            ? "You took a new one."
-            : log.photo_redo_status === "missed"
-              ? "No new photo was taken in time."
-              : log.photo_redo_status === "required"
-                ? "A new photo is due; see the banner at the top."
-                : ""}
-        </p>
-      )}
-      {log.appeal && log.appeal.status !== "withdrawn" && (
-        <p className="rounded-md bg-psu-50 px-2.5 py-1.5 text-sm text-psu-900">
-          <span className="font-semibold">
-            {log.appeal.status === "open"
-              ? "Appeal waiting for the coordinator."
-              : log.appeal.status === "overturned"
-                ? "Appeal accepted."
-                : "Appeal not accepted."}
-          </span>
-          {log.appeal.decision_note ? ` ${log.appeal.decision_note}` : ""}
-        </p>
-      )}
+    <div>
+      <div className="flex items-start gap-3">
+        <span className="w-11 shrink-0 text-center leading-none" aria-hidden="true">
+          <span className="block text-[11px] font-bold uppercase tracking-wider text-slate-500">{formatPhDay(key, { weekday: "short" })}</span>
+          <span className="font-display tabular mt-0.5 block text-[22px] font-extrabold text-slate-900">{formatPhDay(key, { day: "numeric" })}</span>
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="tabular text-[15.5px] font-bold text-slate-900">
+            <span className="sr-only">{formatDayDate(key)}: </span>
+            {title}
+          </p>
+          <p className={`tabular mt-0.5 text-[13.5px] ${lineBad ? "text-(--status-late-ink)" : "text-slate-600"}`}>{line}</p>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          {retake && working ? (
+            <Button icon="camera" onClick={onRetake} disabled={!online}>
+              Retake now
+            </Button>
+          ) : missedOut ? (
+            <Button variant="outline" onClick={onClose}>
+              Enter time-out
+            </Button>
+          ) : (
+            <>
+              {!working && <StatusBadge status={log.status === "Flagged" ? "Rejected" : log.status} />}
+              <AppealActions log={log} onChanged={onChanged} />
+            </>
+          )}
+        </div>
+      </div>
+      <DayNotes log={log} onResubmit={onResubmit} onPhoto={onPhoto} />
+    </div>
+  );
+}
+
+function DayNotes({ log, onResubmit, onPhoto }: { log: AttendanceLog; onResubmit: () => void; onPhoto: () => void }) {
+  const bySupervisor = log.capture_method === "supervisor";
+  const notes: React.ReactNode[] = [];
+  if (bySupervisor) notes.push(<span key="by">Time-in recorded by your supervisor.</span>);
+  if (log.offline_time_in)
+    notes.push(
+      <span key="offline">
+        {log.waiting?.includes("time-in") ? "Recorded with no connection: waiting to be sent." : "Recorded with no connection, so there is no photo."}
+      </span>
+    );
+  if (log.note) notes.push(<span key="note">{log.note}</span>);
+  if (log.correction_note) notes.push(<span key="you"><b>You:</b> {log.correction_note}</span>);
+  if (log.time_correction_reason) notes.push(<span key="corrected"><b>Times corrected by your supervisor:</b> {log.time_correction_reason}</span>);
+  if (log.photo_rejection_reason && log.photo_redo_status !== "required") {
+    notes.push(
+      <span key="photo">
+        <b>Photo rejected:</b> {log.photo_rejection_reason} {log.photo_redo_status === "submitted" ? "You took a new one." : log.photo_redo_status === "missed" ? "No new photo was taken in time." : ""}
+      </span>
+    );
+  }
+  if (log.appeal && log.appeal.status !== "withdrawn") {
+    notes.push(
+      <span key="appeal">
+        <b>{log.appeal.status === "open" ? "Appeal waiting for the coordinator." : log.appeal.status === "overturned" ? "Appeal accepted." : "Appeal not accepted."}</b>
+        {log.appeal.decision_note ? ` ${log.appeal.decision_note}` : ""}
+      </span>
+    );
+  }
+  const resubmit = log.status === "Rejected" && !log.appeal;
+  if (notes.length === 0 && !log.image_url && !(log.pictures ?? 0) && !resubmit) return null;
+  return (
+    <div className="ml-14 mt-2 space-y-1.5 text-[13.5px] text-slate-700">
+      {notes.map((note, index) => (
+        <p key={index}>{note}</p>
+      ))}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        {log.image_url && (
+          <button type="button" onClick={onPhoto} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline">
+            <Icon name="image" size={15} />
+            Photo
+          </button>
+        )}
+        {resubmit && (
+          <button type="button" onClick={onResubmit} className="inline-flex min-h-11 items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline">
+            <Icon name="refresh" size={15} />
+            Ask for another review
+          </button>
+        )}
+      </div>
+      {log.id > 0 && <EntryPictures role="student" owner="attendance" ownerId={log.id} count={log.pictures ?? 0} />}
     </div>
   );
 }
@@ -540,21 +466,12 @@ function PhotoDialog({ log, onClose }: { log: AttendanceLog | null; onClose: () 
   }, [imagePath]);
 
   return (
-    <Modal
-      open={log !== null}
-      onClose={onClose}
-      title="Attendance photo"
-      description={log ? `${formatLongDate(logDateKey(log))} · Time in ${formatTime(log.time_in)}` : undefined}
-    >
+    <Modal open={log !== null} onClose={onClose} title="Attendance photo" description={log ? `${formatLongDate(logDateKey(log))} · Time in ${formatTime(log.time_in)}` : undefined}>
       <div className="flex min-h-48 items-center justify-center rounded-xl bg-slate-100">
         {error ? (
           <p className="px-4 text-sm text-slate-600">{error}</p>
         ) : url ? (
-          <img
-            src={url}
-            alt="Photo submitted at time-in"
-            className="max-h-[60dvh] w-full rounded-xl object-contain"
-          />
+          <img src={url} alt="Photo submitted at time-in" className="max-h-[60dvh] w-full rounded-xl object-contain" />
         ) : (
           <BrandLoader variant="inline" role="student" process="attendance" message="Loading your time-in photo…" />
         )}

@@ -19,14 +19,15 @@ import { useTimeIn } from "./timeInContext";
 | to Attendance, where the day is. A keyboard or a screen reader acts in one
 | go ("Time out, opens the time-out dialog").
 |
-| It is not shown on Attendance (the full card is there) or Profile, while
+| It is not shown on Today (the time card is there) or Profile, while
 | a dialog, a sheet or the on-screen keyboard is open, or once the day is
 | done. It publishes its height as --inb-fab (lib/layers.ts).
 |
 */
 
 /** Pages where the button is not shown. */
-const HIDDEN_ON = ["/daily-log", "/profile"];
+// PSU redesign: Today too, where the time card carries the step buttons.
+const HIDDEN_ON = ["/student/dashboard", "/profile"];
 const COLLAPSE_MS = 4000;
 
 /** True while a dialog, sheet or menu sheet is on screen, whoever opened it. */

@@ -206,8 +206,7 @@
   .inb-roadbar::before { animation: none; width: 100%; opacity: 0.35; }
   .inb-roadbar::after, .inb-sheen::after, .inb-tile-sheen::after, .inb-live::after { animation: none; display: none; }
   .inb-countdown { animation: none; }
-  .inb-press:active:not(:disabled) { transform: none; }
-}
+  .inb-press:active:not(:disabled) { transform: none; } }
 
 /* Iteration 14: the loading prototypes in the brand preview (LoadingPrototypes.tsx). Not used anywhere else. */
 @keyframes inb-proto-shimmer { 0% { opacity: 1; } 50% { opacity: 0.55; } 100% { opacity: 1; } }
@@ -219,8 +218,7 @@
 @keyframes inb-proto-fade { from { opacity: 0; } to { opacity: 1; } }
 .inb-proto-fade { animation: inb-proto-fade 180ms ease-out backwards; }
 @media (prefers-reduced-motion: reduce) {
-  .inb-proto-shimmer, .inb-proto-pulse, .inb-proto-rise, .inb-proto-fade { animation: none !important; }
-}
+  .inb-proto-shimmer, .inb-proto-pulse, .inb-proto-rise, .inb-proto-fade { animation: none !important; } }
 
 /* =====================================================================
    Brand kit v4 (Iteration 19): role palettes, status colours, the seal.
@@ -406,8 +404,7 @@
   .inb-s2r, .inb-s2r * { animation: none !important; }
   .inb-s2r-path { stroke-dashoffset: 0; }
   .inb-s2r-pin { transform: scale(1); }
-  .inb-s2r-word, .inb-s2r-role { opacity: 1; transform: none; }
-}
+  .inb-s2r-word, .inb-s2r-role { opacity: 1; transform: none; } }
 
 /* =====================================================================
    Iteration 20: the day banner, the figure cards, the Time Record.
@@ -437,70 +434,15 @@
 .inb-snap-row > * { scroll-snap-align: start; }
 @media (prefers-reduced-motion: reduce) { .inb-snap-row { scroll-behavior: auto; } }
 
-/* The day banner: the role's primary, its tiles on the role's surface. */
-.day-banner { background: var(--role-primary); color: var(--role-on-primary); }
-.day-banner-muted { color: var(--role-on-primary); opacity: 0.92; }
-.day-banner-chip { background: color-mix(in srgb, var(--role-on-primary) 14%, transparent); }
-.day-banner-link { color: var(--role-on-primary); }
-.day-banner-switch { background: color-mix(in srgb, var(--role-on-primary) 16%, transparent); }
-.day-banner-switch [role="tab"] { color: var(--role-on-primary); transition: background-color var(--inb-dur-2), color var(--inb-dur-2); }
-.day-banner-switch [role="tab"][aria-selected="true"] { background: var(--role-accent); color: var(--role-on-accent); }
-.day-banner-switch [role="tab"]:focus-visible, .step-tile:focus-visible { outline: 3px solid var(--role-accent); outline-offset: 2px; }
-
-.step-tile {
-  display: flex;
-  min-width: 140px;
-  min-height: 88px;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  border-radius: 14px;
-  padding: 10px 12px;
-  text-align: left;
-  background: var(--role-surface);
-  color: var(--role-ink);
-  border: 1px solid color-mix(in srgb, var(--role-ink) 12%, transparent);
-}
-.step-tile-label { font-size: 13px; font-weight: 600; line-height: 1.25; white-space: normal; overflow-wrap: anywhere; }
-.step-tile-time { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.step-tile-detail { font-size: 12px; font-weight: 600; line-height: 1.3; }
-.step-tile--next { background: var(--role-accent); color: var(--role-on-accent); border-color: transparent; cursor: pointer; transition: transform var(--inb-dur-1) var(--inb-ease-out); }
-.step-tile--next:active { transform: scale(0.98); }
-.step-tile--closed { border-style: dashed; cursor: not-allowed; }
-.step-tile--late { background: var(--status-late-bg); color: var(--status-late-ink); }
-.step-tile--early .step-tile-detail, .step-tile--later .step-tile-detail { color: var(--status-info-ink); }
-.step-tile--waiting { opacity: 0.85; }
-@media (prefers-reduced-motion: reduce) { .step-tile--next { transition: none; } .step-tile--next:active { transform: none; } }
-
 .status-chip { display: inline-flex; min-height: 28px; align-items: center; border-radius: 9999px; padding: 0 10px; font-size: 13px; font-weight: 600; }
 .status-chip--absent { background: var(--status-absent-bg); color: var(--status-absent-ink); }
 .status-chip--late { background: var(--status-late-bg); color: var(--status-late-ink); }
 
-/* The figure cards: a snap row on phones, three columns from 600 px. */
-.figure-cards > .figure-card { width: min(85%, 320px); }
-.figure-dot { width: 7px; height: 7px; border-radius: 9999px; background: color-mix(in srgb, var(--role-ink) 25%, transparent); }
-.figure-dot--on { background: var(--role-primary); }
-.figure-action { color: var(--role-primary); }
-@media (min-width: 600px) {
-  .figure-cards { display: grid !important; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; -webkit-mask-image: none; mask-image: none; }
-  .figure-cards > .figure-card { width: auto; }
-  .figure-dots { display: none !important; }
-}
 .ring-track { stroke: color-mix(in srgb, var(--role-ink) 12%, transparent); }
 .ring-track-fill { fill: color-mix(in srgb, var(--role-ink) 12%, transparent); }
 .ring-verified { stroke: var(--role-primary); }
 .ring-verified-fill { fill: var(--role-primary); }
-.ring-pending { stroke: var(--status-warning-ink); }
-.ring-pending-fill { fill: var(--status-warning-ink); }
-.ring-legend text { fill: var(--role-ink); }
-.dot-on-time { fill: var(--role-primary); }
 .dot-late { fill: var(--status-late-bg); stroke: var(--status-late-ink); stroke-width: 1.5; }
-.dot-absent, .dot-hollow { fill: none; stroke: color-mix(in srgb, var(--role-ink) 55%, transparent); stroke-width: 1.5; }
-.bar-scheduled { fill: none; stroke: color-mix(in srgb, var(--role-ink) 45%, transparent); stroke-width: 1.5; }
-.bar-rendered { fill: var(--role-primary); }
-.bar-label { fill: color-mix(in srgb, var(--role-ink) 70%, transparent); }
-.bar-today { fill: var(--role-primary); font-weight: 700; }
-.bar-today-dot { fill: var(--role-primary); }
 
 /* The Time Record: the seal is 2 cm in print; the signature at most 45 x 15 mm. */
 .dtr-line { margin: 0; color: black; line-height: 1.25; }
@@ -551,11 +493,10 @@
 }
 @media (prefers-reduced-motion: reduce) {
   .inb-spotlight-overlay { display: none; }
-  .inb-spotlight { animation: none; transform: none; }
-}
+  .inb-spotlight { animation: none; transform: none; } }
 
-/* The trainee's dock (components/StudentDock.tsx), phones only. */
-.student-dock {
+/* The dock of every role (components/RoleDock.tsx), phones only. */
+.role-dock {
   position: fixed;
   left: 12px;
   right: 12px;
@@ -575,8 +516,8 @@
   box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--role-ink) 45%, transparent);
   transition: transform 220ms var(--inb-ease-out), opacity 220ms;
 }
-.student-dock--hidden { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; }
-.student-dock-item {
+.role-dock--hidden { transform: translateY(calc(100% + 24px)); opacity: 0; pointer-events: none; }
+.role-dock-item {
   display: inline-flex;
   min-width: 44px;
   height: 44px;
@@ -589,11 +530,11 @@
   color: inherit;
   transition: background-color 200ms, padding 200ms;
 }
-.student-dock-label { max-width: 0; overflow: hidden; white-space: nowrap; font-size: 13px; font-weight: 600; transition: max-width 200ms var(--inb-ease-out); }
-.student-dock-item--on { background: var(--role-dock-active); color: var(--role-on-dock-active); padding: 0 14px; }
-.student-dock-item--on .student-dock-label { max-width: 7.5rem; }
-.student-dock-item:focus-visible { outline: 3px solid var(--role-dock-active); outline-offset: 2px; }
-.student-dock-badge {
+.role-dock-label { max-width: 0; overflow: hidden; white-space: nowrap; font-size: 13px; font-weight: 600; transition: max-width 200ms var(--inb-ease-out); }
+.role-dock-item--on { background: var(--role-dock-active); color: var(--role-on-dock-active); padding: 0 14px; }
+.role-dock-item--on .role-dock-label { max-width: 7.5rem; }
+.role-dock-item:focus-visible { outline: 3px solid var(--role-dock-active); outline-offset: 2px; }
+.role-dock-badge {
   position: absolute;
   right: -8px;
   top: -6px;
@@ -609,15 +550,14 @@
   color: white;
 }
 @media (max-width: 359.98px) {
-  .student-dock { padding: 0 4px; gap: 2px; }
-  .student-dock-item { padding: 0 8px; }
-  .student-dock-item--on { padding: 0 10px; }
-  .student-dock-item--on .student-dock-label { max-width: 5.5rem; }
+  .role-dock { padding: 0 4px; gap: 2px; }
+  .role-dock-item { padding: 0 8px; }
+  .role-dock-item--on { padding: 0 10px; }
+  .role-dock-item--on .role-dock-label { max-width: 5.5rem; }
 }
-@media (min-width: 768px) { .student-dock { display: none; } }
+@media (min-width: 768px) { .role-dock { display: none; } }
 @media (prefers-reduced-motion: reduce) {
-  .student-dock, .student-dock-item, .student-dock-label { transition: none; }
-}
+  .role-dock, .role-dock-item, .role-dock-label { transition: none; } }
 
 /* Iteration 21: status chips in every tone, the month calendar, the day sheet. */
 .status-chip--success { background: var(--status-success-bg); color: var(--status-success-ink); }
@@ -697,8 +637,7 @@
 .portal-header-grid > .inb-mark { overflow: hidden; }
 .portal-header-grid > .inb-mark svg { flex-shrink: 1 !important; min-width: 0; max-width: 100%; height: auto; }
 /* Axe pass (Iteration 21): text on the banner's own colour, never on a lightened wash. */
-.day-banner-chip { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role-on-primary) 55%, transparent); }
-.day-banner-switch { background: transparent; box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--role-on-primary) 55%, transparent); }
+
 .cal-cell--outside .cal-num { opacity: 1; font-weight: 400; color: color-mix(in srgb, var(--role-ink, black) 72%, white); }
 .cal-cell--selected.cal-cell--outside .cal-num { color: var(--role-on-primary); }
 
@@ -923,8 +862,6 @@
 .split-facts > * { min-width: 0; padding: 16px 18px; }
 .split-facts > * + * { border-left: 1px solid var(--role-hairline); }
 
-
-
 /* Hatches and dashes as SVG tiles, not gradients (PSU redesign 13.1). A hatch marks a holiday or a lunch;
    the dashes mark weeks still to come. The role-coloured dashes are a mask over the role's colour. */
 .pattern-hatch-soft { background-color: #f8fafc; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Cpath d='M-3 3l6-6M0 12L12 0M9 15l6-6' stroke='%23E2E8F0' stroke-width='3'/%3E%3C/svg%3E"); }
@@ -932,3 +869,55 @@
 .pattern-hatch-role { background-color: color-mix(in srgb, var(--role-primary) 10%, white); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M-2 2l4-4M0 8L8 0M6 10l4-4' stroke='%2394A3B8' stroke-opacity='.55' stroke-width='1.6'/%3E%3C/svg%3E"); }
 .pattern-dash-wide { background-color: var(--color-psu-50); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='4'%3E%3Crect width='16' height='4'/%3E%3C/svg%3E") repeat-x left / 20px 100%; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='4'%3E%3Crect width='16' height='4'/%3E%3C/svg%3E") repeat-x left / 20px 100%; }
 .pattern-dash-fine { background-color: var(--color-psu-300); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Crect width='4' height='4'/%3E%3C/svg%3E") repeat-x left / 7px 100%; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Crect width='4' height='4'/%3E%3C/svg%3E") repeat-x left / 7px 100%; }
+
+/* The grouped More sheet (components/RoleDock.tsx). */
+.more-sheet { width: 100%; padding: 10px 16px max(16px, env(safe-area-inset-bottom)); border-radius: 26px 26px 0 0; background: #ffffff; box-shadow: 0 -16px 40px -16px rgb(15 23 42 / 0.35); }
+.more-sheet-group { margin: 14px 4px 8px; color: color-mix(in srgb, var(--role-ink) 60%, white); }
+.more-sheet-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; margin: 0; padding: 0; list-style: none; }
+.more-sheet-item { display: flex; width: 100%; min-height: 84px; flex-direction: column; align-items: center; gap: 6px; padding: 6px 2px; border-radius: 14px; text-align: center; color: var(--role-ink); }
+.more-sheet-item:hover { background: color-mix(in srgb, var(--role-primary) 6%, white); }
+.more-sheet-tile { position: relative; display: grid; width: 48px; height: 48px; place-items: center; border-radius: 14px; background: color-mix(in srgb, var(--role-primary) 12%, white); color: var(--role-primary); }
+.more-sheet-label { font-size: 12.5px; font-weight: 600; line-height: 1.2; hyphens: auto; overflow-wrap: break-word; }
+.more-sheet-account { display: flex; align-items: center; gap: 12px; margin-top: 12px; padding: 12px 14px; border-radius: 18px; background: color-mix(in srgb, var(--role-surface) 70%, #f1f5f9); }
+.more-sheet-avatar { display: grid; width: 42px; height: 42px; flex-shrink: 0; place-items: center; border-radius: 9999px; background: var(--inb-amber); color: var(--inb-navy); font-size: 14px; font-weight: 800; }
+
+/* The side menu (components/RoleShell.tsx): tablets show it as a rail that opens; computers show it whole. */
+.role-side { position: sticky; top: 0; display: none; height: 100dvh; width: 264px; flex-shrink: 0; flex-direction: column; background-color: var(--role-side); background-image: var(--inb-grain); color: var(--role-on-side); transition: width 200ms var(--inb-ease-out); }
+@media (min-width: 768px) { .role-side { display: flex; } }
+.role-side[data-collapsed] { width: 76px; }
+.role-side-brand { display: flex; min-height: 64px; align-items: center; gap: 10px; padding: 14px 16px; }
+.role-side-top { padding: 0 12px 10px; }
+.role-side-nav { flex: 1; padding: 6px 10px 14px; }
+.role-side-group + .role-side-group { margin-top: 2px; }
+.role-side-link, .role-side-head { position: relative; display: flex; width: 100%; min-height: 44px; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 12px; text-align: left; font-size: 14.5px; font-weight: 600; color: color-mix(in srgb, var(--role-on-side) 82%, transparent); }
+.role-side-link:hover, .role-side-head:hover { background: rgb(255 255 255 / 0.08); color: var(--role-on-side); }
+.role-side-link[aria-current="page"] { background: rgb(255 255 255 / 0.14); color: var(--role-on-side); }
+.role-side-link[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--inb-amber); }
+[data-role="supervisor"] .role-side-link[aria-current="page"]::before { background: #ffffff; }
+.role-side-detail { display: block; font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--role-on-side) 64%, transparent); }
+.role-side-sub { margin: 2px 0 6px 0; padding: 0 0 0 30px; list-style: none; }
+.role-side-sub .role-side-link { min-height: 40px; padding-block: 6px; font-size: 14px; font-weight: 500; }
+.role-side-count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 9999px; background: var(--inb-amber); color: var(--inb-navy); font-size: 11.5px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
+.role-side-foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid rgb(255 255 255 / 0.12); }
+.role-side-avatar { display: grid; width: 38px; height: 38px; flex-shrink: 0; place-items: center; border-radius: 9999px; background: var(--inb-amber); color: var(--inb-navy); font-size: 13px; font-weight: 800; }
+.role-side-toggle { display: grid; width: 44px; height: 44px; flex-shrink: 0; place-items: center; border-radius: 12px; color: var(--role-on-side); }
+.role-side-toggle:hover { background: rgb(255 255 255 / 0.1); }
+.role-side :focus-visible { outline: 3px solid var(--inb-amber); outline-offset: 2px; }
+.role-side[data-collapsed] .role-side-text, .role-side[data-collapsed] .role-side-sub, .role-side[data-collapsed] .role-side-top, .role-side[data-collapsed] .role-side-detail, .role-side[data-collapsed] .role-side-count, .role-side[data-collapsed] .role-side-chevron { display: none; }
+.role-side[data-collapsed] .role-side-link, .role-side[data-collapsed] .role-side-head { justify-content: center; padding-inline: 0; }
+.role-side[data-collapsed] .role-side-brand, .role-side[data-collapsed] .role-side-foot { justify-content: center; padding-inline: 8px; }
+@media (prefers-reduced-motion: reduce) { .role-side { transition: none; } }
+
+/* The top bar beside the side menu (tablets and computers). */
+.role-topbar { position: sticky; top: var(--inb-top-inset); z-index: 20; display: none; min-height: 72px; align-items: center; gap: 14px; padding: 12px 28px; border-bottom: 1px solid var(--role-hairline); background: color-mix(in srgb, var(--role-surface) 92%, white); }
+@media (min-width: 768px) { .role-topbar { display: flex; } }
+.role-topbar-title { margin: 0; font-family: var(--font-display); font-size: 26px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; color: var(--role-ink); }
+.role-topbar-context { margin: 2px 0 0; font-size: 13.5px; color: color-mix(in srgb, var(--role-ink) 68%, white); }
+@media (max-width: 767.98px) { .role-phone-only { display: block; } }
+@media (min-width: 768px) { .role-phone-only { display: none !important; } }
+
+/* "Needs you" rows (the trainee's Today, the retake banner): red left rule on a red tint, a word and an icon. */
+.needs-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 12px 14px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--status-late-ink) 22%, white); background: color-mix(in srgb, var(--status-late-bg) 60%, white); box-shadow: inset 4px 0 0 var(--status-late-ink); }
+.needs-row > div { flex: 1 1 12rem; }
+a.needs-row:hover { background: var(--status-late-bg); }
+.role-dock-badge--waiting { background: var(--status-info-ink); }

@@ -137,6 +137,7 @@ const Notifications = page("student", () => import("./pages/student/notification
 const ResolutionCenter = page("student", () => import("./pages/student/ResolutionCenter"));
 const StudentTimeRecord = page("student", () => import("./pages/student/TimeRecord"));
 const StudentAnnouncements = page("student", () => import("./pages/student/Announcements"));
+const StudentMessages = page("student", () => import("./pages/student/Messages"));
 const StudentJournal = page("student", () => import("./pages/student/Journal"));
 const StudentCompletion = page("student", () => import("./pages/student/Completion"));
 const SupervisorAnnouncements = page("supervisor", () => import("./pages/supervisor/Announcements"));
@@ -310,6 +311,11 @@ function App() {
         <Route
           path="/announcements"
           element={<StudentAnnouncements />}
+        />
+
+        <Route
+          path="/messages"
+          element={<StudentMessages />}
         />
 
         <Route

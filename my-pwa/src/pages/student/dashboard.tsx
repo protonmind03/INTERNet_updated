@@ -1,40 +1,42 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import Icon from "../../components/Icon";
-import ProjectionLine from "../../components/ProjectionLine";
-import Tooltip from "../../components/Tooltip";
-import {
-  Card,
-  CardHeader,
-  EmptyState,
-  ErrorNotice,
-  ProgressRing,
-  Skeleton,
-  SkeletonRows,
-  StatusBadge,
-} from "../../components/ui";
+import { HoursRoad } from "../../brand/motifs";
+import Icon, { type IconName } from "../../components/Icon";
+import InfoTip from "../../components/InfoTip";
+import { Card, ErrorNotice, Skeleton, SkeletonRows } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import {
-  daysUntil,
-  dueLabel,
-  formatDate,
-  formatDayDate,
-  formatHours,
-  formatTime,
-  greetingFor,
-} from "../../lib/format";
+import { daysUntil, dueLabel, formatDate, formatHours, greetingFor } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { savedFetch } from "../../lib/offlineStore";
+import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { useProjections } from "../../lib/useProjections";
-import { MissedTimeOutNotice } from "./AttendanceCorrections";
-import DayStatus, { NextStepButton } from "./DayStatus";
+import { appealUntil, appealableKinds } from "./appealRules";
+import { LateTimeOutDialog } from "./AttendanceCorrections";
+import { PhotoRedoBanner } from "./PhotoRedo";
 import TimeInProvider from "./TimeInProvider";
+import TodayCard from "./TodayCard";
 import { useTimeIn } from "./timeInContext";
-import { logDateKey, type AttendanceLog } from "./useAttendance";
-import { weeklyShiftHours } from "../../lib/studentCalendar";
-import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
+import { logDateKey } from "./useAttendance";
+import QrHandOff from "../../components/QrHandOff";
+
+/*
+|--------------------------------------------------------------------------
+| TODAY (PSU redesign, 7A)
+|--------------------------------------------------------------------------
+|
+| In order: the greeting and the date; the time card (TodayCard.tsx); one
+| red "Needs you" row for each thing to act on (a photo to retake, a
+| missed time-out, a decision that can still be appealed, an overdue
+| task); OJT hours as a road with the expected finish, an "i" saying only
+| verified days count; shortcuts as hairline rows; and Up next. One line
+| per card: explanations sit behind the "i" or in Help. On a tablet or
+| computer the time card is larger, in two columns, with the hand-off to
+| the phone for time-in.
+|
+*/
 
 type DashboardData = {
   hoursRendered: number;
@@ -57,8 +59,6 @@ type Task = {
   assigned_by: string | null;
 };
 
-type ScheduleDay = { day: string; hours: number | string | null; week?: number | null };
-
 const OPEN_TASK_STATUSES = ["Pending", "In Progress"];
 
 /** Mounts the shared time-in actions above the page, which reads the attendance before it renders the layout. */
@@ -74,35 +74,28 @@ function DashboardPage() {
   const student = useAccount("student");
   const studentId = student?.student_id;
   const { attendance } = useTimeIn();
+  const wide = useMediaQuery("(min-width: 1024px)");
 
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
-  const [weeklyScheduleHours, setWeeklyScheduleHours] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [closing, setClosing] = useState(false);
   useLaunchReady(!loading);
 
   const load = useCallback(async () => {
     if (!studentId) return;
     const id = encodeURIComponent(studentId);
     try {
-      const [summaryResponse, tasksResponse, scheduleResponse] = await Promise.all([
+      const [summaryResponse, tasksResponse] = await Promise.all([
         savedFetch("student", "dashboard", `${API_URL}/api/dashboard/${id}`, withStudentAuth()),
         savedFetch("student", "tasks", `${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
-        savedFetch("student", "schedule", `${API_URL}/api/ojt-schedule/${id}`, withStudentAuth()),
       ]);
       if (!summaryResponse.ok) throw new Error("Could not load your progress.");
       setSummary((await summaryResponse.json()) as DashboardData);
-
-      // Tasks and schedule only enrich the page; the summary can stand alone.
       if (tasksResponse.ok) {
         const list = await tasksResponse.json();
         setTasks(Array.isArray(list) ? (list as Task[]) : []);
-      }
-      if (scheduleResponse.ok) {
-        const data = (await scheduleResponse.json()) as { schedule?: ScheduleDay[]; pattern?: { weeks: number; anchor: string | null } };
-        // A two-week pattern's hours are an average week (Iteration 11).
-        setWeeklyScheduleHours(weeklyShiftHours(data.schedule || [], data.pattern));
       }
       setError("");
     } catch (loadError) {
@@ -138,24 +131,71 @@ function DashboardPage() {
         }),
     [tasks]
   );
-
-  const needsAttention = attendance.logs.filter(
-    (log) => log.status === "Rejected" || log.status === "Flagged"
-  ).length;
   const overdueTasks = openTasks.filter((task) => (daysUntil(task.due_date) ?? 0) < 0).length;
+  // Decisions that can still be appealed, newest first.
+  const appealable = attendance.logs.filter((log) => appealableKinds(log).length > 0 && (log.status === "Rejected" || log.photo_rejected_at || log.time_corrected_at));
+  const missed = attendance.openPastLog;
 
   const firstName = (student?.name || "").trim().split(/\s+/)[0] || "there";
+  const timeCard = <TodayCard large={wide} />;
+
+  const needs = (
+    <div className="space-y-2.5" aria-label="Needs you">
+      <PhotoRedoBanner />
+      {missed && (
+        <button type="button" onClick={() => setClosing(true)} className="needs-row w-full text-left">
+          <Icon name="clock" className="shrink-0 text-(--status-late-ink)" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-bold text-(--status-late-ink)">Enter your missed time-out</span>
+            <span className="block text-[13.5px] text-slate-700">{formatPhDay(logDateKey(missed), { weekday: "long", month: "short", day: "numeric" })} has no time-out</span>
+          </span>
+          <Icon name="chevron-right" size={18} className="shrink-0 text-(--status-late-ink)" />
+        </button>
+      )}
+      {appealable.slice(0, 1).map((log) => {
+        const until = appealUntil(log);
+        return (
+          <Link key={log.id} to={`/daily-log?filter=fix`} className="needs-row">
+            <Icon name="flag" className="shrink-0 text-(--status-late-ink)" />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[15px] font-bold text-(--status-late-ink)">
+                {log.status === "Rejected" ? "A day was rejected" : log.photo_rejected_at ? "A time-in photo was rejected" : "Your times were corrected"}
+              </span>
+              <span className="block text-[13.5px] text-slate-700">
+                {formatPhDay(logDateKey(log), { weekday: "short", month: "short", day: "numeric" })}
+                {until ? ` · you can appeal until ${formatDate(until.toISOString())}` : ""}
+              </span>
+            </span>
+            <Icon name="chevron-right" size={18} className="shrink-0 text-(--status-late-ink)" />
+          </Link>
+        );
+      })}
+      {overdueTasks > 0 && (
+        <Link to="/task" className="needs-row">
+          <Icon name="tasks" className="shrink-0 text-(--status-late-ink)" />
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-bold text-(--status-late-ink)">
+              {overdueTasks === 1 ? "1 task is past due" : `${overdueTasks} tasks are past due`}
+            </span>
+            <span className="block text-[13.5px] text-slate-700">Submit your work as soon as you can</span>
+          </span>
+          <Icon name="chevron-right" size={18} className="shrink-0 text-(--status-late-ink)" />
+        </Link>
+      )}
+    </div>
+  );
 
   return (
-    <StudentLayout
-      title="Today"
-      subtitle={`${greetingFor(new Date())}, ${firstName}.`}
-      actions={<NextStepButton />}
-    >
-      <div className="space-y-5">
-        <DayStatus />
+    <StudentLayout title="Today" showPhotoRedo={false}>
+      <div className="mb-3 flex items-baseline justify-between gap-3 text-[15px] text-slate-700">
+        <p>
+          {greetingFor(new Date())}, {firstName}.
+        </p>
+        <p className="tabular shrink-0 text-[14px] text-slate-600">{formatPhDay(phToday(), { weekday: "short", month: "short", day: "numeric" })}</p>
+      </div>
 
-        {(attendance.error || error) && (
+      {(attendance.error || error) && (
+        <div className="mb-4">
           <ErrorNotice
             message={attendance.error || error}
             onRetry={() => {
@@ -163,385 +203,136 @@ function DashboardPage() {
               void load();
             }}
           />
-        )}
+        </div>
+      )}
 
-        <MissedTimeOutNotice attendance={attendance} />
-
-        {summary?.completedAt && (
-          <div className="flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3.5">
-            <Icon name="check-circle" className="mt-0.5 shrink-0 text-emerald-600" />
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-emerald-950">
-                You completed your required hours on {formatDate(summary.completedAt)}
-              </p>
-              <p className="text-sm text-emerald-900">
-                <Link to="/student/completion" className="font-semibold underline underline-offset-2">
-                  See what else is left
-                </Link>{" "}
-                before your OJT is done, then print your time record for signing.
-              </p>
-            </div>
-            <Link
-              to="/time-record"
-              className="shrink-0 text-sm font-semibold text-emerald-900 underline-offset-2 hover:underline"
-            >
-              Time record
-            </Link>
-          </div>
-        )}
-
-        {(needsAttention > 0 || overdueTasks > 0) && (
-          <div
-            className={`grid gap-3 ${
-              needsAttention > 0 && overdueTasks > 0 ? "sm:grid-cols-2" : ""
-            }`}
-          >
-            {needsAttention > 0 && (
-              <AttentionLink
-                to="/daily-log"
-                title={`${needsAttention} attendance ${needsAttention === 1 ? "log was" : "logs were"} rejected`}
-                detail="Read your supervisor's note, then ask for another review."
-              />
-            )}
-            {overdueTasks > 0 && (
-              <AttentionLink
-                to="/task"
-                title={`${overdueTasks} ${overdueTasks === 1 ? "task is" : "tasks are"} past due`}
-                detail="Submit your work as soon as you can."
-              />
-            )}
-          </div>
-        )}
-
-        <div className="grid gap-5 lg:grid-cols-3">
-          <div className="min-w-0 space-y-5 lg:col-span-2">
-            <ProgressCard
-              summary={summary}
-              loading={loading}
-              weeklyScheduleHours={weeklyScheduleHours}
-            />
-            <WeekCard logs={attendance.logs} loading={attendance.loading} />
-          </div>
-
-          <div className="min-w-0 space-y-5">
-            <Card>
-              <CardHeader
-                title="Up next"
-                description={
-                  openTasks.length > 0
-                    ? `${openTasks.length} open ${openTasks.length === 1 ? "task" : "tasks"}`
-                    : undefined
-                }
-                action={<SeeAll to="/task" />}
-              />
-              {loading ? (
-                <SkeletonRows rows={3} />
-              ) : openTasks.length === 0 ? (
-                <EmptyState
-                  icon="tasks"
-                  title="No open tasks"
-                  description="Tasks your supervisor assigns will appear here."
-                />
-              ) : (
-                <ul className="mt-2 divide-y divide-slate-100">
-                  {openTasks.slice(0, 4).map((task) => {
-                    const days = daysUntil(task.due_date);
-                    const late = days !== null && days < 0;
-                    const soon = days !== null && days >= 0 && days <= 2;
-                    return (
-                      <li key={task.id}>
-                        <Link
-                          to="/task"
-                          className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 sm:px-5"
-                        >
-                          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-psu-50 text-psu-700 ring-1 ring-inset ring-psu-600/10">
-                            <Icon name="tasks" size={16} />
-                          </span>
-                          <span className="min-w-0 flex-1">
-                            <span className="block truncate text-sm font-medium text-slate-900">
-                              {task.title}
-                            </span>
-                            <span
-                              className={`mt-0.5 block text-xs ${
-                                late
-                                  ? "font-semibold text-red-600"
-                                  : soon
-                                    ? "font-semibold text-amber-700"
-                                    : "text-slate-500"
-                              }`}
-                            >
-                              {dueLabel(task.due_date)}
-                            </span>
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )}
-            </Card>
-
-            <Card>
-              <CardHeader title="Recent attendance" action={<SeeAll to="/daily-log" />} />
-              {attendance.loading ? (
-                <SkeletonRows rows={3} />
-              ) : attendance.logs.length === 0 ? (
-                <EmptyState
-                  icon="clock"
-                  title="No attendance yet"
-                  description="Your daily logs will appear here once you time in."
-                />
-              ) : (
-                <ul className="mt-2 divide-y divide-slate-100">
-                  {attendance.logs.slice(0, 4).map((log) => (
-                    <li
-                      key={log.id}
-                      className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5"
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900">
-                          {formatDayDate(logDateKey(log))}
-                        </p>
-                        <p className="tabular mt-0.5 text-xs text-slate-500">
-                          {formatTime(log.time_in)} – {formatTime(log.time_out)}
-                          {log.hours !== null && ` · ${formatHours(log.hours)}`}
-                        </p>
-                      </div>
-                      <StatusBadge status={log.status} />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </Card>
-          </div>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] lg:items-start lg:gap-6">
+        <div className="min-w-0 space-y-4">
+          {timeCard}
+          {needs}
+          <HoursCard summary={summary} loading={loading} />
+          {summary?.completedAt && (
+            <p className="rounded-xl bg-(--status-success-bg) px-4 py-3 text-[14px] text-(--status-success-ink)">
+              <span className="font-bold">Required hours completed on {formatDate(summary.completedAt)}.</span>{" "}
+              <Link to="/student/completion" className="font-semibold underline underline-offset-2">
+                See what else is left
+              </Link>
+            </p>
+          )}
+        </div>
+        <div className="min-w-0 space-y-4">
+          <Shortcuts openTasks={openTasks.length} />
+          <UpNext tasks={openTasks} loading={loading} />
+          {wide && <QrHandOff />}
         </div>
       </div>
+
+      {closing && missed && <LateTimeOutDialog log={missed} attendance={attendance} onClose={() => setClosing(false)} />}
     </StudentLayout>
   );
 }
 
-function SeeAll({ to }: { to: string }) {
-  return (
-    <Link
-      to={to}
-      className="inline-flex items-center gap-1 text-sm font-semibold text-psu-700 hover:underline"
-    >
-      See all
-      <Icon name="chevron-right" size={14} />
-    </Link>
-  );
-}
+/* ---------- OJT hours: a road with a pin and a flag ---------- */
 
-function AttentionLink({
-  to,
-  title,
-  detail,
-}: {
-  to: string;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <Link
-      to={to}
-      className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 px-4 py-3 hover:bg-red-100/70"
-    >
-      <Icon name="alert" className="mt-0.5 shrink-0 text-red-600" />
-      <span className="min-w-0 flex-1">
-        <span className="block text-sm font-semibold text-red-900">{title}</span>
-        <span className="block text-sm text-red-800">{detail}</span>
-      </span>
-      <Icon name="chevron-right" size={16} className="mt-1 shrink-0 text-red-400" />
-    </Link>
-  );
-}
-
-/*
-|--------------------------------------------------------------------------
-| OJT PROGRESS
-|--------------------------------------------------------------------------
-*/
-
-function ProgressCard({
-  summary,
-  loading,
-  weeklyScheduleHours,
-}: {
-  summary: DashboardData | null;
-  loading: boolean;
-  weeklyScheduleHours: number;
-}) {
+function HoursCard({ summary, loading }: { summary: DashboardData | null; loading: boolean }) {
   const projection = [...useProjections("student").values()][0];
   if (loading || !summary) {
-    // The card's own shape, filled in place when the figures arrive (Iteration 14, P2).
     return (
-      <Card>
-        <CardHeader title="OJT progress" description="Verified hours toward your requirement" />
-        <div className="flex flex-col items-center gap-5 px-4 pb-5 pt-4 sm:flex-row sm:gap-7 sm:px-5" aria-hidden="true">
-          <Skeleton className="h-[132px] w-[132px] shrink-0 rounded-full" />
-          <div className="w-full min-w-0 flex-1">
-            <div className="grid grid-cols-3 gap-2 sm:gap-3">
-              {[0, 1, 2].map((figure) => (
-                <Skeleton key={figure} className="h-[62px] rounded-lg" />
-              ))}
-            </div>
-            <div className="mt-4 space-y-2 border-t border-slate-100 pt-3">
-              <Skeleton className="h-4 w-full" />
-              <Skeleton className="h-4 w-3/4" />
-            </div>
-          </div>
-        </div>
+      <Card className="p-4">
+        <Skeleton className="h-3 w-24" />
+        <Skeleton className="mt-3 h-7 w-44" />
+        <Skeleton className="mt-6 h-7 w-full" />
       </Card>
     );
   }
-
   const rendered = Number(summary.hoursRendered) || 0;
   const required = Number(summary.requiredHours) || 0;
-  const remaining = Math.max(0, required - rendered);
-  const percent = required > 0 ? Math.min(100, (rendered / required) * 100) : 0;
-
-  let outlook = "Your hours count once your supervisor verifies each log.";
-  if (required > 0 && remaining === 0) {
-    outlook = "You have completed your required hours.";
-  } else if (weeklyScheduleHours > 0 && remaining > 0) {
-    const weeks = Math.ceil(remaining / weeklyScheduleHours);
-    outlook = `At your schedule of ${Number(weeklyScheduleHours.toFixed(1))} hours a week, about ${weeks} ${
-      weeks === 1 ? "week" : "weeks"
-    } to go.`;
-  }
-
+  const left = Math.max(0, required - rendered);
+  const finish = projection?.projected_finish && left > 0 ? `expected to finish ${formatDate(projection.projected_finish)}` : null;
   return (
-    <Card>
-      <CardHeader title="OJT progress" description="Verified hours toward your requirement" />
-      <div className="flex flex-col items-center gap-5 px-4 pb-5 pt-4 sm:flex-row sm:gap-7 sm:px-5">
-        <ProgressRing
-          value={percent}
-          label={`${Math.round(percent)} percent of required hours completed`}
-        >
-          <span className="text-3xl font-bold tracking-tight text-slate-900">
-            {Math.round(percent)}%
-          </span>
-          <span className="text-xs text-slate-500">complete</span>
-        </ProgressRing>
-
-        <div className="w-full min-w-0 flex-1">
-          <dl className="grid grid-cols-3 gap-2 text-center sm:gap-3 sm:text-left">
-            <Figure label="Rendered" value={formatHours(rendered)} />
-            <Figure label="Remaining" value={formatHours(remaining)} />
-            <Figure label="Days verified" value={String(summary.daysLogged)} />
-          </dl>
-          <p className="mt-4 border-t border-slate-100 pt-3 text-sm text-slate-600">
-            {outlook}
-          </p>
-          <ProjectionLine projection={projection} own className="mt-1" />
-          {summary.totalTasks > 0 && (
-            <p className="mt-1 text-sm text-slate-600">
-              {summary.completedTasks} of {summary.totalTasks} tasks reviewed.
-            </p>
-          )}
-        </div>
+    <Card className="p-4">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="eyebrow text-(--role-ink)/80">OJT hours</h2>
+        <InfoTip label="About OJT hours" text="Only verified days count. A pending day is added once your supervisor verifies it." />
+      </div>
+      <p className="mt-1.5">
+        <span className="font-display tabular text-[30px] font-extrabold leading-none text-slate-900">{formatHours(rendered).replace(/ h$/, "")}</span>{" "}
+        <span className="text-[14.5px] text-slate-700">
+          of {formatHours(required)}
+          {required > 0 && left > 0 ? ` · ${formatHours(left)} left` : required > 0 ? " · done" : ""}
+          {finish ? ` · ${finish}` : ""}
+        </span>
+      </p>
+      {projection?.at_risk && left > 0 && (
+        <p className="mt-1 text-[13px] font-semibold text-(--status-late-ink)">At this pace you may finish after the term ends.</p>
+      )}
+      <HoursRoad done={rendered} required={required} label={`${formatHours(rendered)} of ${formatHours(required)} verified`} />
+      <div className="tabular mt-1.5 flex justify-between text-[12px] text-slate-600">
+        <span>0 h</span>
+        <span>{formatHours(required)}</span>
       </div>
     </Card>
   );
 }
 
-function Figure({ label, value }: { label: string; value: string }) {
+/* ---------- Shortcuts, as hairline rows ---------- */
+
+function Shortcuts({ openTasks }: { openTasks: number }) {
+  const rows: Array<{ label: string; to: string; icon: IconName; detail?: string }> = [
+    { label: "Time record", to: "/time-record", icon: "printer" },
+    { label: "Documents", to: "/documents", icon: "document" },
+    { label: "Weekly journal", to: "/journal", icon: "note" },
+    { label: "Tasks", to: "/task", icon: "tasks", detail: openTasks > 0 ? `${openTasks} open` : undefined },
+  ];
   return (
-    <div className="rounded-lg bg-psu-50/80 px-2 py-2.5 ring-1 ring-inset ring-psu-600/10 sm:px-3">
-      <dt className="text-xs text-slate-500">{label}</dt>
-      <dd className="tabular mt-0.5 text-lg font-semibold text-slate-900">{value}</dd>
-    </div>
+    <Card>
+      <ul className="divide-y divide-(--role-hairline)">
+        {rows.map((row) => (
+          <li key={row.to}>
+            <Link to={row.to} className="flex min-h-13 items-center gap-3 px-4 py-3 hover:bg-psu-50/50">
+              <Icon name={row.icon} size={19} className="shrink-0 text-psu-700" />
+              <span className="flex-1 text-[15px] font-semibold text-slate-900">{row.label}</span>
+              {row.detail && <span className="text-[13px] font-semibold text-slate-600">{row.detail}</span>}
+              <Icon name="chevron-right" size={16} className="shrink-0 text-slate-400" />
+            </Link>
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }
 
-/*
-|--------------------------------------------------------------------------
-| LAST 7 DAYS
-|--------------------------------------------------------------------------
-|
-| Hours per day for the past week, taken from the student's own logs. One
-| series, so one colour and no legend; the value sits on each column.
-|
-*/
+/* ---------- Up next ---------- */
 
-function WeekCard({ logs, loading }: { logs: AttendanceLog[]; loading: boolean }) {
-  const days = useMemo(() => {
-    const byDate = new Map<string, number>();
-    for (const log of logs) {
-      const hours = Number(log.hours);
-      if (Number.isFinite(hours) && hours > 0) {
-        const key = logDateKey(log);
-        byDate.set(key, (byDate.get(key) || 0) + hours);
-      }
-    }
-    const today = phToday();
-    return Array.from({ length: 7 }, (_, index) => {
-      const key = phAddDays(today, index - 6);
-      return {
-        key,
-        hours: byDate.get(key) || 0,
-        weekday: formatPhDay(key, { weekday: "short" }),
-        isToday: index === 6,
-      };
-    });
-  }, [logs]);
-
-  const total = days.reduce((sum, day) => sum + day.hours, 0);
-  // The scale tops out at a full working day, or higher if a day ran long.
-  const scaleMax = Math.max(8, ...days.map((day) => day.hours));
-
+function UpNext({ tasks, loading }: { tasks: Task[]; loading: boolean }) {
   return (
     <Card>
-      <CardHeader
-        title="Last 7 days"
-        description="Hours logged each day"
-        action={
-          <p className="text-sm text-slate-500">
-            <span className="font-semibold text-slate-900">{formatHours(total)}</span> total
-          </p>
-        }
-      />
-      <div className="px-4 pb-4 pt-5 sm:px-5">
-        {loading ? (
-          <Skeleton className="h-40 w-full" />
-        ) : (
-          <div className="flex items-end gap-1 border-b border-slate-200 sm:gap-3">
-            {days.map((day) => (
-              <Tooltip
-                key={day.key}
-                label={`${formatDayDate(day.key)}: ${day.hours > 0 ? formatHours(day.hours) : "no hours logged"}`}
-                className="h-40 flex-1 flex-col items-center justify-end"
-              >
-                <span
-                  className={`tabular mb-1 text-xs ${
-                    day.hours > 0 ? "font-medium text-slate-700" : "text-slate-300"
-                  }`}
-                >
-                  {day.hours > 0 ? Number(day.hours.toFixed(1)) : "–"}
-                </span>
-                <div
-                  className="w-full max-w-7 rounded-t-md bg-psu-700 transition-[height,filter] duration-500 ease-soft group-hover/tip:brightness-90"
-                  style={{ height: `${Math.round((day.hours / scaleMax) * 120)}px` }}
-                />
-              </Tooltip>
-            ))}
-          </div>
-        )}
-        {!loading && (
-          <div className="mt-2 flex gap-1 sm:gap-3">
-            {days.map((day) => (
-              <span
-                key={day.key}
-                className={`flex-1 text-center text-xs ${
-                  day.isToday ? "font-semibold text-psu-700" : "text-slate-500"
-                }`}
-              >
-                {day.isToday ? "Today" : day.weekday}
-              </span>
-            ))}
-          </div>
-        )}
+      <div className="flex items-center justify-between gap-3 px-4 pt-3.5">
+        <h2 className="text-[16px] font-bold text-slate-900">Up next</h2>
+        <Link to="/task" className="inline-flex min-h-11 items-center text-sm font-bold text-psu-700 hover:underline">
+          See all
+        </Link>
       </div>
+      {loading ? (
+        <SkeletonRows rows={2} />
+      ) : tasks.length === 0 ? (
+        <p className="px-4 pb-4 text-[14px] text-slate-600">No open tasks.</p>
+      ) : (
+        <ul className="divide-y divide-(--role-hairline) border-t border-(--role-hairline)">
+          {tasks.slice(0, 3).map((task) => {
+            const days = daysUntil(task.due_date);
+            const late = days !== null && days < 0;
+            return (
+              <li key={task.id}>
+                <Link to="/task" className="flex min-h-12 items-center justify-between gap-3 px-4 py-2.5 hover:bg-psu-50/50">
+                  <span className="min-w-0 truncate text-[15px] text-slate-900">{task.title}</span>
+                  <span className={`shrink-0 text-[13px] font-semibold ${late ? "text-(--status-late-ink)" : "text-slate-600"}`}>{dueLabel(task.due_date)}</span>
+                </Link>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </Card>
   );
 }

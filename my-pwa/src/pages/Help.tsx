@@ -1,5 +1,7 @@
-import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
+import { HELP_ANSWERS, HELP_ROLE_NAME, type HelpRole } from "../lib/helpAnswers";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { BrandLockup, PsuSeal } from "../brand";
 import { ATTENDANCE_RULES_HELP, DECIDED_FIRST, OFFLINE_TABLE, type OfflineRow } from "../lib/offlineHelp";
 
@@ -30,7 +32,155 @@ function Items({ items }: { items: string[] }) {
   );
 }
 
+/*
+| PSU redesign, 8A: the Help centre. The same answers as "Help for this
+| screen" (lib/helpAnswers.ts), written once: pick a role, browse by topic,
+| search everything ("/" jumps to the search). One answer open at a time.
+| Public, so anyone can read it before signing in.
+*/
+const ROLES: HelpRole[] = ["student", "supervisor", "coordinator"];
+
+function startingRole(params: URLSearchParams): HelpRole {
+  const asked = params.get("role");
+  if (ROLES.includes(asked as HelpRole)) return asked as HelpRole;
+  try {
+    const active = localStorage.getItem("active_role");
+    if (ROLES.includes(active as HelpRole)) return active as HelpRole;
+  } catch {
+    /* private mode: the trainee */
+  }
+  return "student";
+}
+
+function HelpCentre() {
+  const [params] = useSearchParams();
+  const [role, setRole] = useState<HelpRole>(() => startingRole(params));
+  const [query, setQuery] = useState("");
+  const [topic, setTopic] = useState<string | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const search = useRef<HTMLInputElement | null>(null);
+  const signedIn = (() => {
+    try {
+      return localStorage.getItem("active_role");
+    } catch {
+      return null;
+    }
+  })();
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const typing = (event.target as HTMLElement | null)?.matches?.("input, textarea, select");
+      if (event.key === "/" && !typing) {
+        event.preventDefault();
+        search.current?.focus();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
+
+  const mine = HELP_ANSWERS.filter((answer) => answer.roles.includes(role));
+  const topics = [...new Set(mine.map((answer) => answer.topic))];
+  const text = query.trim().toLowerCase();
+  const shown = mine.filter(
+    (answer) => (!topic || answer.topic === topic) && (!text || `${answer.question} ${answer.answer} ${answer.topic}`.toLowerCase().includes(text))
+  );
+
+  return (
+    <section aria-labelledby="help-centre-title" className="card-hairline rounded-2xl p-5 sm:p-7">
+      <p className="eyebrow text-psu-700">Help centre</p>
+      <h1 id="help-centre-title" className="font-display mt-1 text-[30px] font-extrabold leading-tight tracking-tight text-slate-900">
+        What do you need help with?
+      </h1>
+      <div role="tablist" aria-label="I'm a" className="mt-4 flex flex-wrap gap-2">
+        {ROLES.map((each) => (
+          <button
+            key={each}
+            type="button"
+            role="tab"
+            aria-selected={each === role}
+            onClick={() => {
+              setRole(each);
+              setTopic(null);
+              setOpen(null);
+            }}
+            className={`min-h-11 rounded-full px-4 text-sm font-bold ${each === role ? "bg-psu-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            {HELP_ROLE_NAME[each]}
+          </button>
+        ))}
+      </div>
+      <label className="relative mt-4 block">
+        <span className="sr-only">Search help</span>
+        <input
+          ref={search}
+          type="search"
+          value={query}
+          onChange={(event) => setQuery(event.target.value)}
+          placeholder="Search help, for example “camera check”"
+          className="field min-h-12 pr-10"
+        />
+        <kbd aria-hidden="true" className="absolute right-3 top-1/2 -translate-y-1/2 rounded border border-slate-300 px-1.5 text-xs text-slate-500">
+          /
+        </kbd>
+      </label>
+      <div className="mt-4 flex flex-wrap gap-2" aria-label="Topics">
+        {topics.map((each) => (
+          <button
+            key={each}
+            type="button"
+            aria-pressed={topic === each}
+            onClick={() => setTopic(topic === each ? null : each)}
+            className={`min-h-10 rounded-full px-3.5 text-[13.5px] font-semibold ${topic === each ? "bg-psu-100 text-psu-900 ring-1 ring-psu-600/30" : "bg-slate-100 text-slate-700"}`}
+          >
+            {each} <span className="tabular text-slate-500">{mine.filter((answer) => answer.topic === each).length}</span>
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <p className="mt-5 text-sm text-slate-600">Nothing matches. Try another word, or the table below.</p>
+      ) : (
+        <ul className="mt-5 divide-y divide-slate-200 border-y border-slate-200">
+          {shown.map((answer) => {
+            const isOpen = open === answer.id;
+            return (
+              <li key={answer.id}>
+                <button
+                  type="button"
+                  aria-expanded={isOpen}
+                  onClick={() => setOpen(isOpen ? null : answer.id)}
+                  className="flex min-h-12 w-full items-center justify-between gap-3 py-2 text-left"
+                >
+                  <span>
+                    <span className="eyebrow block text-slate-500">{answer.topic}</span>
+                    <span className="block text-[15.5px] font-semibold text-slate-900">{answer.question}</span>
+                  </span>
+                  <span aria-hidden="true" className="text-xl text-slate-400">
+                    {isOpen ? "−" : "+"}
+                  </span>
+                </button>
+                {isOpen && <p className="pb-3 text-[15px] leading-relaxed text-slate-700">{answer.answer}</p>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      <p className="mt-4 text-sm text-slate-700">
+        Still stuck?{" "}
+        {signedIn ? (
+          <span>Message your supervisor or coordinator from your portal.</span>
+        ) : (
+          <Link to={`/${role}/sign-in`} className="font-bold text-psu-700 underline-offset-2 hover:underline">
+            Sign in to message your supervisor or coordinator
+          </Link>
+        )}
+      </p>
+    </section>
+  );
+}
+
 export default function Help() {
+  const standalone = useMediaQuery("(display-mode: standalone)");
   useEffect(() => {
     document.title = "Help · INTERNet";
     // Opened as /help#offline: go to that part.
@@ -43,14 +193,21 @@ export default function Help() {
       <div className="mx-auto w-full max-w-5xl animate-page-in">
         <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
           <BrandLockup size={24} tagline={null} />
-          <Link to="/" className="rounded-md text-sm font-medium text-psu-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-psu-600">
-            Back to INTERNet
-          </Link>
+          {/* Inside the installed app there is no way back to the website (PSU redesign 5). */}
+          {standalone ? (
+            <button type="button" onClick={() => window.history.back()} className="min-h-11 rounded-md text-sm font-medium text-psu-700 underline-offset-2 hover:underline">
+              Back
+            </button>
+          ) : (
+            <Link to="/" className="inline-flex min-h-11 items-center rounded-md text-sm font-medium text-psu-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-psu-600">
+              Back to INTERNet
+            </Link>
+          )}
         </div>
 
-        <h1 className="text-2xl font-bold tracking-tight text-slate-900">Help</h1>
+        <HelpCentre />
 
-        <section aria-labelledby="attendance-times" className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+        <section aria-labelledby="attendance-times" className="mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="attendance-times" className="text-lg font-semibold text-slate-900">
             Attendance times
           </h2>
@@ -64,7 +221,7 @@ export default function Help() {
           </ul>
         </section>
 
-        <section aria-labelledby="offline" className="mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+        <section aria-labelledby="offline" className="mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="offline" className="text-lg font-semibold text-slate-900">
             With no connection
           </h2>
@@ -130,7 +287,7 @@ export default function Help() {
         </section>
 
         {/* Iteration 23: the landing page's footer links here. */}
-        <section aria-labelledby="privacy" className="mt-6 scroll-mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+        <section aria-labelledby="privacy" className="mt-6 scroll-mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="privacy" className="text-lg font-semibold text-slate-900">
             Privacy notice
           </h2>
@@ -142,7 +299,7 @@ export default function Help() {
           </p>
         </section>
 
-        <section aria-labelledby="contact" className="mt-6 scroll-mt-6 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:p-7">
+        <section aria-labelledby="contact" className="mt-6 scroll-mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="contact" className="text-lg font-semibold text-slate-900">
             Contact the OJT office
           </h2>

@@ -250,6 +250,16 @@ const PATHS = {
     </>
   ),
   heart: <path d="M12 20s-7-4.4-7-10a4 4 0 0 1 7-2.6A4 4 0 0 1 19 10c0 5.6-7 10-7 10Z" />,
+  // PSU redesign: Help and Messages in the grouped More sheet and side menus.
+  help: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 2-2.8 2.4-2.8 4.3M12 17.5h.01" />
+    </>
+  ),
+  chat: <path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.4A7.5 7.5 0 1 1 20 11.5Z" />,
+  "chevrons-left": <path d="m11 17-5-5 5-5M18 17l-5-5 5-5" />,
+  "chevrons-right": <path d="m13 17 5-5-5-5M6 17l5-5-5-5" />,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

@@ -30,20 +30,22 @@ export function PhotoRedoBanner() {
   if (!log || log.photo_redo_status !== "required" || log.time_out) return null;
 
   const deadline = log.photo_redo_due_at
-    ? `by ${formatTime(log.photo_redo_due_at)}`
-    : "before you tap End break";
+    ? `due by ${formatTime(log.photo_redo_due_at)}`
+    : "due before End break";
+  // PSU redesign: one red "Needs you" row; Retake is a solid button with a camera, never like Appeal.
   return (
-    <div role="status" className="mb-5 flex flex-col gap-3 rounded-xl bg-amber-50 px-4 py-3.5 ring-1 ring-inset ring-amber-600/25 sm:flex-row sm:items-center">
-      <Icon name="camera" className="hidden shrink-0 text-amber-700 sm:block" />
-      <div className="min-w-0 flex-1 text-sm text-amber-950">
-        <p className="font-semibold">Retake your time-in photo {deadline}.</p>
-        <p className="mt-0.5">
-          Your supervisor rejected it{log.photo_rejection_reason ? `: ${log.photo_rejection_reason}` : "."} Keep working:
-          your hours still count. If no new photo is taken in time, today is marked absent.
+    <div role="status" className="needs-row mb-4">
+      <Icon name="camera" className="mt-0.5 shrink-0 text-(--status-late-ink)" />
+      <div className="min-w-0 flex-1">
+        <p className="text-[15px] font-bold text-(--status-late-ink)">Retake your time-in photo</p>
+        <p className="mt-0.5 text-[13.5px] text-slate-700">
+          {log.photo_rejection_reason ? `“${log.photo_rejection_reason}” · ` : ""}
+          {deadline}
+          <span className="sr-only">. Keep working: your hours still count. If no new photo is taken in time, today is marked absent.</span>
         </p>
       </div>
       <Button icon="camera" onClick={() => setOpen(true)} disabled={!online} className="shrink-0" data-focus="retake-photo">
-        {online ? "Retake photo" : "Connect to retake"}
+        {online ? "Retake now" : "Connect to retake"}
       </Button>
       {open && <PhotoRedoDialog logId={log.id} onClose={() => setOpen(false)} />}
     </div>

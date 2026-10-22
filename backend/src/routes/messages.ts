@@ -261,6 +261,51 @@ export function registerMessageRoutes(app: express.Express, deps: Dependencies):
     return { thread, other };
   }
 
+  /**
+   * PSU redesign: the signed-in person's threads, newest first, for the
+   * Messages page (More, Messages). Each with the other person, the last
+   * message's first words and how many are unread. Fifty at most.
+   */
+  app.get("/api/messages/threads", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
+    try {
+      const auth = (req as Authed).auth!;
+      const threads = await pool.query(
+        `SELECT t.id, t.subject, t.context_label, t.last_message_at,
+                t.party_a_role, t.party_a_id, t.party_b_role, t.party_b_id,
+                (SELECT LEFT(m.body, 90) FROM messages m WHERE m.thread_id = t.id ORDER BY m.created_at DESC, m.id DESC LIMIT 1) AS last_body,
+                (SELECT COUNT(*)::int FROM messages m
+                  WHERE m.thread_id = t.id AND m.read_at IS NULL
+                    AND m.recipient_role = $1 AND LOWER(TRIM(m.recipient_id)) = LOWER(TRIM($2))) AS unread
+         FROM message_threads t
+         WHERE (t.party_a_role = $1 AND LOWER(TRIM(t.party_a_id)) = LOWER(TRIM($2)))
+            OR (t.party_b_role = $1 AND LOWER(TRIM(t.party_b_id)) = LOWER(TRIM($2)))
+         ORDER BY t.last_message_at DESC, t.id DESC
+         LIMIT 50`,
+        [auth.role, String(auth.id)]
+      );
+      const list = await Promise.all(
+        threads.rows.map(async (row) => {
+          const isA = row.party_a_role === auth.role && sameId(row.party_a_id, auth.id);
+          const other = isA ? { role: row.party_b_role as Role, id: row.party_b_id } : { role: row.party_a_role as Role, id: row.party_a_id };
+          const found = await person(other.role, other.id);
+          return {
+            id: row.id,
+            subject: row.subject,
+            context_label: row.context_label,
+            last_message_at: row.last_message_at,
+            last_body: row.last_body,
+            unread: row.unread,
+            with: { role: other.role, name: found?.name ?? "Account removed" },
+          };
+        })
+      );
+      return res.json({ threads: list });
+    } catch (error) {
+      console.error("LIST THREADS ERROR:", error);
+      return res.status(500).json({ message: "Failed to load your messages." });
+    }
+  });
+
   app.get("/api/messages/threads/:id", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
     try {
       const auth = (req as Authed).auth!;
