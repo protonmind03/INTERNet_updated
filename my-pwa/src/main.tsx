@@ -9,7 +9,10 @@ import { LaunchGate } from './brand'
 import ErrorBoundary from './components/ErrorBoundary'
 import { registerServiceWorker } from './lib/serviceWorker'
 import { watchInstallPrompt } from './lib/useInstallPrompt'
+import { endSessionIfNotKept } from './lib/keepSignedIn'
 
+// "Keep me signed in" was off and the browser has closed since: sign out first.
+void endSessionIfNotKept()
 installSessionGuard()
 // The browser offers installation once, early: listen before anything renders.
 watchInstallPrompt()

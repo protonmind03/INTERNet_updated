@@ -12,5 +12,3 @@ export { BRAND, paint, tonePaint } from "./geometry";
 export { default as RouteProgress } from "./RouteProgress";
 export { default as RoadGlyph, CheckGlyph, CapGlyph } from "./RoadGlyph";
 export { LOGO_SIZES, LOCKUP, MOTION, SIDEBAR, ROLE_PALETTES, STATUS_COLORS, SEAL } from "./tokens";
-export { default as LoginScreen, LOGIN_ROLES } from "./LoginScreen";
-export type { LoginScreenProps } from "./LoginScreen";

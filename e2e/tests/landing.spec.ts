@@ -144,6 +144,23 @@ test.describe("the doors", () => {
     await expect(page).toHaveURL(/\/student\/dashboard$/);
   });
 
+  test("with Keep me signed in off, the next browser session starts signed out", async ({ page, context }) => {
+    await page.goto("/supervisor/sign-in");
+    await page.locator("#inb-login-id").fill(ACCOUNTS.supervisor.email);
+    await page.locator("#inb-login-pw").fill(ACCOUNTS.supervisor.password);
+    await page.getByLabel("Keep me signed in").uncheck();
+    await page.locator('button[type="submit"]').click();
+    await expect(page).toHaveURL(/\/supervisor\/dashboard$/, { timeout: 20_000 });
+    // A reload is the same session: still signed in.
+    await page.reload();
+    await expect(page).toHaveURL(/\/supervisor\/dashboard$/);
+    // A new tab from scratch is a new browser session (no sessionStorage): signed out.
+    const fresh = await context.newPage();
+    await fresh.goto("/supervisor/dashboard");
+    await expect(fresh).toHaveURL(/\/supervisor\/sign-in$/);
+    await fresh.close();
+  });
+
   test("the password pages are themed as the door they came from", async ({ page }) => {
     await page.goto("/supervisor/sign-in");
     await page.getByRole("link", { name: "Forgot password?" }).click();
