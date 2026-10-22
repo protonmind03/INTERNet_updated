@@ -1,28 +1,35 @@
 import { ROLE_PALETTES } from "../brand/tokens";
-import { DOORS, doorPath, type DoorRole } from "./content";
+import { DOORS, doorPath, installPath, type DoorRole } from "./content";
 
 /*
 |--------------------------------------------------------------------------
-| GET THE APP (Iteration 23)
+| GET THE APP (PSU redesign, 3B)
 |--------------------------------------------------------------------------
 |
-| Which app (a role) and which device. The device is guessed from the
-| browser (client hints where the browser has them, otherwise its user
-| agent) and can be changed. Installing happens on the role's own door,
-| which links that role's manifest: an Android or desktop browser offers
-| its Install there (?install=1 puts the button first). The QR code, drawn
-| here in the browser, opens the same door on a phone.
+| Which app (a role) and which device. The device is detected in the
+| browser, with no server: `navigator.userAgentData` where the browser has
+| it (its platform and whether it is a phone), otherwise the user agent.
+| iPads that call themselves a Mac are told apart by their touch screen.
+| The detected tile is chosen and badged "Detected"; it can be changed.
+| Installing happens on the role's own sign-in page, which links that
+| role's manifest: an Android or desktop browser offers its Install there
+| (?install=1 puts the button first). The QR code, drawn here, opens the
+| same page on a phone.
 |
 */
 
-type Device = "android" | "ios" | "desktop";
+export type Device = "android" | "ios" | "desktop";
 
-function guessDevice(): Device {
+export function detectDevice(): Device {
   const hints = (navigator as Navigator & { userAgentData?: { mobile?: boolean; platform?: string } }).userAgentData;
   const agent = navigator.userAgent;
   if (/iPad|iPhone|iPod/.test(agent) || (/Macintosh/.test(agent) && navigator.maxTouchPoints > 1)) return "ios";
-  if (hints?.platform === "Android" || /Android/i.test(agent)) return "android";
-  if (hints?.mobile) return "android";
+  if (hints?.platform) {
+    if (/android/i.test(hints.platform)) return "android";
+    if (hints.mobile) return "android";
+    return "desktop";
+  }
+  if (/Android/i.test(agent)) return "android";
   return "desktop";
 }
 
@@ -31,12 +38,14 @@ function notSafariOnIos(): boolean {
   return /CriOS|FxiOS|EdgiOS|OPiOS|GSA\/|DuckDuckGo|Instagram|FBAN|FBAV|Line\//.test(navigator.userAgent);
 }
 
-export function setUpDownload(): void {
+export function setUpDownload(detected: Device): void {
   const panel = document.querySelector<HTMLElement>("[data-download]");
   if (!panel) return;
   let role: DoorRole = "student";
-  let device: Device = guessDevice();
+  let device: Device = detected;
   let qrFor = "";
+
+  panel.querySelector<HTMLElement>(`[data-detected="${detected}"]`)?.removeAttribute("hidden");
 
   const drawQr = async () => {
     const box = panel.querySelector<HTMLElement>("[data-qr]");
@@ -61,10 +70,9 @@ export function setUpDownload(): void {
   const show = () => {
     panel.dataset.role = role;
     panel.dataset.deviceActive = device;
-    panel.querySelectorAll<HTMLElement>("[data-app-name]").forEach((element) => (element.textContent = DOORS[role].appName));
-    panel.querySelectorAll<HTMLElement>("[data-door-name]").forEach((element) => (element.textContent = DOORS[role].name));
-    panel.querySelectorAll<HTMLAnchorElement>("[data-install-link]").forEach((link) => (link.href = `${doorPath(role)}?install=1`));
-    panel.querySelectorAll<HTMLAnchorElement>("[data-door-link]").forEach((link) => (link.href = doorPath(role)));
+    panel.querySelectorAll<HTMLElement>("[data-plural]").forEach((element) => (element.textContent = DOORS[role].plural));
+    panel.querySelectorAll<HTMLElement>("[data-door-name]").forEach((element) => (element.textContent = DOORS[role].name.toLowerCase()));
+    panel.querySelectorAll<HTMLAnchorElement>("[data-install-link]").forEach((link) => (link.href = installPath(role)));
     const warning = panel.querySelector<HTMLElement>("[data-not-safari]");
     if (warning) warning.hidden = !notSafariOnIos();
     panel.querySelectorAll<HTMLInputElement>('input[name="download-role"]').forEach((input) => (input.checked = input.value === role));
@@ -78,12 +86,5 @@ export function setUpDownload(): void {
     if (input.name === "download-device") device = input.value as Device;
     show();
   });
-  // "Get the app" on a door or in the footer picks that role here.
-  document.querySelectorAll<HTMLElement>("[data-download-role]").forEach((link) =>
-    link.addEventListener("click", () => {
-      role = link.dataset.downloadRole as DoorRole;
-      show();
-    })
-  );
   show();
 }

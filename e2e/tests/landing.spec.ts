@@ -22,15 +22,45 @@ test.describe("the landing page", () => {
     });
     const response = await page.goto("/");
     // The words are in the HTML itself, before any script runs.
-    expect(await response?.text()).toContain("From first time‑in to final hour.");
-    await expect(page.getByRole("heading", { level: 1, name: "From first time‑in to final hour." })).toBeVisible();
+    expect(await response?.text()).toContain("Every role, every screen.");
+    await expect(page.getByRole("heading", { level: 1, name: "One system. Every role, every screen." })).toBeVisible();
     await expect(page.locator("#root")).toHaveCount(0);
     expect(scripts.some((path) => /\/assets\/app-/.test(path))).toBe(false);
 
+    // PSU redesign 1E: each portal's card leads to its app's install page; Sign in lists the three doors.
     for (const role of ROLES) {
-      await expect(page.locator(`#door-${role}`).getByRole("link", { name: /^Sign in/ })).toHaveAttribute("href", `/${role}/sign-in`);
+      await expect(page.locator(`#portal-${role}`).getByRole("link", { name: /^Get the/ })).toHaveAttribute("href", `/${role}/sign-in?install=1`);
+    }
+    await page.locator(".land-top summary", { hasText: "Sign in" }).click();
+    for (const role of ROLES) {
+      await expect(page.locator(`#land-signin-top a[href="/${role}/sign-in"]`)).toBeVisible();
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+  });
+
+  test("the hero turns the roles and switches the device; How it works starts each role at step 1", async ({ page }) => {
+    await page.goto("/");
+    const caption = page.locator("[data-hero-caption]");
+    await expect(caption).toContainText("Trainee on a phone");
+    await page.getByRole("button", { name: "Switch device" }).click();
+    await expect(caption).toContainText("Trainee on a tablet");
+    await page.getByRole("button", { name: "Next role" }).click();
+    await expect(caption).toContainText("Supervisor on a tablet");
+    await page.getByRole("button", { name: "Previous role" }).click();
+    await page.getByRole("button", { name: "Previous role" }).click();
+    await expect(caption).toContainText("Coordinator on a laptop");
+
+    const how = page.locator("#how");
+    await how.locator('[data-how-panel="student"] [data-how-step="3"]').click();
+    await expect(how.locator('[data-how-panel="student"] [data-how-step="3"]')).toHaveAttribute("aria-current", "step");
+    await how.getByRole("tab", { name: "Supervisor" }).click();
+    await expect(how.locator('[data-how-panel="supervisor"] [data-how-step="1"]')).toHaveAttribute("aria-current", "step");
+    await how.getByRole("tab", { name: "Trainee" }).click();
+    await expect(how.locator('[data-how-panel="student"] [data-how-step="1"]')).toHaveAttribute("aria-current", "step");
+
+    // Try to fool it: a pick shows its own answer.
+    await page.locator("[data-fool-pick]", { hasText: "Time in twice" }).click();
+    await expect(page.locator("#fool-panel")).toContainText("There is one time-in a day.");
   });
 
   test("on a phone, the menu is a sheet that opens, takes focus and closes", async ({ page }) => {
@@ -46,14 +76,17 @@ test.describe("the landing page", () => {
   test("the Download module follows the role and the device, and draws the QR code on a computer", async ({ page }) => {
     await page.goto("/");
     const panel = page.locator("[data-download]");
-    await panel.getByRole("radio", { name: "Supervisor" }).check();
-    await panel.getByRole("radio", { name: "Android" }).check();
+    // The device is detected in the browser: exactly one tile says so.
+    await expect(panel.locator("[data-detected]:not([hidden])")).toHaveCount(1);
+    await panel.getByText("Supervisor app").click();
+    await panel.getByText("Android", { exact: true }).click();
     await expect(panel.locator('[data-device="android"] [data-install-link]')).toHaveAttribute("href", "/supervisor/sign-in?install=1");
     await expect(panel.locator('[data-device="android"]')).toBeVisible();
-    await panel.getByRole("radio", { name: "Computer" }).check();
+    await expect(panel.getByRole("heading", { level: 2 })).toContainText("Install INTERNet for supervisors");
+    await panel.getByText("Computer", { exact: true }).click();
     await expect(panel.locator("[data-qr] svg")).toBeVisible();
-    await expect(panel.locator('[data-device="desktop"]')).toContainText("INTERNet Supervisor");
-    await panel.getByRole("radio", { name: "iPhone or iPad" }).check();
+    await expect(panel.locator('[data-device="desktop"]')).toContainText("supervisor sign-in");
+    await panel.getByText("iPhone and iPad", { exact: true }).click();
     await expect(panel.locator('[data-device="ios"]')).toContainText("Add to Home Screen");
   });
 

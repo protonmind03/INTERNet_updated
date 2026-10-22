@@ -292,4 +292,13 @@ export const LANDING = {
   night: "#0B1440",
   onNight: "#FFFFFF",
   onNightMuted: "#C7CDF0",
+  /** PSU redesign: the hero's flat night sky, the navy of the PSU strip and footer, its deeper shade, the gold. */
+  sky: "#0E1550",
+  navy: "#1A237E",
+  navyDeep: "#121A5E",
+  gold: "#FACC15",
+  onGold: "#1A237E",
+  /** A light ground for a section that sits between dark ones, and its dotted grid. */
+  paperCool: "#F7F8FC",
+  dot: "#D8DCEB",
 } as const;

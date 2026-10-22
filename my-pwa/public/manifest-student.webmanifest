@@ -8,8 +8,8 @@
   "start_url": "/student/sign-in?source=app",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#FFF8E8",
-  "theme_color": "#FFF8E8",
+  "background_color": "#FBF7EF",
+  "theme_color": "#8A3A07",
   "categories": [
     "education",
     "productivity"

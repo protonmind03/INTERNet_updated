@@ -1,135 +1,286 @@
 /*
 |--------------------------------------------------------------------------
-| THE LANDING PAGE'S WORDS (Iteration 23)
+| THE LANDING PAGE'S WORDS (PSU redesign, Sections 1 to 5 and 9)
 |--------------------------------------------------------------------------
 |
 | Kept apart from the layout so the wording can be checked in one place.
-| Every claim here is something the system does today; nothing is counted
-| or rated that has not been measured.
+| Every claim is a rule INTERNet has today (the service named beside it).
+| The figures on the small screens are example text, not anyone's data.
 |
 */
 
 export type DoorRole = "student" | "supervisor" | "coordinator";
+export type DeviceKind = "phone" | "tablet" | "laptop";
 
+/** The order the hero's circle and the role indicator show them in. */
+export const HERO_ORDER: DoorRole[] = ["coordinator", "student", "supervisor"];
+/** The order of the cards, the tabs and the footer. */
 export const DOOR_ROLES: DoorRole[] = ["student", "supervisor", "coordinator"];
+
+export const DEVICE_WORD: Record<DeviceKind, string> = { phone: "phone", tablet: "tablet", laptop: "laptop" };
 
 export const DOORS: Record<
   DoorRole,
-  { name: string; palette: string; promise: string; fragment: string; fragmentNote: string; appName: string }
+  {
+    /** The role's name ("Trainee"). */
+    name: string;
+    /** The installed app's name. */
+    appName: string;
+    /** The card's title in "Three portals, one road". */
+    cardTitle: string;
+    /** The chip on the card's cap. */
+    first: string;
+    bullets: [string, string, string];
+    /** The devices the role's portal suits best (filled chips). */
+    best: Array<"Phone" | "Tablet" | "Computer">;
+    /** Behind the card's "i". */
+    deviceWhy: string;
+    /** The device the role is shown on first in the hero. */
+    heroDevice: DeviceKind;
+    /** Two paper notes beside the role's device in the hero: example text. */
+    notes: [{ title: string; line: string }, { title: string; line: string }];
+    /** "Get the trainee app". */
+    getApp: string;
+    /** "for trainees" in "Install INTERNet for trainees". */
+    plural: string;
+  }
 > = {
   student: {
     name: "Trainee",
-    palette: "Sunpath",
-    promise: "Time in at your placement, log the day and watch your hours add up.",
-    fragment: "Timed in · 7:58 AM",
-    fragmentNote: "On time",
     appName: "INTERNet Trainee",
+    cardTitle: "Trainee app",
+    first: "Phone first",
+    bullets: ["Time in with a camera check", "Works without signal", "See the day you'll finish"],
+    best: ["Phone"],
+    deviceWhy: "Time-in needs the phone's front camera, so the trainee app is made for a phone. A computer can check hours and submit work.",
+    heroDevice: "phone",
+    notes: [
+      { title: "Timed in 7:58 AM", line: "camera check passed" },
+      { title: "74 hours to go", line: "expected finish shown" },
+    ],
+    getApp: "Get the trainee app",
+    plural: "trainees",
   },
   supervisor: {
     name: "Supervisor",
-    palette: "Laurel Ledger",
-    promise: "Verify your trainees' days, tasks and documents from one review queue.",
-    fragment: "3 days waiting for review",
-    fragmentNote: "Oldest: yesterday",
     appName: "INTERNet Supervisor",
+    cardTitle: "Supervisor desk",
+    first: "Tablet and computer",
+    bullets: ["See who is in at a glance", "Verify a day in one tap", "Tasks for teams, evaluations"],
+    best: ["Tablet", "Computer"],
+    deviceWhy: "Supervisors review a queue at a desk, so the larger screen shows the day board and the queue side by side. The phone app works too.",
+    heroDevice: "tablet",
+    notes: [
+      { title: "Time-in verified", line: "one tap from the queue" },
+      { title: "4 of 5 in today", line: "today's register" },
+    ],
+    getApp: "Get the supervisor app",
+    plural: "supervisors",
   },
   coordinator: {
     name: "Coordinator",
-    palette: "Royal Seal",
-    promise: "Follow every placement, flag and requirement across the program.",
-    fragment: "Action list · 5 items",
-    fragmentNote: "2 flagged logs",
     appName: "INTERNet Coordinator",
+    cardTitle: "Coordinator console",
+    first: "Computer first",
+    bullets: ["What needs you comes first", "By college, program and block", "Reports for the dean"],
+    best: ["Computer"],
+    deviceWhy: "The coordinator runs the whole program from a desk, with filters, lists and reports that need a wide screen. The phone app keeps up on the go.",
+    heroDevice: "laptop",
+    notes: [
+      { title: "Appeals to decide", line: "first on the list" },
+      { title: "Trainees on the road", line: "behind, on the way, almost done" },
+    ],
+    getApp: "Get the coordinator app",
+    plural: "coordinators",
   },
 };
 
 export const doorPath = (role: DoorRole) => `/${role}/sign-in`;
+export const installPath = (role: DoorRole) => `/${role}/sign-in?install=1`;
 
-/** The four steps of a trainee's day, in the order the hero and the story show them. */
-export const DAY_STEPS = [
-  {
-    key: "time-in",
-    station: "Time in",
-    banner: "Timed in · 7:58 AM",
-    note: "On time. Camera check passed.",
-    title: "Time in",
-    body: "At the placement, tap Time in. A short camera check with on-screen prompts confirms it is you, and the photo goes to your supervisor.",
+/** "How it works": four steps per role, each what the portal does today. */
+export const HOW_STEPS: Record<DoorRole, { title: string; heading: string; steps: Array<{ title: string; body: string }> }> = {
+  student: {
+    title: "A trainee's day",
+    heading: "trainee's",
+    steps: [
+      { title: "Time in with a camera check", body: "Turn your head when asked. No signal? It still works and is sent later." },
+      { title: "Lunch, then time out", body: "Lunch is taken off your hours. At time-out, say what you did and which tasks it was for." },
+      { title: "Tasks, deliverables and journal", body: "Submit your work, upload what's due, and write your weekly journal." },
+      { title: "Watch verified hours grow", body: "See your expected finish date, and print a signed time record." },
+    ],
   },
-  {
-    key: "break",
-    station: "Lunch break",
-    banner: "On lunch break · since 12:01 PM",
-    note: "Your hours pause until you are back.",
-    title: "Lunch break",
-    body: "One tap when you leave for lunch. With no signal the step is kept on the phone and sent when the connection returns.",
+  supervisor: {
+    title: "A supervisor's day",
+    heading: "supervisor's",
+    steps: [
+      { title: "See who is in", body: "Today's register shows each intern's time-in, and who is not in yet." },
+      { title: "Verify the day's time-ins", body: "Verify the ordinary ones together. Time-ins made offline are confirmed one by one." },
+      { title: "Review tasks, documents and journals", body: "Mark work reviewed, or return it with a note." },
+      { title: "Evaluate and certify", body: "Fill in the final evaluation, and certify each month's time record." },
+    ],
   },
-  {
-    key: "break-end",
-    station: "End break",
-    banner: "Back from break · 12:58 PM",
-    note: "Confirmed with your screen lock.",
-    title: "End break",
-    body: "Tap End break when you are back. If you added a passkey, your phone's screen lock confirms the step; without it the step still counts.",
+  coordinator: {
+    title: "A coordinator's week",
+    heading: "coordinator's",
+    steps: [
+      { title: "Watch what needs you", body: "Appeals, flagged logs and concerns come first, oldest on top." },
+      { title: "Decide appeals", body: "Read the day's timeline, then uphold the decision or overturn it." },
+      { title: "Set up the term", body: "Programs, blocks, schedules, holidays and deliverables, in one place." },
+      { title: "Report to the dean", body: "Figures by college, program and block, as a PDF or a spreadsheet." },
+    ],
   },
-  {
-    key: "time-out",
-    station: "Time out",
-    banner: "Timed out · 5:02 PM",
-    note: "8 h counted, waiting for your supervisor.",
-    title: "Time out",
-    body: "Time out ends the day. Your supervisor verifies it, and the verified hours count toward your required total.",
-  },
-] as const;
+};
 
-/** "What the system checks": only what it does. */
-export const CHECKS = [
-  {
-    title: "A camera check at time-in",
-    body: "Before the time-in photo is sent, the phone asks for a few movements shown on screen. The check runs on the phone.",
-    icon: "M4 8h3l2-3h6l2 3h3v11H4zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",
-  },
-  {
-    title: "Signed time-in with no signal",
-    body: "With no connection, time-in uses a voucher collected earlier. It is signed on the phone and checked when it arrives.",
-    icon: "M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6zM9 12l2 2 4-4",
-  },
-  {
-    title: "Your supervisor confirms each day",
-    body: "Every day is verified or rejected by the trainee's supervisor. A rejected photo or day can be appealed to the coordinator.",
-    icon: "M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9",
-  },
-  {
-    title: "An audit log",
-    body: "Changes to records are kept in an audit log: who made them, what changed and when. The coordinator can read it.",
-    icon: "M5 4h11l3 3v13H5zM9 9h6M9 13h6M9 17h4",
-  },
-  {
-    title: "A privacy notice and your data",
-    body: "Trainees read and agree to the privacy notice before the first time-in, and can download a copy of their own records.",
-    icon: "M12 3a4 4 0 0 1 4 4v3H8V7a4 4 0 0 1 4-4zM6 10h12v10H6zM12 14v3",
-  },
-  {
-    title: "Passkey confirmation",
-    body: "A trainee may add a passkey. Lunch break, End break and Time out then ask for the phone's screen lock. It never stops a step.",
-    icon: "M14 10a4 4 0 1 0-3.9 4H11v2h2v2h2v2h3v-3l-4.1-4.1A4 4 0 0 0 14 10zM9 10h.01",
-  },
-] as const;
+export type Verdict = "Blocked" | "Handled" | "Spotted" | "Allowed";
 
-export const QUESTIONS = [
+/** "Go on, try to fool it": ten things a trainee might try, and the rule that answers. */
+export const FOOL: Array<{
+  group: "Timing in" | "During the day" | "Afterwards";
+  try: string;
+  tag: string;
+  verdict: Verdict;
+  answer: string;
+  rule: string;
+  extra?: { title: string; body: string };
+  checkedBy: Array<"Phone" | "Server" | "Supervisor" | "Coordinator">;
+  /** What the small phone shows. */
+  screen: { kind: "camera" | "refused" | "queued" | "flag" | "confirm" | "remind" | "redo" | "locked" | "hours"; title: string; line: string };
+}> = [
   {
-    q: "Does it work with no signal?",
-    a: "Partly, and on purpose. Once the app has been opened with a connection, a trainee can record Time in, Lunch break, End break and Time out with no signal; the steps wait on the phone and are sent when the connection returns. Pages you have opened before show what they last saved. Sending tasks, documents and reports needs a connection.",
+    group: "Timing in",
+    try: "Hold up a photo of yourself",
+    tag: "Camera check",
+    verdict: "Blocked",
+    answer: "A photo can't turn its head on cue.",
+    rule: "The camera check asks for head turns picked by the server. The ticket for each check lasts ten minutes and works once, and your supervisor still sees the photo.",
+    extra: { title: "After a rejected photo", body: "The trainee gets the stricter check (both head turns and the colour light test) until a log is verified again." },
+    checkedBy: ["Phone", "Server", "Supervisor"],
+    screen: { kind: "camera", title: "Now turn your head left", line: "then back to the centre" },
   },
   {
-    q: "Which phones work?",
-    a: "An Android phone with Chrome, or an iPhone or iPad with Safari, kept up to date. Time-in needs the phone's front camera. Supervisors and coordinators can also use a computer with Chrome, Edge or Safari. INTERNet is an installable web app: there is nothing to download from an app store.",
+    group: "Timing in",
+    try: "Time in twice",
+    tag: "One a day",
+    verdict: "Blocked",
+    answer: "There is one time-in a day.",
+    rule: "The server keeps one attendance log per trainee per day, and refuses a second time-in.",
+    checkedBy: ["Server"],
+    screen: { kind: "refused", title: "Already timed in today", line: "You already logged attendance today." },
   },
   {
-    q: "What happens to my photo and records?",
-    a: "The time-in photo is seen by your supervisor and the OJT coordinator. The privacy notice in the Trainee app says what is kept and why, and Profile, Privacy and data has Download my data for a copy of your own records.",
+    group: "Timing in",
+    try: "Come in early to bank hours",
+    tag: "Day rules",
+    verdict: "Handled",
+    answer: "Hours start when the shift does.",
+    rule: "Time-in opens 30 minutes before your shift starts, and hours count from the start of the shift, not from an early time-in.",
+    checkedBy: ["Server"],
+    screen: { kind: "hours", title: "Counting from 8:00 AM", line: "your shift's start" },
   },
   {
-    q: "Who do I contact?",
-    a: "Your program's OJT coordinator at the OJT office, Pangasinan State University – Lingayen Campus. Coordinators create the accounts, so a supervisor or trainee without one asks there. Forgotten passwords can be reset from each sign-in page.",
+    group: "During the day",
+    try: "Time in with no signal",
+    tag: "Offline",
+    verdict: "Allowed",
+    answer: "It works, and it's marked.",
+    rule: "With no signal, time-in uses a voucher the phone collected earlier. It is signed on the phone, checked when it arrives, and accepted within 12 hours.",
+    extra: { title: "On the supervisor's side", body: "An offline time-in is never part of “Verify all”: the supervisor confirms it on its own." },
+    checkedBy: ["Phone", "Server", "Supervisor"],
+    screen: { kind: "queued", title: "Waiting to send", line: "sent when the signal is back" },
+  },
+  {
+    group: "During the day",
+    try: "Set the phone's clock back",
+    tag: "Clock gap",
+    verdict: "Spotted",
+    answer: "A moved clock flags the log.",
+    rule: "An offline step carries how far the phone's clock was from the server's. A clock moved by more than two minutes flags the log for the supervisor.",
+    checkedBy: ["Phone", "Server", "Supervisor"],
+    screen: { kind: "flag", title: "Phone clock moved", line: "flagged for your supervisor" },
+  },
+  {
+    group: "During the day",
+    try: "Let a friend press Time out",
+    tag: "Passkey",
+    verdict: "Spotted",
+    answer: "Your screen lock is asked for.",
+    rule: "With a passkey added, Lunch break, End break and Time out ask for the phone's screen lock. The supervisor sees which steps were confirmed and which were not.",
+    checkedBy: ["Phone", "Server", "Supervisor"],
+    screen: { kind: "confirm", title: "Confirm it's you", line: "use your screen lock" },
+  },
+  {
+    group: "Afterwards",
+    try: "Forget to time out",
+    tag: "Reminder",
+    verdict: "Handled",
+    answer: "You're reminded, and can fix it.",
+    rule: "A reminder comes an hour after the shift ends. A missed time-out can be entered later, for the supervisor to check.",
+    checkedBy: ["Server", "Supervisor"],
+    screen: { kind: "remind", title: "Did you forget to time out?", line: "your shift ended an hour ago" },
+  },
+  {
+    group: "Afterwards",
+    try: "Keep a photo that got rejected",
+    tag: "Photo redo",
+    verdict: "Handled",
+    answer: "A rejected photo must be retaken.",
+    rule: "A rejected photo opens a window to take a new one. With no new photo in time, the day is closed as an unexcused absence.",
+    checkedBy: ["Server", "Supervisor"],
+    screen: { kind: "redo", title: "Retake your time-in photo", line: "before the window closes" },
+  },
+  {
+    group: "Afterwards",
+    try: "Change your times later",
+    tag: "Corrections",
+    verdict: "Blocked",
+    answer: "Only your supervisor can, with a reason.",
+    rule: "A trainee cannot edit a log's times. A supervisor corrects them with a reason, and every change is kept in the audit log.",
+    checkedBy: ["Server", "Supervisor", "Coordinator"],
+    screen: { kind: "locked", title: "Times are locked", line: "ask your supervisor to correct them" },
+  },
+  {
+    group: "Afterwards",
+    try: "Count hours nobody checked",
+    tag: "Verified",
+    verdict: "Blocked",
+    answer: "Only verified days count.",
+    rule: "Hours count toward the requirement only once the supervisor verifies the day.",
+    checkedBy: ["Server", "Supervisor"],
+    screen: { kind: "hours", title: "Verified hours only", line: "pending days are not counted" },
+  },
+];
+
+/** "Get the app": per device, three steps. */
+export const INSTALL_DEVICES = [
+  {
+    key: "android",
+    label: "Android",
+    browsers: "Chrome, Samsung Internet",
+    steps: [
+      { title: "Tap “Install the app”", body: "Or open the browser's ⋮ menu and choose Install app (older phones: Add to Home screen)." },
+      { title: "Confirm Install", body: "No Play Store needed. It takes a few seconds." },
+      { title: "Open it from your home screen", body: "Sign in once. It opens like any other app." },
+    ],
+  },
+  {
+    key: "ios",
+    label: "iPhone and iPad",
+    browsers: "Safari",
+    steps: [
+      { title: "Open the sign-in page in Safari", body: "Other browsers on iPhone and iPad may not offer Add to Home Screen." },
+      { title: "Tap Share, then Add to Home Screen", body: "Then tap Add. No App Store needed." },
+      { title: "Open it from your home screen", body: "Sign in once. It opens like any other app." },
+    ],
+  },
+  {
+    key: "desktop",
+    label: "Computer",
+    browsers: "Windows, Mac, Chromebook",
+    steps: [
+      { title: "Open the sign-in page in Chrome or Edge", body: "On a Mac with Safari, use File, then Add to Dock." },
+      { title: "Choose Install", body: "On the page, or at the right of the address bar." },
+      { title: "Open it like any program", body: "From the Start menu, the Dock or the shelf." },
+    ],
   },
 ] as const;

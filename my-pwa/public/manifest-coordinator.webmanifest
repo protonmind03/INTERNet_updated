@@ -8,8 +8,8 @@
   "start_url": "/coordinator/sign-in?source=app",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F1F3FB",
-  "theme_color": "#0B1440",
+  "background_color": "#F7F8FC",
+  "theme_color": "#1A237E",
   "categories": [
     "education",
     "productivity"

@@ -712,6 +712,13 @@
   --land-night: #0b1440;
   --land-on-night: #ffffff;
   --land-on-night-muted: #c7cdf0;
+  --land-sky: #0e1550;
+  --land-navy: #1a237e;
+  --land-navy-deep: #121a5e;
+  --land-gold: #facc15;
+  --land-on-gold: #1a237e;
+  --land-paper-cool: #f7f8fc;
+  --land-dot: #d8dceb;
 }
 
 /* =====================================================================
