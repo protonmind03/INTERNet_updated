@@ -47,7 +47,7 @@ export const SIDEBAR = {
   groupItems: "space-y-0.5",
   item: "relative flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
   itemIdle: "text-psu-100 hover:bg-white/5 hover:text-white",
-  itemActive: "bg-linear-to-r from-white/15 to-white/5 text-white ring-1 ring-inset ring-white/10",
+  itemActive: "bg-white/15 text-white ring-1 ring-inset ring-white/10",
   /** The gold edge on the current page. */
   activeBar: "absolute inset-y-2 left-0 w-[3px] rounded-r bg-gold-400",
   activeIcon: "text-gold-300",
@@ -95,55 +95,131 @@ export type RolePalette = {
   decor: string;
 };
 
+/*
+| PSU redesign (internet-revisions, Section 13, "beyond gradients"): every
+| header is one flat role colour (`chrome`), every page sits on the role's
+| paper (`surface`), and `primary` is the accent for buttons, the active
+| item and links. Gold (`accent` for the trainee and the coordinator) is
+| the one thing to do now. Status colours are never a role colour.
+*/
 export const ROLE_PALETTES = {
   student: {
-    name: "Sunpath",
-    primary: "#A84B0B",
+    name: "Time card",
+    primary: "#A84A0C",
     onPrimary: "#FFFFFF",
-    accent: "#FFE047",
+    accent: "#FACC15",
     onAccent: "#3A2A12",
-    surface: "#FFF8E8",
+    surface: "#FBF7EF",
     ink: "#3A2A12",
-    chrome: "#FFF8E8",
-    onChrome: "#3A2A12",
-    decor: "#F7AB15",
+    chrome: "#8A3A07",
+    onChrome: "#FFFFFF",
+    decor: "#FACC15",
   },
   supervisor: {
-    name: "Laurel Ledger",
-    primary: "#0F6B5C",
+    name: "Logbook",
+    primary: "#116C5C",
     onPrimary: "#FFFFFF",
-    accent: "#7FD1AE",
+    accent: "#D3E9E1",
     onAccent: "#0E2A26",
-    surface: "#EEF6F2",
+    surface: "#F4F9F6",
     ink: "#0E2A26",
-    chrome: "#FFFFFF",
-    onChrome: "#0E2A26",
-    decor: "#F7AB15",
+    chrome: "#116C5C",
+    onChrome: "#FFFFFF",
+    decor: "#7FD1AE",
   },
   coordinator: {
-    name: "Royal Seal",
-    primary: "#0A28DD",
+    name: "Route map",
+    primary: "#4F46E5",
     onPrimary: "#FFFFFF",
-    accent: "#FFE047",
+    accent: "#FACC15",
     onAccent: "#0B1440",
-    surface: "#F1F3FB",
+    surface: "#F7F8FC",
     ink: "#0B1440",
-    chrome: "#0B1440",
+    chrome: "#1A237E",
     onChrome: "#FFFFFF",
     decor: "#B8C2FF",
   },
 } as const satisfies Record<"student" | "supervisor" | "coordinator", RolePalette>;
 
-/** Whether a role's chrome is dark (the seal then sits on its white disc). */
-export const ROLE_CHROME_DARK = { student: false, supervisor: false, coordinator: true } as const;
+/** Whether a role's chrome is dark (the seal then sits on its white disc). Every header is now a flat dark role colour. */
+export const ROLE_CHROME_DARK = { student: true, supervisor: true, coordinator: true } as const;
 
-/** Status colours, the same for every role: a tint to sit on and the ink to write with. */
+/**
+ * The rest of each role's surface: the 1 px hairline that replaces shadows,
+ * the floating dock (phones) and the side menu (tablets and computers).
+ * brand.css carries them as --role-hairline, --role-dock… (a test checks).
+ */
+export type RoleSurfaces = {
+  hairline: string;
+  dock: string;
+  dockBorder: string;
+  dockInk: string;
+  dockActive: string;
+  onDockActive: string;
+  side: string;
+  onSide: string;
+};
+
+export const ROLE_SURFACES = {
+  student: {
+    hairline: "#EBDDC6",
+    dock: "#FFF8E6",
+    dockBorder: "#F2E3BE",
+    dockInk: "#6E2E08",
+    dockActive: "#A84A0C",
+    onDockActive: "#FFFFFF",
+    side: "#8A3A07",
+    onSide: "#FFFFFF",
+  },
+  supervisor: {
+    hairline: "#D3E6DD",
+    dock: "#0C5548",
+    dockBorder: "#0C5548",
+    dockInk: "#FFFFFF",
+    dockActive: "#FFFFFF",
+    onDockActive: "#0C5548",
+    side: "#116C5C",
+    onSide: "#FFFFFF",
+  },
+  coordinator: {
+    hairline: "#E3E6F5",
+    dock: "#1A237E",
+    dockBorder: "#1A237E",
+    dockInk: "#FFFFFF",
+    dockActive: "#FACC15",
+    onDockActive: "#1A237E",
+    side: "#121A5E",
+    onSide: "#FFFFFF",
+  },
+} as const satisfies Record<"student" | "supervisor" | "coordinator", RoleSurfaces>;
+
+/**
+ * Each role's eleven-step scale. The app's components were written in the
+ * brand blue (`psu-50` … `psu-950`); brand.css redefines that scale under
+ * each [data-role], so every button, link, ring and tint in a portal takes
+ * the role's colour from one place. Step 600 is the role's `primary`.
+ */
+export const ROLE_SCALES = {
+  student: ["#FBF3E8", "#F6E3CB", "#EDC79A", "#E0A468", "#CC7A35", "#B95F18", "#A84A0C", "#8A3A07", "#6E2E08", "#55240A", "#341505"],
+  supervisor: ["#ECF6F2", "#D3E9E1", "#A9D4C5", "#74B8A3", "#3F9881", "#1F7F6B", "#116C5C", "#0C5548", "#0A463C", "#083830", "#04221D"],
+  coordinator: ["#EEF2FF", "#E0E7FF", "#C7D2FE", "#A5B4FC", "#818CF8", "#6366F1", "#4F46E5", "#4338CA", "#3730A3", "#312E81", "#1E1B4B"],
+} as const;
+
+/** The steps of a scale, in order (Tailwind's names). */
+export const SCALE_STEPS = [50, 100, 200, 300, 400, 500, 600, 700, 800, 900, 950] as const;
+
+/**
+ * Status colours, the same for every role: a tint to sit on and the ink to
+ * write with. Green is done or verified, sky is pending or for information,
+ * red is rejected, overdue or needs you. `warning` stays for the few amber
+ * notices (a clock gap); amber and gold never mean a status on their own.
+ */
 export const STATUS_COLORS = {
   success: { bg: "#E6F4EA", ink: "#1B5E34" },
   warning: { bg: "#FEF3C7", ink: "#7A4A00" },
   late: { bg: "#FDE8E7", ink: "#B42318" },
   absent: { bg: "#F2F4F7", ink: "#475467" },
-  info: { bg: "#E8EEFD", ink: "#1D3FB0" },
+  info: { bg: "#E0F2FE", ink: "#075985" },
 } as const;
 
 /** The weekend columns of a calendar (background only). */
@@ -187,6 +263,13 @@ export function paletteTextPairs(): Array<{ role: string; pair: string; text: st
       { role, pair: "ink on surface", text: p.ink, background: p.surface, large: false },
       { role, pair: "on-chrome on chrome", text: p.onChrome, background: p.chrome, large: false },
       { role, pair: "primary on surface (links)", text: p.primary, background: p.surface, large: false }
+    );
+  }
+  for (const [role, s] of Object.entries(ROLE_SURFACES)) {
+    pairs.push(
+      { role, pair: "dock ink on dock", text: s.dockInk, background: s.dock, large: false },
+      { role, pair: "active dock label", text: s.onDockActive, background: s.dockActive, large: false },
+      { role, pair: "side menu text", text: s.onSide, background: s.side, large: false }
     );
   }
   for (const [status, s] of Object.entries(STATUS_COLORS)) {

@@ -327,7 +327,7 @@ export function DocumentsSection({
         {p && (
           <Tile label="Requirements approved" value={<>{p.requirements.approved}<small className="text-[13px] font-medium text-slate-500"> of {p.requirements.required}</small></>} hint={`${Math.max(0, p.requirements.required - p.requirements.approved)} still to go`}>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-psu-50">
-              <div className="h-full rounded-full bg-linear-to-r from-psu-500 to-psu-700" style={{ width: `${p.requirements.required ? (p.requirements.approved / p.requirements.required) * 100 : 0}%` }} />
+              <div className="h-full rounded-full bg-psu-500" style={{ width: `${p.requirements.required ? (p.requirements.approved / p.requirements.required) * 100 : 0}%` }} />
             </div>
           </Tile>
         )}

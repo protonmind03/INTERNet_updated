@@ -248,7 +248,7 @@ export default function ComposeMessage(props: Props) {
         tabIndex={-1}
         className="flex max-h-[92dvh] w-full animate-sheet-in flex-col rounded-t-2xl bg-white shadow-2xl outline-none sm:max-w-2xl sm:animate-dialog-in sm:rounded-2xl"
       >
-        <div className="flex items-start justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-linear-to-b from-psu-50/70 to-white px-5 py-4">
+        <div className="flex items-start justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-psu-50/70 px-5 py-4">
           <h2 id={titleId} className="flex items-center gap-2 text-base font-semibold text-slate-900">
             <Icon name="mail" size={18} className="text-psu-700" />
             {title}

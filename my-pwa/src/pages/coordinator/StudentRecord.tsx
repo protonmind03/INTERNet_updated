@@ -252,7 +252,7 @@ export default function StudentRecord() {
         <div ref={rimRef} data-fit="full" className="group/rim max-md:contents md:sticky md:top-0 md:z-20 md:flex md:items-end md:rounded-t-[30px] md:bg-psu-100 md:pt-2.5 data-[fit=stacked]:flex-wrap print:hidden">
           <div className="relative z-[1] mt-2 flex min-w-0 items-center gap-3 rounded-t-[18px] bg-slate-50 p-2.5 md:mt-0 md:max-w-[46%] md:flex-[0_1_auto] md:rounded-tr-none md:rounded-tl-[22px] md:pb-2 md:pl-2.5 md:pr-1.5 md:pt-2.5 group-data-[fit=tight]/rim:md:max-w-[40%] group-data-[fit=stacked]/rim:md:max-w-none group-data-[fit=stacked]/rim:md:basis-full group-data-[fit=stacked]/rim:md:rounded-t-[22px]">
             {back}
-            <span aria-hidden="true" className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-linear-to-b from-gold-300 to-gold-400 text-[15px] font-bold text-psu-950">
+            <span aria-hidden="true" className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-gold-300 text-[15px] font-bold text-psu-950">
               {getInitials(student.name)}
             </span>
             <div className="min-w-0">

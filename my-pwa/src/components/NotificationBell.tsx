@@ -5,7 +5,6 @@ import AnnouncementList from "./AnnouncementList";
 import SentAnnouncements from "./SentAnnouncements";
 import TraineeAnnouncements from "./TraineeAnnouncements";
 import Icon from "./Icon";
-import Tooltip from "./Tooltip";
 import { FilterChips } from "./ui";
 import { useNotificationFeed, type NotificationFilter } from "../lib/useNotificationFeed";
 import { NOTIFICATIONS_PAGE, resolveNotificationTarget } from "../lib/notificationTargets";
@@ -118,7 +117,6 @@ export default function NotificationBell({
 
   return (
     <div className="relative" ref={containerRef}>
-      <Tooltip label="Notifications" side="left">
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
@@ -142,7 +140,6 @@ export default function NotificationBell({
           </span>
         )}
       </button>
-      </Tooltip>
 
       {open && (
         <div className="fixed inset-x-3 top-[calc(4rem+var(--inb-top-inset))] z-40 origin-top-right animate-pop-in rounded-xl border border-slate-200 bg-white text-left shadow-xl sm:absolute sm:inset-x-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96">

@@ -5,7 +5,7 @@ import AttestedNote, { type OfflineAttestation } from "../../components/Attested
 import DateRangeFilter from "../../components/DateRangeFilter";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
-import Tooltip from "../../components/Tooltip";
+import InfoTip from "../../components/InfoTip";
 import {
   Button,
   Card,
@@ -790,10 +790,7 @@ function TaskSummary({ row }: { row: MonitorRow }) {
 function AttendanceState({ row, onShow }: { row: MonitorRow; onShow: () => void }) {
   if (row.flagged_logs > 0) {
     return (
-      <Tooltip
-        side="left"
-        label={`${row.rejected_logs} rejected, ${row.missing_timeout_logs} missing a time-out, ${row.stale_pending_logs} unverified for more than 2 days. Click to see them.`}
-      >
+      <span className="inline-flex items-center gap-2">
         <button
           type="button"
           onClick={onShow}
@@ -801,7 +798,11 @@ function AttendanceState({ row, onShow }: { row: MonitorRow; onShow: () => void 
         >
           {row.flagged_logs} flagged
         </button>
-      </Tooltip>
+        <InfoTip
+          label="What the flags are"
+          text={`${row.rejected_logs} rejected, ${row.missing_timeout_logs} missing a time-out, ${row.stale_pending_logs} unverified for more than 2 days.`}
+        />
+      </span>
     );
   }
   if (row.pending_logs > 0) {

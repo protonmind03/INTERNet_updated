@@ -167,7 +167,7 @@ export default function CoordinatorLayout({
           className={({ isActive }) => `${SIDEBAR.accountLink} ${isActive ? SIDEBAR.accountActive : SIDEBAR.accountIdle}`}
         >
           {/* The coordinator's own mark: their indigo, not the student's gold. */}
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-linear-to-br from-psu-500 to-psu-700 text-xs font-bold text-white ring-1 ring-white/20">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-psu-500 text-xs font-bold text-white ring-1 ring-white/20">
             {getInitials(coordinator.name, "OC")}
           </span>
           <span className="min-w-0 leading-tight">

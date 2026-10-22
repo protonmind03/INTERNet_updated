@@ -135,7 +135,7 @@
 @keyframes inb-countdown { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 
 /* route change: an amber road with a bright head */
-.inb-route { transform-origin: left; animation: inb-route 0.75s var(--inb-ease-out) forwards; box-shadow: 0 0 10px rgba(250, 204, 21, 0.7); }
+.inb-route { transform-origin: left; animation: inb-route 0.75s var(--inb-ease-out) forwards; }
 @keyframes inb-route { 0% { transform: scaleX(0); opacity: 1; } 70% { transform: scaleX(0.86); opacity: 1; } 100% { transform: scaleX(1); opacity: 0; } }
 
 /* loader progress "road": a track with flowing lane dashes */
@@ -150,22 +150,15 @@
 }
 .inb-roadbar::after {
   content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 2px; margin-top: -1px;
-  background: repeating-linear-gradient(90deg, var(--inb-amber) 0 8px, transparent 8px 14px);
+  /* Lane dashes drawn as an SVG tile, flat (PSU redesign 13.1). */
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='2'%3E%3Crect width='8' height='2' fill='%23FACC15'/%3E%3C/svg%3E") repeat-x;
   opacity: 0.9; animation: inb-roadbar-lane 0.7s linear infinite;
-  -webkit-mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
-          mask: linear-gradient(90deg, transparent, #000 20%, #000 80%, transparent);
 }
 @keyframes inb-roadbar { 0% { transform: translateX(-110%); } 100% { transform: translateX(240%); } }
 @keyframes inb-roadbar-lane { to { background-position: -14px 0; } }
 
-/* determinate progress: a moving sheen */
+/* determinate progress: no sheen since the PSU redesign (flat colour only); the class stays for its users. */
 .inb-sheen { position: relative; overflow: hidden; }
-.inb-sheen::after {
-  content: ""; position: absolute; inset: 0;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.55), transparent);
-  transform: translateX(-100%); animation: inb-sheen 1.4s ease-in-out infinite;
-}
-@keyframes inb-sheen { to { transform: translateX(100%); } }
 
 /* entrances */
 .inb-fade-up { animation: inb-fade-up var(--inb-dur-4) var(--inb-ease-out) both; }
@@ -185,15 +178,8 @@
 .inb-reveal .inb-wm-et { animation-delay: 0.55s; }
 @keyframes inb-wm { from { opacity: 0; transform: translateY(18%); } to { opacity: 1; transform: none; } }
 
-/* tile sheen that passes once after the cap lands (splash, about screen) */
+/* the app tile (splash, about screen): flat since the PSU redesign, no passing sheen */
 .inb-tile-sheen { position: relative; overflow: hidden; border-radius: var(--inb-r-tile); }
-.inb-tile-sheen::after {
-  content: ""; position: absolute; inset: -20%;
-  background: linear-gradient(115deg, transparent 40%, rgba(255, 255, 255, 0.28) 50%, transparent 60%);
-  transform: translateX(-120%); animation: inb-tile-sheen 1.1s var(--inb-ease-out) 1.95s both;
-  pointer-events: none;
-}
-@keyframes inb-tile-sheen { to { transform: translateX(120%); } }
 
 /* splash background road (decorative) */
 .inb-bg-lane { animation: inb-bg-lane 1.6s linear infinite; }
@@ -251,8 +237,8 @@
   --status-late-ink: #b42318;
   --status-absent-bg: #f2f4f7;
   --status-absent-ink: #475467;
-  --status-info-bg: #e8eefd;
-  --status-info-ink: #1d3fb0;
+  --status-info-bg: #e0f2fe;
+  --status-info-ink: #075985;
   --weekend-tint: #fff5f5;
   /* Before a role is known (sign-in, help): the brand's own navy and amber. */
   --role-primary: #1a237e;
@@ -264,39 +250,111 @@
   --role-chrome: #1a237e;
   --role-on-chrome: #ffffff;
   --role-decor: #c7cdf0;
+  --role-hairline: #e2e8f0;
+  --role-dock: #1a237e;
+  --role-dock-border: #1a237e;
+  --role-dock-ink: #ffffff;
+  --role-dock-active: #facc15;
+  --role-on-dock-active: #1a237e;
+  --role-side: #121a5e;
+  --role-on-side: #ffffff;
 }
 [data-role="student"] {
-  --role-primary: #a84b0b;
+  --role-primary: #a84a0c;
   --role-on-primary: #ffffff;
-  --role-accent: #ffe047;
+  --role-accent: #facc15;
   --role-on-accent: #3a2a12;
-  --role-surface: #fff8e8;
+  --role-surface: #fbf7ef;
   --role-ink: #3a2a12;
-  --role-chrome: #fff8e8;
-  --role-on-chrome: #3a2a12;
-  --role-decor: #f7ab15;
+  --role-chrome: #8a3a07;
+  --role-on-chrome: #ffffff;
+  --role-decor: #facc15;
+  --role-hairline: #ebddc6;
+  --role-dock: #fff8e6;
+  --role-dock-border: #f2e3be;
+  --role-dock-ink: #6e2e08;
+  --role-dock-active: #a84a0c;
+  --role-on-dock-active: #ffffff;
+  --role-side: #8a3a07;
+  --role-on-side: #ffffff;
 }
 [data-role="supervisor"] {
-  --role-primary: #0f6b5c;
+  --role-primary: #116c5c;
   --role-on-primary: #ffffff;
-  --role-accent: #7fd1ae;
+  --role-accent: #d3e9e1;
   --role-on-accent: #0e2a26;
-  --role-surface: #eef6f2;
+  --role-surface: #f4f9f6;
   --role-ink: #0e2a26;
-  --role-chrome: #ffffff;
-  --role-on-chrome: #0e2a26;
-  --role-decor: #f7ab15;
+  --role-chrome: #116c5c;
+  --role-on-chrome: #ffffff;
+  --role-decor: #7fd1ae;
+  --role-hairline: #d3e6dd;
+  --role-dock: #0c5548;
+  --role-dock-border: #0c5548;
+  --role-dock-ink: #ffffff;
+  --role-dock-active: #ffffff;
+  --role-on-dock-active: #0c5548;
+  --role-side: #116c5c;
+  --role-on-side: #ffffff;
 }
 [data-role="coordinator"] {
-  --role-primary: #0a28dd;
+  --role-primary: #4f46e5;
   --role-on-primary: #ffffff;
-  --role-accent: #ffe047;
+  --role-accent: #facc15;
   --role-on-accent: #0b1440;
-  --role-surface: #f1f3fb;
+  --role-surface: #f7f8fc;
   --role-ink: #0b1440;
-  --role-chrome: #0b1440;
+  --role-chrome: #1a237e;
   --role-on-chrome: #ffffff;
   --role-decor: #b8c2ff;
+  --role-hairline: #e3e6f5;
+  --role-dock: #1a237e;
+  --role-dock-border: #1a237e;
+  --role-dock-ink: #ffffff;
+  --role-dock-active: #facc15;
+  --role-on-dock-active: #1a237e;
+  --role-side: #121a5e;
+  --role-on-side: #ffffff;
+}
+/* The brand blue scale, redrawn in each role colour (ROLE_SCALES in tokens.ts): every psu-* class in a portal follows it. */
+[data-role="student"] {
+  --color-psu-50: #fbf3e8;
+  --color-psu-100: #f6e3cb;
+  --color-psu-200: #edc79a;
+  --color-psu-300: #e0a468;
+  --color-psu-400: #cc7a35;
+  --color-psu-500: #b95f18;
+  --color-psu-600: #a84a0c;
+  --color-psu-700: #8a3a07;
+  --color-psu-800: #6e2e08;
+  --color-psu-900: #55240a;
+  --color-psu-950: #341505;
+}
+[data-role="supervisor"] {
+  --color-psu-50: #ecf6f2;
+  --color-psu-100: #d3e9e1;
+  --color-psu-200: #a9d4c5;
+  --color-psu-300: #74b8a3;
+  --color-psu-400: #3f9881;
+  --color-psu-500: #1f7f6b;
+  --color-psu-600: #116c5c;
+  --color-psu-700: #0c5548;
+  --color-psu-800: #0a463c;
+  --color-psu-900: #083830;
+  --color-psu-950: #04221d;
+}
+[data-role="coordinator"] {
+  --color-psu-50: #eef2ff;
+  --color-psu-100: #e0e7ff;
+  --color-psu-200: #c7d2fe;
+  --color-psu-300: #a5b4fc;
+  --color-psu-400: #818cf8;
+  --color-psu-500: #6366f1;
+  --color-psu-600: #4f46e5;
+  --color-psu-700: #4338ca;
+  --color-psu-800: #3730a3;
+  --color-psu-900: #312e81;
+  --color-psu-950: #1e1b4b;
 }
 
 /* The seal (brand/PsuSeal.tsx): drawn as it is. No filter, shadow, outline or transform may reach it. */
@@ -511,9 +569,9 @@
   padding: 0 8px;
   overflow: hidden;
   border-radius: 20px;
-  background: var(--role-chrome);
-  color: var(--role-on-chrome);
-  border: 1px solid color-mix(in srgb, var(--role-ink) 14%, transparent);
+  background: var(--role-dock);
+  color: var(--role-dock-ink);
+  border: 1px solid var(--role-dock-border);
   box-shadow: 0 10px 30px -12px color-mix(in srgb, var(--role-ink) 45%, transparent);
   transition: transform 220ms var(--inb-ease-out), opacity 220ms;
 }
@@ -532,9 +590,9 @@
   transition: background-color 200ms, padding 200ms;
 }
 .student-dock-label { max-width: 0; overflow: hidden; white-space: nowrap; font-size: 13px; font-weight: 600; transition: max-width 200ms var(--inb-ease-out); }
-.student-dock-item--on { background: var(--role-primary); color: var(--role-on-primary); padding: 0 14px; }
+.student-dock-item--on { background: var(--role-dock-active); color: var(--role-on-dock-active); padding: 0 14px; }
 .student-dock-item--on .student-dock-label { max-width: 7.5rem; }
-.student-dock-item:focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; }
+.student-dock-item:focus-visible { outline: 3px solid var(--role-dock-active); outline-offset: 2px; }
 .student-dock-badge {
   position: absolute;
   right: -8px;
@@ -729,3 +787,101 @@
 /* The first-open slides (Iteration 23, components/Onboarding.tsx): one slide per width. */
 .onboarding-row { gap: 0; }
 .onboarding-slide { padding: 2px; }
+
+/* =====================================================================
+   PSU redesign (internet-revisions, Section 13 "beyond gradients").
+   Flat colour, paper and grain, hairlines over shadows, a motif per
+   role, status as words and shapes. Colours are the role's (--role-*)
+   and the status set (--status-*).
+   ===================================================================== */
+
+/* Status badges (components/ui.tsx StatusBadge): a word and a mark, never colour alone. */
+.st-badge { display: inline-flex; min-height: 22px; align-items: center; gap: 6px; white-space: nowrap; border-radius: 9999px; padding: 1px 10px; font-size: 12px; font-weight: 600; line-height: 1.3; box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 22%, transparent); }
+.st-badge-mark { width: 6px; height: 6px; flex-shrink: 0; border-radius: 9999px; background: currentColor; }
+.st-badge--good { background: var(--status-success-bg); color: var(--status-success-ink); }
+.st-badge--info { background: var(--status-info-bg); color: var(--status-info-ink); }
+.st-badge--bad { background: var(--status-late-bg); color: var(--status-late-ink); }
+.st-badge--neutral { background: var(--status-absent-bg); color: var(--status-absent-ink); }
+/* Supervisor: green is the portal's colour, so "done" is grey with a tick. */
+[data-role="supervisor"] .st-badge--good { background: var(--status-absent-bg); color: var(--status-absent-ink); }
+[data-role="supervisor"] .st-badge--good .st-badge-mark { width: 10px; height: 10px; border-radius: 0; background: none; }
+[data-role="supervisor"] .st-badge--good .st-badge-mark::before { content: "\2713"; display: block; font-size: 11px; font-weight: 800; line-height: 10px; }
+
+/* Stamps: text inside a 2 px border, rotated a little, in the status colour (motifs/Stamp.tsx). */
+.inb-stamp { display: inline-flex; align-items: center; border: 2px solid currentColor; border-radius: 6px; padding: 1px 7px; font-family: var(--font-mono); font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.35; transform: rotate(-5deg); white-space: nowrap; }
+.inb-stamp--tilt { transform: rotate(-6deg); }
+.inb-stamp--good { color: #15803d; }
+.inb-stamp--grey { color: #64748b; }
+.inb-stamp--bad { color: var(--status-late-ink); }
+.inb-stamp--info { color: var(--status-info-ink); }
+
+/* The "i" button that opens a tooltip (components/InfoTip.tsx): 44 px to touch, 18 px to see. */
+.inb-info { display: inline-grid; width: 44px; height: 44px; margin: -13px; flex-shrink: 0; place-items: center; border-radius: 9999px; color: color-mix(in srgb, var(--role-ink, #0f172a) 62%, white); }
+.inb-info > span { display: grid; width: 18px; height: 18px; place-items: center; border-radius: 9999px; border: 1.5px solid currentColor; font-family: Georgia, "Times New Roman", serif; font-size: 11px; font-style: italic; font-weight: 700; line-height: 1; }
+.inb-info:hover, .inb-info:focus-visible, .inb-info[aria-expanded="true"] { color: var(--role-primary, #1a237e); }
+.inb-tip { position: fixed; z-index: var(--z-menu); max-width: 16rem; border-radius: 10px; background: #0f172a; color: #ffffff; padding: 8px 10px; font-size: 12.5px; font-weight: 500; line-height: 1.4; box-shadow: var(--shadow-raised); animation: inb-tip-in 120ms ease-out both; pointer-events: none; }
+@keyframes inb-tip-in { from { opacity: 0; transform: translateY(2px); } to { opacity: 1; transform: none; } }
+
+/* ---------- Trainee: the time card (motifs/TimeCard.tsx, LaneDash, HoursRoad) ---------- */
+/* The yellow lane-dash strip along the bottom of the trainee's header. */
+.lane-dash { height: 6px; background-color: var(--role-chrome); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='6'%3E%3Crect x='4' y='0' width='16' height='6' fill='%23FACC15'/%3E%3C/svg%3E"); background-repeat: repeat-x; }
+.time-card { position: relative; border: 1px solid var(--role-hairline); border-radius: 16px; background: #ffffff; }
+.time-card-tear { position: relative; height: 0; margin: 0 14px; border-top: 2px dashed var(--role-hairline); }
+.time-card-tear::before, .time-card-tear::after { content: ""; position: absolute; top: -9px; width: 16px; height: 16px; border-radius: 9999px; background: var(--role-surface); border: 1px solid var(--role-hairline); }
+.time-card-tear::before { left: -23px; clip-path: inset(0 0 0 50%); }
+.time-card-tear::after { right: -23px; clip-path: inset(0 50% 0 0); }
+.punch-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.punch-row > div { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 2px; border-left: 1px solid var(--role-hairline); }
+.punch-row > div:first-child { border-left: 0; }
+.punch-label { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: color-mix(in srgb, var(--role-ink) 72%, white); }
+.punch-time { font-family: var(--font-mono); font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--role-ink); }
+.punch-time[data-empty] { color: color-mix(in srgb, var(--role-ink) 52%, white); }
+/* OJT hours as a road: a dark strip with a centre lane, a pin at today's hours and a flag at the end. */
+.hours-road { position: relative; height: 26px; margin-top: 18px; border-radius: 6px; background: #3a2a12; }
+.hours-road-done { position: absolute; inset: 0 auto 0 0; border-radius: 6px 0 0 6px; background: var(--role-chrome); }
+.hours-road-lane { position: absolute; left: 8px; right: 8px; top: 50%; height: 0; border-top: 2px dashed var(--role-decor); opacity: 0.85; }
+.hours-road-pin { position: absolute; top: -17px; translate: -50% 0; color: var(--role-chrome); }
+.hours-road-flag { position: absolute; right: 2px; top: -19px; color: var(--role-ink); }
+
+/* ---------- Supervisor: the logbook (motifs/Register.tsx, UnderlineTabs.tsx) ---------- */
+/* Faint ruled lines across the header: SVG lines, like a ledger page. */
+.ruled-header { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='16'%3E%3Crect y='15' width='8' height='1' fill='%23FFFFFF' fill-opacity='.09'/%3E%3C/svg%3E"), var(--inb-grain); }
+.register { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(56px, 1fr); overflow-x: auto; }
+.register > div { display: flex; min-height: 52px; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 4px; border-left: 1px solid var(--role-hairline); }
+.register > div:first-child { border-left: 0; }
+.register-who { font-size: 13px; font-weight: 800; color: var(--role-ink); }
+.register-time { font-family: var(--font-mono); font-size: 12px; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--role-ink) 78%, white); }
+.register-out .register-who, .register-out .register-time { color: var(--status-late-ink); }
+.u-tabs { display: flex; gap: 20px; overflow-x: auto; border-bottom: 1px solid var(--role-hairline); scrollbar-width: none; }
+.u-tabs::-webkit-scrollbar { display: none; }
+.u-tab { position: relative; display: inline-flex; min-height: 44px; flex-shrink: 0; align-items: center; gap: 6px; font-size: 14.5px; font-weight: 600; color: color-mix(in srgb, var(--role-ink) 68%, white); }
+.u-tab[aria-selected="true"], .u-tab[aria-current="page"] { color: var(--role-ink); font-weight: 800; }
+.u-tab[aria-selected="true"]::after, .u-tab[aria-current="page"]::after { content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; border-radius: 2px 2px 0 0; background: var(--role-primary); }
+.u-tab:focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; border-radius: 4px; }
+.u-tab-count { font-variant-numeric: tabular-nums; font-weight: 600; }
+
+/* ---------- Coordinator: the route map (motifs/RouteLine.tsx, Departures.tsx, SplitFacts.tsx) ---------- */
+.grid-paper { background-color: #ffffff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cpath d='M16 0H0V16' fill='none' stroke='%23E3E6F5' stroke-width='1'/%3E%3C/svg%3E"); }
+.route-line { position: relative; height: 44px; }
+.route-line-track { position: absolute; left: 16px; right: 16px; top: 50%; height: 6px; translate: 0 -50%; border-radius: 3px; background: var(--role-chrome); }
+.route-station { position: absolute; top: 50%; display: grid; width: 34px; height: 34px; translate: -50% -50%; place-items: center; border-radius: 9999px; background: #ffffff; border: 3px solid var(--role-chrome); font-size: 10.5px; font-weight: 800; color: var(--role-ink); }
+.route-station--behind { border-color: var(--status-late-ink); color: var(--status-late-ink); }
+.route-station--done { border-color: #15803d; color: #15803d; }
+.route-station:focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; }
+.departures-row { display: grid; grid-template-columns: 7rem minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 12px 16px; border-top: 1px solid var(--role-hairline); }
+.departures-code { font-family: var(--font-mono); font-size: 12px; font-weight: 800; letter-spacing: 0.06em; color: var(--status-late-ink); }
+.departures-row--first { background: color-mix(in srgb, var(--status-late-bg) 70%, white); box-shadow: inset 4px 0 0 var(--status-late-ink); }
+@media (max-width: 479.98px) { .departures-row { grid-template-columns: 5.5rem minmax(0, 1fr) auto; gap: 8px; padding: 12px; } }
+.split-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.split-facts > * { min-width: 0; padding: 16px 18px; }
+.split-facts > * + * { border-left: 1px solid var(--role-hairline); }
+
+
+
+/* Hatches and dashes as SVG tiles, not gradients (PSU redesign 13.1). A hatch marks a holiday or a lunch;
+   the dashes mark weeks still to come. The role-coloured dashes are a mask over the role's colour. */
+.pattern-hatch-soft { background-color: #f8fafc; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12'%3E%3Cpath d='M-3 3l6-6M0 12L12 0M9 15l6-6' stroke='%23E2E8F0' stroke-width='3'/%3E%3C/svg%3E"); }
+.pattern-hatch { background-color: #ffffff; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Cpath d='M-1 1l2-2M0 6L6 0M5 7l2-2' stroke='%23CBD5E1' stroke-width='1.6'/%3E%3C/svg%3E"); }
+.pattern-hatch-role { background-color: color-mix(in srgb, var(--role-primary) 10%, white); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Cpath d='M-2 2l4-4M0 8L8 0M6 10l4-4' stroke='%2394A3B8' stroke-opacity='.55' stroke-width='1.6'/%3E%3C/svg%3E"); }
+.pattern-dash-wide { background-color: var(--color-psu-50); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='4'%3E%3Crect width='16' height='4'/%3E%3C/svg%3E") repeat-x left / 20px 100%; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='4'%3E%3Crect width='16' height='4'/%3E%3C/svg%3E") repeat-x left / 20px 100%; }
+.pattern-dash-fine { background-color: var(--color-psu-300); -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Crect width='4' height='4'/%3E%3C/svg%3E") repeat-x left / 7px 100%; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='7' height='4'%3E%3Crect width='4' height='4'/%3E%3C/svg%3E") repeat-x left / 7px 100%; }

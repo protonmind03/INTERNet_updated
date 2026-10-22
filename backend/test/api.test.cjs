@@ -11816,7 +11816,7 @@ test("every text pair in the role palettes and the status colours meets WCAG con
   assert.equal(Math.round(contrastRatio("#000000", "#FFFFFF") * 100) / 100, 21);
   assert.equal(contrastRatio("#A84B0B", "#A84B0B"), 1);
   const pairs = paletteTextPairs();
-  assert.equal(pairs.filter((pair) => pair.role !== "all").length, Object.keys(ROLE_PALETTES).length * 5);
+  assert.equal(pairs.filter((pair) => pair.role !== "all").length, Object.keys(ROLE_PALETTES).length * 8);
   assert.ok(pairs.filter((pair) => pair.role === "all").length >= Object.keys(STATUS_COLORS).length);
   for (const pair of pairs) {
     const needed = pair.large ? 3 : 4.5;

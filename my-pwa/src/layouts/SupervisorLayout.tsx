@@ -289,7 +289,7 @@ function TopLink({ label, path, count }: { label: string; path: string; count?: 
       className={({ isActive }) =>
         `relative flex shrink-0 items-center px-3 text-sm font-medium transition-colors ${
           isActive
-            ? "bg-linear-to-b from-transparent to-white/10 text-white"
+            ? "bg-white/10 text-white"
             : "text-psu-200 hover:text-white"
         }`
       }

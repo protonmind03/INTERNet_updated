@@ -193,7 +193,7 @@ function RoadToToday({ role, phase, calm, elapsed, total }: { role: PortalRole; 
   return (
     <div
       className="flex h-full flex-col items-center justify-center gap-8 px-8"
-      style={{ background: dark ? `radial-gradient(120% 70% at 50% 35%, ${t.colors.surfaceRaised} 0%, ${t.colors.surface} 65%)` : "#F8FAFC" }}
+      style={{ background: dark ? t.colors.surface : "#F8FAFC" }}
       role="status"
       aria-live="polite"
     >

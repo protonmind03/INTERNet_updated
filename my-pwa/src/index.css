@@ -43,10 +43,18 @@
   --color-gold-800: #844b0d;
   --color-gold-900: #703e10;
 
-  /* Elevation, tinted with the brand blue so shadows never look grey. */
-  --shadow-card: 0 1px 2px rgb(15 30 110 / 0.04), 0 1px 3px rgb(15 30 110 / 0.05);
+  /*
+   * Elevation (PSU redesign, "hairlines over shadows"): cards are separated
+   * by a 1 px line, not a shadow, so the card shadow is none. Only what
+   * floats over the page (the dock, sheets, menus) keeps a raised shadow.
+   */
+  --shadow-card: 0 0 #0000;
   --shadow-raised: 0 10px 24px -8px rgb(15 30 110 / 0.14),
     0 2px 6px -2px rgb(15 30 110 / 0.06);
+
+  /* Display face: Bricolage Grotesque for big figures and headings. Times are typed in a monospace face. */
+  --font-display: "Bricolage Grotesque Variable", "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", "Cascadia Mono", Menlo, Consolas, "Liberation Mono", monospace;
 
   /*
    * Motion. One easing curve everywhere: things arrive quickly and settle
@@ -191,6 +199,12 @@
   --z-offline: 80;
   --z-flash: 90;
 
+  /*
+   * The paper grain: SVG fractal noise, grey, at 4.5 % (PSU redesign 13.2).
+   * A background image, so it never takes a pointer event or covers text.
+   */
+  --inb-grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.045'/%3E%3C/svg%3E");
+
   --inb-top-inset: 0px;
   --inb-bottom-bar: env(safe-area-inset-bottom, 0px);
   --inb-fab: 0px;
@@ -296,49 +310,68 @@ body {
 
   /*
   |--------------------------------------------------------------------------
-  | SURFACES
+  | SURFACES ("beyond gradients", PSU redesign Section 13)
   |--------------------------------------------------------------------------
   |
-  | The same blue and gold, given depth. Brand surfaces run from the navy to
-  | its deeper shade with a soft light in one corner; the page canvas carries
-  | a faint blue wash at the top so white cards sit on something.
+  | One flat colour per surface, no washes. Depth comes from layout, a 1 px
+  | hairline between things, and a faint paper grain (`--inb-grain`, an SVG
+  | noise at about 4.5 %) on each portal's page and chrome. The colours are
+  | the role's (--role-*, brand/brand.css); before a role is known they are
+  | the INTERNet navy.
   |
   */
 
-  /* Sidebars, the login panel, the phone header and the "today" card. */
+  /* Side menus and drawers: the role's side-menu colour, flat. */
   .surface-brand {
-    background-color: var(--inb-navy);
-    background-image:
-      radial-gradient(120% 80% at 0% 0%, rgb(58 82 230 / 0.34), transparent 62%),
-      radial-gradient(90% 70% at 100% 100%, rgb(10 20 71 / 0.55), transparent 70%),
-      linear-gradient(165deg, var(--inb-navy) 0%, var(--inb-navy-deep) 100%);
+    background-color: var(--role-side, var(--inb-navy));
+    background-image: var(--inb-grain);
+    color: var(--role-on-side, #ffffff);
   }
 
-  /* A horizontal bar: lighter where the logo sits, deep where the links run. */
+  /* A header bar: the role's header colour, flat. */
   .surface-brand-bar {
-    background-color: var(--inb-navy-deep);
-    background-image: linear-gradient(
-      90deg,
-      var(--inb-navy) 0%,
-      var(--inb-navy-deep) 42%,
-      var(--inb-navy-deep) 100%
-    );
+    background-color: var(--role-chrome, var(--inb-navy-deep));
+    background-image: var(--inb-grain);
+    color: var(--role-on-chrome, #ffffff);
   }
 
-  /* The area behind a portal's pages. */
+  /* The area behind a portal's pages: the role's paper, with grain. */
   .app-canvas {
-    background-color: var(--color-slate-50);
-    background-image:
-      radial-gradient(60rem 18rem at 100% 0%, rgb(221 229 255 / 0.55), transparent 70%),
-      linear-gradient(180deg, var(--color-psu-50) 0, var(--color-slate-50) 16rem);
-    background-repeat: no-repeat;
+    background-color: var(--role-surface, var(--color-slate-50));
+    background-image: var(--inb-grain);
   }
 
   /* Column headings of a data table. */
   .table-head th {
-    background: color-mix(in srgb, var(--color-psu-50) 55%, white);
+    background: color-mix(in srgb, var(--role-surface, var(--color-slate-50)) 70%, white);
     color: var(--color-slate-600);
     letter-spacing: 0.01em;
+  }
+
+  /* Big figures and page titles in the display face; every figure even-width. */
+  .font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    letter-spacing: -0.02em;
+  }
+  .font-punch {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.02em;
+  }
+
+  /* Small uppercase labels ("WORKING SINCE 7:58 AM", "TODAY'S REGISTER"). */
+  .eyebrow {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* A card: white on the paper, a 1 px hairline, no soft shadow. */
+  .card-hairline {
+    border: 1px solid var(--role-hairline, var(--color-slate-200));
+    background: #ffffff;
   }
 
   /*

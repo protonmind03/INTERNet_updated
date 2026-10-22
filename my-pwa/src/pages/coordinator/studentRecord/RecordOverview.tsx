@@ -234,7 +234,7 @@ function Attention(props: Props) {
     you: {
       label: "For you",
       sub: "You can act on these now.",
-      badge: <span className="grid h-7 w-7 place-items-center rounded-full bg-linear-to-br from-psu-600 to-psu-800 text-[10.5px] font-bold text-white">You</span>,
+      badge: <span className="grid h-7 w-7 place-items-center rounded-full bg-psu-600 text-[10.5px] font-bold text-white">You</span>,
     },
     supervisor: {
       label: student.supervisor_name ? `Waiting on ${student.supervisor_name}` : "Waiting on a supervisor",
@@ -249,7 +249,7 @@ function Attention(props: Props) {
     student: {
       label: `Waiting on ${first}`,
       sub: "The student needs to do these.",
-      badge: <span className="grid h-7 w-7 place-items-center rounded-full bg-linear-to-b from-gold-300 to-gold-400 text-[10.5px] font-bold text-psu-950">{getInitials(student.name)}</span>,
+      badge: <span className="grid h-7 w-7 place-items-center rounded-full bg-gold-300 text-[10.5px] font-bold text-psu-950">{getInitials(student.name)}</span>,
     },
   };
 
@@ -288,7 +288,7 @@ function Attention(props: Props) {
 
   return (
     <section aria-labelledby="attention-h" className="overflow-hidden rounded-2xl border border-slate-200/80 bg-white shadow-card">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-linear-to-b from-gold-50 to-white px-4 py-3.5 sm:px-5">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 bg-gold-50 px-4 py-3.5 sm:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-50 text-gold-700 ring-1 ring-inset ring-gold-600/20">
             <Icon name="alert" size={17} />
@@ -394,7 +394,7 @@ const DAY_STYLE: Record<DayInfo["kind"], { cell: string; swatch: string; word: s
   absent: { cell: "border-amber-200 bg-amber-50 text-amber-800", swatch: "border-amber-200 bg-amber-50", word: "Absent" },
   unexcused: { cell: "border-red-300 bg-red-50 text-red-700", swatch: "border-red-300 bg-red-50", word: "Unexcused" },
   missed: { cell: "border-dashed border-red-300 bg-white text-red-700", swatch: "border-dashed border-red-300 bg-white", word: "No time-in" },
-  holiday: { cell: "border-slate-200 bg-[repeating-linear-gradient(135deg,var(--color-slate-100)_0_6px,var(--color-slate-50)_6px_12px)]", swatch: "border-slate-200 bg-slate-100", word: "Holiday" },
+  holiday: { cell: "border-slate-200 pattern-hatch-soft", swatch: "border-slate-200 bg-slate-100", word: "Holiday" },
   planned: { cell: "border-dashed border-psu-200 bg-transparent text-psu-700", swatch: "border-dashed border-psu-200 bg-transparent", word: "Planned" },
   off: { cell: "border-transparent bg-transparent", swatch: "", word: "" },
 };
@@ -465,7 +465,7 @@ function WeekByWeek(props: Props) {
                       const firstWeek = weeks.find((week) => monthOf(week.start) === m || monthOf(week.end) === m);
                       setState({ month: m, day: null, week: firstWeek?.start ?? state.week });
                     }}
-                    className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium pointer-coarse:h-10 ${on ? "border-transparent bg-linear-to-br from-[#1a237e] to-[#121a5e] text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
+                    className={`inline-flex h-8 shrink-0 items-center gap-1.5 rounded-full border px-3 text-[12.5px] font-medium pointer-coarse:h-10 ${on ? "border-transparent bg-[#1a237e] text-white" : "border-slate-200 bg-white text-slate-600 hover:bg-slate-50"}`}
                   >
                     {formatPhDay(`${m}-01`, { month: "short" })}
                     {n > 0 && <sup className="tabular inline-grid h-[18px] min-w-[18px] place-items-center rounded-full bg-gold-400 px-1.5 text-[10.5px] font-bold text-psu-950">{n}</sup>}
@@ -555,7 +555,7 @@ function WeeksView(props: Props & { current: Week }) {
                 {week.now && <span className="rounded-full bg-gold-50 px-1.5 text-[10.5px] font-bold text-gold-700 ring-1 ring-inset ring-gold-600/25">This week</span>}
               </span>
               <span className="text-[11.5px] text-slate-500">{weekRange(week.start)}</span>
-              {week.future ? <span className="h-[26px] rounded-md bg-[repeating-linear-gradient(90deg,var(--color-psu-50)_0_16px,transparent_16px_20px)]" /> : <Spark week={week} ctx={ctx} />}
+              {week.future ? <span className="h-[26px] rounded-md pattern-dash-wide" /> : <Spark week={week} ctx={ctx} />}
               <span className="flex items-baseline justify-between text-xs text-slate-500">
                 {week.future ? "Planned" : "Verified"}
                 <b className="tabular text-[15px] font-semibold text-slate-900">{formatHours(week.future ? week.planned : week.verified)}</b>
@@ -567,7 +567,7 @@ function WeeksView(props: Props & { current: Week }) {
               >
                 <span className="h-1 flex-1 overflow-hidden rounded-full bg-slate-100">
                   <span
-                    className={`block h-full rounded-full ${week.future ? "bg-[repeating-linear-gradient(90deg,var(--color-psu-300)_0_4px,transparent_4px_7px)]" : "bg-linear-to-r from-psu-500 to-psu-700"}`}
+                    className={`block h-full rounded-full ${week.future ? "pattern-dash-fine" : "bg-psu-500"}`}
                     style={{ width: `${pct}%` }}
                   />
                 </span>
@@ -1009,7 +1009,7 @@ function ShiftBar({ info, loadedAt }: { info: DayInfo; loadedAt: Date }) {
             {open ? "Timed in" : log.status === "Pending" ? "Worked, awaiting review" : `Worked, ${log.status.toLowerCase()}`}
           </span>
         )}
-        {breakAt !== null && <span className="inline-flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-[repeating-linear-gradient(45deg,var(--color-slate-300)_0_2px,white_2px_5px)]" />Break</span>}
+        {breakAt !== null && <span className="inline-flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-sm pattern-hatch" />Break</span>}
         {info.lateMinutes > 0 && <span className="inline-flex items-center gap-1"><i className="inline-block h-2.5 w-2.5 rounded-sm bg-amber-500" />Late</span>}
       </div>
     </>

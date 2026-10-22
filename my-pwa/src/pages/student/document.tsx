@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../../components/Icon";
-import Tooltip from "../../components/Tooltip";
 import {
   Card,
   CardHeader,
@@ -354,7 +353,6 @@ export default function Documents() {
                     </p>
                   </div>
                   <StatusBadge status={item.status} />
-                  <Tooltip label="Download" side="left">
                     <button
                       type="button"
                       onClick={() => void download(item)}
@@ -363,7 +361,6 @@ export default function Documents() {
                     >
                       <Icon name="download" />
                     </button>
-                  </Tooltip>
                 </li>
               ))}
             </ul>

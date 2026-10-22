@@ -238,7 +238,7 @@ function StudentChrome({ title, subtitle, actions, children }: LayoutProps) {
             tabs={tabs}
             current={current}
             leading={
-              <span aria-hidden="true" className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-linear-to-b from-gold-300 to-gold-400 text-[15px] font-bold text-psu-950">
+              <span aria-hidden="true" className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-xl bg-gold-300 text-[15px] font-bold text-psu-950">
                 {getInitials(student.name, "ST")}
               </span>
             }

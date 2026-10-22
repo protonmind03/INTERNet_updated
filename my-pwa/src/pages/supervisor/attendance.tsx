@@ -367,7 +367,7 @@ export default function SupervisorAttendanceApproval() {
                     onClick={() => toggleChip(chip.value)}
                     className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
                       on
-                        ? "bg-linear-to-b from-psu-600 to-psu-700 text-white shadow-sm shadow-psu-900/20"
+                        ? "bg-psu-600 text-white"
                         : "border border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
                     }`}
                   >

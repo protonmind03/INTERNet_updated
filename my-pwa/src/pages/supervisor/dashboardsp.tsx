@@ -514,7 +514,7 @@ export default function SupervisorDashboard() {
                         aria-current={active ? "true" : undefined}
                         className={`relative flex w-full items-start gap-3 px-4 py-3.5 text-left transition-colors ${
                           active
-                            ? "bg-linear-to-r from-psu-100/80 to-psu-50/60"
+                            ? "bg-psu-100/80"
                             : "hover:bg-slate-50"
                         }`}
                       >

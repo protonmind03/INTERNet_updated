@@ -26,3 +26,7 @@ CC106 GROUP 9*.pdf
 
 # Brand kit drop folders; the integrated copy lives in my-pwa/src/brand
 internet-brand-kit*/
+
+# The PSU redesign drop folder: its boards and original artwork stay local; the shipped marks live in my-pwa/public/brand/psu
+internet-revisions/design/
+internet-revisions/assets/

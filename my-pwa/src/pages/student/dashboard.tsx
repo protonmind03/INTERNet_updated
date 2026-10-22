@@ -447,7 +447,7 @@ function ProgressCard({
 
 function Figure({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-lg bg-linear-to-br from-psu-50/80 to-slate-50 px-2 py-2.5 ring-1 ring-inset ring-psu-600/10 sm:px-3">
+    <div className="rounded-lg bg-psu-50/80 px-2 py-2.5 ring-1 ring-inset ring-psu-600/10 sm:px-3">
       <dt className="text-xs text-slate-500">{label}</dt>
       <dd className="tabular mt-0.5 text-lg font-semibold text-slate-900">{value}</dd>
     </div>
@@ -520,7 +520,7 @@ function WeekCard({ logs, loading }: { logs: AttendanceLog[]; loading: boolean }
                   {day.hours > 0 ? Number(day.hours.toFixed(1)) : "–"}
                 </span>
                 <div
-                  className="w-full max-w-7 rounded-t-md bg-linear-to-t from-psu-700 to-psu-500 transition-[height,filter] duration-500 ease-soft group-hover/tip:brightness-90"
+                  className="w-full max-w-7 rounded-t-md bg-psu-700 transition-[height,filter] duration-500 ease-soft group-hover/tip:brightness-90"
                   style={{ height: `${Math.round((day.hours / scaleMax) * 120)}px` }}
                 />
               </Tooltip>

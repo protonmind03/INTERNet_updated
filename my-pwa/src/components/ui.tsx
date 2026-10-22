@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useRef,
   useState,
   type ButtonHTMLAttributes,
@@ -28,19 +27,21 @@ import { BrandLoader, CheckGlyph, type LoadProcess } from "../brand";
 */
 
 const BUTTON_VARIANTS = {
-  primary:
-    "bg-linear-to-b from-psu-600 to-psu-700 text-white shadow-sm shadow-psu-900/20 hover:from-psu-700 hover:to-psu-800 active:from-psu-800 active:to-psu-900",
-  gold: "bg-linear-to-b from-gold-300 to-gold-400 text-psu-950 shadow-sm shadow-psu-950/20 hover:from-gold-200 hover:to-gold-300 active:from-gold-400 active:to-gold-500",
+  // Flat fills (PSU redesign 13.1): the role's accent (the psu-* scale follows the role,
+  // brand.css), and gold for the one thing to do now.
+  primary: "bg-psu-600 text-white hover:bg-psu-700 active:bg-psu-800",
+  gold: "bg-gold-400 text-psu-950 hover:bg-gold-300 active:bg-gold-500",
   secondary:
-    "border border-slate-300 bg-white text-slate-700 shadow-xs hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
+    "border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
+  // The outlined choice beside a solid main action (Reject beside Verify, Appeal beside Retake).
+  outline: "border-[1.5px] border-psu-600 bg-white text-psu-700 hover:bg-psu-50 active:bg-psu-100",
   ghost: "text-slate-600 hover:bg-slate-100 active:bg-slate-200",
-  danger:
-    "bg-linear-to-b from-red-500 to-red-600 text-white shadow-sm shadow-red-900/20 hover:from-red-600 hover:to-red-700 active:from-red-700 active:to-red-800",
+  danger: "bg-red-600 text-white hover:bg-red-700 active:bg-red-800",
 } as const;
 
 const BUTTON_SIZES = {
-  sm: "h-8 gap-1.5 px-3 text-xs",
-  md: "h-10 gap-2 px-4 text-sm",
+  sm: "h-9 gap-1.5 px-3 text-xs",
+  md: "h-11 gap-2 px-4 text-sm",
   lg: "h-12 gap-2 px-5 text-base",
 } as const;
 
@@ -131,20 +132,15 @@ export function Button({
 
 type StatusTone = "good" | "waiting" | "bad" | "neutral" | "info";
 
+// Status colours are never the role colour (PSU redesign 13.6): green is done, sky is
+// pending or for information, red needs someone. brand.css draws them (.st-badge--*); on the
+// supervisor's pages "done" is grey with a tick, since green is that portal's own colour.
 const STATUS_TONES: Record<StatusTone, string> = {
-  good: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  waiting: "bg-amber-50 text-amber-800 ring-amber-600/25",
-  bad: "bg-red-50 text-red-700 ring-red-600/20",
-  info: "bg-psu-50 text-psu-700 ring-psu-600/20",
-  neutral: "bg-slate-100 text-slate-600 ring-slate-500/20",
-};
-
-const STATUS_DOTS: Record<StatusTone, string> = {
-  good: "bg-emerald-500",
-  waiting: "bg-amber-500",
-  bad: "bg-red-500",
-  info: "bg-psu-500",
-  neutral: "bg-slate-400",
+  good: "st-badge--good",
+  waiting: "st-badge--info",
+  bad: "st-badge--bad",
+  info: "st-badge--info",
+  neutral: "st-badge--neutral",
 };
 
 const STATUS_MEANINGS: Record<string, StatusTone> = {
@@ -184,9 +180,9 @@ export function StatusBadge({
   const resolved = tone ?? statusTone(status);
   return (
     <span
-      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-xs font-medium ring-1 ring-inset ${STATUS_TONES[resolved]}`}
+      className={`st-badge ${STATUS_TONES[resolved]}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOTS[resolved]}`} />
+      <span className="st-badge-mark" aria-hidden="true" />
       {status}
     </span>
   );
@@ -213,7 +209,7 @@ export function CountBadge({
   return (
     <span
       className={`tabular inline-flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold leading-none ${
-        tone === "dark" ? "bg-gold-400 text-psu-950" : "bg-psu-700 text-white"
+        tone === "dark" ? "bg-gold-400 text-psu-950" : "bg-red-600 text-white"
       } ${className}`}
       aria-label={`${count} waiting`}
     >
@@ -237,7 +233,7 @@ export function Card({
 }) {
   return (
     <section
-      className={`rounded-xl border border-slate-200/80 bg-white shadow-card ${className}`}
+      className={`card-hairline rounded-xl ${className}`}
     >
       {children}
     </section>
@@ -298,7 +294,7 @@ export function StatTile({
   loading?: boolean;
 }) {
   return (
-    <div className="rounded-xl border border-slate-200/80 bg-linear-to-br from-white to-psu-50/50 p-4 shadow-card">
+    <div className="card-hairline rounded-xl p-4">
       <div className="flex items-center justify-between gap-2">
         <p className="text-xs font-medium text-slate-500">{label}</p>
         {icon && (
@@ -320,7 +316,7 @@ export function StatTile({
         </>
       ) : (
         <>
-          <p className="mt-1.5 text-2xl font-semibold tracking-tight text-slate-900">
+          <p className="tabular font-display mt-1.5 text-[28px] font-bold leading-tight text-slate-900">
             {value}
           </p>
           {hint && <p className="mt-0.5 text-xs text-slate-500">{hint}</p>}
@@ -357,7 +353,7 @@ export function ProgressBar({
       className={`h-2 w-full overflow-hidden rounded-full bg-slate-100 ${className}`}
     >
       <div
-        className="h-full rounded-full bg-linear-to-r from-psu-500 to-psu-700 transition-[width] duration-500 ease-soft"
+        className="h-full rounded-full bg-psu-600 transition-[width] duration-500 ease-soft"
         style={{ width: `${clamped}%` }}
       />
     </div>
@@ -381,7 +377,6 @@ export function ProgressRing({
   const clamped = Math.max(0, Math.min(100, value));
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const gradientId = useId();
   return (
     <div
       className="relative shrink-0"
@@ -390,12 +385,6 @@ export function ProgressRing({
       aria-label={label ?? `${Math.round(clamped)} percent`}
     >
       <svg width={size} height={size} className="-rotate-90">
-        <defs>
-          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="var(--color-psu-400)" />
-            <stop offset="100%" stopColor="var(--color-psu-700)" />
-          </linearGradient>
-        </defs>
         <circle
           cx={size / 2}
           cy={size / 2}
@@ -413,7 +402,7 @@ export function ProgressRing({
           strokeLinecap="round"
           strokeDasharray={circumference}
           strokeDashoffset={circumference * (1 - clamped / 100)}
-          stroke={`url(#${gradientId})`}
+          stroke="var(--color-psu-600)"
           className="transition-[stroke-dashoffset] duration-700 ease-soft"
         />
       </svg>
@@ -464,7 +453,7 @@ export function EmptyState({
 }) {
   return (
     <div className="flex flex-col items-center px-6 py-10 text-center">
-      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-linear-to-b from-psu-50 to-psu-100 text-psu-500 ring-1 ring-inset ring-psu-600/10">
+      <div className="flex h-12 w-12 items-center justify-center rounded-full bg-psu-50 text-psu-600 ring-1 ring-inset ring-psu-600/15">
         <Icon name={icon} size={20} />
       </div>
       <p className="mt-3 text-sm font-medium text-slate-800">{title}</p>
@@ -628,7 +617,7 @@ export function Modal({
         aria-label={title}
         className={`flex max-h-[92dvh] w-full animate-sheet-in flex-col rounded-t-2xl bg-white shadow-2xl sm:animate-dialog-in sm:rounded-2xl ${width}`}
       >
-        <div className="flex items-start justify-between gap-3 rounded-t-2xl border-b border-slate-100 bg-linear-to-b from-psu-50/70 to-white px-5 py-4">
+        <div className="flex items-start justify-between gap-3 rounded-t-2xl border-b border-(--role-hairline) bg-white px-5 py-4">
           <div className="min-w-0">
             <h2 className="text-base font-semibold text-slate-900">{title}</h2>
             {description && (
@@ -810,7 +799,7 @@ export function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md"
       .toUpperCase() || "?";
   return (
     <span
-      className={`flex shrink-0 items-center justify-center rounded-full bg-linear-to-br from-psu-100 to-psu-200 font-semibold text-psu-800 ring-1 ring-inset ring-psu-600/10 ${
+      className={`flex shrink-0 items-center justify-center rounded-full bg-psu-100 font-semibold text-psu-800 ring-1 ring-inset ring-psu-600/15 ${
         size === "sm" ? "h-8 w-8 text-xs" : "h-9 w-9 text-xs"
       }`}
       aria-hidden="true"
@@ -1042,7 +1031,7 @@ export function FilterChips<T extends string>({
             onClick={() => onChange(option.value)}
             className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
               active
-                ? "bg-linear-to-b from-psu-600 to-psu-700 text-white shadow-sm shadow-psu-900/20"
+                ? "bg-psu-600 text-white"
                 : "border border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"
             }`}
           >
