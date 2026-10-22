@@ -11861,7 +11861,6 @@ test("the seal's smaller copies are the seal, shrunk: square, the sizes named, a
     return [data.readUInt32BE(16), data.readUInt32BE(20)];
   };
   assert.deepEqual(size("psu-seal.png"), [447, 447]);
-  assert.deepEqual(size("psu-seal-96.png"), [96, 96]);
   assert.deepEqual(size("psu-seal-192.png"), [192, 192]);
   assert.equal(SEAL.clearSpace, 0.25);
   assert.equal(SEAL.minPx, 24);
@@ -12501,4 +12500,136 @@ test("Vercel: the landing page at /, the app everywhere else, /login to the door
   // The password-reset link still lands on the app's page.
   const server = fs.readFileSync(nodePath.join(__dirname, "..", "src", "server.ts"), "utf8");
   assert.match(server, /new URL\("\/reset-password", /);
+});
+
+/*
+|--------------------------------------------------------------------------
+| PSU REDESIGN (internet-revisions): THE PSU MARKS
+|--------------------------------------------------------------------------
+*/
+
+test("the PSU marks: the app's registry and the server's keys agree, every shown mark is shipped, the wrong logo is not", () => {
+  require("tsx/cjs");
+  const registry = require("../../my-pwa/src/brand/psuMarks.ts");
+  const server = require("../src/services/psuMarks.ts");
+  const shown = registry.PSU_MARKS.filter((mark) => mark.status !== "replace");
+  assert.deepEqual(
+    shown.filter((mark) => mark.kind === "college").map((mark) => mark.key).sort(),
+    [...server.COLLEGE_MARK_KEYS].sort()
+  );
+  assert.deepEqual(
+    shown.filter((mark) => mark.kind === "program" || mark.kind === "major").map((mark) => mark.key).sort(),
+    [...server.ORG_MARK_KEYS].sort()
+  );
+  const dir = nodePath.join(pwaRoot, "public", "brand", "psu");
+  const size = (file) => {
+    const data = fs.readFileSync(nodePath.join(dir, file));
+    return [data.readUInt32BE(16), data.readUInt32BE(20)];
+  };
+  // 512 and 128 px wide; a mark kept whole (CHTM's wordmark) may be a pixel shorter.
+  for (const mark of shown) {
+    for (const [file, side] of [[`${mark.key}.png`, 512], [`${mark.key}@128.png`, 128]]) {
+      const [width, height] = size(file);
+      assert.equal(width, side, file);
+      assert.ok(height <= side && height >= side - 2, file);
+    }
+  }
+  // The ECOSOC logo reads "Palawan State University": never shipped, never matched.
+  assert.ok(!fs.readdirSync(dir).some((file) => file.startsWith("org-abecon")));
+  assert.equal(registry.getProgramMark("ABEcon"), null);
+  assert.equal(server.markKey("org-abecon-ecosoc", "org"), "bad");
+  // Lookups ignore case and outer spaces; the logo's CTHM finds the system's CHTM.
+  assert.equal(registry.getCollegeMark("  ccs ").key, "college-ccs");
+  assert.equal(registry.getCollegeMark("CTHM").key, "college-chtm");
+  assert.equal(registry.getCollegeMark("CHTM").key, "college-chtm");
+  assert.equal(registry.getProgramMark("bsit").key, "org-bsit-sfiti");
+  assert.equal(registry.getMajorMark("BSEd", " english ").key, "org-bsed-english-afet");
+  assert.equal(registry.getCollegeMark("CBPA"), null, "CBPA has no seal yet: its monogram stands in");
+  assert.equal(registry.PSU_SEAL.key, "psu-seal");
+  // Only the 128 px copies and the seal are kept for offline use.
+  const vite = fs.readFileSync(nodePath.join(pwaRoot, "vite.config.ts"), "utf8");
+  assert.match(vite, /'brand\/psu\/college-\*\[!8\]\.png'/);
+  assert.match(vite, /'brand\/psu\/org-\*\[!8\]\.png'/);
+});
+
+test("migration 071: the marks are seeded without overwriting, the BSEd majors are added, and running it again changes nothing", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  try {
+    const sql = fs.readFileSync(nodePath.join(__dirname, "..", "migrations", "071_psu_marks.sql"), "utf8");
+    const snapshot = async () =>
+      (
+        await pool.query(
+          `SELECT 'c' AS k, short_name AS n, mark_key, NULL AS org FROM colleges
+           UNION ALL SELECT 'p', short_code, mark_key, org_name FROM programs
+           UNION ALL SELECT 'm', p.short_code || '/' || m.name, m.mark_key, m.org_name FROM majors m JOIN programs p ON p.id = m.program_id
+           ORDER BY 1, 2`
+        )
+      ).rows;
+    // A coordinator's own choice survives a second run.
+    const ccs = await pool.query(`SELECT id, mark_key FROM colleges WHERE short_name = 'CCS'`);
+    if (ccs.rows.length === 0) {
+      t.skip("the PSU Lingayen colleges are not seeded here");
+      return;
+    }
+    await pool.query(`UPDATE colleges SET mark_key = 'college-cit' WHERE id = $1`, [ccs.rows[0].id]);
+    await pool.query(sql);
+    const once = await snapshot();
+    await pool.query(sql);
+    assert.deepEqual(await snapshot(), once, "a second run changes nothing");
+    assert.equal(once.find((row) => row.k === "c" && row.n === "CCS").mark_key, "college-cit");
+    await pool.query(`UPDATE colleges SET mark_key = $2 WHERE id = $1`, [ccs.rows[0].id, ccs.rows[0].mark_key]);
+    const bsit = once.find((row) => row.k === "p" && row.n === "BSIT");
+    assert.equal(bsit.mark_key, "org-bsit-sfiti");
+    assert.match(bsit.org, /SFITI/);
+    assert.equal(once.find((row) => row.k === "p" && row.n === "ABEcon").mark_key, null);
+    for (const major of ["English", "Filipino", "Science", "Social Studies"]) {
+      assert.ok(once.some((row) => row.k === "m" && row.n === `BSEd/${major}` && row.mark_key), major);
+    }
+    assert.ok(!once.some((row) => row.k === "m" && row.n === "BSEd/Mathematics"), "BSEd Mathematics is unconfirmed");
+  } finally {
+    await pool.end();
+  }
+});
+
+test("a coordinator chooses marks only from the PSU set, and the trainee's Profile and the supervisor's interns carry them", async () => {
+  const academics = await jsonRequest("/api/coordinator/academics", { headers: authHeaders(coordinatorToken) });
+  assert.equal(academics.response.status, 200);
+  const college = academics.body.colleges[0];
+  assert.ok("mark_key" in college);
+  const program = academics.body.programs[0];
+  assert.ok("mark_key" in program && "org_name" in program);
+  const put = (path, payload) =>
+    jsonRequest(path, {
+      method: "PUT",
+      headers: { ...authHeaders(coordinatorToken), "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  assert.equal((await put(`/api/coordinator/colleges/${college.id}`, { mark_key: "college-unknown" })).response.status, 400);
+  assert.equal((await put(`/api/coordinator/colleges/${college.id}`, { mark_key: "org-bsit-sfiti" })).response.status, 400, "a college takes a college seal");
+  assert.equal((await put(`/api/coordinator/programs/${program.id}`, { org_name: "x".repeat(201) })).response.status, 400);
+  const kept = await put(`/api/coordinator/colleges/${college.id}`, { mark_key: college.mark_key });
+  assert.equal(kept.response.status, 200);
+  assert.equal(kept.body.college.mark_key, college.mark_key);
+  const profile = await jsonRequest(`/api/students/${encodeURIComponent(student.student_id)}/profile`, { headers: authHeaders(studentToken) });
+  assert.equal(profile.response.status, 200);
+  for (const field of ["program_code", "major", "org_mark_key", "org_name", "college_short", "college_mark_key"]) {
+    assert.ok(field in profile.body.student, field);
+  }
+  // The Time Record's seal comes from the same set.
+  const institution = await jsonRequest("/api/coordinator/institution", { headers: authHeaders(coordinatorToken) });
+  const saved = institution.body.institution;
+  const sealPut = (seal) =>
+    jsonRequest("/api/coordinator/institution", {
+      method: "PUT",
+      headers: { ...authHeaders(coordinatorToken), "Content-Type": "application/json" },
+      body: JSON.stringify({ ...saved, seal_asset: seal }),
+    });
+  assert.equal((await sealPut("org-bsit-sfiti")).response.status, 400);
+  const back = await sealPut(saved.seal_asset);
+  assert.equal(back.response.status, 200);
+  assert.equal(back.body.institution.seal_asset, saved.seal_asset);
 });

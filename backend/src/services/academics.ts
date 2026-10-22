@@ -25,7 +25,8 @@ import type { Pool, PoolClient } from "pg";
 
 type Db = Pool | PoolClient;
 
-export type College = { id: number; name: string; short_name: string | null; is_active: boolean };
+/** `mark_key` (migration 071): which shipped PSU mark stands for it (services/psuMarks.ts). */
+export type College = { id: number; name: string; short_name: string | null; mark_key: string | null; is_active: boolean };
 export type Program = {
   id: number;
   college_id: number;
@@ -33,10 +34,13 @@ export type Program = {
   short_code: string;
   /** The full name for the Time Record (migration 068); null prints `name`. */
   formal_name: string | null;
+  /** Migration 071: the organisation's mark and name. */
+  mark_key: string | null;
+  org_name: string | null;
   ojt_applies: boolean;
   is_active: boolean;
 };
-export type Major = { id: number; program_id: number; name: string; is_active: boolean };
+export type Major = { id: number; program_id: number; name: string; mark_key: string | null; org_name: string | null; is_active: boolean };
 export type Block = {
   id: number;
   program_id: number;
@@ -58,11 +62,11 @@ export const BLOCK_NAME_SQL = `p.short_code || ' ' || b.year_level || UPPER(TRIM
 
 export async function loadCatalogue(db: Db): Promise<Catalogue> {
   const [colleges, programs, majors, blocks] = await Promise.all([
-    db.query<College>(`SELECT id, name, short_name, is_active FROM colleges ORDER BY name`),
+    db.query<College>(`SELECT id, name, short_name, mark_key, is_active FROM colleges ORDER BY name`),
     db.query<Program>(
-      `SELECT id, college_id, name, short_code, formal_name, ojt_applies, is_active FROM programs ORDER BY name`
+      `SELECT id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active FROM programs ORDER BY name`
     ),
-    db.query<Major>(`SELECT id, program_id, name, is_active FROM majors ORDER BY name`),
+    db.query<Major>(`SELECT id, program_id, name, mark_key, org_name, is_active FROM majors ORDER BY name`),
     db.query<Block>(
       `SELECT b.id, b.program_id, b.major_id, b.year_level, UPPER(TRIM(b.section)) AS section,
               b.term_id, b.is_active, ${BLOCK_NAME_SQL} AS name,

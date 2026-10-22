@@ -8522,11 +8522,19 @@ app.get(
 
     const result = await pool.query(
       `
-      SELECT student_id, email, name, program, company, supervisor_id,
-        required_hours, is_active,
-        phone, emergency_contact_name, emergency_contact_phone
-      FROM students
-      WHERE student_id = $1
+      SELECT s.student_id, s.email, s.name, s.program, s.company, s.supervisor_id,
+        s.required_hours, s.is_active,
+        s.phone, s.emergency_contact_name, s.emergency_contact_phone,
+        -- PSU redesign (migration 071): the program's or major's organisation mark for Profile.
+        p.short_code AS program_code, m.name AS major,
+        COALESCE(m.mark_key, p.mark_key) AS org_mark_key,
+        CASE WHEN m.mark_key IS NOT NULL THEN m.org_name ELSE p.org_name END AS org_name,
+        c.short_name AS college_short, c.mark_key AS college_mark_key
+      FROM students s
+      LEFT JOIN programs p ON p.id = s.program_id
+      LEFT JOIN majors m ON m.id = s.major_id
+      LEFT JOIN colleges c ON c.id = p.college_id
+      WHERE s.student_id = $1
       `,
       [studentId]
     );
@@ -9044,6 +9052,12 @@ app.get(
         -- Where the intern is placed, when linked: for the supervisor's
         -- "Program and block" choice.
         (SELECT p.short_code FROM programs p WHERE p.id = s.program_id) AS program_code,
+        -- PSU redesign (migration 071): the organisation mark beside the program line.
+        (SELECT m.name FROM majors m WHERE m.id = s.major_id) AS major,
+        (SELECT COALESCE(m.mark_key, p.mark_key) FROM programs p LEFT JOIN majors m ON m.id = s.major_id
+          WHERE p.id = s.program_id) AS org_mark_key,
+        (SELECT CASE WHEN m.mark_key IS NOT NULL THEN m.org_name ELSE p.org_name END
+           FROM programs p LEFT JOIN majors m ON m.id = s.major_id WHERE p.id = s.program_id) AS org_name,
         (SELECT bp.short_code || ' ' || b.year_level || UPPER(TRIM(b.section))
            FROM blocks b JOIN programs bp ON bp.id = b.program_id
           WHERE b.id = s.block_id) AS block_name,

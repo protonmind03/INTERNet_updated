@@ -1,6 +1,7 @@
 import type express from "express";
 import type { Pool } from "pg";
 import { BLOCK_NAME_SQL, loadCatalogue } from "../services/academics";
+import { markKey } from "../services/psuMarks";
 
 /*
 |--------------------------------------------------------------------------
@@ -29,6 +30,24 @@ const optionalId = (value: unknown): number | null | "bad" => {
   return Number.isSafeInteger(number) && number > 0 ? number : "bad";
 };
 const isUnique = (error: unknown) => (error as { code?: string }).code === "23505";
+/**
+ * Migration 071: a mark from the shipped PSU set (services/psuMarks.ts) and,
+ * for programs and majors, the organisation's name. Either may be cleared
+ * with null. Returns what is wrong, or null.
+ */
+const markProblem = (body: unknown, kind: "college" | "org"): string | null => {
+  const entry = (body ?? {}) as Record<string, unknown>;
+  if (has(body, "mark_key") && markKey(entry.mark_key, kind) === "bad") return "Choose a mark from the PSU set.";
+  if (kind === "org" && has(body, "org_name") && entry.org_name !== null) {
+    const name = typeof entry.org_name === "string" ? entry.org_name.trim() : "";
+    if (typeof entry.org_name !== "string" || (name.length > 0 && (name.length < 2 || name.length > 200))) {
+      return "An organisation's name must be 2 to 200 characters.";
+    }
+  }
+  return null;
+};
+const markValue = (body: unknown, kind: "college" | "org") =>
+  markKey(((body ?? {}) as Record<string, unknown>).mark_key ?? null, kind) as string | null;
 
 export function registerAcademicRoutes(app: express.Express, deps: Dependencies): void {
   const { pool, requireCoordinator } = deps;
@@ -80,11 +99,13 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       return res.status(400).json({ message: "A college's name must be 2 to 150 characters." });
     }
     if (shortName.length > 20) return res.status(400).json({ message: "The short name must be 20 characters or fewer." });
+    const collegeMark = markProblem(req.body, "college");
+    if (collegeMark) return res.status(400).json({ message: collegeMark });
     try {
       const saved = await pool.query(
-        `INSERT INTO colleges (name, short_name) VALUES ($1, NULLIF($2, ''))
-         RETURNING id, name, short_name, is_active`,
-        [name, shortName]
+        `INSERT INTO colleges (name, short_name, mark_key) VALUES ($1, NULLIF($2, ''), $3)
+         RETURNING id, name, short_name, mark_key, is_active`,
+        [name, shortName, markValue(req.body, "college")]
       );
       return res.status(201).json({ message: "College added.", college: saved.rows[0] });
     } catch (error) {
@@ -106,17 +127,21 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     if (has(req.body, "is_active") && typeof req.body.is_active !== "boolean") {
       return res.status(400).json({ message: "Active must be yes or no." });
     }
+    const collegeMark = markProblem(req.body, "college");
+    if (collegeMark) return res.status(400).json({ message: collegeMark });
     try {
       const saved = await pool.query(
         `UPDATE colleges SET
            name = CASE WHEN $2::boolean THEN $3 ELSE name END,
            short_name = CASE WHEN $4::boolean THEN NULLIF($5, '') ELSE short_name END,
            is_active = COALESCE($6::boolean, is_active),
+           mark_key = CASE WHEN $7::boolean THEN $8 ELSE mark_key END,
            updated_at = NOW()
          WHERE id = $1
-         RETURNING id, name, short_name, is_active`,
+         RETURNING id, name, short_name, mark_key, is_active`,
         [collegeId, has(req.body, "name"), name, has(req.body, "short_name"), shortName,
-          has(req.body, "is_active") ? req.body.is_active : null]
+          has(req.body, "is_active") ? req.body.is_active : null,
+          has(req.body, "mark_key"), markValue(req.body, "college")]
       );
       if (saved.rows.length === 0) return res.status(404).json({ message: "College not found." });
       return res.json({ message: "College saved.", college: saved.rows[0] });
@@ -150,7 +175,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     for (const flag of ["ojt_applies", "is_active"]) {
       if (has(body, flag) && typeof entry[flag] !== "boolean") return `${flag === "ojt_applies" ? "OJT applies" : "Active"} must be yes or no.`;
     }
-    return null;
+    return markProblem(body, "org");
   };
   const programConflict = (error: unknown): string | null => {
     if (!isUnique(error)) return null;
@@ -166,11 +191,12 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       const college = await pool.query(`SELECT 1 FROM colleges WHERE id = $1`, [Number(req.body.college_id)]);
       if (college.rows.length === 0) return res.status(400).json({ message: "That college does not exist." });
       const saved = await pool.query(
-        `INSERT INTO programs (college_id, name, short_code, ojt_applies, formal_name)
-         VALUES ($1, $2, $3, COALESCE($4::boolean, TRUE), NULLIF($5, ''))
-         RETURNING id, college_id, name, short_code, formal_name, ojt_applies, is_active`,
+        `INSERT INTO programs (college_id, name, short_code, ojt_applies, formal_name, mark_key, org_name)
+         VALUES ($1, $2, $3, COALESCE($4::boolean, TRUE), NULLIF($5, ''), $6, NULLIF($7, ''))
+         RETURNING id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active`,
         [Number(req.body.college_id), text(req.body.name), text(req.body.short_code),
-          has(req.body, "ojt_applies") ? req.body.ojt_applies : null, text(req.body.formal_name)]
+          has(req.body, "ojt_applies") ? req.body.ojt_applies : null, text(req.body.formal_name),
+          markValue(req.body, "org"), text(req.body.org_name)]
       );
       return res.status(201).json({ message: "Program added.", program: saved.rows[0] });
     } catch (error) {
@@ -200,14 +226,17 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
            ojt_applies = COALESCE($7::boolean, ojt_applies),
            is_active = COALESCE($8::boolean, is_active),
            formal_name = CASE WHEN $9::boolean THEN NULLIF($10, '') ELSE formal_name END,
+           mark_key = CASE WHEN $11::boolean THEN $12 ELSE mark_key END,
+           org_name = CASE WHEN $13::boolean THEN NULLIF($14, '') ELSE org_name END,
            updated_at = NOW()
          WHERE id = $1
-         RETURNING id, college_id, name, short_code, formal_name, ojt_applies, is_active`,
+         RETURNING id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active`,
         [programId, has(req.body, "name"), text(req.body?.name), has(req.body, "short_code"), text(req.body?.short_code),
           has(req.body, "college_id") ? Number(req.body.college_id) : null,
           has(req.body, "ojt_applies") ? req.body.ojt_applies : null,
           has(req.body, "is_active") ? req.body.is_active : null,
-          has(req.body, "formal_name"), text(req.body?.formal_name)]
+          has(req.body, "formal_name"), text(req.body?.formal_name),
+          has(req.body, "mark_key"), markValue(req.body, "org"), has(req.body, "org_name"), text(req.body?.org_name)]
       );
       if (saved.rows.length === 0) return res.status(404).json({ message: "Program not found." });
       return res.json({ message: "Program saved.", program: saved.rows[0] });
@@ -228,12 +257,15 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     const programId = optionalId(req.body?.program_id);
     if (programId === "bad" || programId === null) return res.status(400).json({ message: "Choose the major's program." });
     if (name.length < 2 || name.length > 150) return res.status(400).json({ message: "A major's name must be 2 to 150 characters." });
+    const majorMark = markProblem(req.body, "org");
+    if (majorMark) return res.status(400).json({ message: majorMark });
     try {
       const program = await pool.query(`SELECT 1 FROM programs WHERE id = $1`, [programId]);
       if (program.rows.length === 0) return res.status(400).json({ message: "That program does not exist." });
       const saved = await pool.query(
-        `INSERT INTO majors (program_id, name) VALUES ($1, $2) RETURNING id, program_id, name, is_active`,
-        [programId, name]
+        `INSERT INTO majors (program_id, name, mark_key, org_name) VALUES ($1, $2, $3, NULLIF($4, ''))
+         RETURNING id, program_id, name, mark_key, org_name, is_active`,
+        [programId, name, markValue(req.body, "org"), text(req.body?.org_name)]
       );
       return res.status(201).json({ message: "Major added.", major: saved.rows[0] });
     } catch (error) {
@@ -253,14 +285,19 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     if (has(req.body, "is_active") && typeof req.body.is_active !== "boolean") {
       return res.status(400).json({ message: "Active must be yes or no." });
     }
+    const majorMark = markProblem(req.body, "org");
+    if (majorMark) return res.status(400).json({ message: majorMark });
     try {
       const saved = await pool.query(
         `UPDATE majors SET
            name = CASE WHEN $2::boolean THEN $3 ELSE name END,
            is_active = COALESCE($4::boolean, is_active),
+           mark_key = CASE WHEN $5::boolean THEN $6 ELSE mark_key END,
+           org_name = CASE WHEN $7::boolean THEN NULLIF($8, '') ELSE org_name END,
            updated_at = NOW()
-         WHERE id = $1 RETURNING id, program_id, name, is_active`,
-        [majorId, has(req.body, "name"), name, has(req.body, "is_active") ? req.body.is_active : null]
+         WHERE id = $1 RETURNING id, program_id, name, mark_key, org_name, is_active`,
+        [majorId, has(req.body, "name"), name, has(req.body, "is_active") ? req.body.is_active : null,
+          has(req.body, "mark_key"), markValue(req.body, "org"), has(req.body, "org_name"), text(req.body?.org_name)]
       );
       if (saved.rows.length === 0) return res.status(404).json({ message: "Major not found." });
       return res.json({ message: "Major saved.", major: saved.rows[0] });

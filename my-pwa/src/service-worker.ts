@@ -28,9 +28,11 @@ import { MEDIAPIPE_CACHE, MODELS_CACHE } from "./lib/liveness/trackerFiles";
 declare const self: ServiceWorkerGlobalScope;
 
 // The cache names live in lib/liveness/trackerFiles.ts, shared with the app.
-const VERSIONED_PREFIXES = ["mediapipe-", "models-"];
+const VERSIONED_PREFIXES = ["mediapipe-", "models-", "psu-marks-"];
 // The cache the hand-written worker used before this one.
 const LEGACY_CACHES = ["internet-offline-v1"];
+// The PSU marks at full size, kept once shown. Its name moves with a new set of marks.
+const PSU_MARKS_CACHE = "psu-marks-v1";
 
 const NAVIGATION_TIMEOUT_MS = 6000;
 
@@ -98,6 +100,15 @@ registerRoute(
 );
 
 /*
+| The PSU marks at full size (internet-revisions, Section 2): not in the
+| install, kept once shown. The 128 px copies and the seal are precached.
+*/
+registerRoute(
+  ({ url, sameOrigin }) => sameOrigin && url.pathname.startsWith("/brand/psu/"),
+  new CacheFirst({ cacheName: PSU_MARKS_CACHE })
+);
+
+/*
 |--------------------------------------------------------------------------
 | TAKING OVER
 |--------------------------------------------------------------------------
@@ -115,7 +126,7 @@ self.addEventListener("message", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     (async () => {
-      const current = new Set([MEDIAPIPE_CACHE, MODELS_CACHE]);
+      const current = new Set([MEDIAPIPE_CACHE, MODELS_CACHE, PSU_MARKS_CACHE]);
       const names = await caches.keys();
       await Promise.all(
         names

@@ -1,5 +1,6 @@
 import type express from "express";
 import type { Pool } from "pg";
+import { SEAL_KEYS } from "../services/psuMarks";
 
 /*
 |--------------------------------------------------------------------------
@@ -8,7 +9,8 @@ import type { Pool } from "pg";
 |
 | Iteration 18 (migration 068). The lines printed above the Daily Time
 | Record: the republic, the university, the campus, the locality, and which
-| seal the app shows. One row. The coordinator reads and edits it on their
+| seal the app shows (one of the shipped PSU seals, services/psuMarks.ts;
+| chosen with the seal picker since the PSU redesign). One row. The coordinator reads and edits it on their
 | Profile ("Institution details"); every change is audited
 | (services/audit.ts).
 |
@@ -49,8 +51,8 @@ export async function loadInstitution(pool: Pick<Pool, "query">): Promise<Instit
   }
 }
 
-/** The fields of a PUT, each 2 to 120 characters, or what is wrong. */
-export function readInstitution(body: unknown): { problem: string } | { values: Record<(typeof INSTITUTION_FIELDS)[number], string> } {
+/** The fields of a PUT, each 2 to 120 characters, and the seal (kept when left out), or what is wrong. */
+export function readInstitution(body: unknown): { problem: string } | { values: Record<(typeof INSTITUTION_FIELDS)[number], string>; seal: string | null } {
   const input = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
   const values = {} as Record<(typeof INSTITUTION_FIELDS)[number], string>;
   const names: Record<(typeof INSTITUTION_FIELDS)[number], string> = {
@@ -64,7 +66,12 @@ export function readInstitution(body: unknown): { problem: string } | { values: 
     if (value.length < 2 || value.length > 120) return { problem: `${names[field]} must be 2 to 120 characters.` };
     values[field] = value;
   }
-  return { values };
+  let seal: string | null = null;
+  if (input.seal_asset !== undefined) {
+    seal = typeof input.seal_asset === "string" ? input.seal_asset.trim().toLowerCase() : "";
+    if (!(SEAL_KEYS as readonly string[]).includes(seal)) return { problem: "Choose a seal from the PSU set." };
+  }
+  return { values, seal };
 }
 
 export function registerInstitutionRoutes(app: express.Express, deps: Dependencies): void {
@@ -85,15 +92,16 @@ export function registerInstitutionRoutes(app: express.Express, deps: Dependenci
     try {
       const saved = await pool.query<Institution>(
         `INSERT INTO institution_profile (id, republic_line, university_name, campus_name, locality_line, seal_asset)
-         VALUES (1, $1, $2, $3, $4, 'psu-seal')
+         VALUES (1, $1, $2, $3, $4, COALESCE($5, 'psu-seal'))
          ON CONFLICT (id) DO UPDATE SET
            republic_line = EXCLUDED.republic_line,
            university_name = EXCLUDED.university_name,
            campus_name = EXCLUDED.campus_name,
            locality_line = EXCLUDED.locality_line,
+           seal_asset = COALESCE($5, institution_profile.seal_asset),
            updated_at = NOW()
          RETURNING republic_line, university_name, campus_name, locality_line, seal_asset, updated_at`,
-        [read.values.republic_line, read.values.university_name, read.values.campus_name, read.values.locality_line]
+        [read.values.republic_line, read.values.university_name, read.values.campus_name, read.values.locality_line, read.seal]
       );
       return res.json({ message: "Institution details saved.", institution: saved.rows[0] });
     } catch (error) {

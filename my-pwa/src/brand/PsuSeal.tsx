@@ -1,7 +1,14 @@
-import seal447 from "./assets/psu-seal.png";
-import seal96 from "./assets/psu-seal-96.png";
-import seal192 from "./assets/psu-seal-192.png";
 import { SEAL } from "./tokens";
+
+/*
+| PSU redesign (internet-revisions, Section 2): the seal is the shipped
+| psu-seal.png (public/brand/psu, transparent, cut to its circle): the
+| 128 px copy is kept for offline use, the 512 px one loads when drawn
+| large. Served from the site's own address, so the landing page and the
+| app draw the same file.
+*/
+const seal128 = "/brand/psu/psu-seal@128.png";
+const seal512 = "/brand/psu/psu-seal.png";
 
 /*
 |--------------------------------------------------------------------------
@@ -41,9 +48,7 @@ type PsuSealProps = {
 
 /** The smallest file that stays sharp at this size on a 2x screen. */
 function sourceFor(size: number): string {
-  if (size * 2 <= 96) return seal96;
-  if (size * 2 <= 192) return seal192;
-  return seal447;
+  return size * 2 <= 128 ? seal128 : seal512;
 }
 
 export default function PsuSeal({ size, onDark = false, clearSpace = true, className = "", decorative = false }: PsuSealProps) {
@@ -53,7 +58,7 @@ export default function PsuSeal({ size, onDark = false, clearSpace = true, class
   const image = (
     <img
       src={sourceFor(diameter)}
-      srcSet={`${seal96} 96w, ${seal192} 192w, ${seal447} 447w`}
+      srcSet={`${seal128} 128w, ${seal512} 512w`}
       sizes={`${diameter}px`}
       width={diameter}
       height={diameter}

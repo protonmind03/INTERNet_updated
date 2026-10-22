@@ -1,6 +1,8 @@
 import { useState } from "react";
 import "@fontsource/unifrakturmaguntia/latin-400.css";
 import { PsuSeal } from "../brand";
+import { MarkImage } from "../brand/MarkImages";
+import { getMark } from "../brand/psuMarks";
 import { formatHours } from "../lib/format";
 import type { SignatureImage, TimeRecordHeaderData } from "../lib/timeRecordHeader";
 
@@ -34,7 +36,12 @@ export function DtrHeader({ data, monthLabel }: { data: TimeRecordHeaderData | n
   return (
     <header className="dtr-header text-center" style={{ fontFamily: TIMES }}>
       <div className="dtr-seal mx-auto">
-        <PsuSeal size={76} clearSpace={false} />
+        {/* The seal the institution details name (seal_asset, from the PSU set); the university's by default. */}
+        {institution && institution.seal_asset !== "psu-seal" && getMark(institution.seal_asset) ? (
+          <MarkImage mark={getMark(institution.seal_asset)} fallbackCode="PSU" size={76} alt={getMark(institution.seal_asset)?.name ?? ""} />
+        ) : (
+          <PsuSeal size={76} clearSpace={false} />
+        )}
       </div>
       {institution && (
         <>

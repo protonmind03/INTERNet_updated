@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
+import MarkPicker from "../../components/MarkPicker";
+import { markChoices } from "../../brand/psuMarks";
 import {
   Button,
   Card,
@@ -37,7 +39,8 @@ import { sameId } from "../../lib/ids";
 |
 */
 
-type College = { id: number; name: string; short_name: string | null; is_active: boolean };
+/** `mark_key` and `org_name` (migration 071): the mark from the PSU set and, for programs and majors, the organisation it belongs to. */
+type College = { id: number; name: string; short_name: string | null; mark_key?: string | null; is_active: boolean };
 type Program = {
   id: number;
   college_id: number;
@@ -45,11 +48,13 @@ type Program = {
   short_code: string;
   /** Printed on the Time Record; null prints the name. */
   formal_name?: string | null;
+  mark_key?: string | null;
+  org_name?: string | null;
   ojt_applies: boolean;
   is_active: boolean;
   students: number;
 };
-type Major = { id: number; program_id: number; name: string; is_active: boolean };
+type Major = { id: number; program_id: number; name: string; mark_key?: string | null; org_name?: string | null; is_active: boolean };
 type Block = {
   id: number;
   program_id: number;
@@ -471,6 +476,9 @@ function EditDialog({
   const [year, setYear] = useState(kind === "block" ? String(editing.row?.year_level ?? "4") : "4");
   const [section, setSection] = useState(kind === "block" ? editing.row?.section || "" : "");
   const [termId, setTermId] = useState(kind === "block" ? String(editing.row?.term_id ?? "") : "");
+  // The mark from the PSU set, and the organisation's name (programs and majors).
+  const [markKey, setMarkKey] = useState(kind !== "block" ? (editing.row as College | Program | Major | undefined)?.mark_key ?? "" : "");
+  const [orgName, setOrgName] = useState(kind === "program" || kind === "major" ? (editing.row as Program | Major | undefined)?.org_name ?? "" : "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -484,17 +492,25 @@ function EditDialog({
     let body: Record<string, unknown>;
     if (kind === "college") {
       if (name.trim().length < 2) return setError("Give the college a name.");
-      body = { name: name.trim(), short_name: shortName.trim() };
+      body = { name: name.trim(), short_name: shortName.trim(), mark_key: markKey || null };
     } else if (kind === "program") {
       if (!collegeId) return setError("Choose the program's college.");
       if (name.trim().length < 2) return setError("Give the program a name.");
       if (shortCode.trim().length < 2 || /\s/.test(shortCode.trim())) {
         return setError("The short code is 2 to 20 characters with no spaces, such as BSIT.");
       }
-      body = { college_id: Number(collegeId), name: name.trim(), short_code: shortCode.trim(), formal_name: formalName.trim() || null };
+      body = {
+        college_id: Number(collegeId),
+        name: name.trim(),
+        short_code: shortCode.trim(),
+        formal_name: formalName.trim() || null,
+        mark_key: markKey || null,
+        org_name: orgName.trim() || null,
+      };
     } else if (kind === "major") {
       if (name.trim().length < 2) return setError("Give the major a name.");
-      body = row ? { name: name.trim() } : { program_id: editing.programId, name: name.trim() };
+      const marks = { mark_key: markKey || null, org_name: orgName.trim() || null };
+      body = row ? { name: name.trim(), ...marks } : { program_id: editing.programId, name: name.trim(), ...marks };
     } else {
       if (!programId) return setError("Choose the block's program.");
       if (!section.trim()) return setError("Give the block a section, such as A.");
@@ -602,6 +618,30 @@ function EditDialog({
               className="field"
             />
           </FormField>
+        )}
+
+        {(kind === "program" || kind === "major") && (
+          <FormField label="Student organisation" htmlFor="academic-org-name" optional hint="Its name is shown beside its mark.">
+            <input
+              id="academic-org-name"
+              type="text"
+              maxLength={200}
+              value={orgName}
+              onChange={(event) => setOrgName(event.target.value)}
+              className="field"
+            />
+          </FormField>
+        )}
+
+        {kind !== "block" && (
+          <MarkPicker
+            name={`academic-mark-${kind}`}
+            label={kind === "college" ? "College seal" : "Mark"}
+            choices={markChoices(kind === "college" ? "college" : "org")}
+            value={markKey}
+            onChange={setMarkKey}
+            noneCode={kind === "college" ? shortName : kind === "program" ? shortCode : name}
+          />
         )}
 
         {kind === "block" && (

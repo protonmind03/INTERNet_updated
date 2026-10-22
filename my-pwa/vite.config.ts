@@ -155,6 +155,10 @@ export default defineConfig(({ mode }) => {
               'startup/**',
               // Only the install dialog and the Home Screen use the role apps' icons.
               'icons/**',
+              // The PSU marks (internet-revisions, Section 2): only the 128 px copies and the
+              // university seal are kept for offline use; the 512 px ones load when shown.
+              'brand/psu/college-*[!8].png',
+              'brand/psu/org-*[!8].png',
             ],
           },
         })
