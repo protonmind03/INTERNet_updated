@@ -1,68 +1,42 @@
-import { useSearchParams } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import StudentLayout from "../../layouts/StudentLayout";
 import EvaluationsPanel from "./Feedback";
 import ConcernsPanel from "./report";
-import { RESOLUTION_TABS, type ResolutionTab } from "./resolutionTabs";
+import { FEEDBACK_PATH } from "./resolutionTabs";
 
 /*
 |--------------------------------------------------------------------------
-| RESOLUTION CENTER
+| RESOLUTION CENTER AND FEEDBACK
 |--------------------------------------------------------------------------
 |
-| The two things a student takes up with the people running their OJT, in
-| one place: a concern they report to the coordinator, and evaluations
-| (those written about them, and their own rating of the company). Each
-| was a page of its own, at /report and /student/feedback; those addresses
-| now come here, to the right tab.
-|
-| The tab is in the address (?tab=evaluations), so a link or the Back
-| button lands on the tab that was open.
+| Two pages, as More lists them: the Resolution Center, for a concern the
+| trainee reports to the coordinator; and Feedback, for the evaluations
+| written about them and their own rating of the company. They were two
+| tabs of one page, so More's "Feedback" opened the Resolution Center and
+| lit the wrong entry; an old ?tab=evaluations address is sent to
+| Feedback, with whatever else it carried.
 |
 */
 
 export default function ResolutionCenter() {
-  const [params, setParams] = useSearchParams();
-  const tab: ResolutionTab = params.get("tab") === "evaluations" ? "evaluations" : "concerns";
-
-  const show = (next: ResolutionTab) => {
-    const updated = new URLSearchParams(params);
-    updated.set("tab", next);
-    setParams(updated, { replace: true });
-  };
-
+  const { search, hash } = useLocation();
+  const params = new URLSearchParams(search);
+  if (params.get("tab") === "evaluations") {
+    params.delete("tab");
+    const rest = params.toString();
+    return <Navigate to={{ pathname: FEEDBACK_PATH, search: rest ? `?${rest}` : "", hash }} replace />;
+  }
   return (
-    <StudentLayout
-      title="Resolution Center"
-      subtitle="Report a concern, see your evaluations, and rate your company."
-    >
-      <div
-        role="tablist"
-        aria-label="Resolution Center"
-        className="mb-5 flex gap-1 border-b border-slate-200"
-      >
-        {RESOLUTION_TABS.map((item) => (
-          <button
-            key={item.value}
-            type="button"
-            role="tab"
-            id={`resolution-tab-${item.value}`}
-            aria-selected={tab === item.value}
-            aria-controls="resolution-panel"
-            onClick={() => show(item.value)}
-            className={`-mb-px flex h-11 items-center border-b-2 px-4 text-sm font-semibold ${
-              tab === item.value
-                ? "border-psu-600 text-psu-800"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            {item.label}
-          </button>
-        ))}
-      </div>
+    <StudentLayout title="Resolution Center" subtitle="Report a concern to the OJT coordinator">
+      <ConcernsPanel />
+    </StudentLayout>
+  );
+}
 
-      <div id="resolution-panel" role="tabpanel" aria-labelledby={`resolution-tab-${tab}`}>
-        {tab === "concerns" ? <ConcernsPanel /> : <EvaluationsPanel />}
-      </div>
+export function StudentFeedback() {
+  return (
+    <StudentLayout title="Feedback" subtitle="Your evaluations, and your rating of the company">
+      <EvaluationsPanel />
     </StudentLayout>
   );
 }

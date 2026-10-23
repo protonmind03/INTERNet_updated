@@ -37,8 +37,8 @@ type Requirement = {
 export default function CoordinatorRequirements() {
   return (
     <CoordinatorLayout
-      title="Requirements"
-      subtitle="What students must submit, when it is due and who reviews it; and where schedules are set."
+      title="Deliverables"
+      subtitle="What students must submit, when it is due and who reviews it."
     >
       <div className="grid items-start gap-6 xl:grid-cols-3">
         <RequiredDocuments />

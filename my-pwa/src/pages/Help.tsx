@@ -36,7 +36,9 @@ function Items({ items }: { items: string[] }) {
 | PSU redesign, 8A: the Help centre. The same answers as "Help for this
 | screen" (lib/helpAnswers.ts), written once: pick a role, browse by topic,
 | search everything ("/" jumps to the search). One answer open at a time.
-| Public, so anyone can read it before signing in.
+| Public, so anyone can read it before signing in. Inside a portal
+| (/student/help, /supervisor/help, /coordinator/help: pages/PortalHelp.tsx)
+| the role is the signed-in one and is not asked again.
 */
 const ROLES: HelpRole[] = ["student", "supervisor", "coordinator"];
 
@@ -52,9 +54,15 @@ function startingRole(params: URLSearchParams): HelpRole {
   return "student";
 }
 
-function HelpCentre() {
+const MESSAGE_PAGE: Partial<Record<HelpRole, { path: string; label: string }>> = {
+  student: { path: "/messages", label: "Message your supervisor" },
+  supervisor: { path: "/supervisor/messages", label: "Message the coordinator" },
+};
+
+export function HelpCentre({ fixedRole }: { fixedRole?: HelpRole }) {
   const [params] = useSearchParams();
-  const [role, setRole] = useState<HelpRole>(() => startingRole(params));
+  const [chosen, setRole] = useState<HelpRole>(() => startingRole(params));
+  const role = fixedRole ?? chosen;
   const [query, setQuery] = useState("");
   const [topic, setTopic] = useState<string | null>(null);
   const [open, setOpen] = useState<string | null>(null);
@@ -88,11 +96,20 @@ function HelpCentre() {
 
   return (
     <section aria-labelledby="help-centre-title" className="card-hairline rounded-2xl p-5 sm:p-7">
-      <p className="eyebrow text-psu-700">Help centre</p>
-      <h1 id="help-centre-title" className="font-display mt-1 text-[30px] font-extrabold leading-tight tracking-tight text-slate-900">
-        What do you need help with?
-      </h1>
-      <div role="tablist" aria-label="I'm a" className="mt-4 flex flex-wrap gap-2">
+      {fixedRole ? (
+        // In a portal the page's own header names it; this is the section.
+        <h2 id="help-centre-title" className="text-[16px] font-bold text-slate-900">
+          {HELP_ROLE_NAME[fixedRole]} help
+        </h2>
+      ) : (
+        <>
+          <p className="eyebrow text-psu-700">Help centre</p>
+          <h1 id="help-centre-title" className="font-display mt-1 text-[30px] font-extrabold leading-tight tracking-tight text-slate-900">
+            What do you need help with?
+          </h1>
+        </>
+      )}
+      {!fixedRole && <div role="tablist" aria-label="I'm a" className="mt-4 flex flex-wrap gap-2">
         {ROLES.map((each) => (
           <button
             key={each}
@@ -109,7 +126,7 @@ function HelpCentre() {
             {HELP_ROLE_NAME[each]}
           </button>
         ))}
-      </div>
+      </div>}
       <label className="relative mt-4 block">
         <span className="sr-only">Search help</span>
         <input
@@ -165,16 +182,20 @@ function HelpCentre() {
           })}
         </ul>
       )}
-      <p className="mt-4 text-sm text-slate-700">
+      {fixedRole !== "coordinator" && <p className="mt-4 text-sm text-slate-700">
         Still stuck?{" "}
-        {signedIn ? (
+        {fixedRole && MESSAGE_PAGE[fixedRole] ? (
+          <Link to={MESSAGE_PAGE[fixedRole]!.path} className="font-bold text-psu-700 underline-offset-2 hover:underline">
+            {MESSAGE_PAGE[fixedRole]!.label}
+          </Link>
+        ) : signedIn ? (
           <span>Message your supervisor or coordinator from your portal.</span>
         ) : (
           <Link to={`/${role}/sign-in`} className="font-bold text-psu-700 underline-offset-2 hover:underline">
             Sign in to message your supervisor or coordinator
           </Link>
         )}
-      </p>
+      </p>}
     </section>
   );
 }
@@ -183,9 +204,6 @@ export default function Help() {
   const standalone = useMediaQuery("(display-mode: standalone)");
   useEffect(() => {
     document.title = "Help · INTERNet";
-    // Opened as /help#offline: go to that part.
-    const target = window.location.hash ? document.getElementById(window.location.hash.slice(1)) : null;
-    target?.scrollIntoView({ block: "start" });
   }, []);
 
   return (
@@ -206,8 +224,41 @@ export default function Help() {
         </div>
 
         <HelpCentre />
+        <HelpSections />
+        <section aria-labelledby="about" className="mt-6 flex flex-col gap-4 rounded-2xl card-hairline p-5 sm:flex-row sm:items-center sm:p-7">
+          <PsuSeal size={64} clearSpace={false} />
+          <div>
+            <h2 id="about" className="text-lg font-semibold text-slate-900">
+              About INTERNet
+            </h2>
+            <p className="mt-1 text-sm text-slate-700">
+              A system proposal for Pangasinan State University – Lingayen Campus: attendance, tasks, requirements and
+              records for on-the-job training, for trainees, their supervisors and the OJT coordinator.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
 
-        <section aria-labelledby="attendance-times" className="mt-6 rounded-2xl card-hairline p-5 sm:p-7">
+const ROLE_ROW: Record<HelpRole, OfflineRow["role"]> = { student: "Student", supervisor: "Supervisor", coordinator: "Coordinator" };
+
+/**
+ * The reference below the answers: attendance times (trainees), what works
+ * with no connection, privacy and whom to contact. Given a role, only that
+ * role's part.
+ */
+export function HelpSections({ role }: { role?: HelpRole }) {
+  const rows = role ? OFFLINE_TABLE.filter((row) => row.role === ROLE_ROW[role]) : OFFLINE_TABLE;
+  useEffect(() => {
+    // Opened as …/help#offline: go to that part.
+    const target = window.location.hash ? document.getElementById(window.location.hash.slice(1)) : null;
+    target?.scrollIntoView({ block: "start" });
+  }, []);
+  return (
+    <>
+        {(!role || role === "student") && <section aria-labelledby="attendance-times" className="mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="attendance-times" className="text-lg font-semibold text-slate-900">
             Attendance times
           </h2>
@@ -219,7 +270,7 @@ export default function Help() {
               <li key={line}>{line}</li>
             ))}
           </ul>
-        </section>
+        </section>}
 
         <section aria-labelledby="offline" className="mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="offline" className="text-lg font-semibold text-slate-900">
@@ -248,7 +299,7 @@ export default function Help() {
               </tr>
             </thead>
             <tbody>
-              {OFFLINE_TABLE.map((row) => (
+              {rows.map((row) => (
                 <tr key={row.role} className="border-b border-slate-100 align-top last:border-0">
                   <th scope="row" className="py-3 pr-4 font-semibold text-slate-900">
                     {row.role}
@@ -265,7 +316,7 @@ export default function Help() {
 
           {/* Phones: the same, one role at a time. */}
           <div className="mt-5 space-y-4 md:hidden">
-            {OFFLINE_TABLE.map((row) => (
+            {rows.map((row) => (
               <section key={row.role} aria-label={row.role} className="rounded-xl border border-slate-200 p-4">
                 <h3 className="font-semibold text-slate-900">{row.role}</h3>
                 <dl className="mt-2 space-y-3 text-sm text-slate-700">
@@ -287,7 +338,7 @@ export default function Help() {
         </section>
 
         {/* Iteration 23: the landing page's footer links here. */}
-        <section aria-labelledby="privacy" className="mt-6 scroll-mt-6 rounded-2xl card-hairline p-5 sm:p-7">
+        {(!role || role === "student") && <section aria-labelledby="privacy" className="mt-6 scroll-mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="privacy" className="text-lg font-semibold text-slate-900">
             Privacy notice
           </h2>
@@ -297,9 +348,9 @@ export default function Help() {
             <strong>Profile, Privacy and data</strong>, where <strong>Download my data</strong> gives a copy of their own records. Time-in
             photos are seen by the trainee&rsquo;s supervisor and the OJT coordinator.
           </p>
-        </section>
+        </section>}
 
-        <section aria-labelledby="contact" className="mt-6 scroll-mt-6 rounded-2xl card-hairline p-5 sm:p-7">
+        {role !== "coordinator" && <section aria-labelledby="contact" className="mt-6 scroll-mt-6 rounded-2xl card-hairline p-5 sm:p-7">
           <h2 id="contact" className="text-lg font-semibold text-slate-900">
             Contact the OJT office
           </h2>
@@ -308,21 +359,9 @@ export default function Help() {
             coordinator creates every account, so a supervisor or trainee without one asks there. A forgotten password can be
             reset from each role&rsquo;s sign-in page.
           </p>
-        </section>
+        </section>}
 
-        <section aria-labelledby="about" className="mt-6 flex flex-col gap-4 rounded-2xl border border-slate-200/80 bg-white p-5 shadow-card sm:flex-row sm:items-center sm:p-7">
-          <PsuSeal size={64} clearSpace={false} />
-          <div>
-            <h2 id="about" className="text-lg font-semibold text-slate-900">
-              About INTERNet
-            </h2>
-            <p className="mt-1 text-sm text-slate-700">
-              A system proposal for Pangasinan State University – Lingayen Campus: attendance, tasks, requirements and
-              records for on-the-job training, for trainees, their supervisors and the OJT coordinator.
-            </p>
-          </div>
-        </section>
-      </div>
-    </main>
+    </>
   );
 }
+

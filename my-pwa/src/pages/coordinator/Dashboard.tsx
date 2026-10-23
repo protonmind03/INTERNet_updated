@@ -186,7 +186,7 @@ export default function CoordinatorDashboard() {
             <FactCard title="Timed in today" tip="Active trainees with a time-in today." value={data?.today.timedIn} unit={data ? `of ${data.students.active}` : ""} line={actions ? `${actions.scheduled_not_in} not in yet` : ""} to="/coordinator/monitoring" action="See who" loading={loading} />
             <FactCard title="Waiting on supervisors" tip="Attendance logs waiting for the assigned supervisor to verify." value={waitingLogs} unit={waitingLogs === 1 ? "log" : "logs"} line={busiest ? `Most with ${busiest.name}` : "None waiting"} to="/coordinator/companies?tab=supervisors" action="By supervisor" loading={loading} />
             <FactCard title="Behind schedule" tip="Trainees whose expected finish, from their schedule and verified hours, falls after the term ends, or who have nothing scheduled." value={home?.cohort.behind} unit="trainees" line="May finish after the term ends" to="/coordinator/monitoring?risk=1" action="See them" loading={loading} />
-            <FactCard title="Evaluations done" tip="Trainees with a final evaluation from their supervisor." value={home?.evaluations.done} unit={home ? `of ${home.evaluations.of}` : ""} line="Opens as each trainee finishes" to="/coordinator/resolution?tab=evaluations" action="See list" loading={loading} />
+            <FactCard title="Evaluations done" tip="Trainees with a final evaluation from their supervisor." value={home?.evaluations.done} unit={home ? `of ${home.evaluations.of}` : ""} line="Opens as each trainee finishes" to="/coordinator/evaluations" action="See list" loading={loading} />
             <FactCard title="Absences this week" tip="Absences filed for Monday to Sunday of this week." value={home?.absences_week.filed} unit="filed" line={home ? `${home.absences_week.half_days} ${home.absences_week.half_days === 1 ? "is a half-day" : "are half-days"}` : ""} to="/coordinator/monitoring" action="See list" loading={loading} />
             <FactCard title="On the clock now" tip="Timed in today and not yet timed out." value={data?.today.onTheClock} unit="trainees" line={data ? `${data.today.absent} absent today` : ""} to="/coordinator/monitoring" action="Monitoring" loading={loading} />
           </div>
@@ -202,12 +202,35 @@ export default function CoordinatorDashboard() {
 
 function CohortCard({ home, loading, onOpen }: { home: Home | null; loading: boolean; onOpen: (id: string) => void }) {
   if (loading || !home) {
+    // The card's own frame with placeholders, so nothing below moves when it fills in.
     return (
-      <Card className="grid-paper p-4">
-        <Skeleton className="h-5 w-56" />
-        <Skeleton className="mt-6 h-10 w-full" />
-        <Skeleton className="mt-4 h-12 w-full" />
-      </Card>
+      <section className="card-hairline overflow-hidden rounded-2xl" aria-busy="true" aria-label="The cohort, loading">
+        <div className="grid-paper px-4 pb-3 pt-4 sm:px-5">
+          <div className="flex items-center gap-3">
+            <Skeleton className="h-10 w-10 shrink-0 rounded-full" />
+            <div className="min-w-0 flex-1">
+              <Skeleton className="h-[15px] w-40" />
+              <Skeleton className="mt-1.5 h-[24px] w-56 max-w-full" />
+            </div>
+          </div>
+          <div className="mt-4">
+            <RouteLine stations={[]} required={1} />
+          </div>
+          <div className="mt-1 flex justify-between">
+            <Skeleton className="h-[18px] w-8" />
+            <Skeleton className="h-[18px] w-10" />
+            <Skeleton className="h-[18px] w-10" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 border-t border-(--role-hairline) bg-white">
+          {["behind", "on their way", "almost done"].map((label, index) => (
+            <p key={label} className={`px-4 py-3 ${index > 0 ? "border-l border-(--role-hairline)" : ""}`}>
+              <Skeleton className="h-[24px] w-8" />
+              <span className="text-[13px] text-slate-600">{label}</span>
+            </p>
+          ))}
+        </div>
+      </section>
     );
   }
   const { college, program } = home.scope;

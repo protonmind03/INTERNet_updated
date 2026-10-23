@@ -23,7 +23,7 @@ import { fetchProgrammeReport, type ReportGroup } from "./programmeReport";
 function GroupTable({ groups, heading }: { groups: ReportGroup[]; heading: string }) {
   return (
     // Scrolls sideways on a narrow screen, so it can be reached and scrolled from the keyboard.
-    <div className="overflow-x-auto" tabIndex={0} role="group" aria-label={`Students by ${heading.toLowerCase()}`}>
+    <div className="relative overflow-x-auto" tabIndex={0} role="group" aria-label={`Students by ${heading.toLowerCase()}`}>
       <table className="w-full text-left text-sm">
         <thead>
           <tr className="table-head border-y border-slate-100 text-xs text-slate-600">

@@ -88,7 +88,7 @@ test.describe("the time-in photo", () => {
         route.fulfill({ contentType: "application/javascript", body: FAKE_FACE_TRACKER })
       );
       await signIn(page, "student", { ...ACCOUNTS.student, email, password: "CameraCheck456!" });
-      await page.goto("/daily-log");
+      await page.goto("/student/dashboard");
       await page.getByRole("button", { name: "Time in", exact: true }).click();
       const dialog = page.getByRole("dialog", { name: "Time in" });
 
@@ -175,9 +175,8 @@ test.describe("a time-in with no connection", () => {
       await tracker;
       test.skip(vouchers[0]?.date !== today(), "Today is a holiday on this database, so no voucher is given for it.");
 
-      // Time-in starts from the Attendance tile (Iteration 21: on Today the floating button takes two taps).
-      await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Attendance/ }).click();
-      await expect(page).toHaveURL(/\/daily-log$/);
+      // Time-in starts from Today's time card (PSU redesign 7).
+      await expect(page).toHaveURL(/\/student\/dashboard$/);
       // No connection: the check runs on the phone.
       await context.setOffline(true);
       await page.getByRole("button", { name: "Time in", exact: true }).click();

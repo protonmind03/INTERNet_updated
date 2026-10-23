@@ -117,7 +117,7 @@ function fromWording(role: NotificationRole, item: ResolvableNotification): Noti
     if (kind === "attendance") return { icon: "clock", path: "/daily-log" };
     if (kind === "task" || kind === "comment") return { icon: "tasks", path: "/task" };
     if (kind === "document") return { icon: "document", path: "/documents" };
-    if (kind === "evaluation" || title.includes("evaluation")) return { icon: "star", path: "/student/resolution?tab=evaluations" };
+    if (kind === "evaluation" || title.includes("evaluation")) return { icon: "star", path: "/student/feedback" };
     if (concern) return { icon: "flag", path: "/student/resolution?tab=concerns" };
     if (report) return { icon: "note", path: "/journal" };
     if (title.includes("supervisor assigned") || title.includes("schedule")) return { icon: "calendar", path: "/schedule" };
@@ -146,7 +146,7 @@ function fromWording(role: NotificationRole, item: ResolvableNotification): Noti
 
   if (concern) return { icon: "flag", path: "/coordinator/resolution" };
   if (title.includes("appeal")) return { icon: "flag", path: "/coordinator/resolution?tab=appeals" };
-  if (title.includes("feedback") || title.includes("evaluation")) return { icon: "star", path: "/coordinator/resolution?tab=evaluations" };
+  if (title.includes("feedback") || title.includes("evaluation")) return { icon: "star", path: "/coordinator/evaluations" };
   if (kind === "attendance" || title.includes("attendance")) return { icon: "activity", path: "/coordinator/monitoring" };
   if (kind === "document" || title.includes("document")) return { icon: "document", path: "/coordinator/documents" };
   return null;

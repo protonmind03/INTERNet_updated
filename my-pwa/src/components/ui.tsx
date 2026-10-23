@@ -883,7 +883,7 @@ export function RowMenu({ label, items }: { label: string; items: RowMenuItem[] 
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={toggle}
-        className={`inline-flex h-8 w-8 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 ${
+        className={`-my-1.5 inline-flex h-11 w-11 items-center justify-center rounded-md text-slate-500 hover:bg-slate-100 hover:text-slate-800 ${
           open ? "bg-slate-100 text-slate-800" : ""
         }`}
       >

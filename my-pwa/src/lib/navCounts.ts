@@ -76,7 +76,16 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
   if (role === "supervisor") {
     // One small count from the server, not the four lists it is counted from.
     const summary = await getJson(role, "/api/supervisor/review-count", "review-count");
-    return { "/supervisor/dashboard": Number(summary.waiting) || 0 };
+    const kinds = (summary.by_kind ?? {}) as Record<string, number>;
+    // The queue as a whole, and each of the side menu's Review entries.
+    return {
+      "/supervisor/dashboard": Number(summary.waiting) || 0,
+      "/supervisor/dashboard?tab=time-ins": Number(kinds.time_ins) || 0,
+      "/supervisor/dashboard?tab=tasks": Number(kinds.tasks) || 0,
+      "/supervisor/dashboard?tab=docs": Number(kinds.documents) || 0,
+      "/supervisor/dashboard?tab=absences": Number(kinds.absences) || 0,
+      "/supervisor/dashboard?tab=reports": Number(kinds.reports) || 0,
+    };
   }
 
   const [summary, resolution] = await Promise.all([

@@ -115,6 +115,7 @@ export default function TimeInFab() {
       type="button"
       disabled={busy}
       aria-expanded={expanded}
+      data-focus={step.name === "Time out" ? "time-out" : undefined}
       aria-label={`${step.name}, opens ${dialogName}${waiting > 0 ? `. ${waiting === 1 ? "1 step is" : `${waiting} steps are`} waiting to be sent.` : ""}`}
       onPointerDown={(event) => {
         pointer.current = event.pointerType;

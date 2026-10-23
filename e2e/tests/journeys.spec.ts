@@ -52,7 +52,8 @@ test.describe("time-in", () => {
     );
 
     await signIn(page, "student");
-    await page.goto("/daily-log");
+    // The step buttons are on Today's time card (PSU redesign 7).
+    await page.goto("/student/dashboard");
     await page.getByRole("button", { name: "Time in", exact: true }).click();
     if (!privacy.body.current) {
       const notice = page.getByRole("dialog", { name: "Privacy notice" });
@@ -73,7 +74,7 @@ test.describe("time-in", () => {
 test.describe("the floating next-step button", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone it is on Today and Tasks, not on Attendance, and opens the time-in dialog", async ({ page }) => {
+  test("on a phone it is on Tasks and Attendance, not on Today (the time card is there), and opens the time-in dialog", async ({ page }) => {
     const student = await apiSession("student");
     const log = await api<{ attendance: { date: string }[] }>(
       student.token,
@@ -94,6 +95,12 @@ test.describe("the floating next-step button", () => {
     await signIn(page, "student");
     const main = page.getByRole("navigation", { name: "Main" });
     const button = page.locator("button.float-fab");
+    // Today carries the step on its time card, so the button stays away (PSU redesign 7).
+    await expect(page.getByRole("button", { name: "Time in", exact: true })).toBeVisible();
+    await expect(button).toHaveCount(0);
+
+    await main.getByRole("link", { name: "Tasks" }).click();
+    await expect(page).toHaveURL(/\/task$/);
     await expect(button).toBeVisible();
     await expect(button).toHaveAccessibleName(/^Time in, opens the camera check/);
     // 56 px tall, in the bottom right corner, above the dock (Iteration 21).
@@ -103,17 +110,11 @@ test.describe("the floating next-step button", () => {
     expect(box.x + box.width).toBeGreaterThan(390 - 24);
     expect(box.y + box.height).toBeLessThanOrEqual(screen.height - 16);
 
-    await main.getByRole("link", { name: "Tasks" }).click();
-    await expect(page).toHaveURL(/\/task$/);
-    await expect(button).toBeVisible();
-
-    // Attendance has the full card, so the button stays away.
+    // Attendance no longer has the time card, so the button is there too.
     await main.getByRole("link", { name: "Attendance" }).click();
     await expect(page).toHaveURL(/\/daily-log$/);
-    await expect(page.getByRole("button", { name: "Time in", exact: true })).toBeVisible();
-    await expect(button).toHaveCount(0);
+    await expect(button).toBeVisible();
 
-    await main.getByRole("link", { name: "Today" }).click();
     // Iteration 21: the first tap opens it into "Time in · Tap again"; the second acts.
     await button.click();
     await expect(button).toHaveAttribute("aria-expanded", "true");
@@ -157,7 +158,10 @@ test.describe("weekly report", () => {
 
     const supervisorPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, isMobile: false })).newPage();
     await signIn(supervisorPage, "supervisor");
-    await supervisorPage.getByRole("tab", { name: /^Weekly reports/ }).click();
+    // On a computer the queue's kinds are entries of the side menu (PSU menu review).
+    await supervisorPage.locator("aside.role-side").getByRole("link", { name: /^Submitted reports/ }).click();
+    // Each card names what it opens; the report is read in its decision.
+    await supervisorPage.getByRole("button", { name: /^Review Weekly report · .*, Demo Student$/ }).first().click();
     await expect(supervisorPage.getByText(did)).toBeVisible();
     await supervisorPage.locator("#decision-note").fill("Name the tasks that were yours.");
     await supervisorPage.getByRole("button", { name: "Return", exact: true }).click();
@@ -170,8 +174,10 @@ test.describe("weekly report", () => {
     await studentPage.locator('button[form="journal-form"]').click();
     await expect(studentPage.getByText("Waiting for your supervisor").first()).toBeVisible();
 
+    // The queue's kind is in the address, so a reload keeps it.
     await supervisorPage.reload();
-    await supervisorPage.getByRole("tab", { name: /^Weekly reports/ }).click();
+    await expect(supervisorPage).toHaveURL(/\?tab=reports$/);
+    await supervisorPage.getByRole("button", { name: /^Review Weekly report · .*, Demo Student$/ }).first().click();
     await supervisorPage.getByRole("button", { name: "Mark reviewed" }).click();
     await expect(supervisorPage.getByText(/weekly report marked reviewed/)).toBeVisible();
 
@@ -239,35 +245,37 @@ test.describe("completion", () => {
 test.describe("the student's menu", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone: the dock of four and More, and the Resolution Center as the icon beside the bell", async ({ page }) => {
+  test("on a phone: the dock of four and More, the header with Help and the bell, and the Resolution Center and Feedback in More", async ({ page }) => {
     await signIn(page, "student");
-    // Iteration 21: the dock (components/StudentDock.tsx): Today, Attendance, Schedule, Tasks, More.
-    const tabs = page.getByRole("navigation", { name: "Main" });
+    // Iteration 21 and the PSU redesign: the dock (components/RoleDock.tsx): Today, Attendance, Schedule, Tasks, More.
+    const tabs = page.locator(".role-dock");
     await expect(tabs.getByRole("link")).toHaveCount(4);
     await expect(tabs.getByRole("link", { name: /^Today/ })).toHaveAttribute("aria-current", "page");
     await expect(tabs.getByRole("button", { name: /^More/ })).toBeVisible();
     await tabs.getByRole("link", { name: "Schedule" }).click();
     await expect(page).toHaveURL(/\/schedule$/);
-    await expect(page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
+    await expect(tabs.getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
 
-    await page.getByRole("button", { name: /Account menu/ }).click();
-    await expect(page.getByRole("button", { name: "Profile", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
-    await page.getByRole("link", { name: /^Resolution Center/ }).click();
-    await expect(page).toHaveURL(/\/student\/resolution/);
-    await expect(page.getByRole("tab", { name: "Concerns" })).toHaveAttribute("aria-selected", "true");
-    await page.getByRole("tab", { name: "Evaluations" }).click();
+    await tabs.getByRole("button", { name: /^More/ }).click();
+    const sheet = page.getByRole("dialog", { name: "More" });
+    await expect(sheet.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
+    await sheet.getByRole("button", { name: /^Resolution Center/ }).click();
+    await expect(page).toHaveURL(/\/student\/resolution$/);
+    await expect(page.getByRole("heading", { name: "Report a concern" })).toBeVisible();
+    await tabs.getByRole("button", { name: /^More/ }).click();
+    await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: /^Feedback/ }).click();
+    await expect(page).toHaveURL(/\/student\/feedback$/);
     await expect(page.getByRole("heading", { name: "Rate your company" })).toBeVisible();
   });
 
   test("the addresses of the pages that moved still open", async ({ page }) => {
     await signIn(page, "student");
     await page.goto("/report");
-    await expect(page).toHaveURL(/\/student\/resolution\?tab=concerns$/);
+    await expect(page).toHaveURL(/\/student\/resolution$/);
     await expect(page.getByRole("heading", { name: "Report a concern" })).toBeVisible();
-    await page.goto("/student/feedback");
-    await expect(page).toHaveURL(/\/student\/resolution\?tab=evaluations$/);
-    await expect(page.getByRole("tab", { name: "Evaluations" })).toHaveAttribute("aria-selected", "true");
+    await page.goto("/student/resolution?tab=evaluations");
+    await expect(page).toHaveURL(/\/student\/feedback$/);
+    await expect(page.getByRole("heading", { name: "Rate your company" })).toBeVisible();
     // Out of the menu, still pages.
     for (const [path, heading] of [
       ["/notifications", "Notifications"],
@@ -284,49 +292,48 @@ test.describe("the student's menu", () => {
     await expect(page.getByRole("heading", { name: "Completion checklist" })).toBeVisible();
     await page.keyboard.press("Escape");
     await openProfileGroup(page, "Placement");
-    await expect(page.getByRole("link", { name: "Report a concern" })).toHaveAttribute(
-      "href",
-      "/student/resolution?tab=concerns"
-    );
+    await expect(page.getByRole("link", { name: "Report a concern" })).toHaveAttribute("href", "/student/resolution");
   });
 });
 
 test.describe("the supervisor's menu, and one word for a concern", () => {
-  test("Concerns is under the account menu with the coordinator's contact, and announcements are under the bell", async ({ page }) => {
+  test("Concerns is under Talk, the coordinator's contact is on Profile, and announcements are under the bell", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, "supervisor");
-    const bar = page.getByRole("navigation", { name: "Main" }).first();
-    // Six places, in this order. Evaluations is a tab of each intern's page (Round 2, Phase 4).
-    await expect(bar.getByRole("link")).toHaveText(
-      [/^Review/, /^Interns/, /^Attendance/, /^Tasks/, /^Documents/, /^Weekly reports/]
+    const menu = page.locator("aside.role-side");
+    // The side menu's groups, in this order (PSU redesign 10 and the menu review).
+    await expect(menu.locator(".role-side-group > :first-child .role-side-text > span:first-child")).toHaveText(
+      ["Review", "Interns", "Attendance", "Work", "Evaluate", "Talk"]
     );
-    await expect(bar.getByRole("link", { name: "Evaluations" })).toHaveCount(0);
-    await expect(bar.getByRole("link", { name: /Incidents|Concerns/ })).toHaveCount(0);
+    await expect(menu.getByRole("link", { name: /Incidents/ })).toHaveCount(0);
 
-    await page.getByRole("button", { name: /Account menu/ }).click();
-    await expect(page.getByText("Your OJT coordinator")).toBeVisible();
-    await expect(page.getByRole("link", { name: /@/ })).toHaveAttribute("href", /^mailto:/);
-    await expect(page.getByRole("button", { name: "Announcements", exact: true })).toHaveCount(0);
-    await page.getByRole("button", { name: "Concerns", exact: true }).click();
+    const talk = menu.locator(".role-side-group").filter({ hasText: /^Talk/ });
+    await talk.locator("button[aria-expanded]").first().click();
+    await talk.getByRole("link", { name: "Concerns" }).click();
     await expect(page).toHaveURL(/\/supervisor\/complaints$/);
     await expect(page.getByRole("heading", { level: 1, name: "Concerns" })).toBeVisible();
+    await expect(talk.getByRole("link", { name: "Concerns" })).toHaveAttribute("aria-current", "page");
     await page.getByRole("button", { name: "Report a concern" }).click();
     await expect(page.getByRole("dialog", { name: "Report a concern" })).toBeVisible();
     await page.keyboard.press("Escape");
 
+    // The coordinator's contact: on Profile, from the account at the menu's foot.
+    await menu.locator("a.role-side-account").click();
+    await expect(page.getByRole("heading", { name: "Your OJT coordinator" })).toBeVisible();
+    await expect(page.getByRole("link", { name: /@/ }).first()).toHaveAttribute("href", /^mailto:/);
+
     await page.getByRole("button", { name: /^Notifications/ }).click();
     await page.getByRole("tab", { name: "Announcements" }).click();
     await expect(page.getByRole("tabpanel")).toBeVisible();
-    // Out of the menu, still a page.
     await page.goto("/supervisor/announcements");
     await expect(page).toHaveTitle(/^Announcements/);
   });
 
   test("the coordinator's page says Concerns, as the Resolution Center's first tab", async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.setViewportSize({ width: 1024, height: 900 });
     await signIn(page, "coordinator");
-    // Iteration 8: concerns moved from the sidebar to the Resolution Center, the icon left of the bell.
-    await page.getByRole("link", { name: /^Resolution Center/ }).click();
-    await expect(page).toHaveURL(/\/coordinator\/resolution$/);
+    // With the menu closed to a rail, Decide opens the Resolution Center with its tabs.
+    await page.goto("/coordinator/resolution");
     await expect(
       page.getByRole("navigation", { name: "Resolution Center sections" }).getByRole("link", { name: "Concerns" })
     ).toHaveAttribute("aria-current", "page");
@@ -338,31 +345,27 @@ test.describe("the supervisor's menu, and one word for a concern", () => {
 test.describe("the coordinator's console", () => {
   test.use({ viewport: { width: 1280, height: 900 } });
 
-  test("the dashboard is today, one action list by who acts, and six figures with targets", async ({ page }) => {
+  test("Home is the cohort, what needs the coordinator, and plain figures with no targets", async ({ page }) => {
     await signIn(page, "coordinator");
-    await expect(page.getByRole("heading", { name: "Today's attendance" })).toBeVisible();
-    await expect(page.getByText("Scheduled, not yet in")).toBeVisible();
-    await expect(page.getByRole("heading", { name: "Action list" })).toBeVisible();
-    // The three lists it replaced are gone.
-    for (const old of ["Needs attention", "Students to check on", "Alerts"]) {
-      await expect(page.getByRole("heading", { name: old, exact: true })).toHaveCount(0);
+    // PSU redesign 11: the cohort as a route, Needs you, This week, plain fact cards.
+    await expect(page.getByRole("heading", { name: /trainees? on the road$/ })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Needs you" })).toBeVisible();
+    await expect(page.getByRole("link", { name: "Open Decide" })).toHaveAttribute("href", "/coordinator/resolution");
+    await expect(page.getByRole("heading", { name: "This week", exact: true })).toBeVisible();
+    for (const figure of ["Timed in today", "Waiting on supervisors", "Behind schedule", "Evaluations done"]) {
+      await expect(page.getByRole("heading", { name: figure })).toBeVisible();
     }
-
-    const figures = page.getByRole("region", { name: "Key figures" });
-    await expect(figures.getByRole("heading", { level: 3 })).toHaveCount(6);
-    await expect(figures.getByText(/^Target: /)).toHaveCount(6);
-    // "?" states what is counted.
-    const first = "Students on track to finish within the term";
-    await expect(figures.getByText(/Of the active students, the share whose remaining hours/)).toBeHidden();
-    await figures.getByRole("button", { name: `What "${first}" counts` }).click();
-    await expect(figures.getByText(/Of the active students, the share whose remaining hours/)).toBeVisible();
-    // The card opens the list behind the figure.
-    await figures.getByRole("link", { name: first }).click();
+    // No targets, deltas or scores anywhere on it.
+    await expect(page.getByText(/^Target: /)).toHaveCount(0);
+    // "Behind schedule" opens the list behind it.
+    await page.getByRole("link", { name: "See them" }).click();
     await expect(page).toHaveURL(/\/coordinator\/monitoring\?risk=1$/);
 
-    // The same six cards are on Analytics.
+    // Analytics keeps the six key figures, each a plain count with an "i".
     await page.goto("/coordinator/analytics");
-    await expect(page.getByRole("region", { name: "Key figures" }).getByRole("heading", { level: 3 })).toHaveCount(6);
+    const figures = page.getByRole("region", { name: "Key figures" });
+    await expect(figures.getByRole("heading", { level: 3 })).toHaveCount(6);
+    await expect(figures.getByText(/^Target: /)).toHaveCount(0);
   });
 
   test("audit filters live in the address, and an export downloads and is itself logged", async ({ page }) => {
@@ -383,8 +386,8 @@ test.describe("the coordinator's console", () => {
     await expect(page.getByLabel("When")).toHaveValue("week");
 
     await page.getByRole("button", { name: "Clear filters" }).click();
-    // The audit log is a section of Profile settings now (Iteration 8): clearing keeps only that.
-    await expect(page).toHaveURL(/\/coordinator\/profile\?section=audit$/);
+    // The audit log is its own page again (the PSU menu review): clearing leaves its bare address.
+    await expect(page).toHaveURL(/\/coordinator\/audit$/);
     await page.getByLabel("When").selectOption({ label: "Custom dates" });
     await expect(page.getByLabel("From")).toBeVisible();
 
@@ -429,7 +432,10 @@ test.describe("programs, blocks and the filter bar", () => {
     await signIn(page, "coordinator");
 
     // The Programs page lists what the migration seeded.
-    await page.getByRole("link", { name: "Programs", exact: true }).click();
+    // Programs is in the side menu's Term group.
+    const menu = page.locator("aside.role-side");
+    await menu.getByRole("button", { name: /^Term/ }).click();
+    await menu.getByRole("link", { name: "Programs", exact: true }).click();
     await expect(page).toHaveURL(/\/coordinator\/programs$/);
     await expect(page.getByRole("heading", { name: /College of Computing Sciences/ })).toBeVisible();
     await expect(page.getByText("BS Information Technology", { exact: true }).first()).toBeVisible();
@@ -477,7 +483,9 @@ test.describe("programs, blocks and the filter bar", () => {
     await expect(page.getByRole("row")).toHaveCount(2);
     await expect(page.getByRole("cell", { name: new RegExp(blockName) })).toBeVisible();
     // It carries to another page from the menu, and Analytics sums by program and block.
-    await page.getByRole("link", { name: "Analytics", exact: true }).click();
+    const reports = page.locator("aside.role-side");
+    await reports.getByRole("button", { name: /^Reports/ }).click();
+    await reports.getByRole("link", { name: "Analytics", exact: true }).click();
     await expect(page).toHaveURL(/\/coordinator\/analytics\?.*block=\d+/);
     await expect(page.getByRole("heading", { name: "By program" })).toBeVisible();
     // Exactly the block's own row in "By block": the Student performance table under it names the block too.
@@ -1052,8 +1060,14 @@ test.describe("attendance steps recorded offline and not sent yet", () => {
     await signIn(page, "student");
     await queueStep(page);
     const askToSignOut = async () => {
-      await page.getByRole("button", { name: /Account menu/ }).click();
-      await page.getByRole("button", { name: "Sign out", exact: true }).click();
+      // Sign out is at the side menu's foot on a computer, at the bottom of More on a phone.
+      const side = page.locator("aside.role-side");
+      if (await side.isVisible()) {
+        await side.getByRole("button", { name: "Sign out" }).click();
+      } else {
+        await page.locator(".role-dock").getByRole("button", { name: /^More/ }).click();
+        await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Sign out", exact: true }).click();
+      }
     };
     await askToSignOut();
     const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
@@ -1096,8 +1110,9 @@ test.describe("time-in with no connection", () => {
     // offer that instead, and whether it got there first was down to timing.
     await page.route(/\/api\/attendance\/offline-vouchers/, (route) => route.abort());
     await signIn(page, "student", SECOND_STUDENT);
-    await page.goto("/daily-log");
-    await expect(page.getByRole("button", { name: /^Time in/ }).first()).toBeVisible();
+    // The step buttons are on Today's time card (PSU redesign 7).
+    await page.goto("/student/dashboard");
+    await expect(page.getByRole("button", { name: "Time in", exact: true })).toBeVisible();
 
     // No connection: the camera check cannot run, and the app says so and offers the other way.
     await context.setOffline(true);
@@ -1275,8 +1290,8 @@ test.describe("pictures on a time-out note and on a concern", () => {
 
     await signIn(page, "student", SECOND_STUDENT);
     const picture = await drawPicture(page);
-    // The Attendance page offers Time out at any point in the day; the floating button offers only the next step.
-    await page.goto("/daily-log");
+    // Today's time card offers Time out at any point in the day; the floating button offers only the next step.
+    await page.goto("/student/dashboard");
     await page.getByRole("button", { name: /^Time out/ }).locator("visible=true").first().click();
     const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
     await dialog.locator("#accomplishment").fill("Sorted the supply cabinet and labelled each shelf.");

@@ -126,7 +126,7 @@ the role, how long the data takes, and reduced motion to choose.
 - While that file is still coming, `components/PageSkeleton.tsx` stands in
   on the three first pages.
 - Each first page draws placeholders where its figures and lists will be
-  (`StatTile loading`, `TodayStripSkeleton`, the coordinator's filter bar
+  (`StatTile loading`, the coordinator's filter bar
   and figures, the student's progress card) and fills them in place.
 - `e2e/tests/first-page.spec.ts` holds the data back and fails if the page
   shifts by 0.1 or more (cumulative layout shift) when it arrives. A new
@@ -136,6 +136,121 @@ the role, how long the data takes, and reduced motion to choose.
 The prototype components themselves are not used by the app. The page exists in development (`npm run dev`, or
 `npm run dev:phone` to open it on a phone), or in a build made with
 `VITE_BRAND_PREVIEW=true` (for a test site only; production leaves it unset).
+
+## The PSU redesign: tokens, marks and rules
+
+The 2026-10 redesign (`internet-revisions/REVISION_REPORT.md`) changed how
+the app is styled and what the coordinator sees. What to know before
+changing either:
+
+### Brand tokens
+
+- `my-pwa/src/brand/tokens.ts` is the source. `ROLE_PALETTES` holds each
+  role's primary, accent, surface and chrome colour (trainee terracotta
+  `#A84A0C`, supervisor green `#116C5C`, coordinator indigo `#4F46E5` with
+  a navy `#1A237E` chrome); `ROLE_SURFACES` the hairline, dock and side
+  menu colours; `ROLE_SCALES` the 50 to 950 scale each role's `psu-*`
+  classes resolve to; `STATUS_COLORS` the status chips.
+- `my-pwa/src/brand/brand.css` has one `[data-role]` block per role that
+  sets the `--role-*` variables and redefines `--color-psu-*`, so a
+  component written with `psu-600` takes the current role's colour. The
+  layouts set `data-role` (`useRoleTheme`).
+- Surfaces are flat. There are no gradients; depth comes from hairline
+  borders (`.card-hairline`), the grain (`--inb-grain`) on the page canvas,
+  and the motifs in `brand/motifs.tsx` (stamp, lane dash, punch row, hours
+  road, register, route line, departures board, split facts). The only
+  `linear-gradient` left is a CSS mask that fades a scrolling row's edges.
+- Status colours are never a role colour, and always come with a word or
+  a shape (`StatusBadge`, `.st-badge`).
+- A tooltip is only ever behind an "i" (`components/InfoTip.tsx`): it opens
+  after 0.6 s of hover or on keyboard focus and closes on leave.
+- `brand/tokens.ts` has a test that every text pair passes 4.5:1
+  (`paletteTextPairs`); add a pair there when you add a surface.
+
+### PSU marks
+
+- The files are in `my-pwa/public/brand/psu/` (`<key>.png` at 512 px and
+  `<key>@128.png`); the service worker caches them on first use
+  (`psu-marks-v1`) and precaches only the 128 px ones.
+- `my-pwa/src/brand/psuMarks.ts` is the registry: one entry per file with
+  its key, kind (university, college, program, major) and name.
+  `getCollegeMark`, `getProgramMark` and `getMajorMark` find a mark for a
+  record; when there is none, `MarkImages.tsx` draws a monogram of the
+  short code instead. Never show a mark the registry does not list.
+- `backend/src/services/psuMarks.ts` lists the same keys; the API accepts
+  only those for `mark_key` and `seal_asset`, and a test checks the two
+  lists agree and that every file is shipped. Adding a mark: add the two
+  files, the registry entry, the server key, and (if it should be the
+  default for a college or program) a new migration that sets it.
+- The ECOSOC logo was not shipped (see `internet-revisions/MISSING_ASSETS.md`).
+
+### Migration 071
+
+`backend/migrations/071_psu_marks.sql` adds `mark_key` to colleges,
+programs and majors and `org_name` to programs and majors, with a CHECK on
+the key's form, and fills them only where they are empty. It also adds the
+BSEd majors English, Filipino, Science and Social Studies if missing. It
+is additive and safe to run twice. The Time Record's seal is
+`institution_profile.seal_asset` (migration 068), now chosen from the PSU
+set on the coordinator's Profile.
+
+### Key figures have no targets
+
+The KPI targets feature (the dialog, `PUT /api/coordinator/kpi-targets`,
+the target and direction logic in `kpiDefinitions.ts`) was removed: the
+key figures are plain counts with an "i". The `kpi_targets` table from
+migration 043 is kept, as migrations are history; nothing reads or writes
+it. Do not bring back scores, deltas or targets on coordinator screens.
+
+### Navigation: one page, one entry, one name
+
+The menu review (after Phase 7) settled how the three portals' menus work.
+Keep to it when adding a page:
+
+- **One entry per page, in one group, named as the page is titled.** The
+  side menu, the dock and More list each destination once; the label is
+  the page's `title`; a hub's tab label is the same word.
+- **One current entry.** `lib/navMatch.ts` scores every entry against the
+  whole address (path and query) and the highest wins, so
+  `/coordinator/resolution?tab=appeals` marks Appeals and never Concerns
+  too. The side menu opens only that entry's group; the dock lights one
+  item or More, never both. Do not add broad "this group also owns that
+  path" rules; give a record page's parent entry an `also` instead.
+- **State that decides the entry lives in the address.** A page whose tabs
+  or scope are menu entries (the supervisor's Review queue, Monitoring's
+  scope) reads them from the query and writes them back with
+  `replace`, so the menu, the title and Back agree.
+- **No section bar twice.** When the side menu is open it lists a hub's
+  pages, so the page does not draw them again: `HubNav` and
+  `components/UnlessInMenu.tsx` hide them (`components/sideMenuState.ts`).
+  A phone or the closed rail shows them. Underlined tabs are for sections;
+  a filter inside a page is chips (`FilterChips`).
+- **A hub only joins pages of one menu group** (`pages/coordinator/hubs.ts`).
+  A page that leaves a hub keeps its old tab address working through
+  `DEPARTED`.
+- **Profile is the account**, at the foot of the side menu and at the
+  bottom of More, not another entry.
+- **Help stays in the portal**: `/student/help`, `/supervisor/help`,
+  `/coordinator/help` (`pages/PortalHelp.tsx`); the public `/help` is
+  for anyone not signed in.
+
+The backend suite checks the coordinator menu for repeats and that menu
+names match page titles; `e2e/tests/coordinator-hubs.spec.ts` and
+`student-folder.spec.ts` click every entry and check exactly one is
+marked.
+
+### Behind schedule
+
+One rule, in `backend/src/services/coordinatorHome.ts`:
+
+- **behind**: the trainee's projection (`student_projections.at_risk`)
+  says they finish after the term ends, or they have nothing scheduled;
+- **almost done**: within the last 10% of their required hours
+  (`ALMOST_DONE_SHARE = 0.1`), or done; this wins over "behind";
+- **on the way**: everyone else.
+
+It is a constant in code, not a setting, and the coordinator Home's cohort
+line, its counts and the "Behind schedule" figure all use it.
 
 ## Docker for development
 

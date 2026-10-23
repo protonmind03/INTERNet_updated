@@ -15,7 +15,7 @@ import { signIn } from "./helpers";
 test("the status card shows the database backup and the restore drill, and a drill can be recorded", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, "coordinator");
-  await page.goto("/coordinator/profile?section=status");
+  await page.goto("/coordinator/status");
   const card = page.locator("section").filter({ has: page.getByRole("heading", { name: "What is switched on" }) }).first();
   await expect(card.getByText(/^Database backup/).first()).toBeVisible();
   await expect(card.getByText(/^Restore drill/).first()).toBeVisible();

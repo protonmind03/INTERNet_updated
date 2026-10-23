@@ -169,7 +169,7 @@ export function AttendanceSection({
           <EmptyState icon="clock" title="No logs match" description="Choose All to see every log." />
         ) : (
           <>
-            <div className="hidden overflow-x-auto sm:block">
+            <div className="relative hidden overflow-x-auto sm:block">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="table-head border-b border-slate-100 text-xs text-slate-500">

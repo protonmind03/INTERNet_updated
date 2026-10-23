@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Register, Stamp } from "../../brand/motifs";
 import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
-import { Button, Card } from "../../components/ui";
+import { Button, Card, Skeleton } from "../../components/ui";
 import { formatDayDate, formatHours, formatTime, getInitials } from "../../lib/format";
 import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 import type { Projection } from "../../lib/useProjections";
@@ -74,6 +74,24 @@ export function RegisterCard({ interns, logs }: { interns: Intern[]; logs: Map<s
   );
 }
 
+/** The register's frame while the interns load, so the queue below does not jump when it fills in. */
+export function RegisterSkeleton() {
+  return (
+    <Card aria-busy="true">
+      <div className="flex items-baseline justify-between gap-3 px-4 pb-2 pt-3.5">
+        <h2 className="eyebrow text-(--role-ink)/80">Today&rsquo;s register</h2>
+        <Skeleton className="h-[18px] w-16" />
+      </div>
+      <div className="border-t border-(--role-hairline) px-4 py-3">
+        <Skeleton className="h-[38px] w-full" />
+      </div>
+      <div className="border-t border-(--role-hairline) px-4 py-2">
+        <Skeleton className="h-[19px] w-28" />
+      </div>
+    </Card>
+  );
+}
+
 /* ---------- The day board (computers): one row per intern on an 8 AM to 5 PM line ---------- */
 
 const START = 8 * 60;
@@ -87,7 +105,12 @@ function statusOf(log: AttendanceEntry | undefined): { text: string; tone: "info
   return { text: `In · ${formatTime(log.time_in).replace(/\s?[AP]M$/i, "")}`, tone: "neutral" };
 }
 
+/** Rows the day board shows before "Show all", so the queue below stays in view. */
+const BOARD_ROWS = 6;
+
 export function DayBoard({ company, interns, logs, now }: { company: string; interns: Intern[]; logs: Map<string, AttendanceEntry>; now: Date }) {
+  const [all, setAll] = useState(false);
+  const shown = all ? interns : interns.slice(0, BOARD_ROWS);
   const nowMinutes = phMinutes(now.toISOString()) ?? START;
   const showNow = nowMinutes > START && nowMinutes < END;
   const inCount = interns.filter((intern) => findLog(logs, intern.student_id)).length;
@@ -117,8 +140,8 @@ export function DayBoard({ company, interns, logs, now }: { company: string; int
             </span>
           )}
         </div>
-        <ul className="mt-1 space-y-1.5">
-          {interns.map((intern) => {
+        <ul className="mt-1 space-y-1.5" aria-label="Your interns today">
+          {shown.map((intern) => {
             const log = findLog(logs, intern.student_id);
             const status = statusOf(log);
             const inAt = phMinutes(log?.time_in);
@@ -137,7 +160,7 @@ export function DayBoard({ company, interns, logs, now }: { company: string; int
             }
             return (
               <li key={intern.student_id} className="grid grid-cols-[11rem_minmax(0,1fr)_6.5rem] items-center gap-3">
-                <Link to={`/supervisor/interns/${encodeURIComponent(intern.student_id)}`} className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-lg hover:underline">
+                <Link to={`/supervisor/interns/${encodeURIComponent(intern.student_id)}`} className="flex min-h-11 min-w-0 items-center gap-2.5 rounded-lg hover:underline">
                   <span aria-hidden="true" className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-psu-50 text-[10.5px] font-bold text-psu-800">
                     {getInitials(intern.name, "IN")}
                   </span>
@@ -160,6 +183,16 @@ export function DayBoard({ company, interns, logs, now }: { company: string; int
             );
           })}
         </ul>
+        {interns.length > BOARD_ROWS && (
+          <button
+            type="button"
+            onClick={() => setAll((value) => !value)}
+            aria-expanded={all}
+            className="mt-2 inline-flex min-h-11 items-center text-sm font-bold text-psu-700 hover:underline"
+          >
+            {all ? "Show fewer" : `Show all ${interns.length} interns`}
+          </button>
+        )}
       </div>
     </section>
   );
@@ -246,6 +279,8 @@ export function DecisionCard({
     line = `Week of ${formatDayDate(item.entry.week_start)}`;
   }
   const chips = attendance ? attendanceChips(attendance) : [];
+  // Each button says which item it acts on, so a screen reader hears more than "Review" again and again.
+  const what = `${KIND_LABEL[item.kind]}${line ? ` · ${line}` : ""}, ${item.entry.student_name}`;
 
   const actions = attendance ? (
     <>
@@ -284,11 +319,11 @@ export function DecisionCard({
         )}
       </span>
       {open ? (
-        <Button variant="secondary" onClick={onOpen} disabled={busy}>
+        <Button variant="secondary" onClick={onOpen} disabled={busy} aria-label={`Review ${what}`}>
           Review
         </Button>
       ) : (
-        <Button onClick={onVerify} busy={busy} busyProcess="verify">
+        <Button onClick={onVerify} busy={busy} busyProcess="verify" aria-label={`${offline ? "Confirm on its own" : "Verify"} ${what}`}>
           {offline ? "Confirm on its own" : "Verify"}
         </Button>
       )}
@@ -296,11 +331,13 @@ export function DecisionCard({
   ) : (
     <>
       {item.kind !== "absence" && (
-        <Button variant="outline" onClick={onOpen}>
+        <Button variant="outline" onClick={onOpen} aria-label={`Return ${what}`}>
           Return
         </Button>
       )}
-      <Button onClick={onOpen}>Review</Button>
+      <Button onClick={onOpen} aria-label={`Review ${what}`}>
+        Review
+      </Button>
     </>
   );
 

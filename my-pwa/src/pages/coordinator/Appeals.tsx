@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { UnderlineTabs } from "../../brand/motifs";
 import AttendancePhoto from "../../components/AttendancePhoto";
-import { Button, Card, EmptyState, ErrorNotice, FormError, SkeletonRows, StatusBadge } from "../../components/ui";
+import { Button, Card, EmptyState, ErrorNotice, FilterChips, FormError, SkeletonRows, StatusBadge } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDateTime, formatLongDate, formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
@@ -110,9 +109,10 @@ export default function CoordinatorAppeals() {
       subtitle="Trainees asking you to look again at a decision"
     >
       <div className="mb-4">
-        <UnderlineTabs
+        {/* A filter, so chips: underlined tabs are for the page's sections. */}
+        <FilterChips
           label="Show appeals"
-          tabs={[
+          options={[
             { value: "open", label: "Waiting for you" },
             { value: "decided", label: "Decided" },
           ]}

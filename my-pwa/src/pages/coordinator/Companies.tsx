@@ -151,7 +151,7 @@ export default function CoordinatorCompanies() {
     {
       label: company.visits ? `Site visits (${company.visits})` : "Site visits",
       icon: "building" as const,
-      onSelect: () => navigate(`/coordinator/companies?tab=site-visits&company=${company.id}`),
+      onSelect: () => navigate(`/coordinator/site-visits?company=${company.id}`),
     },
     company.is_active
       ? {
@@ -268,7 +268,7 @@ export default function CoordinatorCompanies() {
                 ))}
               </ul>
 
-              <div className="hidden overflow-x-auto lg:block">
+              <div className="relative hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="table-head border-b border-slate-100 text-xs text-slate-500">

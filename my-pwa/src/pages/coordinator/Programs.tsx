@@ -357,7 +357,7 @@ export default function CoordinatorPrograms() {
               }
             />
           ) : (
-            <div className="overflow-x-auto">
+            <div className="relative overflow-x-auto">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="table-head border-y border-slate-100 text-xs text-slate-600">

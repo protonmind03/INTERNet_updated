@@ -158,7 +158,7 @@ export default function CompanyPage() {
                 description="The coordinator's visits to this company, newest first."
                 action={
                   <Link
-                    to={`/coordinator/companies?tab=site-visits&company=${company.id}&log=1`}
+                    to={`/coordinator/site-visits?company=${company.id}&log=1`}
                     className="inline-flex min-h-10 items-center gap-1.5 rounded-lg bg-psu-700 px-3 text-sm font-semibold text-white hover:bg-psu-800"
                   >
                     <Icon name="plus" size={16} />

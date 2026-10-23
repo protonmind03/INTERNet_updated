@@ -850,7 +850,7 @@ function CompanyTable({ companies }: { companies: AnalyticsData["companies"] }) 
         ))}
       </ul>
 
-      <div className="hidden overflow-x-auto md:block">
+      <div className="relative hidden overflow-x-auto md:block">
         <table className="w-full text-left text-sm">
           <thead>
             <tr className="table-head border-y border-slate-100 text-xs text-slate-500">

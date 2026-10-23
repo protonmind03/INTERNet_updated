@@ -206,7 +206,7 @@ export default function CoordinatorSupervisors() {
                 ))}
               </ul>
 
-              <div className="hidden overflow-x-auto lg:block">
+              <div className="relative hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="table-head border-b border-slate-100 text-xs text-slate-500">

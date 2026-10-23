@@ -3,57 +3,63 @@ import { signIn } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
-| THE STUDENT'S PORTAL AS A FOLDER
+| THE TRAINEE'S PORTAL: ONE SHELL, ONE ENTRY PER PAGE
 |--------------------------------------------------------------------------
 |
-| Roadmap 3.6 (Iteration 10). The label tab says whose folder it is: name,
-| program and company, verified hours. Its tabs are Today, Attendance,
-| Tasks, Documents, Schedule and Weekly report; Profile is under the
-| avatar. Every student address still opens its page. On a phone the pages
-| are reached from the dock (Iteration 21) and the floating time-in button
-| keeps its rules.
+| PSU redesign, Section 7 and the menu review. On a computer every page is
+| an entry of the side menu, and exactly one entry is marked; Profile is
+| the account at the menu's foot. On a phone the pages are reached from
+| the dock and More (Iteration 21) and the floating time-in button keeps
+| its rules. Every student address still opens its page.
 |
 */
 
-const ROUTES: [string, string][] = [
-  ["/student/dashboard", "Today"],
-  ["/daily-log", "Attendance"],
-  ["/task", "Tasks"],
-  ["/documents", "Documents"],
-  ["/schedule", "Schedule"],
-  ["/journal", "Weekly report"],
-  ["/profile", "Profile"],
-  ["/student/resolution", "Resolution Center"],
-  ["/notifications", "Notifications"],
-  ["/time-record", "Time record"],
-  ["/announcements", "Announcements"],
-  ["/student/completion", "Completion"],
+const ROUTES: [string, string, "menu" | "account" | "none"][] = [
+  ["/student/dashboard", "Today", "menu"],
+  ["/daily-log", "Attendance", "menu"],
+  ["/task", "Tasks", "menu"],
+  ["/documents", "Documents", "menu"],
+  ["/schedule", "Schedule", "menu"],
+  ["/journal", "Weekly report", "menu"],
+  ["/student/resolution", "Resolution Center", "menu"],
+  ["/student/feedback", "Feedback", "menu"],
+  ["/time-record", "Time record", "menu"],
+  ["/announcements", "Announcements", "menu"],
+  ["/student/completion", "Completion", "menu"],
+  ["/student/help", "Help", "menu"],
+  ["/profile", "Profile", "account"],
+  ["/notifications", "Notifications", "none"],
 ];
 
-test("on a desktop: the label tab, the six tabs, Profile from the avatar, and every student address", async ({ page }) => {
+test("on a computer: one side-menu entry per page, exactly one marked, Profile from the account, and every student address", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await signIn(page, "student");
-  await expect(page.getByText("Demo Student").first()).toBeVisible();
-  await expect(page.getByRole("progressbar", { name: /required hours verified/ })).toBeVisible();
-  const tabs = page.getByRole("navigation", { name: "Main" });
-  await expect(tabs.getByRole("link")).toHaveCount(6);
-
-  for (const [path, heading] of ROUTES) {
+  const menu = page.locator("aside.role-side");
+  for (const [path, heading, where] of ROUTES) {
     await page.goto(path);
     await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
-    const lit = page.getByRole("navigation", { name: "Main" }).locator('a[aria-current="page"]');
-    // The six are tabs; the rest open in the same folder with no tab lit.
-    await expect(lit).toHaveCount(ROUTES.indexOf(ROUTES.find((route) => route[0] === path)!) < 6 ? 1 : 0);
+    const lit = menu.locator('[aria-current="page"]');
+    if (where === "menu") {
+      await expect(lit).toHaveCount(1);
+      await expect(lit).toContainText(heading);
+    } else if (where === "account") {
+      await expect(lit).toHaveCount(1);
+      await expect(lit).toHaveClass(/role-side-account/);
+    } else {
+      await expect(lit).toHaveCount(0);
+    }
   }
-  // Older addresses still lead somewhere.
-  for (const old of ["/report", "/student/feedback"]) {
+  // Older addresses still lead to their page.
+  for (const [old, heading] of [
+    ["/report", "Resolution Center"],
+    ["/student/resolution?tab=evaluations", "Feedback"],
+  ]) {
     await page.goto(old);
-    await expect(page.getByRole("heading", { level: 1, name: "Resolution Center" })).toBeVisible();
+    await expect(page.getByRole("heading", { level: 1, name: heading })).toBeVisible();
   }
 
   await page.goto("/student/dashboard");
-  await page.getByRole("button", { name: /Account menu/ }).click();
-  await page.getByRole("button", { name: "Profile", exact: true }).click();
+  await menu.locator("a.role-side-account").click();
   await expect(page).toHaveURL(/\/profile$/);
   await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeVisible();
 });
@@ -61,7 +67,7 @@ test("on a desktop: the label tab, the six tabs, Profile from the avatar, and ev
 test("on a phone (Iteration 21): a floating dock of four and More, out of the way while scrolling down, and the time-in button keeps its rules", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signIn(page, "student");
-  const dock = page.getByRole("navigation", { name: "Main" });
+  const dock = page.locator(".role-dock");
   await expect(dock.getByRole("link")).toHaveCount(4);
   for (const name of ["Today", "Attendance", "Schedule", "Tasks"]) {
     await expect(dock.getByRole("link", { name: new RegExp(`^${name}`) })).toBeVisible();
@@ -71,38 +77,39 @@ test("on a phone (Iteration 21): a floating dock of four and More, out of the wa
   expect(Math.round(box.height)).toBe(64);
   expect(Math.round(box.x)).toBe(12);
   expect(Math.round(390 - box.x - box.width)).toBe(12);
-  // Only the current page's label is shown.
-  await expect(dock.locator(".student-dock-item--on")).toHaveCount(1);
+  // Only the current page's entry is lit.
+  await expect(dock.locator(".role-dock-item--on")).toHaveCount(1);
 
-  // More: the rest, in a sheet.
+  // More: the rest, in a sheet, with the account (which opens Profile) at the bottom.
   await dock.getByRole("button", { name: /^More/ }).click();
   const sheet = page.getByRole("dialog", { name: "More" });
-  for (const name of ["Documents", "Weekly report", "Resolution Center", "Help"]) {
+  for (const name of ["Documents", "Weekly report", "Resolution Center", "Feedback", "Help"]) {
     await expect(sheet.getByRole("button", { name: new RegExp(`^${name}`) })).toBeVisible();
   }
+  await expect(sheet.locator(".more-sheet-item").filter({ hasText: /^Profile$/ })).toHaveCount(0);
   await sheet.getByRole("button", { name: /^Weekly report/ }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Weekly report" })).toBeVisible();
-  await expect(dock.getByRole("button", { name: /^More/ })).toHaveClass(/student-dock-item--on/);
+  await expect(dock.getByRole("button", { name: /^More/ })).toHaveClass(/role-dock-item--on/);
+  await expect(dock.locator(".role-dock-item--on")).toHaveCount(1);
 
-  // It steps aside while the page scrolls down, and comes back on the way up.
+  // It steps aside while the page scrolls down, and comes back on the way up. The page itself scrolls.
   await page.goto("/student/dashboard");
   await page.locator("main").evaluate((element) => {
-    element.style.minHeight = "100%";
     const filler = document.createElement("div");
     filler.style.height = "3000px";
-    element.querySelector("div")?.appendChild(filler);
+    element.appendChild(filler);
   });
-  await page.locator("main").evaluate((element) => element.scrollTo({ top: 600 }));
-  await expect(page.locator(".student-dock")).toHaveClass(/student-dock--hidden/);
-  await page.locator("main").evaluate((element) => element.scrollTo({ top: 200 }));
-  await expect(page.locator(".student-dock")).not.toHaveClass(/student-dock--hidden/);
+  await page.evaluate(() => window.scrollTo({ top: 600 }));
+  await expect(dock).toHaveClass(/role-dock--hidden/);
+  await page.evaluate(() => window.scrollTo({ top: 200 }));
+  await expect(dock).not.toHaveClass(/role-dock--hidden/);
 
+  // Not where the page carries the step buttons itself (Today's time card), nor on Profile.
   const fab = page.locator("button.float-fab");
-  await expect(fab).toBeVisible();
-  // Not on Attendance (the full card is there) or Profile.
+  await expect(fab).toHaveCount(0);
   await dock.getByRole("link", { name: /^Attendance/ }).click();
   await expect(page).toHaveURL(/\/daily-log$/);
-  await expect(fab).toHaveCount(0);
+  await expect(fab).toBeVisible();
   await page.goto("/profile");
   await expect(page.getByRole("heading", { level: 1, name: "Profile" })).toBeVisible();
   await expect(fab).toHaveCount(0);

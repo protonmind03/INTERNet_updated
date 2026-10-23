@@ -888,8 +888,12 @@
 .role-side-link[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--inb-amber); }
 [data-role="supervisor"] .role-side-link[aria-current="page"]::before { background: #ffffff; }
 .role-side-detail { display: block; font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--role-on-side) 64%, transparent); }
+.role-side-account { padding: 4px; margin: -4px; }
+.role-side-account:hover { background: rgb(255 255 255 / 0.08); }
+.role-side-account[aria-current="page"] { background: rgb(255 255 255 / 0.14); box-shadow: inset 3px 0 0 var(--inb-amber); }
+[data-role="supervisor"] .role-side-account[aria-current="page"] { box-shadow: inset 3px 0 0 #ffffff; }
 .role-side-sub { margin: 2px 0 6px 0; padding: 0 0 0 30px; list-style: none; }
-.role-side-sub .role-side-link { min-height: 40px; padding-block: 6px; font-size: 14px; font-weight: 500; }
+.role-side-sub .role-side-link { min-height: 44px; padding-block: 6px; font-size: 14px; font-weight: 500; }
 .role-side-count { margin-left: auto; min-width: 22px; padding: 1px 7px; border-radius: 9999px; background: var(--inb-amber); color: var(--inb-navy); font-size: 11.5px; font-weight: 800; text-align: center; font-variant-numeric: tabular-nums; }
 .role-side-foot { display: flex; align-items: center; gap: 10px; padding: 12px 14px max(12px, env(safe-area-inset-bottom)); border-top: 1px solid rgb(255 255 255 / 0.12); }
 .role-side-avatar { display: grid; width: 38px; height: 38px; flex-shrink: 0; place-items: center; border-radius: 9999px; background: var(--inb-amber); color: var(--inb-navy); font-size: 13px; font-weight: 800; }

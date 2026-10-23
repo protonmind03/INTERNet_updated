@@ -16,8 +16,9 @@ import { workedMinutes, type AttendanceLog } from "./useAttendance";
 | worked in big figures, a stamp ("On time", "Late 12 min", or how the
 | supervisor decided a finished day), a tear line, then the punch row (In,
 | Lunch, Back, Out) with "--:--" for a step not done. Under it the step
-| buttons: the gold one is the thing to do now (Time in, Time out); Lunch
-| break and End break are outlined. It reads the shared attendance
+| buttons: the gold one is the thing to do now (Time in, End break, Time
+| out); the other choice is outlined (Lunch break while working, Time out
+| during lunch, as the old Attendance tiles allowed). It reads the shared attendance
 | (TimeInProvider) and opens the same dialogs as every other way in, so the
 | camera check, passkeys and offline steps work exactly as before.
 |
@@ -122,18 +123,24 @@ export default function TodayCard({ large = false }: { large?: boolean }) {
                 {STEP_NAMES.lunch}
               </Button>
             )}
-            <Button variant="gold" size="lg" className="flex-1" icon="clock" disabled={busy} onClick={() => timeIn.openStep("out")}>
+            <Button variant="gold" size="lg" className="flex-1" icon="clock" disabled={busy} onClick={() => timeIn.openStep("out")} data-focus="time-out">
               {STEP_NAMES.timeOut}
             </Button>
           </>
         )}
         {stage === "on-break" && (
-          <Button variant="outline" size="lg" block disabled={busy} onClick={() => timeIn.openStep("back")}>
-            {STEP_NAMES.endBreak}
-          </Button>
+          // Back from lunch is the usual next step; leaving during lunch stays possible, as before.
+          <>
+            <Button variant="gold" size="lg" className="flex-1" disabled={busy} onClick={() => timeIn.openStep("back")}>
+              {STEP_NAMES.endBreak}
+            </Button>
+            <Button variant="outline" size="lg" className="flex-1" icon="clock" disabled={busy} onClick={() => timeIn.openStep("out")} data-focus="time-out">
+              {STEP_NAMES.timeOut}
+            </Button>
+          </>
         )}
         {stage === "back" && (
-          <Button variant="gold" size="lg" block icon="clock" disabled={busy} onClick={() => timeIn.openStep("out")}>
+          <Button variant="gold" size="lg" block icon="clock" disabled={busy} onClick={() => timeIn.openStep("out")} data-focus="time-out">
             {STEP_NAMES.timeOut}
           </Button>
         )}

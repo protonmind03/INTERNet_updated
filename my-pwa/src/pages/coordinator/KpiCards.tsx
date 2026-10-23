@@ -43,9 +43,11 @@ function KpiCard({ kpi }: { kpi: Kpi }) {
   return (
     <div className="card-hairline flex flex-col rounded-2xl p-4">
       <div className="flex items-start justify-between gap-2">
-        <Link to={kpi.link} className="text-[13.5px] font-bold text-slate-800 underline-offset-2 hover:underline">
-          {kpi.label}
-        </Link>
+        <h3 className="text-[13.5px] font-bold text-slate-800">
+          <Link to={kpi.link} className="inline-flex min-h-11 items-center underline-offset-2 hover:underline">
+            {kpi.label}
+          </Link>
+        </h3>
         <InfoTip label={`About ${kpi.label}`} text={kpi.definition} />
       </div>
       <p className="mt-1.5">

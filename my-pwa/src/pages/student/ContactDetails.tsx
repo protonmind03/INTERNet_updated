@@ -165,8 +165,11 @@ export default function ContactDetails({
   );
 }
 
-/** Who runs the OJT programme for this student, and how to reach them. */
-export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | null }) {
+/**
+ * Who runs the OJT programme, and how to reach them: on the trainee's
+ * Profile, and on the supervisor's (where the old account menu showed it).
+ */
+export function CoordinatorCard({ coordinator, role = "student" }: { coordinator: Coordinator | null; role?: "student" | "supervisor" }) {
   const [writing, setWriting] = useState(false);
   if (!coordinator) return null;
   return (
@@ -183,17 +186,18 @@ export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | nu
       </a>
       <ReachLines person={coordinator} />
       <p className="mt-2 text-xs text-slate-500">
-        For questions about requirements, your hours, or a problem at your company. To report a
-        concern in confidence, use Report.
+        {role === "student"
+          ? "For questions about requirements, your hours, or a problem at your company. To report a concern in confidence, use the Resolution Center."
+          : "For questions about your interns, their hours or the OJT programme. To report a concern, use Concerns."}
       </p>
       <Button variant="secondary" icon="mail" className="mt-3" onClick={() => setWriting(true)}>
         Message {coordinator.name.split(" ")[0]}
       </Button>
       {writing && (
         <ComposeMessage
-          role="student"
+          role={role}
           to={{ role: "coordinator", id: coordinator.coordinator_id, name: coordinator.name, email: coordinator.email }}
-          subject="A question about my OJT"
+          subject={role === "student" ? "A question about my OJT" : "A question about our interns"}
           onClose={() => setWriting(false)}
         />
       )}

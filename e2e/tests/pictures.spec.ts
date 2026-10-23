@@ -65,7 +65,7 @@ test("a picture chosen for a time-out with no connection waits with it, is sent 
   const s = await freshStudent();
   await signIn(page, "student", s.account);
   const picture = await drawPicture(page);
-  await page.goto("/daily-log");
+  await page.goto("/student/dashboard");
   await expect(page.getByRole("button", { name: /^Time out/ }).locator("visible=true").first()).toBeVisible();
 
   // No connection: the time-out and its picture are kept on the phone.
@@ -128,7 +128,7 @@ test("a picture chosen for a time-out with no connection waits with it, is sent 
 test("a HEIC photo is refused with what to change on the phone, and nothing is sent", async ({ page }) => {
   const s = await freshStudent();
   await signIn(page, "student", s.account);
-  await page.goto("/daily-log");
+  await page.goto("/student/dashboard");
   await page.getByRole("button", { name: /^Time out/ }).locator("visible=true").first().click();
   const dialog = page.getByRole("alertdialog").or(page.getByRole("dialog"));
   await dialog.locator('input[type="file"]').setInputFiles({ name: "IMG_0001.HEIC", mimeType: "image/heic", buffer: Buffer.from("ftypheic not really a picture") });

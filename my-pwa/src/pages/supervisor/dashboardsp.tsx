@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { UnderlineTabs } from "../../brand/motifs";
+import UnlessInMenu from "../../components/UnlessInMenu";
 import Icon from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, Modal, SkeletonRows } from "../../components/ui";
@@ -20,7 +21,7 @@ import ReviewDetail from "./ReviewDetail";
 import { awaitsReview, bulkSkipReason } from "./attendanceView";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
-import { DayBoard, DecidedRow, DecisionCard, FactCard, RegisterCard, ThisWeek, type ReviewItem } from "./ReviewParts";
+import { DayBoard, DecidedRow, DecisionCard, FactCard, RegisterCard, RegisterSkeleton, ThisWeek, type ReviewItem } from "./ReviewParts";
 import { todaysLogs } from "./reviewData";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 
@@ -41,6 +42,17 @@ import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 */
 
 type Tab = "all" | "time-ins" | "tasks" | "docs" | "absences" | "reports" | "final";
+
+/** Each tab as the side menu names it, for the line shown in place of the tabs. */
+const MENU_NAME: Record<Tab, string> = {
+  all: "Everything",
+  "time-ins": "Time-ins",
+  tasks: "Submitted tasks",
+  docs: "Submitted documents",
+  absences: "Absences",
+  reports: "Submitted reports",
+  final: "Final evaluations",
+};
 
 const TAB_KINDS: Record<Tab, ReviewItem["kind"][] | null> = {
   all: null,
@@ -112,13 +124,10 @@ export default function SupervisorDashboard() {
     return () => window.clearInterval(timer);
   }, []);
 
+  // The tab is in the address (?tab=), the one place it is kept, so the
+  // side menu marks the same entry and Back returns to it.
   const asked = params.get("tab") as Tab | null;
-  const [tab, setTab] = useState<Tab>(asked && asked in TAB_KINDS ? asked : "all");
-  const [seenAsk, setSeenAsk] = useState(asked);
-  if (seenAsk !== asked) {
-    setSeenAsk(asked);
-    if (asked && asked in TAB_KINDS) setTab(asked);
-  }
+  const tab: Tab = asked && asked in TAB_KINDS ? asked : "all";
   const [internId, setInternId] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const grouping = useInternGroups();
@@ -214,12 +223,10 @@ export default function SupervisorDashboard() {
   };
 
   const pickTab = (next: Tab) => {
-    setTab(next);
-    if (params.get("tab")) {
-      const copy = new URLSearchParams(params);
-      copy.delete("tab");
-      setParams(copy, { replace: true });
-    }
+    const copy = new URLSearchParams(params);
+    if (next === "all") copy.delete("tab");
+    else copy.set("tab", next);
+    setParams(copy, { replace: true });
   };
 
   const logs = todaysLogs(work);
@@ -238,7 +245,7 @@ export default function SupervisorDashboard() {
     { value: "docs" as Tab, label: "Docs", count: countOf("docs") },
     ...(countOf("absences") > 0 || tab === "absences" ? [{ value: "absences" as Tab, label: "Absences", count: countOf("absences") }] : []),
     ...(countOf("reports") > 0 || tab === "reports" ? [{ value: "reports" as Tab, label: "Reports", count: countOf("reports") }] : []),
-    ...(countOf("final") > 0 || tab === "final" ? [{ value: "final" as Tab, label: "Evaluations", count: countOf("final") }] : []),
+    ...(countOf("final") > 0 || tab === "final" ? [{ value: "final" as Tab, label: "Final evaluations", count: countOf("final") }] : []),
   ];
 
   const list = (
@@ -316,9 +323,10 @@ export default function SupervisorDashboard() {
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
         {computer ? (
-          !loading && shownInterns.length > 0 && <DayBoard company={company} interns={shownInterns} logs={logs} now={now} />
+          // The day as a whole on the full queue; a chosen kind (Absences, Submitted tasks…) opens straight on its list.
+          tab === "all" && !loading && shownInterns.length > 0 && <DayBoard company={company} interns={shownInterns} logs={logs} now={now} />
         ) : (
-          !loading && shownInterns.length > 0 && <RegisterCard interns={shownInterns} logs={logs} />
+          loading ? <RegisterSkeleton /> : shownInterns.length > 0 && <RegisterCard interns={shownInterns} logs={logs} />
         )}
 
         <div className={computer ? "grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}>
@@ -342,7 +350,21 @@ export default function SupervisorDashboard() {
             <div className={computer ? "px-4 pt-2" : "mb-3"}>
               <div className="flex items-end gap-3">
                 <div className="min-w-0 flex-1">
-                  <UnderlineTabs label="Show" tabs={tabs} value={tab} onChange={pickTab} />
+                  {/* The side menu lists these when it is open (components/sideMenuState.ts). */}
+                  <UnlessInMenu
+                    instead={
+                      tab !== "all" && (
+                        <p className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
+                          Showing <b className="text-slate-900">{MENU_NAME[tab]}</b>
+                          <button type="button" onClick={() => pickTab("all")} className="inline-flex min-h-11 items-center font-bold text-psu-700 hover:underline">
+                            Show all
+                          </button>
+                        </p>
+                      )
+                    }
+                  >
+                    <UnderlineTabs label="Show" tabs={tabs} value={tab} onChange={pickTab} />
+                  </UnlessInMenu>
                 </div>
                 <button type="button" onClick={() => setShowFilters((value) => !value)} aria-expanded={showFilters} className="mb-1 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
                   <Icon name="filter" size={16} />

@@ -588,7 +588,7 @@ test("monitoring hours match the student's own verified attendance (no join infl
     (item) => item.student_id === student.student_id
   );
   assert.ok(row, "demo student should appear in monitoring");
-  assert.equal(row.hours_rendered, verifiedHours);
+  assert.equal(row.hours_rendered, Math.round(verifiedHours * 100) / 100);
   assert.equal(row.pending_logs, pendingLogs);
   for (const key of [
     "rejected_logs",
@@ -10107,8 +10107,9 @@ test("every page that moved into a hub keeps its address: it redirects to its ta
   }
   // The examples in the roadmap.
   assert.equal(movedTo("/coordinator/supervisors", ""), "/coordinator/companies?tab=supervisors");
-  assert.equal(movedTo("/coordinator/audit", "?kind=student"), "/coordinator/profile?kind=student&section=audit");
   assert.equal(movedTo("/coordinator/dashboard", ""), null);
+  // Pages that left a hub are their own routes again (PSU redesign, menu review).
+  assert.equal(movedTo("/coordinator/audit", "?kind=student"), null);
   // Every hub is a route.
   for (const hub of Object.values(HUBS)) assert.match(app, new RegExp(`path="${hub.path}"\\s+element=\\{<CoordinatorHub `), hub.path);
 });
@@ -10129,8 +10130,8 @@ test("PSU redesign: the three portals share one shell, a side menu in the role's
   assert.match(dock, /aria-label="Main"/);
   const css = read("brand/brand.css");
   // The dock and the side menu take the role's own colours.
-  assert.match(css, /.role-dock {[^}]*background: var(--role-dock)/);
-  assert.match(css, /.role-side {[^}]*background-color: var(--role-side)/);
+  assert.match(css, /\.role-dock \{[^}]*background: var\(--role-dock\)/);
+  assert.match(css, /\.role-side \{[^}]*background-color: var\(--role-side\)/);
 });
 
 test("a schedule pattern's week: the server, the app and the database agree, and old weekday maps read as one week", async (t) => {
@@ -12595,4 +12596,69 @@ test("PSU redesign: the coordinator's Home reads the cohort, the open appeals an
   assert.equal(picked.length, 12);
   assert.ok(picked.filter((row) => row.state === "behind").length >= 4);
   assert.deepEqual([...picked].sort((a, b) => a.hours - b.hours), picked);
+});
+
+test("PSU redesign, menu review: one page, one menu entry, one name, and old tab addresses still work", () => {
+  require("tsx/cjs");
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const src = path.join(__dirname, "../../my-pwa/src");
+  const read = (file) => fs.readFileSync(path.join(src, file), "utf8");
+  const { currentEntry, matchScore } = require("../../my-pwa/src/lib/navMatch.ts");
+  const { DEPARTED, HUBS, departedTo } = require("../../my-pwa/src/pages/coordinator/hubs.ts");
+
+  // The most specific entry wins, so two entries never light together.
+  const decide = [
+    { key: "Decide>concerns", path: "/coordinator/resolution" },
+    { key: "Decide>appeals", path: "/coordinator/resolution?tab=appeals" },
+    { key: "Decide>attention", path: "/coordinator/monitoring?scope=attention" },
+    { key: "Reports>monitoring", path: "/coordinator/monitoring" },
+    { key: "People>companies", path: "/coordinator/companies" },
+    { key: "People>supervisors", path: "/coordinator/companies?tab=supervisors", also: ["/coordinator/supervisors"] },
+  ];
+  assert.equal(currentEntry(decide, "/coordinator/resolution", "?tab=appeals"), "Decide>appeals");
+  assert.equal(currentEntry(decide, "/coordinator/resolution", ""), "Decide>concerns");
+  assert.equal(currentEntry(decide, "/coordinator/monitoring", "?scope=attention"), "Decide>attention");
+  assert.equal(currentEntry(decide, "/coordinator/monitoring", "?risk=1"), "Reports>monitoring");
+  assert.equal(currentEntry(decide, "/coordinator/companies/4", ""), "People>companies", "a record below a page is that page's");
+  assert.equal(currentEntry(decide, "/coordinator/supervisors/9", ""), "People>supervisors");
+  assert.equal(currentEntry(decide, "/coordinator/dashboard", ""), null);
+  assert.equal(matchScore({ key: "x", path: "/a?tab=b" }, "/a", "?tab=c"), 0);
+
+  // Old tab addresses of pages that left a hub go to the page, keeping the rest.
+  assert.equal(departedTo("/coordinator/resolution", "?tab=evaluations&focus=7"), "/coordinator/evaluations?focus=7");
+  assert.equal(departedTo("/coordinator/profile", "?section=audit&kind=student"), "/coordinator/audit?kind=student");
+  assert.equal(departedTo("/coordinator/students", "?tab=terms"), "/coordinator/terms");
+  assert.equal(departedTo("/coordinator/resolution", "?tab=appeals"), null);
+  const app = read("App.tsx");
+  for (const move of DEPARTED) {
+    if (move.to === move.path) continue;
+    assert.match(app, new RegExp(`path="${move.to}"`), `${move.to} is a route`);
+  }
+  // A hub only holds tabs of one menu group.
+  assert.deepEqual(Object.keys(HUBS).sort(), ["companies", "documents", "resolution"]);
+
+  // Each coordinator menu entry is listed once, with the title of its page.
+  const layout = read("layouts/CoordinatorLayout.tsx");
+  const side = layout.slice(layout.indexOf("const side: SideItem[]"));
+  const leaves = [...side.matchAll(/\{ label: "([^"]+)", path: ([^,}]+)/g)].map((match) => match[1]);
+  assert.equal(new Set(leaves).size, leaves.length, `no entry twice: ${leaves.join(", ")}`);
+  for (const [label, file] of [["Deliverables", "pages/coordinator/Requirements.tsx"], ["Submissions", "pages/coordinator/Documents.tsx"], ["System status", "pages/coordinator/SystemStatusPage.tsx"], ["Concerns", "pages/coordinator/Complaints.tsx"], ["Holidays", "pages/coordinator/Holidays.tsx"]]) {
+    assert.ok(leaves.includes(label), label);
+    assert.match(read(file), new RegExp(`title="${label}"`), `${file} is titled ${label}`);
+  }
+  // The term has one control: the filter bar's.
+  assert.ok(!fs.existsSync(path.join(src, "pages/coordinator/TermSwitcher.tsx")));
+  // Help stays inside each portal.
+  for (const role of ["student", "supervisor", "coordinator"]) assert.match(app, new RegExp(`path="/${role}/help"`));
+  // The trainee's Feedback is its own page, not a tab that lights the Resolution Center.
+  assert.match(app, /path="\/student\/feedback"\s+element=\{<StudentFeedback \/>\}/);
+});
+
+test("the supervisor's review count says how many of each kind wait, for the side menu", async () => {
+  const { token } = await supervisorSession();
+  const { response, body } = await jsonRequest("/api/supervisor/review-count", { headers: authHeaders(token) });
+  assert.equal(response.status, 200);
+  for (const key of ["time_ins", "tasks", "documents", "absences", "reports"]) assert.equal(typeof body.by_kind[key], "number", key);
+  assert.equal(body.waiting, Object.values(body.by_kind).reduce((sum, count) => sum + count, 0));
 });

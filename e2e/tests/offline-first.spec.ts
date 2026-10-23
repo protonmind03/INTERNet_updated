@@ -136,7 +136,8 @@ test("a decision on a record someone else changed meanwhile is refused, says how
   await page.route(/\/api\/events/, (route) => route.abort());
   try {
     await signIn(page, "supervisor");
-    await page.getByRole("tab", { name: /^Absences/ }).click();
+    // On a computer the queue's kinds are entries of the side menu (PSU menu review).
+    await page.locator("aside.role-side").getByRole("link", { name: /^Absences/ }).click();
     await page.getByRole("button", { name: new RegExp(`Absence · ${label}`) }).first().click();
     await expect(page.getByRole("button", { name: "Excuse", exact: true })).toBeVisible();
 
@@ -151,8 +152,7 @@ test("a decision on a record someone else changed meanwhile is refused, says how
     expect(now?.status).toBe("Pending");
     expect(now?.version).toBe(3);
 
-    // Looked at again (the page has reloaded it), the decision goes through.
-    await page.getByRole("button", { name: new RegExp(`Absence · ${label}`) }).first().click();
+    // Looked at again (the open decision has reloaded it), the decision goes through.
     await page.getByRole("button", { name: "Excuse", exact: true }).click();
     await expect(page.getByText(/Absence excused for/)).toBeVisible();
   } finally {

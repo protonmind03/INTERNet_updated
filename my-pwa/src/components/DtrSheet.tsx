@@ -294,7 +294,7 @@ export default function DtrSheet({
           }
         />
 
-        <div className="mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="Time record table">
+        <div className="relative mt-5 overflow-x-auto" tabIndex={0} role="region" aria-label="Time record table">
           <table className="w-full border-collapse text-left text-sm">
             <thead>
               <tr className="border-y border-slate-300 text-xs text-slate-600">

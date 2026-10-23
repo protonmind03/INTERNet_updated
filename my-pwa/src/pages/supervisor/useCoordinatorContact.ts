@@ -8,7 +8,7 @@ const known = new Map<string, CoordinatorContact | null>();
 
 /**
  * The OJT coordinator a supervisor writes to, from their own profile.
- * Asked for only when `wanted` (the account menu is open), and null until
+ * Asked for only when `wanted` (the Messages page is open), and null until
  * it is known or when there is none.
  */
 export function useCoordinatorContact(

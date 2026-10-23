@@ -100,14 +100,18 @@ export default function CoordinatorMonitoring() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  const [searchParams] = useSearchParams();
-  const [scope, setScope] = useState<Scope>(() =>
-    searchParams.get("risk") === "1"
-      ? "risk"
-      : searchParams.get("scope") === "attention"
-        ? "attention"
-        : "all"
-  );
+  // The scope is in the address (?scope=attention or risk), so the menu marks the
+  // entry that matches it and Back returns to the scope that was showing.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const asked = searchParams.get("scope");
+  const scope: Scope = searchParams.get("risk") === "1" || asked === "risk" ? "risk" : asked === "attention" ? "attention" : "all";
+  const setScope = (next: Scope) => {
+    const params = new URLSearchParams(searchParams);
+    params.delete("risk");
+    if (next === "all") params.delete("scope");
+    else params.set("scope", next);
+    setSearchParams(params, { replace: true });
+  };
   const [query, setQuery] = useState("");
   const [focusStudent, setFocusStudent] = useState<string | null>(null);
   const [dateFrom, setDateFrom] = useState("");
@@ -235,8 +239,8 @@ export default function CoordinatorMonitoring() {
 
   return (
     <CoordinatorLayout
-      title="Monitoring"
-      subtitle="Hours, tasks and attendance problems for every active student."
+      title={scope === "attention" ? "Needs attention" : "Monitoring"}
+      subtitle={scope === "attention" ? "Students with flagged attendance logs or overdue tasks." : "Hours, tasks and attendance problems for every active student."}
       actions={
         <Button variant="secondary" icon="download" busy={exporting} busyProcess="export" onClick={() => void exportReport()}>
           {exporting ? "Preparing" : "Export"}
@@ -334,7 +338,7 @@ export default function CoordinatorMonitoring() {
                 ))}
               </ul>
 
-              <div className="hidden overflow-x-auto lg:block">
+              <div className="relative hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="table-head border-b border-slate-100 text-xs text-slate-500">

@@ -51,10 +51,12 @@ for (const role of ["student", "supervisor", "coordinator"] as Role[]) {
     await expect(page).toHaveURL(new RegExp(`${account.home}$`), { timeout: 5_000 });
     await expect(page.getByRole("status", { name: /^Loading INTERNet/ })).toHaveCount(0);
     // While the data is held back the page is already drawn, with placeholders where it will be.
-    await expect(page.locator("h1").first()).toBeVisible();
+    // The visible heading: on a phone the page title is in the role header (the desktop title bar is hidden).
+    await expect(page.getByRole("heading", { level: 1 }).filter({ visible: true }).first()).toBeVisible();
     await expect(page.locator(".animate-skeleton").first()).toBeVisible();
-    // A greeting by name, from the account on this phone, before anything has loaded.
-    if (role !== "coordinator") await expect(page.getByText(/^Good (morning|afternoon|evening), \S+/).first()).toBeVisible();
+    // The trainee is greeted by name before anything has loaded; on a phone the supervisor's and the
+    // coordinator's headers name the page (Review, Home), as the PSU redesign has them.
+    if (role === "student") await expect(page.getByText(/^Good (morning|afternoon|evening), \S+/).first()).toBeVisible();
 
     release();
     await expect(page.locator(".animate-skeleton")).toHaveCount(0, { timeout: 20_000 });

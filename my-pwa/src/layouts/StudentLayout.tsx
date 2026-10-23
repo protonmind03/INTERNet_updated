@@ -13,6 +13,7 @@ import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { waitingSteps } from "../lib/offlineQueue";
 import { signOut as endSession, useAccount } from "../lib/session";
+import { useSpotlightParam } from "../lib/spotlight";
 import { useWaitingCount } from "../lib/useWaitingCount";
 import TimeInFab from "../pages/student/TimeInFab";
 import TimeInProvider from "../pages/student/TimeInProvider";
@@ -27,9 +28,10 @@ import WaitingToSend from "../pages/student/WaitingToSend";
 | PSU redesign, Section 7 (components/RoleShell.tsx draws the frame). On a
 | phone: the flat amber header with the lane-dash strip and only the bell;
 | the cream dock with Today, Attendance, Schedule, Tasks and More. More is
-| grouped: My OJT (Documents, Weekly journal, Completion, Time record,
-| Profile), Messages (Messages, Announcements, Resolution Center) and
-| Support (Help, Feedback), with the account and Sign out at the bottom.
+| grouped: My OJT (Documents, Weekly report, Completion, Time record),
+| Messages (Messages, Announcements, Resolution Center) and Support (Help,
+| Feedback), with the account (which opens Profile) and Sign out at the
+| bottom; in the side menu the account at the foot opens Profile.
 | Notifications live on the bell only. On a tablet or computer the same
 | destinations are a side menu in the trainee's amber.
 |
@@ -51,10 +53,9 @@ const MORE: DockGroup[] = [
     label: "My OJT",
     items: [
       { label: "Documents", path: "/documents", icon: "document" },
-      { label: "Weekly journal", path: "/journal", icon: "note" },
+      { label: "Weekly report", path: "/journal", icon: "note" },
       { label: "Completion", path: "/student/completion", icon: "check-circle" },
       { label: "Time record", path: "/time-record", icon: "printer" },
-      { label: "Profile", path: "/profile", icon: "user" },
     ],
   },
   {
@@ -68,7 +69,7 @@ const MORE: DockGroup[] = [
   {
     label: "Support",
     items: [
-      { label: "Help", path: "/help", icon: "help" },
+      { label: "Help", path: "/student/help", icon: "help" },
       { label: "Feedback", path: "/student/feedback", icon: "star" },
     ],
   },
@@ -92,6 +93,8 @@ type LayoutProps = {
  */
 export default function StudentLayout(props: LayoutProps) {
   useRoleTheme("student");
+  // A notification opens a page with ?spot=<key>: that control is spotlighted (lib/spotlight.ts).
+  useSpotlightParam();
   return (
     <TimeInProvider>
       {/* Iteration 23: the first open of the installed app. */}

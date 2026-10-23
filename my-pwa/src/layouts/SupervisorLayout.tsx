@@ -25,13 +25,20 @@ import { signOut as endSession, useAccount } from "../lib/session";
 | the company at the top, the account at the bottom, and groups that open
 | one at a time:
 |
-|   Review     Time-ins, Tasks, Documents, Absences
+|   Review       (the queue) Time-ins, Submitted tasks, Submitted
+|                documents, Absences, Submitted reports: what waits
+|                for a decision
 |   Interns
-|   Work       Tasks, Weekly reports
-|   Evaluate   Final evaluations, Time records to certify
-|   Talk       Messages, Announcements, Incidents
+|   Attendance
+|   Work         Tasks, Weekly reports, Documents: everything, decided or not
+|   Evaluate     Final evaluations, Time records
+|   Talk         Messages, Announcements, Concerns
 |
-| Staff notes are kept on each intern's page, where they are written.
+| Each entry is one page or one tab of the Review queue, named as it is
+| titled, in one group; the shell marks the one entry the address belongs
+| to (lib/navMatch.ts). Review's entries are its tabs, so the queue does
+| not draw them again while the side menu is open. Staff notes are kept on
+| each intern's page, where they are written.
 |
 */
 
@@ -48,9 +55,9 @@ const MORE: DockGroup[] = [
   {
     label: "Interns' work",
     items: [
-      { label: "Documents", path: "/supervisor/documents", icon: "document" },
       { label: "Weekly reports", path: "/supervisor/journals", icon: "note" },
-      { label: "Evaluations", path: "/supervisor/evaluation", icon: "star" },
+      { label: "Documents", path: "/supervisor/documents", icon: "document" },
+      { label: "Final evaluations", path: `${REVIEW}?tab=final`, icon: "star" },
       { label: "Time records", path: "/supervisor/time-record", icon: "printer" },
     ],
   },
@@ -59,14 +66,13 @@ const MORE: DockGroup[] = [
     items: [
       { label: "Messages", path: "/supervisor/messages", icon: "chat" },
       { label: "Announcements", path: "/supervisor/announcements", icon: "megaphone" },
-      { label: "Incidents", path: "/supervisor/complaints", icon: "flag" },
+      { label: "Concerns", path: "/supervisor/complaints", icon: "flag" },
     ],
   },
   {
     label: "You",
     items: [
-      { label: "Help", path: "/help", icon: "help" },
-      { label: "Profile", path: "/supervisor/profile", icon: "user" },
+      { label: "Help", path: "/supervisor/help", icon: "help" },
     ],
   },
 ];
@@ -108,20 +114,23 @@ export default function SupervisorLayout({
       icon: "tasks",
       count: waiting,
       children: [
-        { label: "Time-ins", path: "/supervisor/attendance" },
-        { label: "Tasks", path: `${REVIEW}?tab=tasks` },
-        { label: "Documents", path: "/supervisor/documents" },
-        { label: "Absences", path: `${REVIEW}?tab=absences` },
+        { label: "Time-ins", path: `${REVIEW}?tab=time-ins`, count: counts[`${REVIEW}?tab=time-ins`] },
+        { label: "Submitted tasks", path: `${REVIEW}?tab=tasks`, count: counts[`${REVIEW}?tab=tasks`] },
+        { label: "Submitted documents", path: `${REVIEW}?tab=docs`, count: counts[`${REVIEW}?tab=docs`] },
+        { label: "Absences", path: `${REVIEW}?tab=absences`, count: counts[`${REVIEW}?tab=absences`] },
+        { label: "Submitted reports", path: `${REVIEW}?tab=reports`, count: counts[`${REVIEW}?tab=reports`] },
       ],
     },
     { label: "Interns", path: "/supervisor/interns", icon: "users", detail: "Interns, teams, schedules" },
+    { label: "Attendance", path: "/supervisor/attendance", icon: "clock", detail: "Every time-in, by day" },
     {
       label: "Work",
       icon: "clipboard",
-      detail: "Tasks, weekly reports",
+      detail: "Tasks, weekly reports, documents",
       children: [
         { label: "Tasks", path: "/supervisor/tasks" },
         { label: "Weekly reports", path: "/supervisor/journals" },
+        { label: "Documents", path: "/supervisor/documents" },
       ],
     },
     {
@@ -129,18 +138,18 @@ export default function SupervisorLayout({
       icon: "star",
       detail: "Final evaluations, time records",
       children: [
-        { label: "Final evaluations", path: "/supervisor/evaluation" },
-        { label: "Time records to certify", path: "/supervisor/time-record" },
+        { label: "Final evaluations", path: `${REVIEW}?tab=final` },
+        { label: "Time records", path: "/supervisor/time-record" },
       ],
     },
     {
       label: "Talk",
       icon: "chat",
-      detail: "Messages, announcements, incidents",
+      detail: "Messages, announcements, concerns",
       children: [
         { label: "Messages", path: "/supervisor/messages" },
         { label: "Announcements", path: "/supervisor/announcements" },
-        { label: "Incidents", path: "/supervisor/complaints" },
+        { label: "Concerns", path: "/supervisor/complaints" },
       ],
     },
   ];

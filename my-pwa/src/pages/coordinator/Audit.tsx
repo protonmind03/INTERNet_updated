@@ -620,16 +620,8 @@ export default function CoordinatorAudit() {
                   onClick={() => {
                     setPersonText("");
                     setRecordText("");
-                    // Every filter goes; Profile settings' section stays.
-                    setParams(
-                      (current) => {
-                        const kept = new URLSearchParams();
-                        const section = current.get("section");
-                        if (section) kept.set("section", section);
-                        return kept;
-                      },
-                      { replace: true }
-                    );
+                    // Every filter goes.
+                    setParams(new URLSearchParams(), { replace: true });
                   }}
                   className="font-semibold text-psu-700 hover:underline"
                 >
@@ -676,7 +668,7 @@ export default function CoordinatorAudit() {
                 ))}
               </ul>
 
-              <div className="hidden overflow-x-auto lg:block">
+              <div className="relative hidden overflow-x-auto lg:block">
                 <table className="w-full text-left text-sm">
                   <thead>
                     <tr className="table-head border-b border-slate-100 text-xs text-slate-500">

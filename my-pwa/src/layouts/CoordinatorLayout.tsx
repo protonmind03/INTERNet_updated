@@ -22,60 +22,66 @@ import HubNav from "../pages/coordinator/HubNav";
 |--------------------------------------------------------------------------
 |
 | PSU redesign, Section 11 (components/RoleShell.tsx draws the frame). The
-| coordinator's route map: a flat navy header with only the bell; on a phone
-| a navy dock with a gold pill (Home, Decide, Trainees, Reports, More), More
-| with "Find anyone" at the top. On a tablet or computer a navy (#121A5E)
-| side menu: "Find anyone" ("/" jumps to it), then text-first groups that
-| open one at a time, with no icon tiles:
+| coordinator's route map: a flat navy header with Help and the bell; on a
+| phone a navy dock with a gold pill (Home, Decide, Students, Reports,
+| More), More with "Find anyone" at the top. On a tablet or computer a
+| navy (#121A5E) side menu: "Find anyone" ("/" jumps to it), then
+| text-first groups that open one at a time, with no icon tiles:
 |
 |   Home      Needs you, figures, this week
-|   Decide    Appeals, Flagged logs, Complaints
-|   People    Students, Supervisors, Companies, Coordinators
-|   Term      Term setup, Programs, Schedules and holidays, Deliverables,
-|             Evaluation form, Site visits
+|   Decide    Concerns, Appeals, Needs attention
+|   People    Students, Companies, Supervisors, Coordinators
+|   Term      Terms, Programs, Holidays, Deliverables, Submissions,
+|             Evaluations, Site visits
 |   Talk      Messages, Announcements
 |   Reports   Analytics, Monitoring, Audit log, System status
 |
-| Pages about one subject are still tabs of one hub
-| (pages/coordinator/hubConfig.ts); the hub's tabs are drawn above the page.
+| Each entry is one page, named as the page is titled, in one group; the
+| shell marks the one entry the address belongs to (lib/navMatch.ts).
+| Pages about one subject in one group are tabs of a hub
+| (pages/coordinator/hubs.ts); the tabs show only when the side menu is not
+| open to list them (pages/coordinator/HubNav.tsx).
 |
 */
 
 const RESOLUTION = HUBS.resolution.path;
 
+/*
+| One destination, one entry, one name: each label below is the title of
+| the page it opens, and no page is listed in two groups. The dock's four
+| are not repeated in More.
+*/
 const DOCK: DockItem[] = [
   { label: "Home", path: "/coordinator/dashboard", icon: "home" },
   { label: "Decide", path: RESOLUTION, icon: "flag" },
-  { label: "Trainees", path: "/coordinator/students", icon: "users" },
+  { label: "Students", path: "/coordinator/students", icon: "users" },
   { label: "Reports", path: "/coordinator/analytics", icon: "chart" },
 ];
 
 const MORE: DockGroup[] = [
   {
     label: "Decide",
-    items: [
-      { label: "Appeals", path: `${RESOLUTION}?tab=appeals`, icon: "flag" },
-      { label: "Flagged logs", path: "/coordinator/monitoring?scope=attention", icon: "alert" },
-      { label: "Complaints", path: RESOLUTION, icon: "chat" },
-    ],
+    // Concerns and Appeals are the Decide page's own tabs.
+    items: [{ label: "Needs attention", path: "/coordinator/monitoring?scope=attention", icon: "alert" }],
   },
   {
     label: "People",
     items: [
-      { label: "Students", path: "/coordinator/students", icon: "users" },
-      { label: "Supervisors", path: "/coordinator/companies?tab=supervisors", icon: "briefcase" },
       { label: "Companies", path: "/coordinator/companies", icon: "building" },
+      { label: "Supervisors", path: "/coordinator/companies?tab=supervisors", icon: "briefcase" },
+      { label: "Coordinators", path: "/coordinator/coordinators", icon: "user" },
     ],
   },
   {
     label: "Term",
     items: [
-      { label: "Term setup", path: "/coordinator/students?tab=terms", icon: "calendar" },
+      { label: "Terms", path: "/coordinator/terms", icon: "calendar" },
       { label: "Programs", path: "/coordinator/programs", icon: "cap" },
-      { label: "Schedules and holidays", path: "/coordinator/holidays", icon: "clock" },
-      { label: "Deliverables", path: "/coordinator/documents?tab=requirements", icon: "document" },
-      { label: "Evaluation form", path: `${RESOLUTION}?tab=evaluations`, icon: "star" },
-      { label: "Site visits", path: "/coordinator/companies?tab=site-visits", icon: "building" },
+      { label: "Holidays", path: "/coordinator/holidays", icon: "clock" },
+      { label: "Deliverables", path: "/coordinator/documents?tab=requirements", icon: "clipboard" },
+      { label: "Submissions", path: "/coordinator/documents", icon: "document" },
+      { label: "Evaluations", path: "/coordinator/evaluations", icon: "star" },
+      { label: "Site visits", path: "/coordinator/site-visits", icon: "building" },
     ],
   },
   {
@@ -88,12 +94,14 @@ const MORE: DockGroup[] = [
   {
     label: "Reports",
     items: [
-      { label: "Analytics", path: "/coordinator/analytics", icon: "chart" },
       { label: "Monitoring", path: "/coordinator/monitoring", icon: "activity" },
-      { label: "Audit log", path: "/coordinator/profile?section=audit", icon: "clipboard" },
-      { label: "System status", path: "/coordinator/profile?section=status", icon: "sliders" },
-      { label: "Help", path: "/help", icon: "help" },
+      { label: "Audit log", path: "/coordinator/audit", icon: "clipboard" },
+      { label: "System status", path: "/coordinator/status", icon: "sliders" },
     ],
+  },
+  {
+    label: "Support",
+    items: [{ label: "Help", path: "/coordinator/help", icon: "help" }],
   },
 ];
 
@@ -146,45 +154,41 @@ export default function CoordinatorLayout({
       label: "Decide",
       icon: "flag",
       count: decide + flagged,
-      also: [RESOLUTION, "/coordinator/monitoring"],
       children: [
+        { label: "Concerns", path: RESOLUTION, count: decide },
         { label: "Appeals", path: `${RESOLUTION}?tab=appeals` },
-        { label: "Flagged logs", path: "/coordinator/monitoring?scope=attention", count: flagged },
-        { label: "Complaints", path: RESOLUTION, count: decide },
+        { label: "Needs attention", path: "/coordinator/monitoring?scope=attention", count: flagged },
       ],
     },
     {
       label: "People",
       icon: "users",
-      detail: "Students, supervisors, companies",
-      also: ["/coordinator/students", "/coordinator/companies", "/coordinator/supervisors"],
+      detail: "Students, companies, supervisors",
       children: [
         { label: "Students", path: "/coordinator/students" },
-        { label: "Supervisors", path: "/coordinator/companies?tab=supervisors" },
         { label: "Companies", path: "/coordinator/companies" },
-        { label: "Coordinators", path: "/coordinator/profile?section=coordinators" },
+        { label: "Supervisors", path: "/coordinator/companies?tab=supervisors", also: ["/coordinator/supervisors"] },
+        { label: "Coordinators", path: "/coordinator/coordinators" },
       ],
     },
     {
       label: "Term",
       icon: "calendar",
-      detail: "Setup, schedules, deliverables, visits",
-      also: ["/coordinator/programs", "/coordinator/holidays", "/coordinator/documents"],
+      detail: "Terms, programs, deliverables, visits",
       children: [
-        { label: "Term setup", path: "/coordinator/students?tab=terms" },
+        { label: "Terms", path: "/coordinator/terms" },
         { label: "Programs", path: "/coordinator/programs" },
-        { label: "Schedules and holidays", path: "/coordinator/holidays" },
+        { label: "Holidays", path: "/coordinator/holidays" },
         { label: "Deliverables", path: "/coordinator/documents?tab=requirements" },
-        { label: "Documents", path: "/coordinator/documents" },
-        { label: "Evaluation form", path: `${RESOLUTION}?tab=evaluations` },
-        { label: "Site visits", path: "/coordinator/companies?tab=site-visits" },
+        { label: "Submissions", path: "/coordinator/documents" },
+        { label: "Evaluations", path: "/coordinator/evaluations" },
+        { label: "Site visits", path: "/coordinator/site-visits" },
       ],
     },
     {
       label: "Talk",
       icon: "chat",
       detail: "Messages and announcements",
-      also: ["/coordinator/messages", "/coordinator/announcements"],
       children: [
         { label: "Messages", path: "/coordinator/messages" },
         { label: "Announcements", path: "/coordinator/announcements" },
@@ -193,13 +197,12 @@ export default function CoordinatorLayout({
     {
       label: "Reports",
       icon: "chart",
-      detail: "Analytics, audit log, system status",
-      also: ["/coordinator/analytics", "/coordinator/audit"],
+      detail: "Analytics, monitoring, audit log",
       children: [
         { label: "Analytics", path: "/coordinator/analytics" },
         { label: "Monitoring", path: "/coordinator/monitoring" },
-        { label: "Audit log", path: "/coordinator/profile?section=audit" },
-        { label: "System status", path: "/coordinator/profile?section=status" },
+        { label: "Audit log", path: "/coordinator/audit" },
+        { label: "System status", path: "/coordinator/status" },
       ],
     },
   ];
@@ -211,6 +214,7 @@ export default function CoordinatorLayout({
       <RoleShell
         role="coordinator"
         textFirst
+        titleIsHeading={!hideHeading}
         title={title}
         context={subtitle ?? coordinator.department ?? "Pangasinan State University · Lingayen Campus"}
         headerRight={
@@ -243,7 +247,7 @@ export default function CoordinatorLayout({
       >
         <div className="mx-auto w-full max-w-7xl animate-page-in px-4 pb-32 pt-4 md:px-8 md:pb-12 md:pt-6 print:max-w-none print:p-0">
           {!hideHeading && actions && <div className="mb-4 flex flex-wrap justify-end gap-2 print:hidden">{actions}</div>}
-          {hub && HUBS[hub.hub].kind === "tabs" && <HubNav hub={hub.hub} tab={hub.tab} />}
+          {hub && <HubNav hub={hub.hub} tab={hub.tab} />}
           {recordStudentId && (
             <div className="mb-3 flex justify-end print:hidden">
               <Button variant="secondary" icon="mail" onClick={() => setWriting(true)}>
@@ -251,15 +255,7 @@ export default function CoordinatorLayout({
               </Button>
             </div>
           )}
-          {hub && HUBS[hub.hub].kind === "sections" ? (
-            // Profile settings: its sections down the left, the chosen one beside them.
-            <div className="lg:grid lg:grid-cols-[13rem_minmax(0,1fr)] lg:items-start lg:gap-8">
-              <HubNav hub={hub.hub} tab={hub.tab} />
-              <div className="min-w-0">{children}</div>
-            </div>
-          ) : (
-            children
-          )}
+          {children}
           <MessageThreadHost role="coordinator" />
           {writing && recordStudentId && (
             <ComposeMessage

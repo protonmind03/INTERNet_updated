@@ -110,7 +110,7 @@ function HelpSheet({ role, pathname, onClose }: { role: HelpRole; pathname: stri
           })}
         </ul>
         <Link
-          to={`/help?role=${role}`}
+          to={`/${role}/help`}
           onClick={onClose}
           className="mt-4 flex min-h-12 items-center justify-between rounded-2xl bg-psu-50 px-4 text-[15px] font-bold text-psu-800"
         >

@@ -3,64 +3,50 @@ import { api, apiSession, signIn } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
-| THE STUDENT'S RESOLUTION CENTER ICON
+| THE TRAINEE'S RESOLUTION CENTER: WHERE IT IS, AND ITS COUNT
 |--------------------------------------------------------------------------
+|
+| PSU redesign, Section 7: the header carries Help and the bell only; the
+| Resolution Center is an entry of the menu (More on a phone, the side menu
+| on a computer), and its count of concerns with a new coordinator reply
+| moved there with it.
+|
 */
 
-/** How many concerns the icon says have a new reply. */
+/** The count on the side menu's Resolution Center entry. */
 async function newReplies(page: Page): Promise<number> {
-  const name = (await page.getByRole("link", { name: /^Resolution Center/ }).getAttribute("aria-label")) || "";
-  const match = /^Resolution Center, (\d+) concerns? with a new reply$/.exec(name);
+  const entry = page.locator("aside.role-side").getByRole("link", { name: /^Resolution Center/ });
+  const name = (await entry.textContent()) || "";
+  const match = /(\d+)\s*$/.exec(name.trim());
   return match ? Number(match[1]) : 0;
 }
 
-test.describe("the Resolution Center icon", () => {
-  test("sits left of the bell with a name, a tooltip and a 44-pixel target, and has left the account menu", async ({ page }) => {
+test.describe("the Resolution Center", () => {
+  test("on a phone the header has Help and the bell only, and the Resolution Center is in More", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await signIn(page, "student");
-    const icon = page.getByRole("link", { name: /^Resolution Center/ });
-    const bell = page.getByRole("button", { name: /^Notifications/ });
-    await expect(icon).toBeVisible();
-    const [iconBox, bellBox] = [(await icon.boundingBox())!, (await bell.boundingBox())!];
-    expect(iconBox.width).toBeGreaterThanOrEqual(44);
-    expect(iconBox.height).toBeGreaterThanOrEqual(44);
-    expect(iconBox.x + iconBox.width).toBeLessThanOrEqual(bellBox.x + 1);
-    // No text label beside it; the tooltip names it on focus.
-    await expect(icon).toHaveText("");
-    await icon.focus();
-    const tip = page.getByRole("tooltip", { name: "Resolution Center" });
-    await expect.poll(() => tip.evaluate((element) => getComputedStyle(element).opacity)).toBe("1");
-
-    // On a phone the account menu no longer lists it.
-    await page.getByRole("button", { name: /Account menu for/ }).click();
-    await expect(page.getByRole("button", { name: "Profile" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Resolution Center" })).toHaveCount(0);
+    const header = page.locator(".role-phone-only");
+    await expect(header.getByRole("button", { name: /^Notifications/ })).toBeVisible();
+    await expect(header.getByRole("link", { name: /^Resolution Center/ })).toHaveCount(0);
+    await page.locator(".role-dock").getByRole("button", { name: /^More/ }).click();
+    const sheet = page.getByRole("dialog", { name: "More" });
+    await sheet.getByRole("button", { name: /^Resolution Center/ }).click();
+    await expect(page).toHaveURL(/\/student\/resolution$/);
+    await expect(page.locator(".role-dock").getByRole("button", { name: /^More/ })).toHaveClass(/role-dock-item--on/);
   });
 
-  // Iteration 21: the header is three tracks; below 360 px the role pill is a dot.
-  for (const width of [320, 360, 390]) {
-    test(`at ${width} px the role mark and the icon never overlap`, async ({ page }) => {
-      await page.setViewportSize({ width, height: 800 });
-      await signIn(page, "student");
-      const icon = page.getByRole("link", { name: /^Resolution Center/ });
-      const role = width < 360 ? page.getByRole("img", { name: "Trainee" }) : page.locator(".role-pill").first();
-      await expect(role).toBeVisible();
-      const [a, b] = [(await role.boundingBox())!, (await icon.boundingBox())!];
-      const overlap = a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
-      expect(overlap).toBe(false);
-    });
-  }
-
-  test("on a desktop it is the same icon, not a labelled button", async ({ page }) => {
+  test("on a computer it is one entry of the side menu, marked when open", async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 });
     await signIn(page, "student");
-    const icon = page.getByRole("link", { name: /^Resolution Center/ });
-    await expect(icon).toBeVisible();
-    await expect(icon).toHaveText("");
-    await icon.click();
+    const entry = page.locator("aside.role-side").getByRole("link", { name: /^Resolution Center/ });
+    await entry.click();
     await expect(page).toHaveURL(/\/student\/resolution$/);
+    await expect(entry).toHaveAttribute("aria-current", "page");
+    await expect(page.locator('aside.role-side [aria-current="page"]')).toHaveCount(1);
   });
 
   test("counts a concern with a new coordinator reply until the student opens it", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 800 });
     const student = await apiSession("student");
     const coordinator = await apiSession("coordinator");
     const stamp = `Badge check ${Date.now()}`;
@@ -81,11 +67,9 @@ test.describe("the Resolution Center icon", () => {
 
     await page.reload();
     await expect.poll(() => newReplies(page)).toBe(before + 1);
-    // The badge shows the same number the name says.
-    await expect(page.getByRole("link", { name: /^Resolution Center/ }).getByText(String(before + 1), { exact: true })).toBeVisible();
 
     // Opening the conversation reads it.
-    await page.getByRole("link", { name: /^Resolution Center/ }).click();
+    await page.locator("aside.role-side").getByRole("link", { name: /^Resolution Center/ }).click();
     const concern = page.getByRole("listitem").filter({ hasText: stamp });
     await concern.getByRole("button", { name: /Conversation with the coordinator/ }).click();
     await expect(concern.getByText("We have asked the company to unlock it.")).toBeVisible();

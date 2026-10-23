@@ -9,6 +9,8 @@ type PortalHeaderProps = {
   context?: ReactNode;
   /** The page's name, drawn as the header's title ("Today", "Review", "Home"). */
   pageTitle?: string;
+  /** False when the page draws its own level-1 heading (a student's record), so there is one. */
+  titleIsHeading?: boolean;
   /** Opens a side menu. When omitted the menu button is not drawn. */
   onMenu?: () => void;
   /** Right-hand slot: the bell. */
@@ -26,7 +28,7 @@ type PortalHeaderProps = {
 | lane-dash strip along the bottom edge, the supervisor's faint ruled lines.
 | The coordinator's header is plain navy.
 */
-export default function PortalHeader({ role, context, pageTitle, onMenu, right, variant = "mobile", status }: PortalHeaderProps) {
+export default function PortalHeader({ role, context, pageTitle, onMenu, right, variant = "mobile", status, titleIsHeading = true }: PortalHeaderProps) {
   const t = ROLE_THEMES[role];
 
   if (variant === "desktop") {
@@ -58,7 +60,7 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
           </button>
         )}
         <div className="min-w-0 flex-1">
-          <p className="font-display truncate text-[26px] font-extrabold leading-tight text-white" role="heading" aria-level={1}>
+          <p className="font-display truncate text-[26px] font-extrabold leading-tight text-white" role={titleIsHeading ? "heading" : undefined} aria-level={titleIsHeading ? 1 : undefined}>
             {pageTitle ?? t.portal}
           </p>
           {context && <p className="mt-0.5 truncate text-[13.5px] font-medium text-white/85">{context}</p>}

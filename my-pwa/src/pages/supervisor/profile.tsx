@@ -12,6 +12,7 @@ import { API_URL, withSupervisorAuth } from "../../lib/api";
 import { getInitials } from "../../lib/format";
 import { updateStoredAccount, useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
+import { CoordinatorCard, type Coordinator } from "../student/ContactDetails";
 
 type SupervisorProfile = {
   supervisor_id: string;
@@ -29,6 +30,7 @@ export default function SupervisorProfilePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
+  const [coordinator, setCoordinator] = useState<Coordinator | null>(null);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [department, setDepartment] = useState("");
@@ -45,6 +47,7 @@ export default function SupervisorProfilePage() {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.message || "Could not load your profile.");
       setProfile(data.supervisor);
+      setCoordinator(data.coordinator && data.coordinator.email ? data.coordinator : null);
       setName(data.supervisor.name);
       setEmail(data.supervisor.email);
       setDepartment(data.supervisor.department || "");
@@ -157,6 +160,7 @@ export default function SupervisorProfilePage() {
         </Card>
 
         <div className="space-y-5 lg:col-span-2">
+          <CoordinatorCard coordinator={coordinator} role="supervisor" />
           <Card>
             <form onSubmit={save} className="p-4 sm:p-5" noValidate>
               <h2 className="text-[16px] font-bold text-slate-900">Account details</h2>

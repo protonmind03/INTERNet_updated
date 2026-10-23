@@ -208,7 +208,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
           <EmptyState icon="users" title="No active students" />
         ) : (
           <>
-            <div className="overflow-x-auto" tabIndex={0} role="group" aria-label="Student performance">
+            <div className="relative overflow-x-auto" tabIndex={0} role="group" aria-label="Student performance">
               <table className="w-full text-left text-sm">
                 <thead>
                   <tr className="table-head border-y border-slate-100 text-xs text-slate-600">

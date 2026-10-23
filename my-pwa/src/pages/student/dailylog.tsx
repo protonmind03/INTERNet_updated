@@ -371,7 +371,7 @@ function DayRow({
               <AppealActions log={log} onChanged={onChanged} />
             </>
           ) : missedOut ? (
-            <Button variant="outline" onClick={onClose}>
+            <Button variant="outline" onClick={onClose} data-focus="time-out">
               Enter time-out
             </Button>
           ) : (

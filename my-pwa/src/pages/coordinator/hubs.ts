@@ -3,27 +3,28 @@
 | THE COORDINATOR'S HUBS
 |--------------------------------------------------------------------------
 |
-| Roadmap 5.1. Pages about one subject live together as tabs of one page:
+| Roadmap 5.1. Pages about one subject live together as tabs of one page.
+| Since the PSU redesign's menu review, a hub only joins pages that sit in
+| the same group of the coordinator's menu (layouts/CoordinatorLayout.tsx),
+| so a tab never belongs to another group than its page:
 |
-|   Companies         Companies · Supervisors · Site visits
-|   Documents         Submissions · Requirements
-|   Students          Students · Terms (with the term switcher)
-|   Resolution Center Concerns · Evaluations · Appeals (icon left of the bell)
-|   Profile settings  Account · Coordinators · Audit log · What is switched on
-|                     (a section list on the left, from the avatar)
+|   Decide   Resolution Center   Concerns · Appeals
+|   People   Companies           Companies · Supervisors
+|   Term     Documents           Submissions · Deliverables
 |
-| Each tab is the old page, unchanged, drawn inside the hub (CoordinatorHub
-| puts it there; the layout draws the tabs). The tab is in the address
-| (?tab=, or ?section= for Profile settings), and every old address
-| redirects to its tab, keeping what else it carried (?focus= from a
-| notification, an audit filter), so bookmarks and stored links still work.
+| Evaluations, Site visits, Terms, Coordinators, Audit log and System
+| status were tabs of hubs in other groups; each is its own page again,
+| and its old tab address is sent there (DEPARTED). The tab is in the
+| address (?tab=), and every older address redirects to its tab (MOVED),
+| keeping what else it carried (?focus= from a notification, an audit
+| filter), so bookmarks and stored links still work.
 |
 | No imports here: the backend test reads this file without the app's
 | packages installed. The React context is in hubConfig.ts.
 |
 */
 
-export type HubKey = "companies" | "documents" | "students" | "resolution" | "settings";
+export type HubKey = "companies" | "documents" | "resolution";
 
 export type HubTab = { id: string; label: string };
 
@@ -31,9 +32,7 @@ export type Hub = {
   title: string;
   path: string;
   /** The address parameter that names the tab. */
-  param: "tab" | "section";
-  /** Tabs across the top, or a list of sections on the left. */
-  kind: "tabs" | "sections";
+  param: "tab";
   tabs: HubTab[];
 };
 
@@ -42,54 +41,27 @@ export const HUBS: Record<HubKey, Hub> = {
     title: "Companies",
     path: "/coordinator/companies",
     param: "tab",
-    kind: "tabs",
     tabs: [
       { id: "companies", label: "Companies" },
       { id: "supervisors", label: "Supervisors" },
-      { id: "site-visits", label: "Site visits" },
     ],
   },
   documents: {
     title: "Documents",
     path: "/coordinator/documents",
     param: "tab",
-    kind: "tabs",
     tabs: [
       { id: "submissions", label: "Submissions" },
-      { id: "requirements", label: "Requirements" },
-    ],
-  },
-  students: {
-    title: "Students",
-    path: "/coordinator/students",
-    param: "tab",
-    kind: "tabs",
-    tabs: [
-      { id: "students", label: "Students" },
-      { id: "terms", label: "Terms" },
+      { id: "requirements", label: "Deliverables" },
     ],
   },
   resolution: {
     title: "Resolution Center",
     path: "/coordinator/resolution",
     param: "tab",
-    kind: "tabs",
     tabs: [
       { id: "concerns", label: "Concerns" },
-      { id: "evaluations", label: "Evaluations" },
       { id: "appeals", label: "Appeals" },
-    ],
-  },
-  settings: {
-    title: "Profile settings",
-    path: "/coordinator/profile",
-    param: "section",
-    kind: "sections",
-    tabs: [
-      { id: "account", label: "Account" },
-      { id: "coordinators", label: "Coordinators" },
-      { id: "audit", label: "Audit log" },
-      { id: "status", label: "What is switched on" },
     ],
   },
 };
@@ -97,15 +69,35 @@ export const HUBS: Record<HubKey, Hub> = {
 /** Where each page that moved used to be, and the tab it is now. */
 export const MOVED: { from: string; hub: HubKey; tab: string }[] = [
   { from: "/coordinator/supervisors", hub: "companies", tab: "supervisors" },
-  { from: "/coordinator/site-visits", hub: "companies", tab: "site-visits" },
   { from: "/coordinator/requirements", hub: "documents", tab: "requirements" },
-  { from: "/coordinator/terms", hub: "students", tab: "terms" },
   { from: "/coordinator/complaints", hub: "resolution", tab: "concerns" },
-  { from: "/coordinator/evaluations", hub: "resolution", tab: "evaluations" },
   { from: "/coordinator/appeals", hub: "resolution", tab: "appeals" },
-  { from: "/coordinator/coordinators", hub: "settings", tab: "coordinators" },
-  { from: "/coordinator/audit", hub: "settings", tab: "audit" },
 ];
+
+/**
+ * Tabs that left their hub to be pages of their own: the old tab address
+ * and where it goes now. The address's other parameters go along.
+ */
+export const DEPARTED: { path: string; param: "tab" | "section"; value: string; to: string }[] = [
+  { path: "/coordinator/resolution", param: "tab", value: "evaluations", to: "/coordinator/evaluations" },
+  { path: "/coordinator/companies", param: "tab", value: "site-visits", to: "/coordinator/site-visits" },
+  { path: "/coordinator/students", param: "tab", value: "terms", to: "/coordinator/terms" },
+  { path: "/coordinator/students", param: "tab", value: "students", to: "/coordinator/students" },
+  { path: "/coordinator/profile", param: "section", value: "coordinators", to: "/coordinator/coordinators" },
+  { path: "/coordinator/profile", param: "section", value: "audit", to: "/coordinator/audit" },
+  { path: "/coordinator/profile", param: "section", value: "status", to: "/coordinator/status" },
+  { path: "/coordinator/profile", param: "section", value: "account", to: "/coordinator/profile" },
+];
+
+/** A departed tab's new address, with what else the old one carried; null for any other address. */
+export function departedTo(pathname: string, search: string): string | null {
+  const params = new URLSearchParams(search);
+  const move = DEPARTED.find((item) => item.path === pathname && params.get(item.param) === item.value);
+  if (!move) return null;
+  params.delete(move.param);
+  const rest = params.toString();
+  return rest ? `${move.to}?${rest}` : move.to;
+}
 
 /** The tab an address asks for, or the hub's first. */
 export function tabOf(hub: HubKey, params: URLSearchParams): string {

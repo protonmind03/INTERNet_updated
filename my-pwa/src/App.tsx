@@ -13,7 +13,7 @@ import Go from "./pages/Go";
 import PageSkeleton from "./components/PageSkeleton";
 import { HOME_PAGE, HOME_PATH } from "./lib/homePages";
 import Help from "./pages/Help";
-import CoordinatorHub, { MovedPage } from "./pages/coordinator/CoordinatorHub";
+import CoordinatorHub, { MovedPage, OwnPage } from "./pages/coordinator/CoordinatorHub";
 
 /*
 |--------------------------------------------------------------------------
@@ -103,15 +103,10 @@ function PageFallback() {
   );
 }
 
-/**
- * The old address of a page that is now a tab of the student's Resolution
- * Center. Whatever else the address carried is kept.
- */
-function ToResolutionTab({ tab }: { tab: "concerns" | "evaluations" }) {
+/** The old address of the concerns page: the Resolution Center, keeping what else the address carried. */
+function ToResolutionCenter() {
   const { search, hash } = useLocation();
-  const params = new URLSearchParams(search);
-  params.set("tab", tab);
-  return <Navigate to={{ pathname: "/student/resolution", search: `?${params}`, hash }} replace />;
+  return <Navigate to={{ pathname: "/student/resolution", search, hash }} replace />;
 }
 
 /** The old sign-in address: the landing page's doors (Vercel redirects it before the app loads). */
@@ -135,6 +130,7 @@ const Schedule = page("student", () => import("./pages/student/sched"));
 const Documents = page("student", () => import("./pages/student/document"));
 const Notifications = page("student", () => import("./pages/student/notifications"));
 const ResolutionCenter = page("student", () => import("./pages/student/ResolutionCenter"));
+const StudentFeedback = page("student", () => import("./pages/student/ResolutionCenter").then((module) => ({ default: module.StudentFeedback })));
 const StudentTimeRecord = page("student", () => import("./pages/student/TimeRecord"));
 const StudentAnnouncements = page("student", () => import("./pages/student/Announcements"));
 const StudentMessages = page("student", () => import("./pages/student/Messages"));
@@ -194,6 +190,10 @@ const CoordinatorSiteVisits = page("coordinator", () => import("./pages/coordina
 const CoordinatorSystemStatus = page("coordinator", () => import("./pages/coordinator/SystemStatusPage"));
 const CoordinatorCompanyPage = page("coordinator", () => import("./pages/coordinator/CompanyPage"));
 const CoordinatorSupervisorPage = page("coordinator", () => import("./pages/coordinator/SupervisorPage"));
+// Help inside each portal (the public /help stays for anyone not signed in).
+const StudentHelp = page("student", () => import("./pages/PortalHelp").then((module) => ({ default: module.StudentHelp })));
+const SupervisorHelp = page("supervisor", () => import("./pages/PortalHelp").then((module) => ({ default: module.SupervisorHelp })));
+const CoordinatorHelp = page("coordinator", () => import("./pages/PortalHelp").then((module) => ({ default: module.CoordinatorHelp })));
 
 // The brand kit preview (and the loading prototypes, Iteration 14) only exists in development
 // builds, or in a build made with VITE_BRAND_PREVIEW=true, so it can be tried on a test site.
@@ -285,14 +285,14 @@ function App() {
           element={<Documents />}
         />
 
-        {/* Concerns and evaluations are the two tabs of the Resolution Center. */}
+        {/* Concerns are the Resolution Center; evaluations are Feedback (/student/feedback). */}
         <Route
           path="/student/resolution"
           element={<ResolutionCenter />}
         />
         <Route
           path="/report"
-          element={<ToResolutionTab tab="concerns" />}
+          element={<ToResolutionCenter />}
         />
 
         <Route
@@ -302,7 +302,7 @@ function App() {
 
         <Route
           path="/student/feedback"
-          element={<ToResolutionTab tab="evaluations" />}
+          element={<StudentFeedback />}
         />
 
         <Route
@@ -424,7 +424,7 @@ function App() {
 
         <Route
           path="/coordinator/students"
-          element={<CoordinatorHub hub="students" pages={{ students: CoordinatorStudents, terms: CoordinatorTerms }} />}
+          element={<OwnPage><CoordinatorStudents /></OwnPage>}
         />
 
         <Route
@@ -454,7 +454,7 @@ function App() {
 
         <Route
           path="/coordinator/evaluations"
-          element={<MovedPage />}
+          element={<CoordinatorEvaluations />}
         />
 
         <Route
@@ -464,7 +464,7 @@ function App() {
 
         <Route
           path="/coordinator/resolution"
-          element={<CoordinatorHub hub="resolution" pages={{ concerns: CoordinatorComplaints, evaluations: CoordinatorEvaluations, appeals: CoordinatorAppeals }} />}
+          element={<CoordinatorHub hub="resolution" pages={{ concerns: CoordinatorComplaints, appeals: CoordinatorAppeals }} />}
         />
 
         <Route
@@ -479,7 +479,7 @@ function App() {
 
         <Route
           path="/coordinator/profile"
-          element={<CoordinatorHub hub="settings" pages={{ account: CoordinatorProfile, coordinators: CoordinatorAccounts, audit: CoordinatorAudit, status: CoordinatorSystemStatus }} />}
+          element={<OwnPage><CoordinatorProfile /></OwnPage>}
         />
 
         <Route
@@ -509,17 +509,37 @@ function App() {
 
         <Route
           path="/coordinator/audit"
-          element={<MovedPage />}
+          element={<CoordinatorAudit />}
+        />
+
+        <Route
+          path="/coordinator/status"
+          element={<CoordinatorSystemStatus />}
+        />
+
+        <Route
+          path="/coordinator/help"
+          element={<CoordinatorHelp />}
+        />
+
+        <Route
+          path="/supervisor/help"
+          element={<SupervisorHelp />}
+        />
+
+        <Route
+          path="/student/help"
+          element={<StudentHelp />}
         />
 
         <Route
           path="/coordinator/companies"
-          element={<CoordinatorHub hub="companies" pages={{ companies: CoordinatorCompanies, supervisors: CoordinatorSupervisors, "site-visits": CoordinatorSiteVisits }} />}
+          element={<CoordinatorHub hub="companies" pages={{ companies: CoordinatorCompanies, supervisors: CoordinatorSupervisors }} />}
         />
 
         <Route
           path="/coordinator/terms"
-          element={<MovedPage />}
+          element={<CoordinatorTerms />}
         />
 
         <Route
@@ -534,12 +554,12 @@ function App() {
 
         <Route
           path="/coordinator/coordinators"
-          element={<MovedPage />}
+          element={<CoordinatorAccounts />}
         />
 
         <Route
           path="/coordinator/site-visits"
-          element={<MovedPage />}
+          element={<CoordinatorSiteVisits />}
         />
 
         {BrandPreview && (

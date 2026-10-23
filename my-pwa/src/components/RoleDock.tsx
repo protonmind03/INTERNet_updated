@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import Icon, { type IconName } from "./Icon";
 import { useReportedHeight } from "../lib/layers";
+import { currentEntry } from "../lib/navMatch";
 
 /*
 |--------------------------------------------------------------------------
@@ -54,7 +55,6 @@ function useKeyboardOpen(): boolean {
   return open;
 }
 
-const isOn = (pathname: string, path: string) => pathname === path || pathname.startsWith(`${path}/`);
 
 export default function RoleDock({
   items,
@@ -66,13 +66,13 @@ export default function RoleDock({
   items: DockItem[];
   groups: DockGroup[];
   /** The account row at the bottom of More. */
-  account: { initials: string; name: string; detail: string; onSignOut: () => void };
+  account: { initials: string; name: string; detail: string; profilePath: string; onSignOut: () => void };
   /** A search field at the top of More (the coordinator's "Find anyone"). */
   search?: (close: () => void) => ReactNode;
   /** The element the page scrolls in, if not the window. */
   scroller: HTMLElement | null;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, search: query } = useLocation();
   const navigate = useNavigate();
   const [hidden, setHidden] = useState(false);
   const [sheet, setSheet] = useState(false);
@@ -101,8 +101,13 @@ export default function RoleDock({
   }, [pathname]);
 
   const more = groups.flatMap((group) => group.items);
-  // More lights only for a page no dock item owns.
-  const moreActive = !items.some((item) => isOn(pathname, item.path)) && more.some((item) => isOn(pathname, item.path.split("?")[0]));
+  // One entry is current, in the dock or in More, never both (lib/navMatch.ts).
+  const active = currentEntry(
+    [...items.map((item) => ({ key: `dock:${item.path}`, path: item.path })), ...more.map((item) => ({ key: `more:${item.path}`, path: item.path }))],
+    pathname,
+    query
+  );
+  const moreActive = Boolean(active?.startsWith("more:"));
   const moreCount = more.reduce((sum, item) => sum + (item.count ?? 0), 0);
   const gone = hidden || keyboard;
 
@@ -110,12 +115,13 @@ export default function RoleDock({
     <>
       <nav ref={keyboard ? undefined : report} aria-label="Main" className={`role-dock md:hidden print:hidden ${gone ? "role-dock--hidden" : ""}`} aria-hidden={gone || undefined}>
         {items.map((item) => (
-          <NavLink
+          <Link
             key={item.path}
             to={item.path}
             aria-label={item.count ? `${item.label}, ${item.count} new` : item.label}
+            aria-current={active === `dock:${item.path}` ? "page" : undefined}
             tabIndex={gone ? -1 : undefined}
-            className={({ isActive }) => `role-dock-item ${isActive ? "role-dock-item--on" : ""}`}
+            className={`role-dock-item ${active === `dock:${item.path}` ? "role-dock-item--on" : ""}`}
           >
             <span className="relative inline-flex">
               <Icon name={item.icon} size={22} />
@@ -129,7 +135,7 @@ export default function RoleDock({
             <span className="role-dock-label" aria-hidden="true">
               {item.label}
             </span>
-          </NavLink>
+          </Link>
         ))}
         <button
           type="button"
@@ -179,7 +185,7 @@ function MoreSheet({
   onGo,
 }: {
   groups: DockGroup[];
-  account: { initials: string; name: string; detail: string; onSignOut: () => void };
+  account: { initials: string; name: string; detail: string; profilePath: string; onSignOut: () => void };
   search?: (close: () => void) => ReactNode;
   onClose: () => void;
   onGo: (path: string) => void;
@@ -226,13 +232,16 @@ function MoreSheet({
           ))}
         </div>
         <div className="more-sheet-account">
-          <span className="more-sheet-avatar" aria-hidden="true">
-            {account.initials}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-[15px] font-bold text-slate-900">{account.name}</span>
-            <span className="block truncate text-[13px] text-slate-600">{account.detail}</span>
-          </span>
+          {/* The profile is reached here, for every role, and not listed again above. */}
+          <button type="button" onClick={() => onGo(account.profilePath)} className="flex min-h-11 min-w-0 flex-1 items-center gap-3 rounded-xl text-left hover:bg-slate-50">
+            <span className="more-sheet-avatar" aria-hidden="true">
+              {account.initials}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[15px] font-bold text-slate-900">{account.name}</span>
+              <span className="block truncate text-[13px] text-slate-600">Profile · {account.detail}</span>
+            </span>
+          </button>
           <button
             type="button"
             onClick={() => {

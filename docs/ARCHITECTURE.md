@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-246 routes in 16 files; 45 services in use.
+247 routes in 16 files; 47 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -26,14 +26,14 @@ flowchart LR
     routes_accountDetails["routes/accountDetails.ts<br/>7 routes: /api/coordinator, /api/me"]
     routes_appeals["routes/appeals.ts<br/>4 routes: /api/appeals, /api/coordinator"]
     routes_attachments["routes/attachments.ts<br/>5 routes: /api/attachments"]
-    routes_console["routes/console.ts<br/>8 routes: /api/coordinator"]
+    routes_console["routes/console.ts<br/>9 routes: /api/coordinator"]
     routes_deliverables["routes/deliverables.ts<br/>2 routes: /api/coordinator, /api/students"]
     routes_extensions["routes/extensions.ts<br/>71 routes: /api/coordinator, /api/absences, /api/students"]
     routes_institution["routes/institution.ts<br/>2 routes: /api/coordinator"]
-    routes_messages["routes/messages.ts<br/>4 routes: /api/messages"]
+    routes_messages["routes/messages.ts<br/>5 routes: /api/messages"]
     routes_offlineTimeIn["routes/offlineTimeIn.ts<br/>4 routes: /api/attendance, /api/offline"]
     routes_passkeys["routes/passkeys.ts<br/>5 routes: /api/passkeys"]
-    routes_programme["routes/programme.ts<br/>10 routes: /api/coordinator"]
+    routes_programme["routes/programme.ts<br/>9 routes: /api/coordinator"]
     routes_projections["routes/projections.ts<br/>1 routes: /api/students"]
     routes_supervisorDesk["routes/supervisorDesk.ts<br/>13 routes: /api/supervisor, /api/tasks, /api/student-notes"]
     routes_timeRecord["routes/timeRecord.ts<br/>5 routes: /api/student, /api/students, /api/time-record"]
@@ -45,6 +45,7 @@ flowchart LR
     services_backups["backups.ts"]
     services_clientErrors["clientErrors.ts"]
     services_coordinatorActions["coordinatorActions.ts"]
+    services_coordinatorHome["coordinatorHome.ts"]
     services_dayRules["dayRules.ts"]
     services_deadlineReminders["deadlineReminders.ts"]
     services_deliverables["deliverables.ts"]
@@ -75,6 +76,7 @@ flowchart LR
     services_privateFileStore["privateFileStore.ts"]
     services_problems["problems.ts"]
     services_projection["projection.ts"]
+    services_psuMarks["psuMarks.ts"]
     services_removedRecords["removedRecords.ts"]
     services_schedulePattern["schedulePattern.ts"]
     services_schedules["schedules.ts"]
@@ -99,6 +101,7 @@ flowchart LR
   end
   pwa -->|"HTTPS JSON and the /api/events stream"| api
   routes_academics --> services_academics
+  routes_academics --> services_psuMarks
   routes_accountDetails --> services_kpiDefinitions
   routes_appeals --> services_liveness
   routes_appeals --> services_photoRedo
@@ -110,6 +113,7 @@ flowchart LR
   routes_attachments --> services_uploadQuota
   routes_console --> services_backups
   routes_console --> services_coordinatorActions
+  routes_console --> services_coordinatorHome
   routes_console --> services_emailBudget
   routes_console --> services_kpis
   routes_console --> services_mailer
@@ -135,6 +139,7 @@ flowchart LR
   routes_extensions --> services_taskRelease
   routes_extensions --> services_uploadQuota
   routes_extensions --> services_versions
+  routes_institution --> services_psuMarks
   routes_messages --> services_emailBudget
   routes_messages --> services_ids
   routes_messages --> services_mailer
@@ -151,8 +156,6 @@ flowchart LR
   routes_programme --> services_documentZip
   routes_programme --> services_ids
   routes_programme --> services_insights
-  routes_programme --> services_kpiDefinitions
-  routes_programme --> services_kpis
   routes_programme --> services_performance
   routes_programme --> services_phTime
   routes_programme --> services_privateFileStore
@@ -211,6 +214,9 @@ flowchart LR
   services_coordinatorActions --> services_insights
   services_coordinatorActions --> services_phTime
   services_coordinatorActions --> services_studentScope
+  services_coordinatorHome --> services_phTime
+  services_coordinatorHome --> services_projection
+  services_coordinatorHome --> services_studentScope
   services_dayRules --> services_phTime
   services_deadlineReminders --> services_deliverables
   services_deadlineReminders --> services_emailBudget
@@ -275,6 +281,7 @@ flowchart LR
   services_backups -.-> ext_bucket
   services_backups -.-> ext_postgres
   services_coordinatorActions -.-> ext_postgres
+  services_coordinatorHome -.-> ext_postgres
   services_dayRules -.-> ext_postgres
   services_deadlineReminders -.-> ext_postgres
   services_deliverables -.-> ext_postgres
@@ -311,14 +318,14 @@ flowchart LR
 | `routes/accountDetails.ts` | 7 | `/api/coordinator`, `/api/me` |
 | `routes/appeals.ts` | 4 | `/api/appeals`, `/api/coordinator` |
 | `routes/attachments.ts` | 5 | `/api/attachments` |
-| `routes/console.ts` | 8 | `/api/coordinator` |
+| `routes/console.ts` | 9 | `/api/coordinator` |
 | `routes/deliverables.ts` | 2 | `/api/coordinator`, `/api/students` |
 | `routes/extensions.ts` | 71 | `/api/coordinator`, `/api/absences`, `/api/students`, `/api/journals`, `/api/dtr-certifications`, `/api/tasks`, `/api/complaints`, `/api/evaluations` |
 | `routes/institution.ts` | 2 | `/api/coordinator` |
-| `routes/messages.ts` | 4 | `/api/messages` |
+| `routes/messages.ts` | 5 | `/api/messages` |
 | `routes/offlineTimeIn.ts` | 4 | `/api/attendance`, `/api/offline` |
 | `routes/passkeys.ts` | 5 | `/api/passkeys` |
-| `routes/programme.ts` | 10 | `/api/coordinator` |
+| `routes/programme.ts` | 9 | `/api/coordinator` |
 | `routes/projections.ts` | 1 | `/api/students` |
 | `routes/supervisorDesk.ts` | 13 | `/api/supervisor`, `/api/tasks`, `/api/student-notes`, `/api/coordinator` |
 | `routes/timeRecord.ts` | 5 | `/api/student`, `/api/students`, `/api/time-record` |
@@ -344,6 +351,7 @@ Pages built: `index.html`, `app.html`. Doors: `/student/sign-in`, `/supervisor/s
 | `backups.ts` | `routes/console.ts`, `scripts/backup-cron.ts`, `server.ts` |
 | `clientErrors.ts` | `server.ts` |
 | `coordinatorActions.ts` | `routes/console.ts` |
+| `coordinatorHome.ts` | `routes/console.ts` |
 | `dayRules.ts` | `routes/offlineTimeIn.ts`, `server.ts` |
 | `deadlineReminders.ts` | `server.ts` |
 | `deliverables.ts` | `routes/deliverables.ts`, `routes/extensions.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |
@@ -353,8 +361,8 @@ Pages built: `index.html`, `app.html`. Doors: `/student/sign-in`, `/supervisor/s
 | `ids.ts` | `routes/attachments.ts`, `routes/deliverables.ts`, `routes/extensions.ts`, `routes/messages.ts`, `routes/programme.ts`, `routes/projections.ts`, `routes/supervisorDesk.ts`, `routes/timeRecord.ts`, `server.ts`, `services/coordinatorActions.ts` |
 | `imageMetadata.ts` | `routes/attachments.ts`, `server.ts` |
 | `insights.ts` | `routes/extensions.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/kpis.ts`, `services/performance.ts`, `services/projection.ts` |
-| `kpiDefinitions.ts` | `routes/accountDetails.ts`, `routes/programme.ts`, `services/kpis.ts` |
-| `kpis.ts` | `routes/console.ts`, `routes/programme.ts` |
+| `kpiDefinitions.ts` | `routes/accountDetails.ts`, `services/kpis.ts` |
+| `kpis.ts` | `routes/console.ts` |
 | `listQuery.ts` | `server.ts` |
 | `liveNotifications.ts` | `server.ts` |
 | `liveness.ts` | `routes/appeals.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
@@ -367,17 +375,18 @@ Pages built: `index.html`, `app.html`. Doors: `/student/sign-in`, `/supervisor/s
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
 | `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
-| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
+| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
 | `photoPurge.ts` | `routes/console.ts`, `server.ts` |
 | `photoRedo.ts` | `routes/appeals.ts`, `server.ts`, `services/deadlineReminders.ts` |
 | `privacy.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `server.ts`, `services/photoPurge.ts` |
 | `privateFileStore.ts` | `routes/attachments.ts`, `routes/console.ts`, `routes/programme.ts`, `server.ts`, `services/backups.ts`, `services/photoPurge.ts` |
 | `problems.ts` | `routes/console.ts`, `server.ts` |
-| `projection.ts` | `routes/extensions.ts`, `routes/programme.ts`, `routes/projections.ts`, `server.ts`, `services/deadlineReminders.ts` |
+| `projection.ts` | `routes/extensions.ts`, `routes/programme.ts`, `routes/projections.ts`, `server.ts`, `services/coordinatorHome.ts`, `services/deadlineReminders.ts` |
+| `psuMarks.ts` | `routes/academics.ts`, `routes/institution.ts` |
 | `removedRecords.ts` | `routes/extensions.ts`, `routes/supervisorDesk.ts` |
 | `schedulePattern.ts` | `services/insights.ts`, `services/kpis.ts`, `services/performance.ts` |
 | `schedules.ts` | `routes/programme.ts`, `server.ts` |
-| `studentScope.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/insights.ts`, `services/kpis.ts`, `services/projection.ts` |
+| `studentScope.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/insights.ts`, `services/kpis.ts`, `services/projection.ts` |
 | `taskRelease.ts` | `routes/extensions.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |
 | `termSetup.ts` | `routes/programme.ts` |
 | `timeOutReminders.ts` | `server.ts` |

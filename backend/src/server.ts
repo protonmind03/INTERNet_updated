@@ -4385,7 +4385,8 @@ app.get(
   async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth;
-      const result = await pool.query<{ waiting: string }>(
+      // Each kind separately too, for the side menu's Review entries.
+      const result = await pool.query<{ time_ins: string; tasks: string; documents: string; absences: string; reports: string }>(
         `
         WITH mine AS (
           SELECT TRIM(student_id::text) AS student_id FROM students
@@ -4396,20 +4397,28 @@ app.get(
             WHERE TRIM(a.student_id::text) IN (SELECT student_id FROM mine)
               AND a.status = 'Pending'
               -- A time-in the supervisor recorded in person needs no review.
-              AND NOT (a.capture_method IS NOT DISTINCT FROM 'supervisor' AND a.time_out IS NULL))
-          + (SELECT COUNT(*) FROM tasks t
-              WHERE TRIM(t.student_id::text) IN (SELECT student_id FROM mine) AND t.status = 'Submitted')
-          + (SELECT COUNT(*) FROM documents d
-              WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending')
-          + (SELECT COUNT(*) FROM absences b
-              WHERE TRIM(b.student_id::text) IN (SELECT student_id FROM mine) AND b.status = 'Pending')
-          + (SELECT COUNT(*) FROM journals j
-              WHERE TRIM(j.student_id::text) IN (SELECT student_id FROM mine) AND j.status = 'Submitted')
-          AS waiting
+              AND NOT (a.capture_method IS NOT DISTINCT FROM 'supervisor' AND a.time_out IS NULL)) AS time_ins,
+          (SELECT COUNT(*) FROM tasks t
+              WHERE TRIM(t.student_id::text) IN (SELECT student_id FROM mine) AND t.status = 'Submitted') AS tasks,
+          (SELECT COUNT(*) FROM documents d
+              WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending') AS documents,
+          (SELECT COUNT(*) FROM absences b
+              WHERE TRIM(b.student_id::text) IN (SELECT student_id FROM mine) AND b.status = 'Pending') AS absences,
+          (SELECT COUNT(*) FROM journals j
+              WHERE TRIM(j.student_id::text) IN (SELECT student_id FROM mine) AND j.status = 'Submitted') AS reports
         `,
         [auth?.id]
       );
-      return res.json({ waiting: Number(result.rows[0]?.waiting) || 0 });
+      const row = result.rows[0];
+      const byKind = {
+        time_ins: Number(row?.time_ins) || 0,
+        tasks: Number(row?.tasks) || 0,
+        documents: Number(row?.documents) || 0,
+        absences: Number(row?.absences) || 0,
+        reports: Number(row?.reports) || 0,
+      };
+      const waiting = Object.values(byKind).reduce((sum, count) => sum + count, 0);
+      return res.json({ waiting, by_kind: byKind });
     } catch (error) {
       console.error("SUPERVISOR REVIEW COUNT ERROR:", error);
       return res.status(500).json({ message: "Failed to count what is waiting." });
@@ -6267,7 +6276,8 @@ app.get(
           OR ($2 = 'unassigned' AND s.is_active = TRUE AND sup.supervisor_id IS NULL)
           -- Iteration 20: whose Time Record header lacks its college and formal program name.
           OR ($2 = 'no-program' AND s.is_active = TRUE AND s.program_id IS NULL))${scope.sql}
-        ORDER BY s.name ASC
+        -- By name; the student ID settles two of the same name, so the order is the same every time.
+        ORDER BY s.name ASC, s.student_id ASC
         `,
         [q, status || null]
       );

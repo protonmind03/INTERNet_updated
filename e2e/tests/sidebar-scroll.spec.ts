@@ -9,22 +9,22 @@ import { signIn } from "./helpers";
 | Roadmap 5.8. One class for the menus of all three portals: room kept for
 | a thin bar, no scrolling of the page behind, edge fades only when there
 | is more that way, and the brand block and account footer fixed while
-| only the list scrolls. The coordinator's sidebar wears the student's
-| style (brand/tokens.ts, SIDEBAR).
+| only the list scrolls. Since the PSU redesign the three side menus are
+| one component (components/RoleShell.tsx), each in its role's colour.
 |
 */
 
 const style = (pane: Locator, property: string) =>
   pane.evaluate((element, name) => getComputedStyle(element).getPropertyValue(name), property);
 
-test("the coordinator's menu: student-style sidebar, fades only when there is more, header and footer fixed", async ({ page }) => {
+test("the coordinator's menu: the shared side menu, fades only when there is more, header and footer fixed", async ({ page }) => {
   // Short enough that the menu has to scroll.
-  await page.setViewportSize({ width: 1280, height: 520 });
+  await page.setViewportSize({ width: 1280, height: 420 });
   await signIn(page, "coordinator");
-  const aside = page.locator("aside").filter({ has: page.getByRole("navigation", { name: "Main" }) }).first();
+  const aside = page.locator("aside.role-side");
   const pane = aside.getByRole("navigation", { name: "Main" });
   await expect(pane).toHaveClass(/inb-scroll-pane/);
-  await expect(aside).toHaveClass(/surface-brand/);
+  expect(await aside.evaluate((element) => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
   expect(await style(pane, "scrollbar-gutter")).toContain("stable");
   expect(await style(pane, "overscroll-behavior-y")).toBe("contain");
 
@@ -46,20 +46,13 @@ test("the coordinator's menu: student-style sidebar, fades only when there is mo
   await expect(pane).not.toHaveAttribute("data-more-above", "");
 });
 
-test("the same pane in the student's sidebar and, sideways, in the supervisor's phone menu", async ({ browser }) => {
-  const student = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
-  await signIn(student, "student");
-  await expect(student.getByRole("navigation", { name: "Main" }).first()).toHaveClass(/inb-scroll-pane/);
-  await student.context().close();
-
-  const supervisor = await (await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true })).newPage();
-  await signIn(supervisor, "supervisor");
-  const row = supervisor.locator('nav[aria-label="Main"][data-axis="x"]');
-  await expect(row).toHaveClass(/inb-scroll-pane/);
-  // Six pages on a phone's width: more lies to the right, none to the left yet.
-  await expect(row).toHaveAttribute("data-more-below", "");
-  await expect(row).not.toHaveAttribute("data-more-above", "");
-  await supervisor.context().close();
+test("the same pane in the trainee's and the supervisor's side menus", async ({ browser }) => {
+  for (const role of ["student", "supervisor"] as const) {
+    const page = await (await browser.newContext({ viewport: { width: 1280, height: 900 } })).newPage();
+    await signIn(page, role);
+    await expect(page.locator("aside.role-side").getByRole("navigation", { name: "Main" })).toHaveClass(/inb-scroll-pane/);
+    await page.context().close();
+  }
 });
 
 test("a dialog whose body scrolls can be reached with the keyboard, one that fits is no extra stop", async ({ browser }) => {
@@ -85,32 +78,10 @@ test("a dialog whose body scrolls can be reached with the keyboard, one that fit
   await tall.context().close();
 });
 
-// Iteration 21: every sideways area shares one rule set (.inb-snap-row in brand.css).
+// Iteration 21: every sideways area shares one rule set (.inb-snap-row in brand.css);
+// since the PSU redesign the first-open slides are the one sideways row left.
 test.describe("sideways rows", () => {
   test.use({ viewport: { width: 390, height: 844 } });
-
-  test("the figure cards and the day pager snap, hide their scrollbar, and keep the page from moving", async ({ page }) => {
-    await signIn(page, "student");
-    await page.goto("/daily-log");
-    const rows = page.locator(".inb-snap-row");
-    await expect(rows.first()).toBeVisible();
-    for (const row of await rows.all()) {
-      const styles = await row.evaluate((element) => {
-        const style = getComputedStyle(element);
-        return { snap: style.scrollSnapType, bar: style.scrollbarWidth, overscroll: style.overscrollBehaviorX, axis: element.getAttribute("data-axis") };
-      });
-      expect(styles.snap).toContain("x");
-      expect(styles.snap).toContain("mandatory");
-      expect(styles.bar).toBe("none");
-      expect(styles.overscroll).toBe("contain");
-      expect(styles.axis).toBe("x");
-    }
-    // The figure cards have more to the right, so that edge fades; the first edge does not.
-    const cards = page.locator(".figure-cards");
-    await expect(cards).toHaveAttribute("data-more-below", "");
-    await expect(cards).not.toHaveAttribute("data-more-above", "");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
-  });
 
   test("the first-open slides are the same kind of row (Iteration 23)", async ({ page }) => {
     // Opened as an installed app, so the slides show.
