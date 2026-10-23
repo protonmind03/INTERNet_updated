@@ -245,6 +245,15 @@ function Hero() {
             The on-the-job training system of <b>Pangasinan State University</b>, installable on any phone, tablet or computer.
           </span>
         </p>
+        {/* What to do next, in the first screen: open a portal, or install the app. */}
+        <p className="hero-cta">
+          <a href="#doors" className="hero-cta-primary">
+            Open your portal
+          </a>
+          <a href="#download" className="hero-cta-secondary">
+            Get the app
+          </a>
+        </p>
         <ul className="hero-chips" aria-label="Show a role">
           {DOOR_ROLES.map((role) => (
             <li key={role}>
@@ -285,7 +294,11 @@ function Hero() {
       <div className="land-wrap hero-controls">
         <p className="hero-caption" aria-live="polite" data-hero-caption>
           <span className="land-dot" data-role="student" aria-hidden="true" />
-          <b data-hero-role>Trainee</b> on a <span data-hero-device>phone</span>.
+          <span>
+            <b data-hero-role>Trainee</b>
+            {" on a "}
+            <span data-hero-device>phone</span>
+          </span>
         </p>
         <div className="hero-buttons">
           <button type="button" className="hero-arrow" data-hero-prev aria-label="Previous role">
@@ -545,7 +558,7 @@ function GetTheApp() {
             </ol>
             <div className="get-actions">
               <a className="get-install" data-install-link href={installPath("student")}>
-                Open the{" "}<span data-door-name>trainee</span>{" "}sign-in to install
+                {"Open the "}<span data-door-name>trainee</span>{" sign-in to install"}
               </a>
               {device.key === "ios" && (
                 <p className="get-warning" data-not-safari hidden>

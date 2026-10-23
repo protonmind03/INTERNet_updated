@@ -53,13 +53,13 @@ const WORDS: Record<Role, { lead: string; deskTitle: string; deskLead: string; h
   },
   supervisor: {
     lead: "Sign in to review your trainees' hours.",
-    deskTitle: "Sign in to your desk",
+    deskTitle: "Sign in",
     deskLead: "Verify your trainees' days, tasks and documents.",
     help: "Locked out?",
   },
   coordinator: {
     lead: "Sign in to manage your cohort.",
-    deskTitle: "Coordinator console",
+    deskTitle: "Sign in",
     deskLead: "Oversee every OJT journey across the program.",
     help: "Locked out?",
   },
@@ -278,15 +278,14 @@ function FormFooter({ role, standalone }: { role: Role; standalone: boolean }) {
       <p className="signin-seal-line">
         <PsuSeal size={24} clearSpace={false} />
         Pangasinan State University · Lingayen Campus
-        {!standalone && (
-          <>
-            {" · "}
-            <a href="/" className="signin-link signin-link--quiet">
-              INTERNet home
-            </a>
-          </>
-        )}
       </p>
+      {!standalone && (
+        <p className="m-0">
+          <a href="/" className="signin-link signin-link--quiet">
+            INTERNet home
+          </a>
+        </p>
+      )}
     </div>
   );
 }
@@ -381,7 +380,7 @@ function TraineeDesk({ form, extra, standalone }: { form: ReactNode; extra: Reac
           {form}
           {extra}
           <p className="signin-note">
-            <b>On a computer you can</b> check your hours, submit tasks and documents, write your journal and print your time record.
+            <b>On a computer you can</b> check your hours, submit tasks and documents, write your weekly report and print your time record.
           </p>
           <FormFooter role="student" standalone={standalone} />
         </div>
@@ -450,59 +449,57 @@ function SupervisorDesk({ form, extra, standalone }: { form: ReactNode; extra: R
   );
 }
 
-/** The coordinator on a computer: a card over the console, blurred, with the tools only they have. */
+const CONSOLE_TOOLS = [
+  { title: "What needs you, first", line: "Appeals, concerns and who to nudge.", glyph: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" },
+  { title: "One filter for everything", line: "Term, college, program, block, company or supervisor.", glyph: "M3 5h18l-7 8v6l-4 2v-8z" },
+  { title: "Every change is recorded", line: "The audit log keeps who changed what, and when.", glyph: "M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 13l2 2 4-4" },
+  { title: "Reports to go", line: "Analytics as a PDF or CSV for the dean.", glyph: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
+];
+
+/** The coordinator on a computer: the same split page as the other doors, with the console's tools. */
 function CoordinatorDesk({ form, extra, standalone }: { form: ReactNode; extra: ReactNode; standalone: boolean }) {
   return (
-    <main className="signin-console">
-      <div className="signin-console-bg" aria-hidden="true">
-        <span className="signin-console-side">
-          {Array.from({ length: 12 }, (_, i) => (
-            <i key={i} />
-          ))}
-        </span>
-        <span className="signin-console-main">
-          <i className="bar" />
-          <i />
-          <i />
-          <i />
-          <i />
-          <i className="wide" />
-        </span>
-      </div>
-      <div className="signin-console-row">
-        <section className="signin-card" aria-labelledby="door-title">
-          <div className="signin-card-head">
-            <Logo />
-            <h1 id="door-title" className="signin-card-title">
-              {WORDS.coordinator.deskTitle}
-            </h1>
-            <p>{WORDS.coordinator.deskLead}</p>
-          </div>
-          <div className="signin-card-body">
-            {form}
-            {extra}
-            <FormFooter role="coordinator" standalone={standalone} />
-          </div>
-        </section>
-        <ul className="signin-tools" aria-label="In the console">
-          <li>
-            <b>What needs you, first</b>
-            <i>Appeals, flagged logs and who to nudge.</i>
-          </li>
-          <li>
-            <b>One filter for everything</b>
-            <i>Term, college, program, block, company or supervisor.</i>
-          </li>
-          <li>
-            <b>Every change is recorded</b>
-            <i>The audit log keeps who changed what, and when.</i>
-          </li>
-          <li>
-            <b>Reports to go</b>
-            <i>Analytics export as a PDF for the dean.</i>
-          </li>
-        </ul>
-      </div>
+    <main className="signin-desk">
+      <aside className="signin-panel">
+        <Logo />
+        <div className="signin-panel-copy">
+          <p className="signin-kicker">Coordinator console</p>
+          <h2 className="signin-panel-title">
+            Every trainee&rsquo;s OJT, <em>in one view</em>.
+          </h2>
+          <ul className="signin-tools-list">
+            {CONSOLE_TOOLS.map((tool) => (
+              <li key={tool.title}>
+                <span className="signin-tools-icon">
+                  <Glyph d={tool.glyph} size={18} />
+                </span>
+                <span>
+                  <b>{tool.title}</b>
+                  <i>{tool.line}</i>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <p className="signin-panel-seal">
+          <PsuSeal size={34} clearSpace={false} onDark />
+          <span>
+            <b>Pangasinan State University</b>
+            <i>Lingayen Campus · OJT office</i>
+          </span>
+        </p>
+      </aside>
+      <section className="signin-side" aria-labelledby="door-title">
+        <div className="signin-side-inner">
+          <h1 id="door-title" className="signin-title">
+            {WORDS.coordinator.deskTitle}
+          </h1>
+          <p className="signin-sub">{WORDS.coordinator.deskLead}</p>
+          {form}
+          {extra}
+          <FormFooter role="coordinator" standalone={standalone} />
+        </div>
+      </section>
     </main>
   );
 }

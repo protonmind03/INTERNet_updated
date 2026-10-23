@@ -106,7 +106,7 @@ export const HOW_STEPS: Record<DoorRole, { title: string; heading: string; steps
     steps: [
       { title: "Time in with a camera check", body: "Turn your head when asked. No signal? It still works and is sent later." },
       { title: "Lunch, then time out", body: "Lunch is taken off your hours. At time-out, say what you did and which tasks it was for." },
-      { title: "Tasks, deliverables and journal", body: "Submit your work, upload what's due, and write your weekly journal." },
+      { title: "Tasks, deliverables and weekly report", body: "Submit your work, upload what's due, and write your weekly report." },
       { title: "Watch verified hours grow", body: "See your expected finish date, and print a signed time record." },
     ],
   },
@@ -116,7 +116,7 @@ export const HOW_STEPS: Record<DoorRole, { title: string; heading: string; steps
     steps: [
       { title: "See who is in", body: "Today's register shows each intern's time-in, and who is not in yet." },
       { title: "Verify the day's time-ins", body: "Verify the ordinary ones together. Time-ins made offline are confirmed one by one." },
-      { title: "Review tasks, documents and journals", body: "Mark work reviewed, or return it with a note." },
+      { title: "Review tasks, documents and weekly reports", body: "Mark work reviewed, or return it with a note." },
       { title: "Evaluate and certify", body: "Fill in the final evaluation, and certify each month's time record." },
     ],
   },

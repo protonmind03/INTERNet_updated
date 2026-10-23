@@ -60,7 +60,7 @@ function TraineeScreen() {
             Time record <i>›</i>
           </span>
           <span>
-            Weekly journal <i>Due Sun</i>
+            Weekly report <i>Due Sun</i>
           </span>
         </div>
       </div>

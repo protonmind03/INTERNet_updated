@@ -684,7 +684,7 @@
 .signin-install-help { padding: 14px 16px; border-radius: 12px; background: var(--land-paper-cool); color: var(--land-ink); font-size: 14px; line-height: 1.5; box-shadow: inset 0 0 0 1px var(--land-line); }
 .signin-foot { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-top: 8px; text-align: center; font-size: 14px; color: var(--land-muted); }
 .signin-seal-line { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 8px; margin: 6px 0 0; font-size: 12.5px; color: var(--land-muted); }
-.signin-body :focus-visible, .signin-phone :focus-visible, .signin-desk :focus-visible, .signin-console :focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; }
+.signin-body :focus-visible, .signin-phone :focus-visible, .signin-desk :focus-visible { outline: 3px solid var(--role-primary); outline-offset: 2px; }
 
 /* Phones and tablets: the flat header, then the sheet. */
 .signin-phone { min-height: 100dvh; background: #ffffff; color: var(--land-ink); }
@@ -742,26 +742,15 @@
 .signin-pills { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 0; padding: 0; list-style: none; }
 .signin-pills li { padding: 7px 12px; border-radius: 9999px; background: rgb(255 255 255 / 0.12); font-size: 13.5px; font-weight: 600; }
 
-/* The coordinator on a computer: a card over the console, blurred. */
-.signin-console { position: relative; display: grid; min-height: 100dvh; place-items: center; overflow: hidden; padding: 40px; background: var(--role-surface); color: var(--land-ink); }
-.signin-console-bg { position: absolute; inset: 0; display: grid; grid-template-columns: 250px 1fr; filter: blur(3px); opacity: 0.85; }
-.signin-console-side { display: grid; align-content: start; gap: 14px; padding: 80px 24px; background: #ffffff; box-shadow: inset -1px 0 0 var(--role-hairline); }
-.signin-console-side i { height: 16px; border-radius: 6px; background: color-mix(in srgb, var(--role-primary) 12%, white); }
-.signin-console-main { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: 92px; gap: 18px; align-content: start; padding: 28px 36px; }
-.signin-console-main i { border-radius: 16px; background: #ffffff; box-shadow: inset 0 0 0 1px var(--role-hairline); }
-.signin-console-main .bar { grid-column: span 2; height: 44px; }
-.signin-console-main .wide { grid-column: 1 / -1; height: 280px; }
-.signin-console-row { position: relative; display: flex; align-items: center; gap: 0; }
-.signin-card { width: min(30rem, 92vw); overflow: hidden; border-radius: 26px; background: #ffffff; box-shadow: 0 40px 80px -30px rgb(15 23 42 / 0.45); }
-.signin-card-head { padding: 26px 34px 24px; background-color: var(--role-chrome); background-image: var(--inb-grain); color: var(--role-on-chrome); }
-.signin-card-title { margin: 22px 0 0; font-family: var(--font-display); font-size: 32px; font-weight: 800; letter-spacing: -0.025em; }
-.signin-card-head p { margin: 6px 0 0; font-size: 15px; color: rgb(255 255 255 / 0.85); }
-.signin-card-body { display: flex; flex-direction: column; gap: 14px; padding: 26px 34px 22px; }
-.signin-tools { display: grid; gap: 12px; width: 16rem; margin: 0; padding: 12px 12px 12px 0; list-style: none; background: var(--role-chrome); border-radius: 0 18px 18px 0; }
-.signin-tools li { padding: 14px 16px; border-radius: 0 14px 14px 0; background: #ffffff; }
-.signin-tools b { display: block; font-size: 15px; }
-.signin-tools i { display: block; margin-top: 3px; font-size: 13.5px; font-style: normal; color: var(--land-muted); }
-@media (max-width: 1199.98px) { .signin-tools { display: none; } }
+/* The coordinator's door: the console's tools as a list in the panel (system pass: one template for the three doors). */
+.signin-tools-list { display: grid; gap: 14px; margin: 28px 0 0; padding: 0; list-style: none; }
+.signin-tools-list li { display: flex; align-items: flex-start; gap: 14px; }
+.signin-tools-icon { display: grid; flex-shrink: 0; width: 40px; height: 40px; place-items: center; border-radius: 10px; background: rgb(255 255 255 / 0.12); color: var(--inb-amber); }
+.signin-tools-list b { display: block; font-size: 16px; }
+.signin-tools-list i { display: block; margin-top: 2px; font-size: 14px; font-style: normal; color: rgb(255 255 255 / 0.78); }
+.signin-panel-seal { display: flex; align-items: center; gap: 12px; margin: 0; }
+.signin-panel-seal b { display: block; font-size: 14.5px; }
+.signin-panel-seal i { display: block; font-size: 13px; font-style: normal; color: rgb(255 255 255 / 0.75); }
 
 /* The first-open slides (Iteration 23, components/Onboarding.tsx): one slide per width. */
 .onboarding-row { gap: 0; }
