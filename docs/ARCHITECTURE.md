@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-247 routes in 16 files; 47 services in use.
+249 routes in 16 files; 47 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -21,7 +21,7 @@ flowchart LR
   doors --> pwa
   apps --> doors
   subgraph api["backend, the Express API"]
-    server["server.ts<br/>94 routes: /api/coordinator, /api/attendance, /api/notifications"]
+    server["server.ts<br/>96 routes: /api/coordinator, /api/attendance, /api/notifications"]
     routes_academics["routes/academics.ts<br/>11 routes: /api/coordinator"]
     routes_accountDetails["routes/accountDetails.ts<br/>7 routes: /api/coordinator, /api/me"]
     routes_appeals["routes/appeals.ts<br/>4 routes: /api/appeals, /api/coordinator"]
@@ -313,7 +313,7 @@ flowchart LR
 
 | File | Routes | Address families (most routes first) |
 |---|---|---|
-| `server.ts` | 94 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/supervisor`, `/api/tasks`, `/api/complaints`, `/api/push` |
+| `server.ts` | 96 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/supervisor`, `/api/tasks`, `/api/complaints`, `/api/push` |
 | `routes/academics.ts` | 11 | `/api/coordinator` |
 | `routes/accountDetails.ts` | 7 | `/api/coordinator`, `/api/me` |
 | `routes/appeals.ts` | 4 | `/api/appeals`, `/api/coordinator` |
