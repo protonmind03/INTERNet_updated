@@ -27,15 +27,11 @@ import { bindFilters, filterConditions, hasFilters, type StudentFilters } from "
 import {
   AGREEMENT_WITHIN_DAYS,
   CONCERN_OLD_AFTER_DAYS,
-  KPI_COMPARE_WEEKS,
   KPI_DEFINITIONS,
-  KPI_WEEKS,
   KPI_WINDOW_DAYS,
   REQUIREMENTS_DUE_AT,
-  meetsTarget,
   type KpiDefinition,
   type KpiKey,
-  type KpiTargets,
 } from "./kpiDefinitions";
 
 
@@ -186,40 +182,16 @@ const FIGURES: Record<KpiKey, (asOf: string, inputs: KpiInputs) => Figure> = {
 };
 
 export type Kpi = KpiDefinition & {
-  /** The target when nobody has changed it. `target` is the one in force. */
-  default_target: number;
   value: number | null;
-  /** Whether the target is met; null when there is nothing to judge. */
-  met: boolean | null;
+  /** One line of context: what the figure was worked out from. */
   basis: string;
-  /** The figure KPI_COMPARE_WEEKS weeks earlier, and what to call that. */
-  previous: number | null;
-  previous_label: string;
-  /** Oldest first; the last point is today's value. */
-  series: { date: string; value: number | null }[];
 };
 
-/** Every figure as of `today`, with its history, from rows already loaded. */
-export function computeKpis(today: string, inputs: KpiInputs, targets: KpiTargets = {}): Kpi[] {
-  return KPI_DEFINITIONS.map((standard) => {
-    // A target the coordinator set replaces the default; nothing else about the figure changes.
-    const definition = { ...standard, target: targets[standard.key] ?? standard.target };
-    const figure = FIGURES[definition.key];
-    const series = Array.from({ length: KPI_WEEKS }, (_, index) => {
-      const date = addDays(today, -7 * (KPI_WEEKS - 1 - index));
-      return { date, value: figure(date, inputs).value };
-    });
-    const now = figure(today, inputs);
-    return {
-      ...definition,
-      default_target: standard.target,
-      value: now.value,
-      met: meetsTarget(definition, now.value),
-      basis: now.basis,
-      previous: series[KPI_WEEKS - 1 - KPI_COMPARE_WEEKS].value,
-      previous_label: `${KPI_COMPARE_WEEKS} weeks earlier`,
-      series,
-    };
+/** Every figure as of `today`, from rows already loaded. */
+export function computeKpis(today: string, inputs: KpiInputs): Kpi[] {
+  return KPI_DEFINITIONS.map((definition) => {
+    const now = FIGURES[definition.key](today, inputs);
+    return { ...definition, value: now.value, basis: now.basis };
   });
 }
 
@@ -248,8 +220,8 @@ export async function loadKpiInputs(
     [],
     filters
   );
-  // Far enough back for the oldest point on the chart and the window before it.
-  const historyFrom = addDays(today, -(7 * KPI_WEEKS + KPI_WINDOW_DAYS + 7));
+  // Far enough back for the window before today.
+  const historyFrom = addDays(today, -(KPI_WINDOW_DAYS + 7));
 
   const [logs, decisions, requirements, approvals, concerns, companies] = await Promise.all([
     pool.query<{ student_id: string; date: string; hours: number; verified: boolean }>(
@@ -327,16 +299,6 @@ export async function coordinatorKpis(
   now: Date = new Date()
 ): Promise<{ as_of: string; kpis: Kpi[] }> {
   const { date: today } = phClock(now);
-  const [inputs, targets] = await Promise.all([loadKpiInputs(pool, filters, today), loadKpiTargets(pool)]);
-  return { as_of: today, kpis: computeKpis(today, inputs, targets) };
-}
-
-/** The targets a coordinator has set. A figure not listed uses its default. */
-export async function loadKpiTargets(pool: Pool): Promise<KpiTargets> {
-  const rows = await pool.query<{ key: string; target: number }>(`SELECT key, target::float AS target FROM kpi_targets`);
-  const targets: KpiTargets = {};
-  for (const row of rows.rows) {
-    if (KPI_DEFINITIONS.some((definition) => definition.key === row.key)) targets[row.key as KpiKey] = Number(row.target);
-  }
-  return targets;
+  const inputs = await loadKpiInputs(pool, filters, today);
+  return { as_of: today, kpis: computeKpis(today, inputs) };
 }

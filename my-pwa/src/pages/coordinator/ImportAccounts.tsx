@@ -242,7 +242,7 @@ export default function ImportAccounts({
   };
 
   const outcomeList = (list: ImportResult[]) => (
-    <ul className="max-h-72 divide-y divide-slate-100 overflow-y-auto rounded-lg border border-slate-200">
+    <ul className="max-h-72 divide-y divide-(--role-hairline) overflow-y-auto rounded-lg border border-(--role-hairline)">
       {list.map((result) => (
         <li
           key={result.row}
@@ -342,7 +342,7 @@ export default function ImportAccounts({
       {results ? (
         <div className="space-y-4">
           {created.length > 0 && (
-            <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-900">
+            <p className="flex items-start gap-2 rounded-lg bg-(--status-warning-bg) px-3 py-2.5 text-sm text-(--status-warning-ink)">
               <Icon name="alert" size={16} className="mt-0.5 shrink-0" />
               Download the passwords now. They are not shown again, and each {config.one} must
               set their own at first sign-in.
@@ -394,7 +394,7 @@ export default function ImportAccounts({
             type="button"
             onClick={() => input.current?.click()}
             disabled={busy}
-            className="flex w-full items-center gap-3 rounded-lg border border-dashed border-slate-300 px-3.5 py-3.5 text-left hover:border-psu-400 hover:bg-psu-50"
+            className="flex w-full items-center gap-3 rounded-lg border-[1.5px] border-dashed border-psu-300 px-3.5 py-3.5 text-left hover:border-psu-400 hover:bg-psu-50"
           >
             <Icon name="upload" className="shrink-0 text-slate-400" />
             <span className="text-sm">
@@ -415,7 +415,7 @@ export default function ImportAccounts({
                 {rows.length} {rows.length === 1 ? config.one : config.many} found. Checking the
                 file creates nothing; it shows what would happen to each row.
               </p>
-              <div className="max-h-64 overflow-auto rounded-lg border border-slate-200">
+              <div className="max-h-64 overflow-auto rounded-lg border border-(--role-hairline)">
                 <table className="w-full text-left text-sm">
                   <thead className="sticky top-0 bg-slate-50 text-xs text-slate-500">
                     <tr>
@@ -429,7 +429,7 @@ export default function ImportAccounts({
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100">
+                  <tbody className="divide-y divide-(--role-hairline)">
                     {rows.map((row, index) => (
                       <tr key={index}>
                         <td className="whitespace-nowrap px-3 py-2">{row[config.id] || "—"}</td>

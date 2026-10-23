@@ -111,7 +111,7 @@ export default function ContactDetails({
   return (
     <Card className="p-5">
       <form onSubmit={save}>
-        <h2 className="text-sm font-semibold text-slate-900">Contact details</h2>
+        <h2 className="text-[16px] font-bold text-slate-900">Contact details</h2>
         <p className="mt-1 text-sm text-slate-600">
           Seen by your supervisor and your OJT coordinator, so they can reach you or someone
           close to you if something happens at work.
@@ -171,7 +171,7 @@ export function CoordinatorCard({ coordinator }: { coordinator: Coordinator | nu
   if (!coordinator) return null;
   return (
     <Card className="p-5">
-      <h2 className="text-sm font-semibold text-slate-900">Your OJT coordinator</h2>
+      <h2 className="text-[16px] font-bold text-slate-900">Your OJT coordinator</h2>
       <p className="mt-2 text-sm font-medium text-slate-900">{coordinator.name}</p>
       {coordinator.position && <p className="text-sm text-slate-600">{coordinator.position}</p>}
       {coordinator.department && <p className="text-sm text-slate-600">{coordinator.department}</p>}
@@ -207,7 +207,7 @@ export function SupervisorCard({ supervisor }: { supervisor: Supervisor | null }
   if (!supervisor) return null;
   return (
     <Card className="p-5">
-      <h2 className="text-sm font-semibold text-slate-900">Your supervisor</h2>
+      <h2 className="text-[16px] font-bold text-slate-900">Your supervisor</h2>
       <p className="mt-2 text-sm font-medium text-slate-900">{supervisor.name}</p>
       {supervisor.position && <p className="text-sm text-slate-600">{supervisor.position}</p>}
       {(supervisor.company || supervisor.department) && (

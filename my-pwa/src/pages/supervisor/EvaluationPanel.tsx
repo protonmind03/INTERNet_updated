@@ -181,7 +181,7 @@ export default function EvaluationPanel({ intern }: { intern: { student_id: stri
       <div className="grid items-start gap-5 lg:grid-cols-5">
         <Card className="lg:col-span-2">
           <form onSubmit={submit} className="space-y-4 p-4 sm:p-5" noValidate>
-            <h2 className="text-sm font-semibold text-slate-900">
+            <h2 className="text-[16px] font-bold text-slate-900">
               {editingId === null ? "New evaluation" : "Edit evaluation"}
             </h2>
 

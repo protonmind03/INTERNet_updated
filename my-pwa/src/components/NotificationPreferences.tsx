@@ -86,7 +86,7 @@ export default function NotificationPreferences({ role }: { role: Role }) {
 
   return (
     <Card className="p-4 sm:p-5">
-      <h2 className="text-sm font-semibold text-slate-900">Notifications</h2>
+      <h2 className="text-[16px] font-bold text-slate-900">Notifications</h2>
       <p className="mt-1 text-sm text-slate-600">
         Every notification is kept in the app. Choose which ones are also sent to your devices
         {anyEmail ? " or by email" : ""}.

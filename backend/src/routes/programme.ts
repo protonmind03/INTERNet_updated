@@ -17,8 +17,6 @@ import {
 } from "../services/performance";
 import { bindFilters, filterConditions, readStudentFilters } from "../services/studentScope";
 import { BLOCK_NAME_SQL } from "../services/academics";
-import { KPI_DEFINITIONS, readTarget, type KpiDefinition } from "../services/kpiDefinitions";
-import { loadKpiTargets } from "../services/kpis";
 import { compareSchedule, patternKey, readPattern, scheduleKey, type PatternDay, type ReadPattern } from "../services/schedules";
 import { termSetup } from "../services/termSetup";
 import { sameId } from "../services/ids";
@@ -109,71 +107,6 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
     } catch (error) {
       console.error("GET STUDENT PERFORMANCE ERROR:", error);
       return res.status(500).json({ message: "Failed to work out this student's performance." });
-    }
-  });
-
-  /*
-  | The key figures' targets. One set for the programme. Sending a number
-  | sets a figure's target; sending null puts its default back.
-  */
-
-  app.put("/api/coordinator/kpi-targets", requireCoordinator, async (req, res) => {
-    const auth = (req as Authed).auth!;
-    const sent: unknown = req.body?.targets;
-    if (!sent || typeof sent !== "object" || Array.isArray(sent)) {
-      return res.status(400).json({ message: "Send the targets to change." });
-    }
-    const changes: { definition: KpiDefinition; target: number | null }[] = [];
-    for (const [key, value] of Object.entries(sent as Record<string, unknown>)) {
-      const definition = KPI_DEFINITIONS.find((item) => item.key === key);
-      if (!definition) return res.status(400).json({ message: "That is not one of the key figures." });
-      if (value === null) {
-        changes.push({ definition, target: null });
-        continue;
-      }
-      const read = readTarget(definition, value);
-      if ("problem" in read) return res.status(400).json({ message: read.problem });
-      changes.push({ definition, target: read.target });
-    }
-    if (changes.length === 0) return res.status(400).json({ message: "Send the targets to change." });
-    const client = await pool.connect();
-    try {
-      const before = await loadKpiTargets(pool);
-      await client.query("BEGIN");
-      for (const { definition, target } of changes) {
-        // A target equal to the default is the default: no row is kept for it.
-        if (target === null || target === definition.target) {
-          await client.query(`DELETE FROM kpi_targets WHERE key = $1`, [definition.key]);
-        } else {
-          await client.query(
-            `INSERT INTO kpi_targets (key, target, updated_by, updated_at) VALUES ($1, $2, $3, NOW())
-             ON CONFLICT (key) DO UPDATE SET target = EXCLUDED.target, updated_by = EXCLUDED.updated_by, updated_at = NOW()`,
-            [definition.key, target, auth.id]
-          );
-        }
-      }
-      await client.query("COMMIT");
-      const after = await loadKpiTargets(pool);
-      // What actually moved, in words, for the audit log.
-      const changed = changes
-        .map(({ definition }) => {
-          const was = before[definition.key] ?? definition.target;
-          const is = after[definition.key] ?? definition.target;
-          return was === is ? "" : `${definition.key}: ${was} to ${is}`;
-        })
-        .filter(Boolean);
-      return res.json({
-        message: changed.length === 0 ? "The targets are as they were." : "Targets saved.",
-        targets: Object.fromEntries(KPI_DEFINITIONS.map((item) => [item.key, after[item.key] ?? item.target])),
-        changed: changed.join("; "),
-        changed_count: changed.length,
-      });
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      console.error("SAVE KPI TARGETS ERROR:", error);
-      return res.status(500).json({ message: "Failed to save the targets." });
-    } finally {
-      client.release();
     }
   });
 

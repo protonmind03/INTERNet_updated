@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
+import { sealChoices } from "../../brand/psuMarks";
+import MarkPicker from "../../components/MarkPicker";
 import { Button, Card, ErrorNotice, FormError, FormField } from "../../components/ui";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
@@ -6,7 +8,9 @@ import { coordinatorRequest } from "./request";
 /*
 | Iteration 18 (migration 068): the lines printed above every trainee's
 | Daily Time Record. Edited here, on the coordinator's Profile; each save is
-| audited on the server.
+| audited on the server. PSU redesign: the seal printed with them is chosen
+| from the PSU set (the university's or a college's; brand/psuMarks.ts),
+| saved as seal_asset (migration 071 and routes/institution.ts).
 */
 
 type Institution = {
@@ -14,6 +18,7 @@ type Institution = {
   university_name: string;
   campus_name: string;
   locality_line: string;
+  seal_asset: string;
 };
 
 const FIELDS: Array<{ key: keyof Institution; label: string; hint: string }> = [
@@ -23,7 +28,7 @@ const FIELDS: Array<{ key: keyof Institution; label: string; hint: string }> = [
   { key: "locality_line", label: "Locality line", hint: "Printed under the program." },
 ];
 
-const EMPTY: Institution = { republic_line: "", university_name: "", campus_name: "", locality_line: "" };
+const EMPTY: Institution = { republic_line: "", university_name: "", campus_name: "", locality_line: "", seal_asset: "psu-seal" };
 
 export default function InstitutionCard() {
   const [saved, setSaved] = useState<Institution | null>(null);
@@ -47,7 +52,7 @@ export default function InstitutionCard() {
     void Promise.resolve().then(load);
   }, [load]);
 
-  const changed = saved !== null && FIELDS.some(({ key }) => draft[key].trim() !== saved[key]);
+  const changed = saved !== null && (FIELDS.some(({ key }) => draft[key].trim() !== saved[key]) || draft.seal_asset !== saved.seal_asset);
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -58,7 +63,7 @@ export default function InstitutionCard() {
     try {
       const data = await coordinatorRequest<{ institution: Institution }>("/api/coordinator/institution", {
         method: "PUT",
-        body: Object.fromEntries(FIELDS.map(({ key }) => [key, draft[key].trim()])),
+        body: { ...Object.fromEntries(FIELDS.map(({ key }) => [key, draft[key].trim()])), seal_asset: draft.seal_asset },
       });
       setSaved(data.institution);
       setDraft(data.institution);
@@ -73,7 +78,7 @@ export default function InstitutionCard() {
   return (
     <Card>
       <form onSubmit={save} className="p-4 sm:p-5" noValidate aria-labelledby="institution-heading">
-        <h2 id="institution-heading" className="text-sm font-semibold text-slate-900">
+        <h2 id="institution-heading" className="text-[16px] font-bold text-slate-900">
           Institution details
         </h2>
         <p className="mt-1 text-sm text-slate-600">The lines printed above every trainee's Time Record.</p>
@@ -96,6 +101,17 @@ export default function InstitutionCard() {
               />
             </FormField>
           ))}
+        </div>
+        <div className="mt-5">
+          <MarkPicker
+            name="institution-seal"
+            label="Seal on the Time Record"
+            choices={sealChoices()}
+            value={draft.seal_asset}
+            onChange={(key) => setDraft((current) => ({ ...current, seal_asset: key }))}
+            noneCode="PSU"
+            allowNone={false}
+          />
         </div>
         <div className="mt-3">
           <FormError message={formError} />

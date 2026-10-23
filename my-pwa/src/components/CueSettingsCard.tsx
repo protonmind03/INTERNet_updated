@@ -19,7 +19,7 @@ export default function CueSettingsCard({ attention = false }: { attention?: boo
 
   return (
     <Card className="p-4 sm:p-5">
-      <h2 className="text-sm font-semibold text-slate-900">Sounds and vibration</h2>
+      <h2 className="text-[16px] font-bold text-slate-900">Sounds and vibration</h2>
       <p className="mt-1 text-sm text-slate-600">
         A short sound or buzz when a step is recorded, saved on this phone, sent or not accepted.
         These choices are kept on this device only.

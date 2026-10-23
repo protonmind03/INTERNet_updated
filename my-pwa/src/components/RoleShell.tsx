@@ -56,7 +56,10 @@ function SideMenu({
   collapsed,
   onToggle,
   canToggle,
+  textFirst,
 }: {
+  /** Words only while the menu is open (the coordinator's); icons only on the rail. */
+  textFirst: boolean;
   items: SideItem[];
   top?: ReactNode;
   account: { initials: string; name: string; detail: string; profilePath: string; onSignOut: () => void };
@@ -96,7 +99,7 @@ function SideMenu({
           const expanded = Boolean(item.children) && open === item.label;
           const label = (
             <>
-              <Icon name={item.icon} size={20} className="shrink-0" />
+              {(!textFirst || collapsed) && <Icon name={item.icon} size={20} className="shrink-0" />}
               <span className="role-side-text min-w-0 flex-1">
                 <span className="block truncate">{item.label}</span>
                 {item.detail && <span className="role-side-detail truncate">{item.detail}</span>}
@@ -206,7 +209,10 @@ export default function RoleShell({
   account,
   children,
   phoneHeader = true,
+  textFirst = false,
 }: {
+  /** The side menu as words, with no icon tiles, when open. */
+  textFirst?: boolean;
   role: Role;
   title: string;
   /** The one line under the title. */
@@ -235,7 +241,7 @@ export default function RoleShell({
 
   return (
     <div className="flex min-h-[calc(100dvh-var(--inb-top-inset))] bg-(--role-surface) print:block print:bg-white">
-      {tablet && <SideMenu items={side} top={sideTop} account={account} collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} canToggle />}
+      {tablet && <SideMenu items={side} top={sideTop} account={account} collapsed={collapsed} onToggle={() => setCollapsed((value) => !value)} canToggle textFirst={textFirst} />}
       <div className="flex min-w-0 flex-1 flex-col">
         {phoneHeader && (
           <div className="role-phone-only print:hidden">

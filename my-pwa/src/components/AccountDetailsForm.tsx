@@ -139,7 +139,7 @@ export default function AccountDetailsForm({
   return (
     <Card>
       <form onSubmit={save} className="p-4 sm:p-5" noValidate>
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+        <h2 className="text-[16px] font-bold text-slate-900">{title}</h2>
         {description && <p className="mt-1 text-sm text-slate-600">{description}</p>}
         {loadError ? (
           <div className="mt-3">

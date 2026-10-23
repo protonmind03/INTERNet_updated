@@ -152,7 +152,7 @@ export default function SystemStatus() {
 
   return (
     <Card className="p-4 sm:p-5">
-      <h2 className="text-sm font-semibold text-slate-900">What is switched on</h2>
+      <h2 className="text-[16px] font-bold text-slate-900">What is switched on</h2>
       <p className="mt-1 text-sm text-slate-600">
         These depend on settings of the server, which whoever looks after the hosting changes.
         The steps are in the deployment notes.

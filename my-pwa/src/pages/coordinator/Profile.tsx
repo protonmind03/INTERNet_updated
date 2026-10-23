@@ -89,7 +89,7 @@ export default function CoordinatorProfilePage() {
 
         <Card>
           <form onSubmit={save} className="p-4 sm:p-5" noValidate>
-            <h2 className="text-sm font-semibold text-slate-900">Account details</h2>
+            <h2 className="text-[16px] font-bold text-slate-900">Account details</h2>
             {loading && (
               <div className="mt-3">
                 <BrandLoader variant="inline" role="coordinator" process="profile" />

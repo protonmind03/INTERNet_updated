@@ -252,7 +252,7 @@ export function CardHeader({
   return (
     <div className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5">
       <div className="min-w-0">
-        <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+        <h2 className="text-[16px] font-bold text-slate-900">{title}</h2>
         {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
       </div>
       {action && <div className="shrink-0">{action}</div>}

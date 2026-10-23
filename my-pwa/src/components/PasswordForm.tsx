@@ -77,7 +77,7 @@ export default function PasswordForm({
     <Card>
       <form onSubmit={submit} className="p-4 sm:p-5" noValidate>
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-sm font-semibold text-slate-900">Change password</h2>
+          <h2 className="text-[16px] font-bold text-slate-900">Change password</h2>
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"

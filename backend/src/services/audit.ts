@@ -385,15 +385,7 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("id"),
     from: (source) => ({ name: nested(source.result.requirement, "name"), settings: source.result.summary }),
   },
-  // The programme's settings: targets, and a schedule for a whole block
-  {
-    method: "PUT",
-    path: "/api/coordinator/kpi-targets",
-    action: (source) => (Number(source.result.changed_count) > 0 ? "kpi.targets" : null),
-    entityType: "kpi_targets",
-    entityId: () => null,
-    from: (source) => ({ changed: source.result.changed }),
-  },
+  // The programme's settings: a schedule for a whole block
   {
     method: "PUT",
     path: "/api/coordinator/blocks/:id/schedule",

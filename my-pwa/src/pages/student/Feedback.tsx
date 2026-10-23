@@ -176,7 +176,7 @@ export default function EvaluationsPanel() {
           <div className="space-y-5 lg:col-span-2">
             <Card>
               <form onSubmit={submit} className="p-4 sm:p-5">
-                <h2 className="text-sm font-semibold text-slate-900">Rate your company</h2>
+                <h2 className="text-[16px] font-bold text-slate-900">Rate your company</h2>
                 <p className="mt-0.5 text-sm text-slate-500">
                   Your coordinator uses this to assess partner companies.
                 </p>

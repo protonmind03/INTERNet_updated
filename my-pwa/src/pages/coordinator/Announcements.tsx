@@ -135,7 +135,7 @@ export default function CoordinatorAnnouncements() {
       <div className="grid items-start gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-2">
           <form onSubmit={review} className="space-y-4 p-4 sm:p-5" noValidate>
-            <h2 className="text-sm font-semibold text-slate-900">New announcement</h2>
+            <h2 className="text-[16px] font-bold text-slate-900">New announcement</h2>
 
             <FormField label="Send to" htmlFor="announcement-audience">
               <select

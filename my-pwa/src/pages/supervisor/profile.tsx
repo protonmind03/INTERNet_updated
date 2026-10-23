@@ -159,7 +159,7 @@ export default function SupervisorProfilePage() {
         <div className="space-y-5 lg:col-span-2">
           <Card>
             <form onSubmit={save} className="p-4 sm:p-5" noValidate>
-              <h2 className="text-sm font-semibold text-slate-900">Account details</h2>
+              <h2 className="text-[16px] font-bold text-slate-900">Account details</h2>
               <div className="mt-4 grid gap-4 sm:grid-cols-2">
                 <div>
                   <label

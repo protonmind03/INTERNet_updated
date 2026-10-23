@@ -865,29 +865,13 @@ test.describe("the programme, for the coordinator", () => {
     await expect(page.getByText("View as a table").first()).toBeVisible();
   });
 
-  test("the key figures' targets are changed from the dashboard and put back", async ({ page }) => {
-    const coordinator = await apiSession("coordinator");
-    await api(coordinator.token, "PUT", "/api/coordinator/kpi-targets", { targets: { on_track: null } });
-    try {
-      await signIn(page, "coordinator");
-      await expect(page.getByText("Target: 90% or more")).toBeVisible();
-      await page.getByRole("button", { name: "Targets", exact: true }).click();
-      const dialog = page.getByRole("dialog", { name: "Targets for the key figures" });
-      const field = dialog.getByLabel("Students on track to finish within the term");
-      await expect(field).toHaveValue("90");
-      await field.fill("85");
-      await expect(dialog.getByRole("button", { name: /Use the default for Students on track/ })).toBeVisible();
-      await dialog.getByRole("button", { name: "Save targets" }).click();
-      await expect(page.getByText("Targets saved.")).toBeVisible();
-      await expect(page.getByText("Target: 85% or more")).toBeVisible();
-      await expect(page.getByText("Target: 90% or more")).toHaveCount(0);
-      // On Analytics the same cards show the same target, and offer no way to change it.
-      await page.goto("/coordinator/analytics");
-      await expect(page.getByText("Target: 85% or more")).toBeVisible();
-      await expect(page.getByRole("button", { name: "Targets", exact: true })).toHaveCount(0);
-    } finally {
-      await api(coordinator.token, "PUT", "/api/coordinator/kpi-targets", { targets: { on_track: null } });
-    }
+  test("the key figures are plain counts with their definition behind an i: no targets anywhere", async ({ page }) => {
+    // PSU redesign, Section 7: targets were removed with their dialog and route.
+    await signIn(page, "coordinator");
+    await page.goto("/coordinator/analytics");
+    await expect(page.getByText(/Target:/)).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Targets", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^About Students on track/ })).toBeVisible();
   });
 
   test("a set of filters is saved as a view, chosen again, and removed", async ({ page }) => {

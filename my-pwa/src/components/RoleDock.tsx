@@ -101,7 +101,8 @@ export default function RoleDock({
   }, [pathname]);
 
   const more = groups.flatMap((group) => group.items);
-  const moreActive = more.some((item) => isOn(pathname, item.path));
+  // More lights only for a page no dock item owns.
+  const moreActive = !items.some((item) => isOn(pathname, item.path)) && more.some((item) => isOn(pathname, item.path.split("?")[0]));
   const moreCount = more.reduce((sum, item) => sum + (item.count ?? 0), 0);
   const gone = hidden || keyboard;
 

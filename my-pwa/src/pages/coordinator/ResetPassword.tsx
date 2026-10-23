@@ -68,7 +68,7 @@ export default function ResetPassword({
 
   if (!open) {
     return (
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 px-3.5 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-(--role-hairline) px-3.5 py-3">
         <div className="min-w-0">
           <p className="text-sm font-medium text-slate-800">Locked out?</p>
           <p className="text-sm text-slate-500">
@@ -83,7 +83,7 @@ export default function ResetPassword({
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 px-3.5 py-3">
+    <div className="space-y-3 rounded-lg border border-(--role-hairline) px-3.5 py-3">
       <label htmlFor="reset-temp-password" className="block text-sm font-medium text-slate-800">
         Temporary password for {name}
       </label>

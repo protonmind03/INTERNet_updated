@@ -247,7 +247,7 @@ export default function ConcernsPanel() {
         <Card className="lg:col-span-3">
           <form onSubmit={submit} className="space-y-5 p-4 sm:p-5" noValidate>
             <div>
-              <h2 className="text-sm font-semibold text-slate-900">Report a concern</h2>
+              <h2 className="text-[16px] font-bold text-slate-900">Report a concern</h2>
               <p className="mt-0.5 text-sm text-slate-500">
                 Tell your OJT coordinator about a problem at your placement.
               </p>
@@ -403,7 +403,7 @@ export default function ConcernsPanel() {
 
         <div className="space-y-5 lg:col-span-2">
           <Card className="p-4 sm:p-5">
-            <h2 className="text-sm font-semibold text-slate-900">What happens next</h2>
+            <h2 className="text-[16px] font-bold text-slate-900">What happens next</h2>
             <ol className="mt-3 space-y-3 text-sm text-slate-600">
               <Step number={1}>Your OJT coordinator receives your concern.</Step>
               <Step number={2}>They review it, usually within 3 to 5 working days.</Step>

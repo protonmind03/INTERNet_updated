@@ -117,7 +117,7 @@ export default function AnnouncementList({
       {items.map((item) => (
         <li key={item.id}>
           <Card className="p-4 sm:p-5">
-            <h2 className="text-sm font-semibold text-slate-900">{item.title}</h2>
+            <h2 className="text-[16px] font-bold text-slate-900">{item.title}</h2>
             <p className="mt-0.5 text-xs text-slate-500">{formatDateTime(item.created_at)}</p>
             <p className="mt-2 whitespace-pre-line break-words text-sm text-slate-700">
               {item.message}

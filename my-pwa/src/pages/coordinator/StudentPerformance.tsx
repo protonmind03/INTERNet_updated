@@ -334,7 +334,7 @@ export function PerformanceSummary({ studentId }: { studentId: string }) {
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex flex-wrap items-center gap-2">
-        <h2 className="text-sm font-semibold text-slate-900">Performance</h2>
+        <h2 className="text-[16px] font-bold text-slate-900">Performance</h2>
         <StatusBadge status={p.status} tone={STATUS_TONE[p.status]} />
         <StatusRules rules={state.rules} />
       </div>

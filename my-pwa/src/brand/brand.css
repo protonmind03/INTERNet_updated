@@ -185,13 +185,6 @@
 .inb-bg-lane { animation: inb-bg-lane 1.6s linear infinite; }
 @keyframes inb-bg-lane { to { stroke-dashoffset: -220; } }
 
-/* "live" dot used in chips (active step, status) */
-.inb-live { position: relative; }
-.inb-live::after {
-  content: ""; position: absolute; inset: -3px; border-radius: 9999px; border: 2px solid currentColor;
-  animation: inb-live 1.4s var(--inb-ease-out) infinite; opacity: 0;
-}
-@keyframes inb-live { 0% { transform: scale(0.6); opacity: 0.8; } 100% { transform: scale(1.8); opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   .inb-click, .inb-ripple, .inb-tassel, .inb-cap-toss, .inb-cap-toss .inb-tassel, .inb-spark, .inb-ring,
@@ -204,7 +197,7 @@
   .inb-spark, .inb-ring { opacity: 0; }
   .inb-mark:hover .inb-l, a:hover > .inb-mark .inb-l, a:focus-visible .inb-mark .inb-l { animation: none; }
   .inb-roadbar::before { animation: none; width: 100%; opacity: 0.35; }
-  .inb-roadbar::after, .inb-sheen::after, .inb-tile-sheen::after, .inb-live::after { animation: none; display: none; }
+  .inb-roadbar::after, .inb-sheen::after, .inb-tile-sheen::after { animation: none; display: none; }
   .inb-countdown { animation: none; }
   .inb-press:active:not(:disabled) { transform: none; } }
 

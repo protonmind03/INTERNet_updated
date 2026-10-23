@@ -412,7 +412,7 @@ export default function OjtSchedule() {
 
           <div className="min-w-0 space-y-5">
             <Card className="p-4 sm:p-5">
-              <h2 className="text-sm font-semibold text-slate-900">Today</h2>
+              <h2 className="text-[16px] font-bold text-slate-900">Today</h2>
               {loading ? (
                 <Skeleton className="mt-3 h-12 w-full" />
               ) : todayHoliday ? (
@@ -451,7 +451,7 @@ export default function OjtSchedule() {
 
             {upcomingHolidays.length > 0 && (
               <Card className="p-4 sm:p-5">
-                <h2 className="text-sm font-semibold text-slate-900">Upcoming holidays</h2>
+                <h2 className="text-[16px] font-bold text-slate-900">Upcoming holidays</h2>
                 <ul className="mt-3 space-y-2.5 text-sm">
                   {upcomingHolidays.map((holiday) => (
                     <li key={holiday.id}>
@@ -466,7 +466,7 @@ export default function OjtSchedule() {
             )}
 
             <Card className="p-4 sm:p-5">
-              <h2 className="text-sm font-semibold text-slate-900">Host company</h2>
+              <h2 className="text-[16px] font-bold text-slate-900">Host company</h2>
               {loading ? (
                 <div className="mt-3 space-y-2">
                   <Skeleton className="h-4 w-3/4" />

@@ -184,7 +184,7 @@ export default function CoordinatorCompanies() {
         {!loading && unlinked.length > 0 && (
           <Card>
             <div className="p-4 sm:p-5">
-              <h2 className="text-sm font-semibold text-slate-900">
+              <h2 className="text-[16px] font-bold text-slate-900">
                 Company names with no record yet
               </h2>
               <p className="mt-1 text-sm text-slate-600">

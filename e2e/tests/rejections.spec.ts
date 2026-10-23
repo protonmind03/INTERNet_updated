@@ -86,11 +86,12 @@ test("a rejected time-in photo: the supervisor's choice, the student's banner, a
     const cp = await coordinatorContext.newPage();
     await signIn(cp, "coordinator");
     await cp.goto("/coordinator/appeals");
-    const card = cp.getByRole("listitem").filter({ hasText: name });
+    const card = cp.getByRole("listitem").filter({ hasText: name }).first();
     await expect(card).toContainText("Rejected time-in photo");
     await expect(card).toContainText("The office lights were off at 8 AM");
-    await card.getByLabel("Your note to the student and the supervisor").fill("The face is visible; the photo stands.");
-    await card.getByRole("button", { name: "Overturn it" }).click();
+    await card.getByRole("radio", { name: /Overturn/ }).check();
+    await card.getByLabel("Note").fill("The face is visible; the photo stands.");
+    await card.getByRole("button", { name: /^Send decision to .* and their supervisor$/ }).click();
     await expect(cp.getByText(/Appeal overturned\./)).toBeVisible();
     await coordinatorContext.close();
 

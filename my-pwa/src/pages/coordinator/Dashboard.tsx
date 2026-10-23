@@ -1,44 +1,44 @@
 import { useCallback, useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import { ColumnChart, ShareBar } from "../../components/charts";
-import Icon, { type IconName } from "../../components/Icon";
-import {
-  Button,
-  Card,
-  CardHeader,
-  EmptyState,
-  ErrorNotice,
-  Skeleton,
-  SkeletonRows,
-} from "../../components/ui";
+import { Link, useNavigate } from "react-router-dom";
+import { PsuSeal } from "../../brand";
+import { CollegeMark, ProgramMark } from "../../brand/MarkImages";
+import { DeparturesRow, RouteLine, SplitFacts } from "../../brand/motifs";
+import Icon from "../../components/Icon";
+import InfoTip from "../../components/InfoTip";
+import { Button, Card, ErrorNotice, Skeleton, SkeletonRows } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatDate, formatHours, formatLongDate, greetingFor } from "../../lib/format";
+import { formatDayDate, formatHours, getInitials, greetingFor } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
+import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { errorText, toast } from "../../lib/toast";
-import KpiCards from "./KpiCards";
 import { coordinatorRequest } from "./request";
 import FilterBar from "./FilterBar";
 import { useStudentFilters } from "./useStudentFilters";
 
 /*
 |--------------------------------------------------------------------------
-| COORDINATOR DASHBOARD
+| THE COORDINATOR'S HOME (PSU redesign 11: C1 on phones, C6 and C7 wider)
 |--------------------------------------------------------------------------
 |
-| Top to bottom, in the order a coordinator asks: who is in today; what
-| needs someone to act, and who; whether the programme is on target; and
-| then the detail (hours, progress, what waits with each supervisor).
+| In order: the cohort as a route on grid paper (the college's seal when a
+| college is chosen, the program's organisation mark beside it, the PSU
+| seal when nothing is chosen); "Needs you" as a departures board, the
+| open appeals first with a solid red Decide, then each other row as a
+| code, a title, its age and Open; then plain figures (a count, one line,
+| an "i"), and This week. There are no targets, deltas or scores.
 |
-| Everything is counted on the server. The page asks for three summaries
-| and never downloads the students themselves.
+| Everything is counted on the server: GET /api/coordinator/home (the
+| cohort, appeals, this week), /api/coordinator/actions (what needs
+| someone) and /api/coordinator/dashboard (today), for the students the
+| filters leave.
 |
 */
 
 type DashboardData = {
   students: { active: number; total: number };
   today: { timedIn: number; onTheClock: number; absent: number };
-  hoursTrend: { day: string; hours: number; logs: number }[];
 };
 
 type ActionRow = {
@@ -48,66 +48,86 @@ type ActionRow = {
   reason: string;
   link: string;
   names?: string[];
-  /** The supervisors a "slow to review" row is about. */
   people?: { id: string; name: string; detail: string; reminded_today: boolean }[];
 };
-
-type ActionGroup = { who: "you" | "supervisors" | "students"; title: string; rows: ActionRow[] };
-
 type Actions = {
-  groups: ActionGroup[];
+  groups: { who: "you" | "supervisors" | "students"; title: string; rows: ActionRow[] }[];
   scheduled_not_in: number;
-  progress: { students: number; not_started: number; under_half: number; past_half: number; completed: number };
   supervisor_queues: { supervisor_id: string; name: string; interns: number; logs: number; tasks: number; waiting: number }[];
 };
 
-const GROUPS: Record<ActionGroup["who"], { icon: IconName; note: string }> = {
-  you: { icon: "user", note: "Only you can settle these." },
-  supervisors: { icon: "briefcase", note: "Waiting on supervisors. Follow up if they stay." },
-  students: { icon: "users", note: "Students to check on." },
+type Home = {
+  week: { number: number; of: number; term: string } | null;
+  scope: {
+    college: { id: number; name: string; short_name: string | null; mark_key: string | null } | null;
+    program: { id: number; name: string; short_code: string; mark_key: string | null; org_name: string | null } | null;
+  };
+  cohort: {
+    total: number;
+    behind: number;
+    on_the_way: number;
+    almost_done: number;
+    required: number;
+    stations: { student_id: string; name: string; hours: number; required: number; state: "behind" | "on-the-way" | "almost-done" }[];
+  };
+  appeals: { count: number; oldest_days: number; kinds: string[]; names: string[] };
+  this_week: { date: string; kind: string; title: string; line: string; link: string }[];
+  absences_week: { filed: number; half_days: number };
+  evaluations: { done: number; of: number };
 };
 
-// Lighter to darker along the same blue: further along is darker.
-const PROGRESS_BANDS = [
-  { key: "not_started", label: "Not started", color: "#95a9fc" },
-  { key: "under_half", label: "Under halfway", color: "#637bf4" },
-  { key: "past_half", label: "Past halfway", color: "#1d36d3" },
-  { key: "completed", label: "Completed", color: "#0f1e6e" },
-] as const;
+/** The departures board's code column, by action row. */
+const CODES: Record<string, string> = {
+  concerns: "CONCERN",
+  flagged_logs: "FLAG",
+  unassigned: "ASSIGN",
+  agreements: "MOA",
+  slow_reviews: "NUDGE",
+  pending_logs: "WAITING",
+  pending_tasks: "WAITING",
+  missed_days: "NUDGE",
+  at_risk: "BEHIND",
+  overdue_tasks: "OVERDUE",
+};
 
-const plural = (count: number, one: string, many = `${one}s`) =>
-  `${count} ${count === 1 ? one : many}`;
+const KIND_WORDS: Record<string, string> = {
+  time_in_rejection: "photo rejection",
+  time_correction: "time correction",
+  attendance_rejection: "a rejected day",
+};
 
-/** "Oct 6" for a "YYYY-MM-DD" day. */
-const dayLabel = (day: string) => formatDate(day).replace(/, \d{4}$/, "");
+const days = (count: number) => (count === 1 ? "1 day" : `${count} days`);
 
 export default function CoordinatorDashboard() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [actions, setActions] = useState<Actions | null>(null);
+  const [home, setHome] = useState<Home | null>(null);
   const [loading, setLoading] = useState(true);
-  // Greeted by name at once, from the account kept on this device (Iteration 14, P2).
-  const coordinatorName = useAccount("coordinator")?.name?.trim() ?? "";
   const [error, setError] = useState("");
+  const coordinatorName = useAccount("coordinator")?.name?.trim() ?? "";
+  const navigate = useNavigate();
+  const wide = useMediaQuery("(min-width: 1024px)");
   useLaunchReady(!loading);
-  // Shared with the other coordinator pages, so the choice carries between them.
   const studentFilters = useStudentFilters();
-  const termQuery = studentFilters.query ? `?${studentFilters.query}` : "";
+  const query = studentFilters.query ? `?${studentFilters.query}` : "";
 
   const load = useCallback(async () => {
     try {
-      const [summary, list] = await Promise.all([
-        coordinatorRequest<DashboardData>(`/api/coordinator/dashboard${termQuery}`),
-        coordinatorRequest<Actions>(`/api/coordinator/actions${termQuery}`),
+      const [summary, list, extra] = await Promise.all([
+        coordinatorRequest<DashboardData>(`/api/coordinator/dashboard${query}`),
+        coordinatorRequest<Actions>(`/api/coordinator/actions${query}`),
+        coordinatorRequest<Home>(`/api/coordinator/home${query}`),
       ]);
       setData(summary);
       setActions(list);
+      setHome(extra);
       setError("");
     } catch (loadError) {
-      setError(errorText(loadError, "Could not load the dashboard."));
+      setError(errorText(loadError, "Could not load the home page."));
     } finally {
       setLoading(false);
     }
-  }, [termQuery]);
+  }, [query]);
 
   useEffect(() => {
     const refresh = () => {
@@ -127,321 +147,226 @@ export default function CoordinatorDashboard() {
     };
   }, [load]);
 
-  const groups = actions ? actions.groups.filter((group) => group.rows.length > 0) : [];
-  const trendHours = data ? data.hoursTrend.reduce((sum, day) => sum + day.hours, 0) : 0;
-  const queues = actions?.supervisor_queues ?? [];
+  const firstName = coordinatorName.split(/\s+/)[0] || "";
+  const scopeWords = [home?.scope.college?.short_name, home?.scope.program?.short_code].filter(Boolean).join(" · ");
+  const weekWords = home?.week ? `Week ${home.week.number} of ${home.week.of}` : "";
+  const rows = actions ? actions.groups.flatMap((group) => group.rows) : [];
+  const waitingLogs = rows.find((row) => row.key === "pending_logs")?.count ?? 0;
+  const busiest = actions?.supervisor_queues.find((queue) => queue.waiting > 0);
 
   return (
     <CoordinatorLayout
-      title="Dashboard"
-      subtitle={`${greetingFor(new Date())}${coordinatorName ? `, ${coordinatorName}` : ""}. Here is where the programme stands on ${formatLongDate(new Date())}.`}
+      title={wide ? `${greetingFor(new Date())}${firstName ? `, ${firstName}` : ""}` : "Home"}
+      subtitle={
+        wide
+          ? [formatPhDay(phToday(), { weekday: "long", month: "short", day: "numeric" }), weekWords.toLowerCase()].filter(Boolean).join(" · ")
+          : [weekWords, scopeWords].filter(Boolean).join(" · ") || "Pangasinan State University · Lingayen Campus"
+      }
     >
-      <div className="space-y-6">
+      <div className="space-y-4">
         <FilterBar state={studentFilters} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-        {/* TODAY */}
-        <section aria-labelledby="today-heading">
-          <h2 id="today-heading" className="mb-3 text-sm font-semibold text-slate-900">
-            Today's attendance
-          </h2>
-          {loading || !data || !actions ? (
-            // The four figures' places, empty, so nothing moves when they arrive (Iteration 14, P2).
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4" aria-hidden="true">
-              {[0, 1, 2, 3].map((figure) => (
-                <div key={figure} className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-card">
-                  <span className="flex h-4 items-center"><Skeleton className="h-3 w-2/3" /></span>
-                  <span className="mt-1 flex h-8 items-center"><Skeleton className="h-6 w-1/3" /></span>
-                  <span className="mt-0.5 flex h-4 items-center"><Skeleton className="h-3 w-4/5" /></span>
-                </div>
-              ))}
-            </div>
+        <CohortCard home={home} loading={loading} onOpen={(id) => navigate(`/coordinator/students/${encodeURIComponent(id)}`)} />
+
+        <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]">
+          <NeedsYou home={home} rows={rows} loading={loading} onReminded={() => void load()} />
+          {wide ? (
+            <ThisWeek home={home} loading={loading} />
           ) : (
-            <dl className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-              <TodayFigure
-                label="Timed in"
-                value={`${data.today.timedIn} of ${data.students.active}`}
-                note="Active students with a log today"
-              />
-              <TodayFigure
-                label="On the clock now"
-                value={data.today.onTheClock}
-                note="Timed in and not yet out"
-              />
-              <TodayFigure label="Absent" value={data.today.absent} note="Filed an absence for today" />
-              <TodayFigure
-                label="Scheduled, not yet in"
-                value={actions.scheduled_not_in}
-                note="Due today with no log and no absence"
-              />
-            </dl>
+            <SplitFacts>
+              <Fact title="Timed in today" tip="Active trainees with a time-in today." value={data?.today.timedIn} unit={data ? `of ${data.students.active}` : ""} line={actions ? `${actions.scheduled_not_in} not in yet` : ""} loading={loading} />
+              <Fact title="Waiting on supervisors" tip="Attendance logs waiting for the assigned supervisor to verify." value={waitingLogs} unit={waitingLogs === 1 ? "log" : "logs"} line={busiest ? `Most with ${busiest.name}` : "None waiting"} loading={loading} />
+            </SplitFacts>
           )}
-        </section>
-
-        {/* WHAT NEEDS DOING, AND WHO DOES IT */}
-        <Card>
-          <CardHeader
-            title="Action list"
-            description="What needs someone to act, grouped by who"
-          />
-          <div className="mt-3">
-            {loading ? (
-              <SkeletonRows rows={4} />
-            ) : groups.length === 0 ? (
-              <EmptyState
-                icon="check-circle"
-                title="Nothing needs doing"
-                description="No open concerns, flagged logs, waiting reviews or students to check on."
-              />
-            ) : (
-              <div className="grid grid-cols-1 border-t border-slate-100 lg:grid-cols-3 lg:divide-x lg:divide-slate-100">
-                {(["you", "supervisors", "students"] as const).map((who) => {
-                  const group = actions?.groups.find((item) => item.who === who);
-                  const rows = group?.rows ?? [];
-                  return (
-                    <section
-                      key={who}
-                      aria-labelledby={`actions-${who}`}
-                      className="border-b border-slate-100 last:border-b-0 lg:border-b-0"
-                    >
-                      <div className="flex items-center gap-2.5 px-4 pt-4 sm:px-5">
-                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-psu-50 text-psu-700 ring-1 ring-inset ring-psu-600/10">
-                          <Icon name={GROUPS[who].icon} size={16} />
-                        </span>
-                        <div className="min-w-0">
-                          <h3 id={`actions-${who}`} className="text-sm font-semibold text-slate-900">
-                            {group?.title ?? who}
-                          </h3>
-                          <p className="text-xs text-slate-600">{GROUPS[who].note}</p>
-                        </div>
-                      </div>
-                      {rows.length === 0 ? (
-                        <p className="px-4 pb-5 pt-3 text-sm text-slate-600 sm:px-5">Nothing here.</p>
-                      ) : (
-                        <ul className="mt-2 divide-y divide-slate-100">
-                          {rows.map((row) => (
-                            <li key={row.key}>
-                              <Link
-                                to={row.link}
-                                className="flex items-start gap-3 px-4 py-3 hover:bg-slate-50 sm:px-5"
-                              >
-                                <span className="tabular mt-0.5 flex h-7 min-w-7 shrink-0 items-center justify-center rounded-md bg-slate-900 px-1.5 text-sm font-semibold text-white">
-                                  {row.count}
-                                </span>
-                                <span className="min-w-0 flex-1">
-                                  <span className="block text-sm font-semibold text-slate-900">
-                                    {row.label}
-                                  </span>
-                                  <span className="block text-sm text-slate-600">{row.reason}</span>
-                                  {row.names && row.names.length > 0 && (
-                                    <span className="mt-0.5 block truncate text-xs text-slate-600">
-                                      {row.names.join(", ")}
-                                      {row.count > row.names.length && ` and ${row.count - row.names.length} more`}
-                                    </span>
-                                  )}
-                                </span>
-                                <Icon name="chevron-right" size={16} className="mt-1 shrink-0 text-slate-400" />
-                              </Link>
-                              {row.people && row.people.length > 0 && (
-                                <RemindList people={row.people} onSent={() => void load()} />
-                              )}
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </section>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </Card>
-
-        {/* IS IT GOING WELL */}
-        <KpiCards query={studentFilters.query} editable />
-
-        {/* THE DETAIL */}
-        <Card className="min-w-0">
-          <CardHeader
-            title="Verified hours, last 14 days"
-            description={loading ? undefined : `${formatHours(trendHours)} in total`}
-            action={<CardLink to="/coordinator/analytics" label="Analytics" />}
-          />
-          <div className="px-4 pb-4 pt-7 sm:px-5">
-            {loading || !data ? (
-              <Skeleton className="h-36 w-full" />
-            ) : trendHours === 0 ? (
-              <p className="py-10 text-center text-sm text-slate-600">
-                No hours were verified in the last 14 days.
-              </p>
-            ) : (
-              <ColumnChart
-                points={data.hoursTrend.map((day) => ({
-                  key: day.day,
-                  label: dayLabel(day.day),
-                  value: day.hours,
-                  detail: day.logs === 0 ? "No attendance logged" : plural(day.logs, "log"),
-                }))}
-                label="Verified hours per day over the last 14 days"
-                format={(value) => formatHours(value)}
-                height={130}
-                axis={false}
-              />
-            )}
-          </div>
-        </Card>
-
-        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-          <Card className="min-w-0">
-            <CardHeader
-              title="Progress toward required hours"
-              description={
-                loading || !actions ? undefined : plural(actions.progress.students, "active student")
-              }
-              action={<CardLink to="/coordinator/monitoring" label="Monitoring" />}
-            />
-            <div className="px-4 pb-5 pt-5 sm:px-5">
-              {loading || !actions ? (
-                <Skeleton className="h-28 w-full" />
-              ) : actions.progress.students === 0 ? (
-                <p className="py-6 text-center text-sm text-slate-600">No active students yet.</p>
-              ) : (
-                <ShareBar
-                  label="Active students by progress toward their required hours"
-                  segments={PROGRESS_BANDS.map((band) => ({
-                    label: band.label,
-                    color: band.color,
-                    value: actions.progress[band.key],
-                  }))}
-                />
-              )}
-            </div>
-          </Card>
-
-          <Card className="min-w-0">
-            <CardHeader
-              title="Waiting with supervisors"
-              description="Attendance logs and task submissions not yet reviewed"
-              action={<CardLink to="/coordinator/supervisors" label="Supervisors" />}
-            />
-            <div className="mt-3">
-              {loading ? (
-                <SkeletonRows rows={3} />
-              ) : queues.length === 0 ? (
-                <EmptyState icon="briefcase" title="No supervisors have interns yet" />
-              ) : queues.every((queue) => queue.waiting === 0) ? (
-                <EmptyState
-                  icon="check-circle"
-                  title="Supervisors are caught up"
-                  description="No logs or submissions are waiting for review."
-                />
-              ) : (
-                <ul className="divide-y divide-slate-100 border-t border-slate-100">
-                  {queues.slice(0, 5).map((queue) => (
-                    <li
-                      key={queue.supervisor_id}
-                      className="flex items-center justify-between gap-3 px-4 py-3 sm:px-5"
-                    >
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium text-slate-900">{queue.name}</p>
-                        <p className="text-xs text-slate-600">
-                          {plural(queue.interns, "intern")} · {plural(queue.logs, "log")} ·{" "}
-                          {plural(queue.tasks, "task")}
-                        </p>
-                      </div>
-                      <span
-                        className={`tabular shrink-0 rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ring-inset ${
-                          queue.waiting > 0
-                            ? "bg-amber-50 text-amber-800 ring-amber-600/25"
-                            : "bg-slate-100 text-slate-600 ring-slate-500/15"
-                        }`}
-                      >
-                        {queue.waiting} waiting
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </Card>
         </div>
+
+        {wide && (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+            <FactCard title="Timed in today" tip="Active trainees with a time-in today." value={data?.today.timedIn} unit={data ? `of ${data.students.active}` : ""} line={actions ? `${actions.scheduled_not_in} not in yet` : ""} to="/coordinator/monitoring" action="See who" loading={loading} />
+            <FactCard title="Waiting on supervisors" tip="Attendance logs waiting for the assigned supervisor to verify." value={waitingLogs} unit={waitingLogs === 1 ? "log" : "logs"} line={busiest ? `Most with ${busiest.name}` : "None waiting"} to="/coordinator/companies?tab=supervisors" action="By supervisor" loading={loading} />
+            <FactCard title="Behind schedule" tip="Trainees whose expected finish, from their schedule and verified hours, falls after the term ends, or who have nothing scheduled." value={home?.cohort.behind} unit="trainees" line="May finish after the term ends" to="/coordinator/monitoring?risk=1" action="See them" loading={loading} />
+            <FactCard title="Evaluations done" tip="Trainees with a final evaluation from their supervisor." value={home?.evaluations.done} unit={home ? `of ${home.evaluations.of}` : ""} line="Opens as each trainee finishes" to="/coordinator/resolution?tab=evaluations" action="See list" loading={loading} />
+            <FactCard title="Absences this week" tip="Absences filed for Monday to Sunday of this week." value={home?.absences_week.filed} unit="filed" line={home ? `${home.absences_week.half_days} ${home.absences_week.half_days === 1 ? "is a half-day" : "are half-days"}` : ""} to="/coordinator/monitoring" action="See list" loading={loading} />
+            <FactCard title="On the clock now" tip="Timed in today and not yet timed out." value={data?.today.onTheClock} unit="trainees" line={data ? `${data.today.absent} absent today` : ""} to="/coordinator/monitoring" action="Monitoring" loading={loading} />
+          </div>
+        )}
+
+        {!wide && <ThisWeek home={home} loading={loading} />}
       </div>
     </CoordinatorLayout>
   );
 }
 
-/** One of today's four counts. Plain: these are facts, not judged against a target. */
-function TodayFigure({ label, value, note }: { label: string; value: number | string; note: string }) {
+/* ---------- The cohort as a route ---------- */
+
+function CohortCard({ home, loading, onOpen }: { home: Home | null; loading: boolean; onOpen: (id: string) => void }) {
+  if (loading || !home) {
+    return (
+      <Card className="grid-paper p-4">
+        <Skeleton className="h-5 w-56" />
+        <Skeleton className="mt-6 h-10 w-full" />
+        <Skeleton className="mt-4 h-12 w-full" />
+      </Card>
+    );
+  }
+  const { college, program } = home.scope;
+  const { cohort } = home;
+  const who = `${cohort.total} ${program?.short_code ? `${program.short_code} ` : ""}${cohort.total === 1 ? "trainee" : "trainees"} on the road`;
   return (
-    <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-card">
-      <dt className="text-xs font-medium text-slate-600">{label}</dt>
-      <dd className="tabular mt-1 text-2xl font-semibold tracking-tight text-slate-900">{value}</dd>
-      <dd className="mt-0.5 text-xs text-slate-600">{note}</dd>
-    </div>
+    <section className="card-hairline overflow-hidden rounded-2xl" aria-labelledby="cohort-title">
+      <div className="grid-paper px-4 pb-3 pt-4 sm:px-5">
+        <div className="flex items-center gap-3">
+          {college ? (
+            <CollegeMark shortName={college.short_name} markKey={college.mark_key} size={40} alt={`${college.name} seal`} />
+          ) : (
+            <PsuSeal size={40} clearSpace={false} />
+          )}
+          <div className="min-w-0 flex-1">
+            <p className="eyebrow truncate text-psu-700">{college ? college.name : "Pangasinan State University"}</p>
+            <h2 id="cohort-title" className="font-display truncate text-[20px] font-extrabold text-slate-900">
+              {who}
+            </h2>
+          </div>
+          {program && (
+            <span className="flex items-center gap-1">
+              <ProgramMark shortCode={program.short_code} markKey={program.mark_key} size={34} alt={program.org_name ? `${program.org_name} logo` : `${program.short_code} monogram`} />
+              {program.org_name && <InfoTip label={`About the ${program.short_code} mark`} text={`${program.org_name}, the student organisation of ${program.name}.`} />}
+            </span>
+          )}
+          <InfoTip label="About the cohort line" text={`Each station is a trainee at their verified hours. Red: behind, may finish after the term ends. Navy: on the way. Green: within the last tenth of their hours.`} />
+        </div>
+        {cohort.total === 0 ? (
+          <p className="py-6 text-sm text-slate-600">No active trainees for these filters.</p>
+        ) : (
+          <>
+            <div className="mt-4">
+              <RouteLine
+                stations={cohort.stations.map((station) => ({ key: station.student_id, initials: getInitials(station.name, "ST"), name: station.name, hours: station.hours, state: station.state }))}
+                required={cohort.required || Math.max(...cohort.stations.map((station) => station.required), 1)}
+                onOpen={onOpen}
+              />
+            </div>
+            <div className="tabular mt-1 flex justify-between text-[12px] text-slate-600">
+              <span>0 h</span>
+              <span>{formatHours((cohort.required || 0) / 2)}</span>
+              <span>{formatHours(cohort.required)}</span>
+            </div>
+          </>
+        )}
+      </div>
+      <div className="grid grid-cols-3 border-t border-(--role-hairline) bg-white">
+        {[
+          { label: "behind", value: cohort.behind, tone: "text-(--status-late-ink)" },
+          { label: "on their way", value: cohort.on_the_way, tone: "text-slate-900" },
+          { label: "almost done", value: cohort.almost_done, tone: "text-(--status-success-ink)" },
+        ].map((item, index) => (
+          <p key={item.label} className={`px-4 py-3 ${index > 0 ? "border-l border-(--role-hairline)" : ""}`}>
+            <span className={`font-display tabular block text-[24px] font-extrabold leading-none ${item.tone}`}>{item.value}</span>
+            <span className="text-[13px] text-slate-600">{item.label}</span>
+          </p>
+        ))}
+      </div>
+    </section>
   );
 }
 
-function CardLink({ to, label }: { to: string; label: string }) {
+/* ---------- Needs you: a departures board ---------- */
+
+function NeedsYou({ home, rows, loading, onReminded }: { home: Home | null; rows: ActionRow[]; loading: boolean; onReminded: () => void }) {
+  const appeals = home?.appeals;
+  // Logs and tasks waiting on supervisors are theirs; they show as a figure, not here.
+  const listed = rows.filter((row) => row.key !== "pending_logs" && row.key !== "pending_tasks");
+  const total = (appeals?.count ?? 0) + listed.reduce((sum, row) => sum + row.count, 0);
   return (
-    <Link
-      to={to}
-      className="inline-flex items-center gap-1 text-sm font-semibold text-psu-700 hover:underline"
-    >
-      {label}
-      <Icon name="chevron-right" size={14} />
-    </Link>
+    <section className="overflow-hidden rounded-2xl border border-(--status-late-ink)/25 bg-white" aria-labelledby="needs-title">
+      <div className="flex items-center gap-3 bg-(--status-late-bg)/60 px-4 py-3">
+        <span className="font-display tabular grid h-9 min-w-9 place-items-center rounded-lg bg-(--status-late-ink) px-2 text-[18px] font-extrabold text-white">{loading ? "–" : total}</span>
+        <h2 id="needs-title" className="font-display text-[22px] font-extrabold text-(--status-late-ink)">
+          Needs you
+        </h2>
+        <Link to="/coordinator/resolution" className="ml-auto inline-flex min-h-11 items-center gap-1 text-sm font-bold text-(--status-late-ink) hover:underline">
+          Open Decide
+          <Icon name="chevron-right" size={15} />
+        </Link>
+      </div>
+      {loading ? (
+        <SkeletonRows rows={3} />
+      ) : total === 0 ? (
+        <p className="border-t border-(--role-hairline) px-4 py-5 text-sm text-slate-600">Nothing needs you right now.</p>
+      ) : (
+        <div>
+          {appeals && appeals.count > 0 && (
+            <DeparturesRow
+              first
+              code={`APPEAL ×${appeals.count}`}
+              title={`${appeals.count === 1 ? "An appeal" : `${appeals.count} appeals`} to decide`}
+              detail={appeals.kinds.map((kind) => KIND_WORDS[kind] ?? kind).join(", ")}
+              age={`oldest ${days(appeals.oldest_days)}`}
+              action={
+                <Link to="/coordinator/resolution?tab=appeals" className="inline-flex min-h-11 items-center rounded-lg bg-(--status-late-ink) px-4 text-sm font-bold text-white hover:bg-red-800">
+                  Decide
+                </Link>
+              }
+            />
+          )}
+          {listed.map((row, index) => (
+            <div key={row.key}>
+              <DeparturesRow
+                first={!appeals?.count && index === 0}
+                code={`${CODES[row.key] ?? "ACTION"}${row.count > 1 ? ` ×${row.count}` : ""}`}
+                title={row.label.charAt(0).toUpperCase() + row.label.slice(1)}
+                detail={row.names?.length ? row.names.slice(0, 2).join(", ") : row.reason}
+                action={
+                  <Link to={row.link} className="inline-flex min-h-11 items-center rounded-lg border-[1.5px] border-psu-600 px-3.5 text-sm font-bold text-psu-700 hover:bg-psu-50">
+                    Open
+                  </Link>
+                }
+              />
+              {row.people && row.people.length > 0 && <RemindList people={row.people} onSent={onReminded} />}
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
 /**
- * The supervisors who are slow to review, each with a button that sends
- * them a reminder of what is waiting. The server allows one a day for each
- * supervisor, whoever sends it; after that the button says so.
+ * The supervisors slow to review, each with a button that sends a reminder
+ * of what is waiting ("Nudge"). The server allows one a day for each.
  */
-function RemindList({
-  people,
-  onSent,
-}: {
-  people: NonNullable<ActionRow["people"]>;
-  onSent: () => void;
-}) {
+function RemindList({ people, onSent }: { people: NonNullable<ActionRow["people"]>; onSent: () => void }) {
   const [busy, setBusy] = useState<string | null>(null);
-  // Reminded from this page since it loaded.
   const [sent, setSent] = useState<Set<string>>(() => new Set());
-
   const remind = async (person: { id: string; name: string }) => {
     setBusy(person.id);
     try {
-      const data = await coordinatorRequest<{ message?: string }>(
-        `/api/coordinator/supervisors/${encodeURIComponent(person.id)}/remind`,
-        { method: "POST", body: {} }
-      );
+      const data = await coordinatorRequest<{ message?: string }>(`/api/coordinator/supervisors/${encodeURIComponent(person.id)}/remind`, { method: "POST", body: {} });
       toast.success(data.message || `${person.name} was reminded.`);
       setSent((current) => new Set(current).add(person.id));
       onSent();
     } catch (error) {
       toast.error(errorText(error, "The reminder could not be sent."));
-      // Refused because someone already sent today's: the list is out of date.
       onSent();
     } finally {
       setBusy(null);
     }
   };
-
   return (
-    <ul className="mx-4 mb-3 divide-y divide-slate-100 rounded-lg border border-slate-200 sm:mx-5">
+    <ul className="divide-y divide-(--role-hairline) border-t border-(--role-hairline) bg-slate-50/50">
       {people.map((person) => {
         const done = person.reminded_today || sent.has(person.id);
         return (
-          <li key={person.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 px-3 py-2">
+          <li key={person.id} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 py-2 pl-4 pr-4 sm:pl-[8.5rem]">
             <span className="min-w-0 flex-1">
-              <span className="block text-sm font-medium text-slate-900">{person.name}</span>
+              <span className="block text-sm font-semibold text-slate-900">{person.name}</span>
               <span className="block text-xs text-slate-600">{person.detail}</span>
             </span>
             {done ? (
               <span className="text-sm text-slate-600">Reminded today</span>
             ) : (
-              <Button variant="secondary" busy={busy === person.id} onClick={() => void remind(person)}>
+              <Button variant="outline" busy={busy === person.id} onClick={() => void remind(person)}>
                 Remind<span className="sr-only"> {person.name}</span>
               </Button>
             )}
@@ -449,5 +374,76 @@ function RemindList({
         );
       })}
     </ul>
+  );
+}
+
+/* ---------- Figures ---------- */
+
+function Fact({ title, tip, value, unit, line, loading }: { title: string; tip: string; value: number | undefined; unit: string; line: string; loading: boolean }) {
+  return (
+    <div>
+      <div className="flex items-start justify-between gap-1">
+        <h3 className="eyebrow text-slate-600">{title}</h3>
+        <InfoTip label={`About ${title.toLowerCase()}`} text={tip} />
+      </div>
+      {loading ? (
+        <Skeleton className="mt-2 h-7 w-20" />
+      ) : (
+        <p className="mt-1">
+          <span className="font-display tabular text-[28px] font-extrabold leading-none text-slate-900">{value ?? 0}</span> <span className="text-[13.5px] text-slate-700">{unit}</span>
+        </p>
+      )}
+      <p className="mt-1 text-[12.5px] text-slate-600">{line}</p>
+    </div>
+  );
+}
+
+function FactCard(props: { title: string; tip: string; value: number | undefined; unit: string; line: string; to: string; action: string; loading: boolean }) {
+  return (
+    <div className="card-hairline flex flex-col rounded-2xl p-4">
+      <Fact {...props} />
+      <Link to={props.to} className="mt-auto inline-flex min-h-11 items-center gap-1 pt-1 text-sm font-bold text-psu-700 hover:underline">
+        {props.action}
+        <Icon name="arrow-right" size={15} />
+      </Link>
+    </div>
+  );
+}
+
+/* ---------- This week ---------- */
+
+function ThisWeek({ home, loading }: { home: Home | null; loading: boolean }) {
+  return (
+    <Card>
+      <div className="flex items-center justify-between px-4 pt-3.5">
+        <h2 className="text-[16px] font-bold text-slate-900">This week</h2>
+        <Link to="/coordinator/holidays" className="inline-flex min-h-11 items-center text-sm font-bold text-psu-700 hover:underline">
+          Calendar
+        </Link>
+      </div>
+      {loading || !home ? (
+        <SkeletonRows rows={3} />
+      ) : home.this_week.length === 0 ? (
+        <p className="px-4 pb-4 text-[14px] text-slate-600">Nothing dated in the next seven days.</p>
+      ) : (
+        <ul className="mt-1 divide-y divide-(--role-hairline) border-t border-(--role-hairline)">
+          {home.this_week.slice(0, 6).map((row) => (
+            <li key={`${row.date}-${row.title}`}>
+              <Link to={row.link} className="flex min-h-14 items-center gap-3 px-4 py-2.5 hover:bg-psu-50/50">
+                <span className="w-11 shrink-0 rounded-lg bg-psu-50 py-1 text-center leading-none" aria-hidden="true">
+                  <span className="block text-[10.5px] font-bold uppercase text-psu-700">{formatPhDay(row.date, { weekday: "short" })}</span>
+                  <span className="font-display tabular block text-[18px] font-extrabold text-slate-900">{formatPhDay(row.date, { day: "numeric" })}</span>
+                </span>
+                <span className="min-w-0">
+                  <span className="sr-only">{formatDayDate(row.date)}: </span>
+                  <span className="block truncate text-[14.5px] font-bold text-slate-900">{row.title}</span>
+                  <span className="block truncate text-[13px] text-slate-600">{row.line}</span>
+                </span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }

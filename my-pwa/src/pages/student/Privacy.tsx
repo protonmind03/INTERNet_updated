@@ -143,7 +143,7 @@ export function PrivacyCard({ studentId }: { studentId: string }) {
 
   return (
     <Card className="p-4 sm:p-5">
-      <h2 className="text-sm font-semibold text-slate-900">Privacy</h2>
+      <h2 className="text-[16px] font-bold text-slate-900">Privacy</h2>
       {state && (
         <p className="mt-2 text-sm text-slate-600">
           {state.current && state.consent_at

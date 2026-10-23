@@ -5113,10 +5113,10 @@ test("a supervisor's profile names the coordinator to write to, and nothing else
 | Round 2, Phase 1C: the coordinator's console
 */
 
-test("each key figure is worked out from dated rows, and its target says which side is good", () => {
+test("each key figure is worked out from dated rows, as a plain value with its definition", () => {
   require("tsx/cjs");
   const kpis = require("../src/services/kpis.ts");
-  const { KPI_DEFINITIONS, meetsTarget } = require("../src/services/kpiDefinitions.ts");
+  const { KPI_DEFINITIONS } = require("../src/services/kpiDefinitions.ts");
   const week = { Monday: 8, Tuesday: 8, Wednesday: 8, Thursday: 8, Friday: 8 };
   const none = new Set();
   // Friday 9 October 2026.
@@ -5192,35 +5192,18 @@ test("each key figure is worked out from dated rows, and its target says which s
   // Agreements: ended, or ending within 30 days.
   assert.equal(kpis.agreementsEndingAt(today, ["2026-01-01", "2026-11-08", "2026-11-09", "2027-06-30"]).value, 2);
 
-  // The whole set: six figures in the stated order, eight weekly points ending today.
+  // The whole set: six figures in the stated order, each today's value with one line of context.
   const all = kpis.computeKpis(today, { students: [fits, late, idle], holidays: none, decisions, requirements: names, concerns, expiries: ["2026-11-01"] });
   assert.deepEqual(all.map((kpi) => kpi.key), ["on_track", "attendance_rate", "review_time", "requirements_complete", "old_concerns", "agreements_ending"]);
   for (const kpi of all) {
-    assert.equal(kpi.series.length, 8, kpi.key);
-    assert.equal(kpi.series[7].date, today);
-    assert.equal(kpi.series[0].date, "2026-08-21");
-    assert.equal(kpi.series[7].value, kpi.value, `${kpi.key}: the last point is the value`);
-    assert.equal(kpi.previous, kpi.series[3].value, `${kpi.key}: compared with 4 weeks earlier`);
     assert.ok(kpi.label && kpi.definition && kpi.link.startsWith("/coordinator/"), kpi.key);
+    assert.equal(typeof kpi.basis, "string", kpi.key);
+    // PSU redesign: plain figures, with no target, comparison or weekly points.
+    for (const gone of ["target", "direction", "met", "previous", "series", "default_target"]) assert.ok(!(gone in kpi), `${kpi.key} has no ${gone}`);
   }
   const of = (key) => all.find((kpi) => kpi.key === key);
-  assert.deepEqual([of("on_track").value, of("on_track").target, of("on_track").met], [33.3, 90, false]);
-  assert.deepEqual([of("review_time").value, of("review_time").target, of("review_time").met], [1.5, 2, true]);
-  assert.deepEqual([of("old_concerns").value, of("old_concerns").met], [1, false]);
-  assert.deepEqual([of("agreements_ending").value, of("agreements_ending").met], [1, false]);
-
-  // The targets, and which side of each is good.
-  assert.deepEqual(KPI_DEFINITIONS.map((item) => [item.key, item.target, item.direction]), [
-    ["on_track", 90, "atLeast"],
-    ["attendance_rate", 95, "atLeast"],
-    ["review_time", 2, "atMost"],
-    ["requirements_complete", 80, "atLeast"],
-    ["old_concerns", 0, "atMost"],
-    ["agreements_ending", 0, "atMost"],
-  ]);
-  const [onTrack, , reviewTime] = KPI_DEFINITIONS;
-  assert.deepEqual([meetsTarget(onTrack, 90), meetsTarget(onTrack, 89.9), meetsTarget(onTrack, null)], [true, false, null]);
-  assert.deepEqual([meetsTarget(reviewTime, 2), meetsTarget(reviewTime, 2.1)], [true, false]);
+  assert.deepEqual([of("on_track").value, of("review_time").value, of("old_concerns").value, of("agreements_ending").value], [33.3, 1.5, 1, 1]);
+  assert.equal(KPI_DEFINITIONS.length, 6);
 });
 
 test("the key figures and the action list are the coordinator's, take a term, and agree with the pages behind them", async () => {
@@ -5244,10 +5227,8 @@ test("the key figures and the action list are the coordinator's, take a term, an
   assert.match(kpis.as_of, /^\d{4}-\d{2}-\d{2}$/);
   assert.equal(kpis.kpis.length, 6);
   for (const kpi of kpis.kpis) {
-    assert.equal(kpi.series.length, 8, kpi.key);
-    assert.equal(kpi.series[7].date, kpis.as_of);
     assert.ok(kpi.value === null || typeof kpi.value === "number", kpi.key);
-    assert.equal(kpi.met, kpi.value === null ? null : kpi.direction === "atLeast" ? kpi.value >= kpi.target : kpi.value <= kpi.target, kpi.key);
+    assert.ok(!("target" in kpi) && !("series" in kpi), `${kpi.key}: a plain figure`);
     if (kpi.unit === "percent" && kpi.value !== null) assert.ok(kpi.value >= 0 && kpi.value <= 100, kpi.key);
     assert.equal(typeof kpi.basis, "string");
   }
@@ -6930,76 +6911,6 @@ test("the performance table is the coordinator's, takes the filters, and its hou
       await pool.query(`DELETE FROM ${table} WHERE student_id = ANY($1::text[])`, [ids]);
     }
     if (blockId) await pool.query(`DELETE FROM blocks WHERE id = $1`, [blockId]);
-    await pool.end();
-  }
-});
-
-test("a key figure's target can be replaced, within what its unit allows, and nothing else about it changes", () => {
-  require("tsx/cjs");
-  const { KPI_DEFINITIONS, readTarget } = require("../src/services/kpiDefinitions.ts");
-  const { computeKpis } = require("../src/services/kpis.ts");
-  const of = (key) => KPI_DEFINITIONS.find((item) => item.key === key);
-  // Percent: whole, 0 to 100. Days: one decimal, 0 to 60. Count: whole, 0 to 1000.
-  assert.deepEqual(readTarget(of("on_track"), 85), { target: 85 });
-  for (const bad of [-1, 101, 85.5, "85", null, NaN, Infinity]) assert.ok("problem" in readTarget(of("on_track"), bad), String(bad));
-  assert.deepEqual(readTarget(of("review_time"), 1.5), { target: 1.5 });
-  for (const bad of [1.55, 61, -0.1]) assert.ok("problem" in readTarget(of("review_time"), bad), String(bad));
-  assert.deepEqual(readTarget(of("old_concerns"), 3), { target: 3 });
-  for (const bad of [2.5, 1001]) assert.ok("problem" in readTarget(of("old_concerns"), bad), String(bad));
-
-  const inputs = { students: [], holidays: new Set(), decisions: [], requirements: [], concerns: [{ created_on: "2026-09-01", closed_on: null }, { created_on: "2026-09-02", closed_on: null }], expiries: [] };
-  const plain = computeKpis("2026-10-12", inputs).find((kpi) => kpi.key === "old_concerns");
-  assert.deepEqual([plain.value, plain.target, plain.default_target, plain.met], [2, 0, 0, false]);
-  const moved = computeKpis("2026-10-12", inputs, { old_concerns: 2 }).find((kpi) => kpi.key === "old_concerns");
-  assert.deepEqual([moved.value, moved.target, moved.default_target, moved.met], [2, 2, 0, true], "the same count, judged against the new target");
-  assert.equal(moved.label, plain.label);
-  assert.deepEqual(moved.series, plain.series);
-  // The other five are untouched.
-  assert.ok(computeKpis("2026-10-12", inputs, { old_concerns: 2 }).filter((kpi) => kpi.key !== "old_concerns").every((kpi) => kpi.target === kpi.default_target));
-});
-
-test("the coordinator changes the key figures' targets, the defaults come back with null, and a change is logged", async (t) => {
-  const supervisor = await supervisorSession();
-  const path = "/api/coordinator/kpi-targets";
-  assert.equal((await jsonRequest(path, jsonBody(studentToken, "PUT", { targets: { on_track: 80 } }))).response.status, 403);
-  assert.equal((await jsonRequest(path, jsonBody(supervisor.token, "PUT", { targets: { on_track: 80 } }))).response.status, 403);
-  const put = (targets) => jsonRequest(path, jsonBody(coordinatorToken, "PUT", { targets }));
-  for (const bad of [undefined, [], {}, { nonsense: 5 }, { on_track: 101 }, { on_track: "80" }, { review_time: 1.25 }, { old_concerns: -1 }]) {
-    assert.equal((await put(bad)).response.status, 400, JSON.stringify(bad));
-  }
-  if (needsWrites(t)) return;
-  const pool = localTestPool();
-  const kpi = async (key) => (await jsonRequest("/api/coordinator/kpis", { headers: authHeaders(coordinatorToken) })).body.kpis.find((item) => item.key === key);
-  await pool.query(`DELETE FROM kpi_targets`);
-  try {
-    const before = await kpi("on_track");
-    assert.deepEqual([before.target, before.default_target], [90, 90]);
-    const saved = await put({ on_track: 75, review_time: 3.5 });
-    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
-    assert.deepEqual([saved.body.targets.on_track, saved.body.targets.review_time, saved.body.targets.attendance_rate], [75, 3.5, 95]);
-    assert.equal(saved.body.changed, "on_track: 90 to 75; review_time: 2 to 3.5");
-    const after = await kpi("on_track");
-    assert.deepEqual([after.target, after.default_target, after.value], [75, 90, before.value], "the value is the same; only what it is judged against moved");
-    assert.equal(after.met, after.value === null ? null : after.value >= 75);
-    assert.equal((await pool.query(`SELECT updated_by FROM kpi_targets WHERE key = 'on_track'`)).rows[0].updated_by, coordinator.coordinator_id);
-
-    // Saved again unchanged: nothing moved, nothing logged.
-    const same = await put({ on_track: 75 });
-    assert.deepEqual([same.response.status, same.body.changed_count], [200, 0]);
-    // null, or the default itself, puts the default back and keeps no row.
-    const reset = await put({ on_track: null, review_time: 2 });
-    assert.deepEqual([reset.body.targets.on_track, reset.body.targets.review_time], [90, 2]);
-    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM kpi_targets`)).rows[0].n, 0);
-    assert.equal((await kpi("on_track")).target, 90);
-
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    const audit = await jsonRequest("/api/coordinator/audit?action=kpi.targets&limit=5", { headers: authHeaders(coordinatorToken) });
-    const changes = audit.body.entries.map((entry) => entry.details?.changed);
-    assert.ok(changes.includes("on_track: 90 to 75; review_time: 2 to 3.5"), JSON.stringify(changes));
-    assert.ok(changes.includes("on_track: 75 to 90; review_time: 3.5 to 2"), JSON.stringify(changes));
-    assert.equal(changes.filter((item) => item === "").length, 0, "the unchanged save is not in the log");
-  } finally {
-    await pool.query(`DELETE FROM kpi_targets`);
     await pool.end();
   }
 });
@@ -12647,4 +12558,41 @@ test("the Messages page lists only the signed-in person's threads, newest first,
     const opened = await jsonRequest(`/api/messages/threads/${listed.body.threads[0].id}`, { headers: authHeaders(studentToken) });
     assert.equal(opened.response.status, 200);
   }
+});
+
+test("PSU redesign: the key figures' targets are gone from the API and the app; their table is kept", async () => {
+  const gone = await jsonRequest("/api/coordinator/kpi-targets", jsonBody(coordinatorToken, "PUT", { targets: { on_track: 80 } }));
+  assert.equal(gone.response.status, 404);
+  const pwa = nodePath.join(__dirname, "..", "..", "my-pwa", "src");
+  assert.ok(!fs.existsSync(nodePath.join(pwa, "pages", "coordinator", "KpiTargetsDialog.tsx")));
+  // Migrations are history: 043 still creates the table.
+  assert.match(fs.readFileSync(nodePath.join(__dirname, "..", "migrations", "043_kpi_targets.sql"), "utf8"), /kpi_targets/);
+});
+
+test("PSU redesign: the coordinator's Home reads the cohort, the open appeals and this week, for the filters", async () => {
+  const { response, body: data } = await jsonRequest("/api/coordinator/home", { headers: authHeaders(coordinatorToken) });
+  assert.equal(response.status, 200);
+  for (const key of ["total", "behind", "on_the_way", "almost_done", "required", "stations"]) assert.ok(key in data.cohort, key);
+  assert.equal(data.cohort.behind + data.cohort.on_the_way + data.cohort.almost_done, data.cohort.total);
+  assert.ok(data.cohort.stations.length <= 12);
+  assert.equal(typeof data.appeals.count, "number");
+  assert.ok(Array.isArray(data.this_week));
+  assert.equal(data.evaluations.of, data.cohort.total);
+  assert.deepEqual(data.scope, { college: null, program: null });
+
+  const student = await jsonRequest("/api/coordinator/home", { headers: authHeaders(studentToken) });
+  assert.ok([401, 403].includes(student.response.status));
+
+  // The rule behind the three groups: almost done wins, then behind, then on the way.
+  require("tsx/cjs");
+  const { stateOf, pickStations, ALMOST_DONE_SHARE } = require("../src/services/coordinatorHome.ts");
+  assert.equal(ALMOST_DONE_SHARE, 0.1);
+  assert.equal(stateOf({ required: 480, hours: 440, at_risk: true }), "almost-done");
+  assert.equal(stateOf({ required: 480, hours: 100, at_risk: true }), "behind");
+  assert.equal(stateOf({ required: 480, hours: 100, at_risk: false }), "on-the-way");
+  const many = Array.from({ length: 40 }, (_, index) => ({ hours: index * 10, state: index < 6 ? "behind" : "on-the-way" }));
+  const picked = pickStations(many);
+  assert.equal(picked.length, 12);
+  assert.ok(picked.filter((row) => row.state === "behind").length >= 4);
+  assert.deepEqual([...picked].sort((a, b) => a.hours - b.hours), picked);
 });

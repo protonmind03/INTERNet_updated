@@ -1,6 +1,7 @@
 import type express from "express";
 import type { Pool } from "pg";
 import { coordinatorActions } from "../services/coordinatorActions";
+import { coordinatorHome } from "../services/coordinatorHome";
 import { coordinatorKpis } from "../services/kpis";
 import { readStudentFilters } from "../services/studentScope";
 import { emailRoute, sendEmail } from "../services/mailer";
@@ -193,6 +194,18 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
     } catch (error) {
       console.error("COORDINATOR ACTIONS ERROR:", error);
       return res.status(500).json({ message: "Failed to load the action list." });
+    }
+  });
+
+  /** PSU redesign: the Home page's cohort line, open appeals, this week and plain counts (services/coordinatorHome.ts). */
+  app.get("/api/coordinator/home", requireCoordinator, async (req, res) => {
+    try {
+      const read = readStudentFilters(req.query as Record<string, unknown>);
+      if ("problem" in read) return res.status(400).json({ message: read.problem });
+      return res.json(await coordinatorHome(pool, read.filters));
+    } catch (error) {
+      console.error("COORDINATOR HOME ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the home page." });
     }
   });
 

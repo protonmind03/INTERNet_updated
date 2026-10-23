@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { BrandIcon, BrandLoader, BrandLockup, PortalBrand, PortalHeader, ROLE_THEMES, RouteProgress, SplashScreen, Wordmark } from ".";
+import { BrandIcon, BrandLoader, BrandLockup, PortalHeader, ROLE_THEMES, RouteProgress, SplashScreen, Wordmark } from ".";
 // The kit's own toasts, shown only on this development-only page.
 import { ActionButton, BrandToastProvider } from "./feedback";
 import type { Role } from ".";
@@ -231,9 +231,9 @@ function PreviewInner() {
         <PalettesPanel />
 
         <section className="flex flex-wrap items-center gap-6 rounded-2xl bg-white p-6 ring-1 ring-slate-200" aria-label="Real sizes">
-          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: "#1A237E" }}><PortalBrand role="student" showTag /></div>
-          <div className="flex items-center gap-3 rounded-xl px-4 py-3 ring-1 ring-slate-200"><PortalBrand role="coordinator" /></div>
-          <div className="flex items-center gap-3 rounded-xl px-4 py-2" style={{ background: "#121A5E" }}><PortalBrand role="supervisor" showTag size="bar" /></div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3" style={{ background: "#1A237E" }}><BrandLockup size={28} tone="onDark" /></div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-3 ring-1 ring-slate-200"><BrandLockup size={28} /></div>
+          <div className="flex items-center gap-3 rounded-xl px-4 py-2" style={{ background: "#121A5E" }}><BrandLockup size={24} tone="onDark" /></div>
           <div className="flex items-end gap-3">{[24, 32, 40, 44, 48, 64].map((n) => <BrandIcon key={n} size={n} />)}</div>
         </section>
 
@@ -249,7 +249,7 @@ function PreviewInner() {
 
         <section className="grid gap-6 lg:grid-cols-[260px_1fr]">
           <aside className="flex flex-col rounded-2xl p-4" style={{ background: t.colors.surface, border: dark ? "none" : "1px solid #E2E8F0" }}>
-            <PortalBrand role={role} showTag />
+            <BrandLockup size={28} tone={dark ? "onDark" : "onLight"} />
             <nav className="mt-6 flex flex-col gap-1">
               {NAV[role].map((n, i) => (
                 <a

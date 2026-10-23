@@ -76,7 +76,7 @@ export default function SignatureCard() {
   return (
     <Card>
       <section aria-labelledby="signature-heading" className="p-4 sm:p-5">
-        <h2 id="signature-heading" className="text-sm font-semibold text-slate-900">
+        <h2 id="signature-heading" className="text-[16px] font-bold text-slate-900">
           Signature
         </h2>
         <p className="mt-1 text-sm text-slate-600">

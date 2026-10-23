@@ -364,9 +364,12 @@ function DayRow({
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
           {retake && working ? (
-            <Button icon="camera" onClick={onRetake} disabled={!online}>
-              Retake now
-            </Button>
+            <>
+              <Button icon="camera" onClick={onRetake} disabled={!online}>
+                Retake now
+              </Button>
+              <AppealActions log={log} onChanged={onChanged} />
+            </>
           ) : missedOut ? (
             <Button variant="outline" onClick={onClose}>
               Enter time-out
