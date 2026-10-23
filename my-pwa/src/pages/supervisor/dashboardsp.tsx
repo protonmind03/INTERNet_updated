@@ -406,6 +406,8 @@ export default function SupervisorDashboard() {
         </div>
 
         {computer && !loading && (
+          // The same counts the side menu shows; only drawn while it is closed to a rail.
+          <UnlessInMenu>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <FactCard
               title="Time-ins to verify"
@@ -440,10 +442,11 @@ export default function SupervisorDashboard() {
               unit={finalDue.length === 1 ? "intern" : "interns"}
               line={finalDue[0] ? finalDue[0].entry.student_name : "None due"}
               tip="Interns close to their required hours with no final evaluation yet."
-              to="/supervisor/evaluation"
+              to="/supervisor/dashboard?tab=final"
               action="Start"
             />
           </div>
+          </UnlessInMenu>
         )}
 
         {!loading && interns.length === 0 && !work.error && (

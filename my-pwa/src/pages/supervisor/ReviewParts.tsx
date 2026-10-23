@@ -8,7 +8,7 @@ import { formatDayDate, formatHours, formatTime, getInitials } from "../../lib/f
 import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 import type { Projection } from "../../lib/useProjections";
 import { sameId } from "../../lib/ids";
-import type { FinalDue } from "./finalDue";
+import { finalEvaluationPath, type FinalDue } from "./finalDue";
 import type { AttendanceEntry, Intern, QueueItem, SupervisorWork } from "./useSupervisorWork";
 
 /*
@@ -419,12 +419,12 @@ export function ThisWeek({ work, finalDue, projections }: { work: SupervisorWork
     for (const [id, value] of projections) if (sameId(id, intern.student_id)) projection = value;
     const finish = projection?.projected_finish;
     if (finish && finish >= today && finish <= end) {
-      rows.push({ date: finish, title: `${intern.name.split(/\s+/)[0]}'s final evaluation`, line: `Reaches ${formatHours(intern.required_hours)}`, to: "/supervisor/evaluation" });
+      rows.push({ date: finish, title: `${intern.name.split(/\s+/)[0]}'s final evaluation`, line: `Reaches ${formatHours(intern.required_hours)}`, to: finalEvaluationPath(intern.student_id) });
     }
   }
   for (const due of finalDue) {
     if (!rows.some((row) => row.title.startsWith(due.entry.student_name.split(/\s+/)[0]))) {
-      rows.push({ date: today, title: `${due.entry.student_name.split(/\s+/)[0]}'s final evaluation`, line: "Due now", to: "/supervisor/evaluation" });
+      rows.push({ date: today, title: `${due.entry.student_name.split(/\s+/)[0]}'s final evaluation`, line: "Due now", to: finalEvaluationPath(due.entry.student_id) });
     }
   }
   const dueByDay = new Map<string, string[]>();
