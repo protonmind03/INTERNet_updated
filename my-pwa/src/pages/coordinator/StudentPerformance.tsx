@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Meter, SummaryTiles, type SummaryTile } from "../../components/display";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
-import { Button, Card, CardHeader, EmptyState, SkeletonRows, StatusBadge } from "../../components/ui";
+import { Button, Card, CardHeader, EmptyState, SearchField, SkeletonRows, StatusBadge } from "../../components/ui";
 import { saveCsv } from "../../lib/csv";
 import { formatDate, formatHours } from "../../lib/format";
 import { toast } from "../../lib/toast";
@@ -125,6 +125,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
   const [sort, setSort] = useState<{ key: SortKey; down: boolean }>({ key: "status", down: false });
   const [buildingPdf, setBuildingPdf] = useState(false);
   const [shown, setShown] = useState<Shown>("all");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     let current = true;
@@ -154,7 +155,15 @@ export default function StudentPerformance({ query, covered }: { query: string; 
     });
     return rows;
   }, [state, sort]);
-  const visible = useMemo(() => (shown === "all" ? sorted : sorted.filter((row) => row.performance.status === shown)), [sorted, shown]);
+  // A status tile and a name search narrow the table; the files keep every student.
+  const visible = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    return sorted.filter(
+      (row) =>
+        (shown === "all" || row.performance.status === shown) &&
+        (!text || [row.name, row.student_id, row.program, row.program_code, row.block].some((value) => String(value ?? "").toLowerCase().includes(text)))
+    );
+  }, [sorted, shown, search]);
   const tiles: SummaryTile<Shown>[] = [
     { value: "all", label: "All students", count: state ? sorted.length : null, icon: "users", tone: "brand" },
     ...(Object.keys(STATUS_ORDER) as PerformanceStatus[]).map((status) => ({
@@ -219,10 +228,13 @@ export default function StudentPerformance({ query, covered }: { query: string; 
       />
       <div className="px-4 pt-3 sm:px-5">
         <SummaryTiles label="Show students by status" tiles={tiles} value={shown} onChange={setShown} />
-        <p className="mt-3">
-          <span className="text-sm text-slate-600">What the status words mean </span>
-          <StatusRules rules={state?.rules ?? null} />
-        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <SearchField value={search} onChange={setSearch} label="Search students" placeholder="Search by name, ID, program or block" className="w-full sm:w-80" />
+          <p className="m-0">
+            <span className="text-sm text-slate-600">What the status words mean </span>
+            <StatusRules rules={state?.rules ?? null} />
+          </p>
+        </div>
       </div>
       <div className="mt-3">
         {failed && loading ? (
@@ -234,7 +246,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
         ) : sorted.length === 0 ? (
           <EmptyState icon="users" title="No active students" />
         ) : visible.length === 0 ? (
-          <EmptyState icon="check-circle" title={`No students are ${shown === "all" ? "listed" : shown.toLowerCase()}`} />
+          <EmptyState icon={search.trim() ? "search" : "check-circle"} title={search.trim() ? "No students match" : `No students are ${shown === "all" ? "listed" : shown.toLowerCase()}`} />
         ) : (
           <>
             <div className="relative overflow-x-auto" tabIndex={0} role="group" aria-label="Student performance">

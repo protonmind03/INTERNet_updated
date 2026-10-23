@@ -432,9 +432,9 @@ test.describe("programs, blocks and the filter bar", () => {
     await signIn(page, "coordinator");
 
     // The Programs page lists what the migration seeded.
-    // Programs is in the side menu's Term group.
+    // Programs is in the side menu's Setup group.
     const menu = page.locator("aside.role-side");
-    await menu.getByRole("button", { name: /^Term/ }).click();
+    await menu.getByRole("button", { name: /^Setup/ }).click();
     await menu.getByRole("link", { name: "Programs", exact: true }).click();
     await expect(page).toHaveURL(/\/coordinator\/programs$/);
     await expect(page.getByRole("heading", { name: /College of Computing Sciences/ })).toBeVisible();
@@ -820,6 +820,8 @@ test.describe("the programme, for the coordinator", () => {
 
     // Student performance: a status from the rules, a sentence, and the rules behind the "?".
     const table = page.getByRole("group", { name: "Student performance" });
+    // Ten to a page: the search finds one student wherever they are.
+    await page.getByLabel("Search students").fill("Demo Student");
     await expect(table.getByRole("link", { name: "Demo Student", exact: true })).toBeVisible();
     await expect(table.getByText(/^(On track|Behind|At risk|Completed): \d/).first()).toBeVisible();
     await page.getByRole("button", { name: "What the status words mean" }).click();
@@ -879,7 +881,7 @@ test.describe("the programme, for the coordinator", () => {
     await page.goto("/coordinator/analytics");
     await expect(page.getByText(/Target:/)).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Targets", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("button", { name: /^About Students on track/ })).toBeVisible();
+    await expect(page.getByRole("button", { name: /^About students on track/i })).toBeVisible();
   });
 
   test("a set of filters is saved as a view, chosen again, and removed", async ({ page }) => {
