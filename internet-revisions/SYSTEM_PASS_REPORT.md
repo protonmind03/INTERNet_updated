@@ -146,6 +146,21 @@ Nothing was deployed. The standing risks are the same as before this pass:
 - **Midnight.** Three picture tests start a time-in "an hour ago". The full run happened at 00:51 Philippine time, so that time-in fell on the previous day. They passed in the previous full run, and this pass did not change what they test.
 - **Data.** One test expects a supervisor whose interns are all in one program and block. On the local database the demo supervisor now has 24 interns, most left by earlier test runs, so showing the chooser is correct. It passes on a fresh database, as in CI.
 
+## Verified the way CI runs it, before the push
+
+Run on a throwaway Postgres cluster on a fresh database (migrated and seeded), with the clock on UTC, against the production build and Playwright's own Chromium (`CI=1`):
+
+| Check | Result |
+|---|---|
+| Backend tests | 273 of 273 passed, none skipped |
+| Backend lint | clean |
+| Backend `check:route-tests` | clean |
+| Backend `docs:architecture` | matches |
+| End to end | 85 of 85 passed: no failures, no flaky, no skips |
+| Frontend lint, type check, `check:pwa` | clean |
+
+**A flaky journey on the first CI-style run exposed an app flaw, now fixed.** When the list of an entry's pictures could not be fetched under load, the entry showed nothing, as if it had none. It now tries twice more, then says "N pictures could not be loaded", with Try again (`components/EntryPictures.tsx`).
+
 ## Not done
 
 - **The landing page's two side device mockups are still small and faint.** They are decoration only, and the first screen now leads with the call to action instead.
