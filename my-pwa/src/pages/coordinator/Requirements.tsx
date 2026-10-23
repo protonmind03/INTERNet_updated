@@ -213,7 +213,7 @@ function RequiredDocuments() {
               ) : (
                 <li
                   key={item.id}
-                  className="flex items-start justify-between gap-3 px-4 py-3.5 sm:px-5"
+                  className="flex flex-col gap-2 px-4 py-3.5 sm:flex-row sm:items-start sm:justify-between sm:gap-3 sm:px-5"
                 >
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-2">
@@ -233,25 +233,26 @@ function RequiredDocuments() {
                       <p className="mt-0.5 text-sm font-medium text-slate-700">{deliverableLine(item)}</p>
                     )}
                   </div>
-                  <div className="flex shrink-0 flex-wrap justify-end gap-1">
+                  {/* On a phone the actions wrap under the requirement; each is a 44 px target. */}
+                  <div className="-ml-2 flex min-w-0 flex-wrap gap-1 sm:ml-0 sm:shrink-0 sm:justify-end">
                     {/* Roadmap 5.5: straight to the files submitted for it. */}
                     <Link
                       to={`/coordinator/documents?doc_type=${encodeURIComponent(item.name)}`}
-                      className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                      className="inline-flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-psu-700 hover:bg-slate-100"
                     >
                       Submissions<span className="sr-only"> for {item.name}</span>
                     </Link>
                     <button
                       type="button"
                       onClick={() => setSettingUp(item)}
-                      className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                      className="inline-flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-psu-700 hover:bg-slate-100"
                     >
                       Due date and reviewer<span className="sr-only"> for {item.name}</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setEditing(item)}
-                      className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                      className="inline-flex min-h-11 items-center rounded-md px-2 text-sm font-medium text-psu-700 hover:bg-slate-100"
                     >
                       Edit<span className="sr-only"> {item.name}</span>
                     </button>
@@ -266,7 +267,7 @@ function RequiredDocuments() {
                             : `"${item.name}" restored to the checklist.`
                         )
                       }
-                      className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 ${
+                      className={`inline-flex min-h-11 items-center gap-1.5 rounded-md px-2 text-sm font-medium hover:bg-slate-100 disabled:opacity-50 ${
                         item.is_active ? "text-red-600" : "text-emerald-700"
                       }`}
                     >

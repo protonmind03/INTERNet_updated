@@ -517,7 +517,7 @@ export function ErrorNotice({
         <button
           type="button"
           onClick={onRetry}
-          className="rounded-md px-2 py-1 text-sm font-semibold text-red-700 underline-offset-2 hover:underline"
+          className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-semibold text-red-700 underline-offset-2 hover:underline"
         >
           Try again
         </button>

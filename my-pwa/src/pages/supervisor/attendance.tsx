@@ -525,7 +525,7 @@ export default function SupervisorAttendanceApproval() {
                                 <button
                                   type="button"
                                   onClick={() => setOpenId(entry.id)}
-                                  className="rounded-md px-2 py-1 text-sm font-semibold text-psu-700 hover:bg-psu-50"
+                                  className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-semibold text-psu-700 hover:bg-psu-50"
                                 >
                                   {awaitsReview(entry) ? "Review" : "View"}
                                 </button>

@@ -218,14 +218,14 @@ export default function CoordinatorEvaluations() {
                       <button
                         type="button"
                         onClick={() => setEditing(row)}
-                        className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                        className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-medium text-psu-700 hover:bg-slate-100"
                       >
                         Edit
                       </button>
                       <button
                         type="button"
                         onClick={() => setRemoving(row)}
-                        className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-slate-100"
+                        className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-medium text-red-600 hover:bg-slate-100"
                       >
                         Remove
                       </button>

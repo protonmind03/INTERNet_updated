@@ -911,14 +911,14 @@ function TaskDialog({
               <button
                 type="button"
                 onClick={() => fileInput.current?.click()}
-                className="rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-medium text-psu-700 hover:bg-slate-100"
               >
                 Replace
               </button>
               <button
                 type="button"
                 onClick={() => setKeepExisting(false)}
-                className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-slate-100"
+                className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-medium text-red-600 hover:bg-slate-100"
               >
                 Remove
               </button>

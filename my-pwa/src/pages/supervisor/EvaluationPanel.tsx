@@ -343,7 +343,7 @@ export default function EvaluationPanel({ intern }: { intern: { student_id: stri
                           <button
                             type="button"
                             onClick={() => startEditing(item)}
-                            className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-sm font-medium text-psu-700 hover:bg-slate-100"
+                            className="inline-flex items-center gap-1.5 rounded-md px-2 min-h-11 text-sm font-medium text-psu-700 hover:bg-slate-100"
                           >
                             <Icon name="edit" size={14} />
                             Edit
@@ -351,7 +351,7 @@ export default function EvaluationPanel({ intern }: { intern: { student_id: stri
                           <button
                             type="button"
                             onClick={() => setRemoving(item)}
-                            className="rounded-md px-2 py-1 text-sm font-medium text-red-600 hover:bg-slate-100"
+                            className="inline-flex items-center rounded-md px-2 min-h-11 text-sm font-medium text-red-600 hover:bg-slate-100"
                           >
                             Remove
                           </button>

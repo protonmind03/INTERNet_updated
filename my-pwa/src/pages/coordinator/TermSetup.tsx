@@ -68,7 +68,7 @@ export default function TermSetup({
             </div>
             <Link
               to={line.link}
-              className="shrink-0 self-center rounded-md px-2 py-1.5 text-sm font-semibold text-psu-700 hover:bg-white hover:underline"
+              className="inline-flex items-center shrink-0 self-center rounded-md px-2 min-h-11.5 text-sm font-semibold text-psu-700 hover:bg-white hover:underline"
             >
               Open<span className="sr-only">: {line.label}</span>
             </Link>
