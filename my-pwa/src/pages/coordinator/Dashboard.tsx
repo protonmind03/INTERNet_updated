@@ -3,7 +3,9 @@ import { Link, useNavigate } from "react-router-dom";
 import { PsuSeal } from "../../brand";
 import { CollegeMark, ProgramMark } from "../../brand/MarkImages";
 import { DeparturesRow, RouteLine, SplitFacts } from "../../brand/motifs";
-import Icon from "../../components/Icon";
+import { MetricCard } from "../../components/display";
+import Icon, { type IconName } from "../../components/Icon";
+import type { Tone } from "../../components/tones";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ErrorNotice, Skeleton, SkeletonRows } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
@@ -183,12 +185,12 @@ export default function CoordinatorDashboard() {
 
         {wide && (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
-            <FactCard title="Timed in today" tip="Active trainees with a time-in today." value={data?.today.timedIn} unit={data ? `of ${data.students.active}` : ""} line={actions ? `${actions.scheduled_not_in} not in yet` : ""} to="/coordinator/monitoring" action="See who" loading={loading} />
-            <FactCard title="Waiting on supervisors" tip="Attendance logs waiting for the assigned supervisor to verify." value={waitingLogs} unit={waitingLogs === 1 ? "log" : "logs"} line={busiest ? `Most with ${busiest.name}` : "None waiting"} to="/coordinator/companies?tab=supervisors" action="By supervisor" loading={loading} />
-            <FactCard title="Behind schedule" tip="Trainees whose expected finish, from their schedule and verified hours, falls after the term ends, or who have nothing scheduled." value={home?.cohort.behind} unit="trainees" line="May finish after the term ends" to="/coordinator/monitoring?risk=1" action="See them" loading={loading} />
-            <FactCard title="Evaluations done" tip="Trainees with a final evaluation from their supervisor." value={home?.evaluations.done} unit={home ? `of ${home.evaluations.of}` : ""} line="Opens as each trainee finishes" to="/coordinator/evaluations" action="See list" loading={loading} />
-            <FactCard title="Absences this week" tip="Absences filed for Monday to Sunday of this week." value={home?.absences_week.filed} unit="filed" line={home ? `${home.absences_week.half_days} ${home.absences_week.half_days === 1 ? "is a half-day" : "are half-days"}` : ""} to="/coordinator/monitoring" action="See list" loading={loading} />
-            <FactCard title="On the clock now" tip="Timed in today and not yet timed out." value={data?.today.onTheClock} unit="trainees" line={data ? `${data.today.absent} absent today` : ""} to="/coordinator/monitoring" action="Monitoring" loading={loading} />
+            <FactCard icon="clock" of={data?.students.active} title="Timed in today" tip="Active trainees with a time-in today." value={data?.today.timedIn} unit={data ? `of ${data.students.active}` : ""} line={actions ? `${actions.scheduled_not_in} not in yet` : ""} to="/coordinator/monitoring" action="See who" loading={loading} />
+            <FactCard icon="hourglass" tone={waitingLogs > 0 ? "warning" : "neutral"} title="Waiting on supervisors" tip="Attendance logs waiting for the assigned supervisor to verify." value={waitingLogs} unit={waitingLogs === 1 ? "log" : "logs"} line={busiest ? `Most with ${busiest.name}` : "None waiting"} to="/coordinator/companies?tab=supervisors" action="By supervisor" loading={loading} />
+            <FactCard icon="alert" tone={(home?.cohort.behind ?? 0) > 0 ? "danger" : "neutral"} title="Behind schedule" tip="Trainees whose expected finish, from their schedule and verified hours, falls after the term ends, or who have nothing scheduled." value={home?.cohort.behind} unit="trainees" line="May finish after the term ends" to="/coordinator/monitoring?risk=1" action="See them" loading={loading} />
+            <FactCard icon="star" of={home?.evaluations.of} title="Evaluations done" tip="Trainees with a final evaluation from their supervisor." value={home?.evaluations.done} unit={home ? `of ${home.evaluations.of}` : ""} line="Opens as each trainee finishes" to="/coordinator/evaluations" action="See list" loading={loading} />
+            <FactCard icon="calendar" tone="info" title="Absences this week" tip="Absences filed for Monday to Sunday of this week." value={home?.absences_week.filed} unit="filed" line={home ? `${home.absences_week.half_days} ${home.absences_week.half_days === 1 ? "is a half-day" : "are half-days"}` : ""} to="/coordinator/monitoring" action="See list" loading={loading} />
+            <FactCard icon="activity" tone="info" title="On the clock now" tip="Timed in today and not yet timed out." value={data?.today.onTheClock} unit="trainees" line={data ? `${data.today.absent} absent today` : ""} to="/coordinator/monitoring" action="Monitoring" loading={loading} />
           </div>
         )}
 
@@ -421,15 +423,23 @@ function Fact({ title, tip, value, unit, line, loading }: { title: string; tip: 
   );
 }
 
-function FactCard(props: { title: string; tip: string; value: number | undefined; unit: string; line: string; to: string; action: string; loading: boolean }) {
+/** A fact on a computer: a MetricCard (components/display.tsx), its subject as an icon and, for a share, a meter. */
+function FactCard(props: { icon: IconName; tone?: Tone; title: string; tip: string; value: number | undefined; unit: string; line: string; to: string; action: string; loading: boolean; of?: number }) {
+  const { value, of } = props;
   return (
-    <div className="card-hairline flex flex-col rounded-2xl p-4">
-      <Fact {...props} />
-      <Link to={props.to} className="mt-auto inline-flex min-h-11 items-center gap-1 pt-1 text-sm font-bold text-psu-700 hover:underline">
-        {props.action}
-        <Icon name="arrow-right" size={15} />
-      </Link>
-    </div>
+    <MetricCard
+      icon={props.icon}
+      tone={props.tone}
+      title={props.title}
+      tip={props.tip}
+      value={value ?? 0}
+      unit={props.unit}
+      line={props.line}
+      meter={of !== undefined && of > 0 && value !== undefined ? value / of : undefined}
+      to={props.to}
+      action={props.action}
+      loading={props.loading}
+    />
   );
 }
 

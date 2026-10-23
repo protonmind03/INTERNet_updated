@@ -12662,3 +12662,36 @@ test("the supervisor's review count says how many of each kind wait, for the sid
   for (const key of ["time_ins", "tasks", "documents", "absences", "reports"]) assert.equal(typeof body.by_kind[key], "number", key);
   assert.equal(body.waiting, Object.values(body.by_kind).reduce((sum, count) => sum + count, 0));
 });
+
+test("the Students page's status tiles: one count for each, for the same search and filters as the list", async () => {
+  const get = (query = "") => jsonRequest(`/api/coordinator/students/counts${query}`, { headers: authHeaders(coordinatorToken) });
+  const { response, body } = await get();
+  assert.equal(response.status, 200);
+  const counts = body.counts;
+  for (const key of ["all", "active", "inactive", "unassigned", "no-program"]) assert.equal(typeof counts[key], "number", key);
+  assert.equal(counts.active + counts.inactive, counts.all);
+  // Each count is what the list itself says for that status.
+  for (const [key, status] of [["active", "active"], ["inactive", "inactive"], ["unassigned", "unassigned"], ["no-program", "no-program"]]) {
+    const list = await jsonRequest(`/api/coordinator/students?limit=1&status=${status}`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(list.body.total, counts[key], key);
+  }
+  // The search narrows the counts as it narrows the list.
+  const none = await get(`?q=${encodeURIComponent("no-such-student-" + Date.now())}`);
+  assert.equal(none.body.counts.all, 0);
+  // Coordinators only.
+  assert.equal((await jsonRequest("/api/coordinator/students/counts", { headers: authHeaders(studentToken) })).response.status, 403);
+});
+
+test("the Concerns page's status tiles: one count for each status, for the same search as the list", async () => {
+  const { response, body } = await jsonRequest("/api/coordinator/complaints/counts", { headers: authHeaders(coordinatorToken) });
+  assert.equal(response.status, 200);
+  const counts = body.counts;
+  for (const key of ["all", "Pending", "In Review", "Resolved", "Dismissed"]) assert.equal(typeof counts[key], "number", key);
+  for (const status of ["Pending", "In Review", "Resolved", "Dismissed"]) {
+    const list = await jsonRequest(`/api/coordinator/complaints?limit=1&status=${encodeURIComponent(status)}`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(list.body.total, counts[status], status);
+  }
+  const none = await jsonRequest(`/api/coordinator/complaints/counts?q=${encodeURIComponent("no-such-concern-" + Date.now())}`, { headers: authHeaders(coordinatorToken) });
+  assert.equal(none.body.counts.all, 0);
+  assert.equal((await jsonRequest("/api/coordinator/complaints/counts", { headers: authHeaders(studentToken) })).response.status, 403);
+});

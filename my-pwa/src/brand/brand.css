@@ -770,6 +770,8 @@
 .st-badge--info { background: var(--status-info-bg); color: var(--status-info-ink); }
 .st-badge--bad { background: var(--status-late-bg); color: var(--status-late-ink); }
 .st-badge--neutral { background: var(--status-absent-bg); color: var(--status-absent-ink); }
+/* A count of work waiting for this person: a call to act, so amber (system pass). Record statuses keep their own colours. */
+.st-badge--waiting { background: var(--status-warning-bg); color: var(--status-warning-ink); }
 /* Supervisor: green is the portal's colour, so "done" is grey with a tick. */
 [data-role="supervisor"] .st-badge--good { background: var(--status-absent-bg); color: var(--status-absent-ink); }
 [data-role="supervisor"] .st-badge--good .st-badge-mark { width: 10px; height: 10px; border-radius: 0; background: none; }

@@ -301,7 +301,7 @@ export default function OjtSchedule() {
         <div className="grid gap-5 lg:grid-cols-3">
           {/* min-w-0: a grid item otherwise grows to its longest line, which pushed the hours off a phone screen. */}
           <Card className="min-w-0 lg:col-span-2">
-            <CardHeader
+            <CardHeader icon="calendar"
               title="Weekly schedule"
               action={
                 !loading && schedule.length > 0 ? (
@@ -503,7 +503,7 @@ export default function OjtSchedule() {
         </div>
 
         <Card>
-          <CardHeader
+          <CardHeader icon="hourglass"
             title="Upcoming deadlines"
             description="Open tasks by due date"
             action={

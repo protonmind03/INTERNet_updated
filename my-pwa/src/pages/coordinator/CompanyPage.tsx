@@ -85,7 +85,7 @@ export default function CompanyPage() {
         {company && data && (
           <>
             <Card>
-              <CardHeader title="Details and agreement" />
+              <CardHeader icon="briefcase" title="Details and agreement" />
               <dl className="grid gap-x-6 gap-y-4 px-4 pb-5 pt-3 sm:grid-cols-2 sm:px-5 lg:grid-cols-3">
                 <Fact label="Agreement">
                   <span className="flex flex-wrap items-center gap-2">
@@ -122,7 +122,7 @@ export default function CompanyPage() {
             </Card>
 
             <Card>
-              <CardHeader title="Supervisors" description="Who supervises interns here, and how many each has." />
+              <CardHeader icon="users" title="Supervisors" description="Who supervises interns here, and how many each has." />
               {data.supervisors.length === 0 ? (
                 <EmptyState icon="users" title="No supervisors linked to this company" />
               ) : (
@@ -153,7 +153,7 @@ export default function CompanyPage() {
             </Card>
 
             <Card>
-              <CardHeader
+              <CardHeader icon="map-pin"
                 title="Visits"
                 description="The coordinator's visits to this company, newest first."
                 action={

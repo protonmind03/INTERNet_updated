@@ -9,7 +9,6 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   FormError,
   FormField,
   Modal,
@@ -20,6 +19,7 @@ import {
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
+import { SummaryTiles } from "../../components/display";
 import { formatHours } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { serverPagination } from "../../lib/usePagination";
@@ -116,6 +116,8 @@ export default function CoordinatorStudents() {
   // The server searches, filters, orders and pages; only one page is here.
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  // How many each status tile would show, for the same search and filters.
+  const [counts, setCounts] = useState<Record<StatusFilter, number> | null>(null);
   const pager = serverPagination(students, total, page, PAGE_SIZE, setPage);
   // A changed search, filter or order starts again from the first page.
   const fromFirstPage =
@@ -133,10 +135,15 @@ export default function CoordinatorStudents() {
     });
     if (search.trim()) params.set("q", search.trim());
     if (status !== "all") params.set("status", status);
+    const countParams = new URLSearchParams();
+    if (search.trim()) countParams.set("q", search.trim());
     try {
-      const data = await coordinatorRequest<{ students: Student[]; total?: number }>(
-        `/api/coordinator/students?${params.toString()}${term ? `&${term}` : ""}`
-      );
+      const [data, tally] = await Promise.all([
+        coordinatorRequest<{ students: Student[]; total?: number }>(`/api/coordinator/students?${params.toString()}${term ? `&${term}` : ""}`),
+        // Extra to the list: without it the tiles show no number.
+        coordinatorRequest<{ counts: Record<StatusFilter, number> }>(`/api/coordinator/students/counts?${countParams.toString()}${term ? `&${term}` : ""}`).catch(() => null),
+      ]);
+      setCounts(tally?.counts ?? null);
       const list = data.students || [];
       setStudents(list);
       setTotal(data.total ?? list.length);
@@ -223,18 +230,20 @@ export default function CoordinatorStudents() {
               // One row with the status chips and Sort by on a laptop screen (UX pass).
               className="w-full sm:w-72"
             />
-            <FilterChips
-              label="Account status"
-              value={status}
-              onChange={fromFirstPage(setStatus)}
-              options={[
-                { value: "all", label: "All" },
-                { value: "active", label: "Active" },
-                { value: "unassigned", label: "No supervisor" },
-                { value: "no-program", label: "No linked program" },
-                { value: "inactive", label: "Deactivated" },
-              ]}
-            />
+            <div className="w-full">
+              <SummaryTiles
+                label="Account status"
+                value={status}
+                onChange={fromFirstPage(setStatus)}
+                tiles={[
+                  { value: "all", label: "All students", count: counts?.all ?? null, icon: "users", tone: "brand" },
+                  { value: "active", label: "Active", count: counts?.active ?? null, icon: "check-circle", tone: "success" },
+                  { value: "unassigned", label: "No supervisor", count: counts?.unassigned ?? null, icon: "user", tone: counts?.unassigned ? "warning" : "neutral" },
+                  { value: "no-program", label: "No linked program", count: counts?.["no-program"] ?? null, icon: "cap", tone: counts?.["no-program"] ? "warning" : "neutral" },
+                  { value: "inactive", label: "Deactivated", count: counts?.inactive ?? null, icon: "ban", tone: "neutral" },
+                ]}
+              />
+            </div>
             <label className="ml-auto flex items-center gap-2 text-sm text-slate-600">
               Sort by
               <select

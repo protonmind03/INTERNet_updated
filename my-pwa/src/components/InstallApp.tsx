@@ -30,7 +30,7 @@ export default function InstallApp() {
 
   return (
     <Card>
-      <CardHeader
+      <CardHeader icon="download"
         title="Install INTERNet"
         description="Opens from your home screen like any other app, and keeps working when your signal drops."
       />

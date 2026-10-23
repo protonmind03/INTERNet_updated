@@ -143,7 +143,7 @@ export default function SupervisorPage() {
             )}
 
             <Card>
-              <CardHeader title="Interns" description="Active interns first." />
+              <CardHeader icon="users" title="Interns" description="Active interns first." />
               {data.interns.length === 0 ? (
                 <EmptyState icon="users" title="No interns assigned" />
               ) : (

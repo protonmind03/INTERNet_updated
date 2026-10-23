@@ -117,7 +117,7 @@ export default function CompletionChecklist({ title = "Completion checklist" }: 
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <Card>
-          <CardHeader
+          <CardHeader icon="check-circle"
             title={title}
             description={
               loading || items.length === 0

@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { HoursRoad } from "../../brand/motifs";
 import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
-import { Card, ErrorNotice, Skeleton, SkeletonRows } from "../../components/ui";
+import type { Tone } from "../../components/tones";
+import { Card, ErrorNotice, IconTile, Skeleton, SkeletonRows } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { daysUntil, dueLabel, formatDate, formatHours, greetingFor } from "../../lib/format";
@@ -78,6 +79,8 @@ function DashboardPage() {
 
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  // The completion checklist's lines (documents, hours…), for the shortcuts' status.
+  const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [closing, setClosing] = useState(false);
@@ -87,15 +90,21 @@ function DashboardPage() {
     if (!studentId) return;
     const id = encodeURIComponent(studentId);
     try {
-      const [summaryResponse, tasksResponse] = await Promise.all([
+      const [summaryResponse, tasksResponse, checklistResponse] = await Promise.all([
         savedFetch("student", "dashboard", `${API_URL}/api/dashboard/${id}`, withStudentAuth()),
         savedFetch("student", "tasks", `${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
+        // Extra to Today: without it the shortcuts simply show no status.
+        savedFetch("student", "completion", `${API_URL}/api/students/${id}/completion`, withStudentAuth()).catch(() => null),
       ]);
       if (!summaryResponse.ok) throw new Error("Could not load your progress.");
       setSummary((await summaryResponse.json()) as DashboardData);
       if (tasksResponse.ok) {
         const list = await tasksResponse.json();
         setTasks(Array.isArray(list) ? (list as Task[]) : []);
+      }
+      if (checklistResponse?.ok) {
+        const data = await checklistResponse.json().catch(() => ({}));
+        setChecklist(Array.isArray(data.items) ? (data.items as ChecklistItem[]) : []);
       }
       setError("");
     } catch (loadError) {
@@ -221,7 +230,7 @@ function DashboardPage() {
           )}
         </div>
         <div className="min-w-0 space-y-4">
-          <Shortcuts openTasks={openTasks.length} />
+          <Shortcuts openTasks={openTasks.length} overdueTasks={overdueTasks} checklist={checklist} />
           <UpNext tasks={openTasks} loading={loading} />
           {wide && <QrHandOff />}
         </div>
@@ -277,22 +286,46 @@ function HoursCard({ summary, loading }: { summary: DashboardData | null; loadin
 
 /* ---------- Shortcuts, as hairline rows ---------- */
 
-function Shortcuts({ openTasks }: { openTasks: number }) {
-  const rows: Array<{ label: string; to: string; icon: IconName; detail?: string }> = [
-    { label: "Time record", to: "/time-record", icon: "printer" },
-    { label: "Documents", to: "/documents", icon: "document" },
-    { label: "Weekly journal", to: "/journal", icon: "note" },
-    { label: "Tasks", to: "/task", icon: "tasks", detail: openTasks > 0 ? `${openTasks} open` : undefined },
+type ChecklistItem = { key: string; done: boolean; detail: string };
+
+/**
+ * Each shortcut with where it stands (system pass): an icon tile in a
+ * status tone and one line, from the completion checklist and the tasks.
+ * The tone always comes with its words.
+ */
+function Shortcuts({ openTasks, overdueTasks, checklist }: { openTasks: number; overdueTasks: number; checklist: ChecklistItem[] }) {
+  const line = (key: string) => checklist.find((item) => item.key === key);
+  const documents = line("documents");
+  const hours = line("hours");
+  const rows: Array<{ label: string; to: string; icon: IconName; tone: Tone; detail?: string }> = [
+    {
+      label: "Tasks",
+      to: "/task",
+      icon: "tasks",
+      tone: overdueTasks > 0 ? "danger" : openTasks > 0 ? "warning" : "success",
+      detail: overdueTasks > 0 ? `${overdueTasks} past due · ${openTasks} open` : openTasks > 0 ? `${openTasks} open` : "Nothing open",
+    },
+    {
+      label: "Documents",
+      to: "/documents",
+      icon: "document",
+      tone: documents ? (documents.done ? "success" : "warning") : "brand",
+      detail: documents?.detail,
+    },
+    { label: "Weekly report", to: "/journal", icon: "note", tone: "brand", detail: "One for each week you work" },
+    { label: "Time record", to: "/time-record", icon: "printer", tone: "brand", detail: hours?.detail },
   ];
   return (
     <Card>
       <ul className="divide-y divide-(--role-hairline)">
         {rows.map((row) => (
           <li key={row.to}>
-            <Link to={row.to} className="flex min-h-13 items-center gap-3 px-4 py-3 hover:bg-psu-50/50">
-              <Icon name={row.icon} size={19} className="shrink-0 text-psu-700" />
-              <span className="flex-1 text-[15px] font-semibold text-slate-900">{row.label}</span>
-              {row.detail && <span className="text-[13px] font-semibold text-slate-600">{row.detail}</span>}
+            <Link to={row.to} className="flex min-h-14 items-center gap-3 px-4 py-2.5 hover:bg-psu-50/50">
+              <IconTile icon={row.icon} tone={row.tone} size="sm" />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[15px] font-semibold text-slate-900">{row.label}</span>
+                {row.detail && <span className="block truncate text-[13px] text-slate-600">{row.detail}</span>}
+              </span>
               <Icon name="chevron-right" size={16} className="shrink-0 text-slate-400" />
             </Link>
           </li>

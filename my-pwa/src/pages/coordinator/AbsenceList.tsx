@@ -56,7 +56,7 @@ export default function AbsenceList({ search }: { search: string }) {
 
   return (
     <Card>
-      <CardHeader
+      <CardHeader icon="calendar"
         title="Absences"
         description="Filed by students and reviewed by their supervisors. You decide for a student who has none."
       />

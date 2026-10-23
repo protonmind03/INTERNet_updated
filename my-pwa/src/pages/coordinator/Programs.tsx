@@ -224,7 +224,7 @@ export default function CoordinatorPrograms() {
 
         {/* COLLEGES, PROGRAMS, MAJORS */}
         <Card>
-          <CardHeader
+          <CardHeader icon="cap"
             title="Colleges and programs"
             description="OJT applies: whether the program has OJT in its curriculum. Switch it off to keep a program out of the pickers on a student's form."
           />
@@ -314,7 +314,7 @@ export default function CoordinatorPrograms() {
 
         {/* BLOCKS */}
         <Card>
-          <CardHeader
+          <CardHeader icon="layers"
             title="Blocks"
             description={'A block is named from its program, year and section: "BSIT 4A". Closing a term makes its blocks inactive; reopening it brings them back.'}
           />

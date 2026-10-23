@@ -137,7 +137,7 @@ function RequiredDocuments() {
 
   return (
     <Card className="xl:col-span-2">
-      <CardHeader
+      <CardHeader icon="document"
         title="Required documents"
         description={
           loading
@@ -349,7 +349,7 @@ function StudentSchedule() {
   const selected = searchParams.get("student") || "";
   return (
     <Card>
-      <CardHeader title="Schedules" description="The days and hours students report for OJT." />
+      <CardHeader icon="calendar" title="Schedules" description="The days and hours students report for OJT." />
       <div className="mt-3 space-y-3 border-t border-slate-100 px-4 py-4 text-sm text-slate-700 sm:px-5">
         <p className="flex items-start gap-2 rounded-lg bg-slate-100 px-3 py-2.5">
           <Icon name="info" size={16} className="mt-0.5 shrink-0 text-slate-500" />

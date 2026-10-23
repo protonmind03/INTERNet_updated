@@ -269,7 +269,7 @@ export default function EvaluationPanel({ intern }: { intern: { student_id: stri
         </Card>
 
         <Card className="lg:col-span-3">
-          <CardHeader
+          <CardHeader icon="star"
             title="Past evaluations"
             description={`For ${chosenIntern.name}`}
           />

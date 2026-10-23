@@ -18,6 +18,7 @@ import { IconTile, Skeleton } from "./ui";
 |   SectionTitle   a section of a long page: icon tile, title, one line
 |   SummaryTiles   counts that are also the page's filter (Active 12,
 |                  No supervisor 3 …), one tile pressed at a time
+|   CountTiles     the same look for counts that only inform
 |   JumpNav        "On this page": the sections of a long page, with the
 |                  one in view marked
 |   Meter          a share as a bar, with its words beside it
@@ -146,6 +147,23 @@ export function SummaryTiles<T extends string>({ label, tiles, value, onChange }
         );
       })}
     </div>
+  );
+}
+
+/** Counts that only inform (the same look as SummaryTiles, without the choosing). */
+export function CountTiles({ label, tiles }: { label: string; tiles: { label: string; count: number | null; icon: IconName; tone: Tone }[] }) {
+  return (
+    <dl aria-label={label} className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))]">
+      {tiles.map((tile) => (
+        <div key={tile.label} className="card-hairline flex min-h-[4.5rem] items-center gap-3 rounded-xl px-3.5 py-2.5">
+          <IconTile icon={tile.icon} tone={tile.tone} size="sm" />
+          <div className="min-w-0">
+            <dd className="font-display tabular text-[22px] font-extrabold leading-none text-slate-900">{tile.count ?? "–"}</dd>
+            <dt className="mt-1 truncate text-[13px] font-semibold text-slate-700">{tile.label}</dt>
+          </div>
+        </div>
+      ))}
+    </dl>
   );
 }
 

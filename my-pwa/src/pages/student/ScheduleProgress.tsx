@@ -166,7 +166,7 @@ export default function ScheduleProgress({
   return (
     <div className="space-y-5">
       <Card>
-        <CardHeader title="Hours over time" description="If you keep to your schedule." />
+        <CardHeader icon="chart" title="Hours over time" description="If you keep to your schedule." />
         <div className="px-4 pb-4 sm:px-5">
           <svg
             viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
@@ -227,7 +227,7 @@ export default function ScheduleProgress({
 
       <div className="grid gap-5 md:grid-cols-2">
         <Card>
-          <CardHeader title="Milestones" />
+          <CardHeader icon="map-pin" title="Milestones" />
           <ol className="space-y-2 px-4 pb-4 sm:px-5" aria-label="Milestones">
             {milestones.map((milestone) => (
               <li key={milestone.share} className="flex items-center justify-between gap-3 text-sm">
@@ -244,7 +244,7 @@ export default function ScheduleProgress({
         </Card>
 
         <Card>
-          <CardHeader title="Change since last week" />
+          <CardHeader icon="trend-up" title="Change since last week" />
           <p className="px-4 pb-4 text-sm text-slate-700 sm:px-5">
             {moved === null
               ? "Not enough history yet: this shows once a week of daily projections is kept."
@@ -256,7 +256,7 @@ export default function ScheduleProgress({
       </div>
 
       <Card>
-        <CardHeader title="Rhythm" description="The last eight weeks, Sunday to Saturday. Darker is more hours." />
+        <CardHeader icon="activity" title="Rhythm" description="The last eight weeks, Sunday to Saturday. Darker is more hours." />
         <div className="px-4 pb-4 sm:px-5">
           <svg viewBox="0 0 280 260" role="img" aria-label={`Rhythm of the last eight weeks: ${rhythm.flat().filter((cell) => cell.hours > 0).length} days with hours, ${rhythm.flat().filter((cell) => cell.late).length} late.`} className="h-auto w-full max-w-md">
             {["S", "M", "T", "W", "T", "F", "S"].map((name, index) => (

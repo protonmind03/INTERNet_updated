@@ -305,7 +305,7 @@ export default function CoordinatorDocuments() {
         />
 
         <Card>
-          <CardHeader
+          <CardHeader icon="trend-up"
             title="Requirement progress"
             description={`A requirement is complete once the supervisor approves the student's file. ${total} active ${
               total === 1 ? "requirement" : "requirements"
@@ -398,7 +398,7 @@ export default function CoordinatorDocuments() {
         </Card>
 
         <Card>
-          <CardHeader
+          <CardHeader icon="inbox"
             title="Submitted files"
             description={
               loading ? undefined : `${visibleDocuments.length} of ${documents.length} shown, newest first`

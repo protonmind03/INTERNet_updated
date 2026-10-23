@@ -114,7 +114,7 @@ export default function CoordinatorHolidays() {
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <Card>
-          <CardHeader
+          <CardHeader icon="calendar"
             title="Upcoming"
             description={
               loading || upcoming.length === 0
@@ -139,7 +139,7 @@ export default function CoordinatorHolidays() {
 
         {!loading && past.length > 0 && (
           <Card>
-            <CardHeader title="Past" description="Kept so earlier time records still show them." />
+            <CardHeader icon="clock" title="Past" description="Kept so earlier time records still show them." />
             <div className="mt-3">{list(past)}</div>
           </Card>
         )}

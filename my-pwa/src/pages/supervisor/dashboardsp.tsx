@@ -410,6 +410,7 @@ export default function SupervisorDashboard() {
           <UnlessInMenu>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <FactCard
+              icon="clock"
               title="Time-ins to verify"
               value={countOf("time-ins")}
               unit={countOf("time-ins") === 1 ? "log" : "logs"}
@@ -419,6 +420,7 @@ export default function SupervisorDashboard() {
               action="Start"
             />
             <FactCard
+              icon="tasks"
               title="Tasks to review"
               value={countOf("tasks")}
               unit={countOf("tasks") === 1 ? "task" : "tasks"}
@@ -428,6 +430,7 @@ export default function SupervisorDashboard() {
               action="Open"
             />
             <FactCard
+              icon="note"
               title="Weekly reports to read"
               value={countOf("reports")}
               unit={countOf("reports") === 1 ? "report" : "reports"}
@@ -437,6 +440,7 @@ export default function SupervisorDashboard() {
               action="Read"
             />
             <FactCard
+              icon="star"
               title="Evaluations due"
               value={finalDue.length}
               unit={finalDue.length === 1 ? "intern" : "interns"}

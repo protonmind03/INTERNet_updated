@@ -171,7 +171,7 @@ export default function WeeklyJournal() {
 
         {!loading && (earlier.length > 0 || missed.length > 0) && (
           <Card>
-            <CardHeader title="Earlier weeks" />
+            <CardHeader icon="list" title="Earlier weeks" />
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
               {[...missed.map((week) => ({ week, journal: undefined as Journal | undefined })),
                 ...earlier.map((journal) => ({ week: journal.week_start, journal }))]

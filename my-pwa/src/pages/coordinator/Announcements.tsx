@@ -199,7 +199,7 @@ export default function CoordinatorAnnouncements() {
         </Card>
 
         <Card className="lg:col-span-3">
-          <CardHeader title="Sent announcements" description="Newest first" />
+          <CardHeader icon="megaphone" title="Sent announcements" description="Newest first" />
           <div className="mt-3">
             {loadError && (
               <div className="px-4 pb-3 sm:px-5">

@@ -559,7 +559,7 @@ export default function SupervisorAttendanceApproval() {
         </Card>
 
         <Card>
-          <CardHeader
+          <CardHeader icon="calendar"
             title="Absences"
             description="Filed by your interns. Pending ones are waiting in Review."
           />

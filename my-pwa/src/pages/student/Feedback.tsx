@@ -127,7 +127,7 @@ export default function EvaluationsPanel() {
 
         {final.evaluation && (
           <Card>
-            <CardHeader
+            <CardHeader icon="star"
               title="Final evaluation"
               description="Your supervisor's evaluation at the end of your OJT"
             />
@@ -139,7 +139,7 @@ export default function EvaluationsPanel() {
 
         <div className="grid gap-5 lg:grid-cols-5">
           <Card className="lg:col-span-3">
-            <CardHeader
+            <CardHeader icon="star"
               title="Evaluations of your performance"
               description="From your supervisor and OJT coordinator"
               action={
@@ -244,7 +244,7 @@ export default function EvaluationsPanel() {
 
             {!loading && given.length > 0 && (
               <Card>
-                <CardHeader title="Ratings you sent" />
+                <CardHeader icon="star" title="Ratings you sent" />
                 <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
                   {given.map((item) => (
                     <EvaluationRow key={item.id} evaluation={item} />

@@ -5,7 +5,6 @@ import {
   CardHeader,
   EmptyState,
   ErrorNotice,
-  ProgressBar,
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
@@ -14,6 +13,7 @@ import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { withoutCameraDetails } from "../../lib/image";
 import { formatFileSize, UPLOAD_ACCEPT, UPLOAD_HINT, uploadProblem } from "../../lib/files";
+import { CountTiles } from "../../components/display";
 import { formatDate, phDateKey } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { useDeliverables, type WeeklyItem } from "./useDeliverables";
@@ -124,6 +124,7 @@ export default function Documents() {
     const state = stateOf(latestByType.get(item.name));
     return state === "missing" || state === "rejected";
   }).length;
+  const inState = (wanted: RequirementState) => requirements.filter((item) => stateOf(latestByType.get(item.name)) === wanted).length;
 
   const startUpload = (docType: string, item: WeeklyItem | null = null) => {
     targetType.current = docType;
@@ -211,27 +212,24 @@ export default function Documents() {
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         {!loading && requirements.length > 0 && (
-          <Card className="p-4 sm:p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <p className="text-sm font-semibold text-slate-900">
-                {approved} of {requirements.length} requirements approved
-              </p>
-              <p className="text-sm text-slate-600">
-                {needsAction === 0
-                  ? "Nothing left to upload."
-                  : `${needsAction} still ${needsAction === 1 ? "needs" : "need"} your upload.`}
-              </p>
-            </div>
-            <ProgressBar
-              value={(approved / requirements.length) * 100}
-              className="mt-3"
-              label="Requirements approved"
+          <div className="space-y-3">
+            <CountTiles
+              label="Your requirements"
+              tiles={[
+                { label: `Approved of ${requirements.length}`, count: approved, icon: "check-circle", tone: "success" },
+                { label: "Under review", count: inState("pending"), icon: "hourglass", tone: "info" },
+                { label: "To upload", count: inState("missing"), icon: "upload", tone: inState("missing") > 0 ? "warning" : "neutral" },
+                { label: "Returned to you", count: inState("rejected"), icon: "refresh", tone: inState("rejected") > 0 ? "danger" : "neutral" },
+              ]}
             />
-          </Card>
+            <p className="text-sm text-slate-600">
+              {needsAction === 0 ? "Nothing left to upload." : `${needsAction} still ${needsAction === 1 ? "needs" : "need"} your upload.`}
+            </p>
+          </div>
         )}
 
         <Card data-focus="requirements">
-          <CardHeader
+          <CardHeader icon="document"
             title="OJT requirements"
             description={`${UPLOAD_HINT}, up to ${MAX_DOCUMENT_MB} MB each`}
           />
@@ -267,7 +265,7 @@ export default function Documents() {
 
         {due.weekly.length > 0 && (
           <Card>
-            <CardHeader
+            <CardHeader icon="calendar"
               title="Weekly requirements"
               description="One upload for each week, due on its Sunday. These are separate from your weekly report."
             />
@@ -332,7 +330,7 @@ export default function Documents() {
 
         {!loading && documents.length > 0 && (
           <Card>
-            <CardHeader
+            <CardHeader icon="inbox"
               title="Upload history"
               description="Every file you have submitted, newest first"
             />

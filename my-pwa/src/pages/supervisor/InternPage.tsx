@@ -383,7 +383,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
       </Card>
 
       <Card>
-        <CardHeader
+        <CardHeader icon="inbox" tone="warning"
           title="Waiting for you"
           description={
             waiting.length + (finalDue ? 1 : 0) === 0
@@ -430,7 +430,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
       </Card>
 
       <Card>
-        <CardHeader
+        <CardHeader icon="calendar"
           title="Weekly schedule"
           description={
             shifts?.[0]?.pattern_weeks === 2
@@ -649,7 +649,7 @@ function Tasks({ intern, work, onReview }: Reviewable) {
   const tasks = work.tasks.filter((task) => sameId(task.student_id, intern.student_id));
   return (
     <Card>
-      <CardHeader
+      <CardHeader icon="tasks"
         title={`Tasks (${tasks.length})`}
         description="Assign, change or cancel a task on the Tasks page."
         action={
@@ -730,7 +730,7 @@ function Documents({ intern, work, onReview }: Reviewable) {
   };
   return (
     <Card>
-      <CardHeader title={`Documents (${documents.length})`} description="What this intern has uploaded." />
+      <CardHeader icon="document" title={`Documents (${documents.length})`} description="What this intern has uploaded." />
       {work.loading ? (
         <SkeletonRows rows={4} />
       ) : documents.length === 0 ? (
@@ -785,7 +785,7 @@ function Reports({ intern, work, onReview }: Reviewable) {
   } as const;
   return (
     <Card>
-      <CardHeader title={`Weekly reports (${reports.length})`} description="One a week, written by the intern." />
+      <CardHeader icon="note" title={`Weekly reports (${reports.length})`} description="One a week, written by the intern." />
       {work.loading ? (
         <SkeletonRows rows={4} />
       ) : reports.length === 0 ? (

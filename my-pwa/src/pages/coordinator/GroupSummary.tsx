@@ -116,7 +116,7 @@ export default function GroupSummary({ query }: { query: string }) {
     <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-2">
       {tables.map((table) => (
         <Card key={table.key} className="min-w-0">
-          <CardHeader title={table.title} description={table.description} />
+          <CardHeader icon="layers" title={table.title} description={table.description} />
           <div className="mt-3">
             {loading ? (
               <SkeletonRows rows={3} />

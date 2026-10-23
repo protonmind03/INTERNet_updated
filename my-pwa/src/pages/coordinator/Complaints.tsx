@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import ComplaintThread from "../../components/ComplaintThread";
-import Icon from "../../components/Icon";
+import { SummaryTiles } from "../../components/display";
+import Icon, { type IconName } from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import {
   Button,
   Card,
   EmptyState,
   ErrorNotice,
-  FilterChips,
+  IconTile,
   FormError,
   Modal,
   SearchField,
@@ -58,6 +59,24 @@ function subjectOf(complaint: Complaint): string {
 /** Complaints shown at a time; the server sends one page of them. */
 const PAGE_SIZE = 15;
 
+/** A status's edge on its row: new ones stand out, settled ones are quiet. */
+const STATUS_ACCENT: Record<string, string> = {
+  Pending: "border-(--status-warning-ink)",
+  "In Review": "border-(--status-info-ink)",
+  Resolved: "border-(--status-success-ink)",
+  Dismissed: "border-slate-300",
+};
+
+/** A concern's category as an icon, so a list of them can be scanned. */
+function categoryIcon(category: string): IconName {
+  const word = category.toLowerCase();
+  if (word.includes("safety") || word.includes("unsafe")) return "shield";
+  if (word.includes("attendance") || word.includes("hours")) return "clock";
+  if (word.includes("harass") || word.includes("conduct") || word.includes("behav")) return "users";
+  if (word.includes("task") || word.includes("work")) return "tasks";
+  return "flag";
+}
+
 export default function CoordinatorComplaints() {
   const [searchParams] = useSearchParams();
   const [complaints, setComplaints] = useState<Complaint[]>([]);
@@ -72,6 +91,7 @@ export default function CoordinatorComplaints() {
   // The server searches, filters and pages; only one page is here.
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState<Record<Filter, number> | null>(null);
   // A changed search or filter starts again from the first page.
   const fromFirstPage =
     <T,>(setter: (value: T) => void) =>
@@ -87,10 +107,15 @@ export default function CoordinatorComplaints() {
     });
     if (filter !== "all") params.set("status", filter);
     if (search.trim()) params.set("q", search.trim());
+    const countParams = new URLSearchParams();
+    if (search.trim()) countParams.set("q", search.trim());
     try {
-      const data = await coordinatorRequest<{ complaints: Complaint[]; total?: number }>(
-        `/api/coordinator/complaints?${params.toString()}`
-      );
+      const [data, tally] = await Promise.all([
+        coordinatorRequest<{ complaints: Complaint[]; total?: number }>(`/api/coordinator/complaints?${params.toString()}`),
+        // Extra to the list: without it the tiles show no number.
+        coordinatorRequest<{ counts: Record<Filter, number> }>(`/api/coordinator/complaints/counts?${countParams.toString()}`).catch(() => null),
+      ]);
+      setCounts(tally?.counts ?? null);
       const list = data.complaints || [];
       setComplaints(list);
       setTotal(data.total ?? list.length);
@@ -129,19 +154,19 @@ export default function CoordinatorComplaints() {
             placeholder="Search by person, company or wording"
             className="w-full sm:w-80"
           />
-          <FilterChips
-            label="Filter by status"
-            value={filter}
-            onChange={fromFirstPage(setFilter)}
-            options={[
-              { value: "all", label: "All" },
-              { value: "Pending", label: "New" },
-              { value: "In Review", label: "In review" },
-              { value: "Resolved", label: "Resolved" },
-              { value: "Dismissed", label: "Dismissed" },
-            ]}
-          />
         </div>
+        <SummaryTiles
+          label="Filter by status"
+          value={filter}
+          onChange={fromFirstPage(setFilter)}
+          tiles={[
+            { value: "all", label: "All concerns", count: counts?.all ?? null, icon: "flag", tone: "brand" },
+            { value: "Pending", label: "New", count: counts?.Pending ?? null, icon: "bell", tone: counts?.Pending ? "warning" : "neutral" },
+            { value: "In Review", label: "In review", count: counts?.["In Review"] ?? null, icon: "search", tone: "info" },
+            { value: "Resolved", label: "Resolved", count: counts?.Resolved ?? null, icon: "check-circle", tone: "success" },
+            { value: "Dismissed", label: "Dismissed", count: counts?.Dismissed ?? null, icon: "ban", tone: "neutral" },
+          ]}
+        />
 
         <Card>
           {loading ? (
@@ -159,8 +184,9 @@ export default function CoordinatorComplaints() {
                   <button
                     type="button"
                     onClick={() => setOpenId(item.id)}
-                    className="flex w-full items-start gap-4 px-4 py-4 text-left first:rounded-t-xl last:rounded-b-xl hover:bg-slate-50 sm:px-5"
+                    className={`flex w-full items-start gap-4 border-l-4 px-4 py-4 text-left first:rounded-tl-xl last:rounded-bl-xl hover:bg-slate-50 sm:px-5 ${STATUS_ACCENT[item.status] ?? "border-transparent"}`}
                   >
+                    <IconTile icon={categoryIcon(item.category)} tone={item.status === "Pending" ? "warning" : item.status === "Resolved" ? "success" : "neutral"} size="sm" className="mt-0.5" />
                     <div className="min-w-0 flex-1">
                       <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
                         <p className="text-sm font-semibold text-slate-900">{item.category}</p>
@@ -178,7 +204,7 @@ export default function CoordinatorComplaints() {
                 </li>
               ))}
             </ul>
-            <Pagination state={pager} noun="complaint" />
+            <Pagination state={pager} noun="concern" />
             </>
           )}
         </Card>

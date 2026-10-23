@@ -6219,6 +6219,51 @@ app.post("/api/login/coordinator", loginGuard("coordinator"), async (req, res) =
 |--------------------------------------------------------------------------
 */
 
+/*
+| How many students each status chip of the Students page would show
+| (system pass): the same search and filters as the list, one count each,
+| in one query, so the chips can say "Active 21" before they are chosen.
+*/
+app.get(
+  "/api/coordinator/students/counts",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const q = typeof req.query.q === "string" ? `%${req.query.q}%` : "%";
+      const scope = studentScope(req.query);
+      if ("problem" in scope) return res.status(400).json({ message: scope.problem });
+      const bound = scope.bind(
+        `
+        SELECT
+          COUNT(*)::int AS all_students,
+          COUNT(*) FILTER (WHERE s.is_active = TRUE)::int AS active,
+          COUNT(*) FILTER (WHERE s.is_active = FALSE)::int AS inactive,
+          COUNT(*) FILTER (WHERE s.is_active = TRUE AND sup.supervisor_id IS NULL)::int AS unassigned,
+          COUNT(*) FILTER (WHERE s.is_active = TRUE AND s.program_id IS NULL)::int AS no_program
+        FROM students s
+        LEFT JOIN supervisors sup
+          ON ${sqlSameId("sup.supervisor_id", "s.supervisor_id")}
+        WHERE (s.name ILIKE $1 OR s.email ILIKE $1 OR s.student_id::text ILIKE $1 OR s.company ILIKE $1 OR s.program ILIKE $1)${scope.sql}
+        `,
+        [q]
+      );
+      const row = (await pool.query(bound.text, bound.values)).rows[0] ?? {};
+      return res.json({
+        counts: {
+          all: Number(row.all_students) || 0,
+          active: Number(row.active) || 0,
+          inactive: Number(row.inactive) || 0,
+          unassigned: Number(row.unassigned) || 0,
+          "no-program": Number(row.no_program) || 0,
+        },
+      });
+    } catch (error) {
+      console.error("STUDENT COUNTS ERROR:", error);
+      return res.status(500).json({ message: "Failed to count students." });
+    }
+  }
+);
+
 app.get(
   "/api/coordinator/students",
   requireCoordinator,
@@ -7421,6 +7466,50 @@ app.get(
 | COORDINATOR COMPLAINT OVERSIGHT
 |--------------------------------------------------------------------------
 */
+
+/*
+| How many concerns each status tile of the Concerns page would show
+| (system pass), for the same search as the list, in one query.
+*/
+app.get(
+  "/api/coordinator/complaints/counts",
+  requireCoordinator,
+  async (req, res) => {
+    try {
+      const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
+      if (query.length > 100) return res.status(400).json({ message: "Search query must be 100 characters or fewer." });
+      const result = await pool.query<{ status: string; count: number }>(
+        `
+        SELECT c.status, COUNT(*)::int AS count
+        FROM complaints c
+        LEFT JOIN students s ON s.student_id::text = c.student_id::text
+        LEFT JOIN supervisors sup ON sup.supervisor_id::text = c.filed_by_supervisor_id::text
+        WHERE ($1::text IS NULL
+            OR c.id::text ILIKE $1
+            OR c.student_id::text ILIKE $1
+            OR c.category ILIKE $1
+            OR c.description ILIKE $1
+            OR COALESCE(c.reported_student_name, '') ILIKE $1
+            OR COALESCE(c.company_name, '') ILIKE $1
+            OR COALESCE(c.supervisor_name, '') ILIKE $1
+            OR COALESCE(s.name, sup.name, '') ILIKE $1
+            OR c.created_at::text ILIKE $1)
+        GROUP BY c.status
+        `,
+        [query ? `%${query}%` : null]
+      );
+      const counts: Record<string, number> = { all: 0, Pending: 0, "In Review": 0, Resolved: 0, Dismissed: 0 };
+      for (const row of result.rows) {
+        counts[row.status] = (counts[row.status] ?? 0) + row.count;
+        counts.all += row.count;
+      }
+      return res.json({ counts });
+    } catch (error) {
+      console.error("COMPLAINT COUNTS ERROR:", error);
+      return res.status(500).json({ message: "Failed to count concerns." });
+    }
+  }
+);
 
 app.get(
   "/api/coordinator/complaints",

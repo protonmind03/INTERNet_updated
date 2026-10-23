@@ -1,5 +1,6 @@
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { SummaryTiles } from "../../components/display";
 import Icon from "../../components/Icon";
 import {
   Button,
@@ -19,23 +20,42 @@ import { internPath } from "./internPath";
 import { useSupervisorWork, type Intern, type SupervisorWork } from "./useSupervisorWork";
 import { sameId } from "../../lib/ids";
 
+type Shown = "all" | "waiting" | "tasks" | "almost";
+
+/** Within this share of their hours, an intern counts as almost done (the coordinator's Home uses the same tenth). */
+const ALMOST_DONE = 90;
+
 export default function SupervisorInterns() {
   const supervisor = useAccount("supervisor");
   const work = useSupervisorWork(supervisor?.supervisor_id);
   const { interns, loading } = work;
 
   const [search, setSearch] = useState("");
+  const [shown, setShown] = useState<Shown>("all");
   const [openId, setOpenId] = useState<string | null>(null);
 
+  // Which interns each tile counts (system pass): the tiles are the page's filter.
+  const fits = useCallback(
+    (intern: (typeof interns)[number], which: Shown) =>
+      which === "all" ||
+      (which === "waiting" && pendingFor(work, intern.student_id) > 0) ||
+      (which === "tasks" && intern.active_tasks > 0) ||
+      (which === "almost" && intern.completion >= ALMOST_DONE),
+    [work]
+  );
   const visible = useMemo(() => {
     const text = search.trim().toLowerCase();
-    if (!text) return interns;
-    return interns.filter((intern) =>
-      [intern.name, intern.student_id, intern.program, intern.email]
-        .filter(Boolean)
-        .some((value) => String(value).toLowerCase().includes(text))
+    return interns.filter(
+      (intern) =>
+        fits(intern, shown) &&
+        (!text ||
+          [intern.name, intern.student_id, intern.program, intern.email]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(text)))
     );
-  }, [interns, search]);
+  }, [interns, search, shown, fits]);
+  const countOf = (which: Shown) => (loading ? null : interns.filter((intern) => fits(intern, which)).length);
+  const waitingCount = countOf("waiting") ?? 0;
 
   const opened = interns.find((intern) => sameId(intern.student_id, openId)) ?? null;
 
@@ -50,6 +70,20 @@ export default function SupervisorInterns() {
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
+
+        {!loading && interns.length > 0 && (
+          <SummaryTiles
+            label="Show interns"
+            value={shown}
+            onChange={setShown}
+            tiles={[
+              { value: "all", label: "All interns", count: countOf("all"), icon: "users", tone: "brand" },
+              { value: "waiting", label: "Work waiting for you", count: countOf("waiting"), icon: "inbox", tone: waitingCount > 0 ? "warning" : "neutral" },
+              { value: "tasks", label: "With open tasks", count: countOf("tasks"), icon: "tasks", tone: "info" },
+              { value: "almost", label: "Almost done", count: countOf("almost"), icon: "check-circle", tone: "success" },
+            ]}
+          />
+        )}
 
         {interns.length > 3 && (
           <label className="relative block max-w-sm">
@@ -83,7 +117,7 @@ export default function SupervisorInterns() {
           <Card>
             <EmptyState
               icon="users"
-              title={interns.length === 0 ? "No interns yet" : "No interns match your search"}
+              title={interns.length === 0 ? "No interns yet" : "No interns match"}
               description={
                 interns.length === 0
                   ? "Your OJT coordinator assigns students to you."
@@ -100,7 +134,7 @@ export default function SupervisorInterns() {
                   <button
                     type="button"
                     onClick={() => setOpenId(intern.student_id)}
-                    className="block h-full w-full rounded-xl border border-slate-200/80 bg-white p-5 text-left shadow-card transition-[border-color,box-shadow] duration-200 hover:border-psu-300 hover:shadow-raised"
+                    className={`card-hairline block h-full w-full rounded-2xl border-l-4 p-5 text-left transition-colors hover:bg-psu-50/40 ${pending > 0 ? "border-l-(--status-warning-ink)" : "border-l-transparent"}`}
                   >
                     <div className="flex items-center gap-3">
                       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-psu-700 text-sm font-bold text-white">
@@ -129,12 +163,15 @@ export default function SupervisorInterns() {
                       label={`${intern.completion} percent of required hours`}
                     />
 
-                    <p className="mt-4 text-sm text-slate-600">
-                      {intern.active_tasks} open {intern.active_tasks === 1 ? "task" : "tasks"}
+                    <p className="mt-4 flex flex-wrap items-center gap-2 text-sm text-slate-600">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Icon name="tasks" size={15} className="text-slate-500" />
+                        {intern.active_tasks} open {intern.active_tasks === 1 ? "task" : "tasks"}
+                      </span>
                       {pending > 0 && (
-                        <span className="font-semibold text-amber-700">
-                          {" "}
-                          · {pending} waiting for you
+                        <span className="st-badge st-badge--waiting">
+                          <Icon name="inbox" size={13} />
+                          {pending} waiting for you
                         </span>
                       )}
                     </p>

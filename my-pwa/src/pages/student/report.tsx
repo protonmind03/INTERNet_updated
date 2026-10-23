@@ -417,7 +417,7 @@ export default function ConcernsPanel() {
           </Card>
 
           <Card>
-            <CardHeader title="Your concerns" />
+            <CardHeader icon="flag" title="Your concerns" />
             <div className="mt-3">
               {reportsLoading ? (
                 <SkeletonRows rows={2} />

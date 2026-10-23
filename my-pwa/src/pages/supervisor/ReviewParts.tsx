@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { Register, Stamp } from "../../brand/motifs";
+import { MetricCard } from "../../components/display";
 import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, Skeleton } from "../../components/ui";
@@ -479,22 +480,7 @@ export function ThisWeek({ work, finalDue, projections }: { work: SupervisorWork
 
 /* ---------- Plain fact cards (computers) ---------- */
 
-export function FactCard({ title, value, unit, line, tip, to, action }: { title: string; value: number; unit: string; line: string; tip: string; to: string; action: string }) {
-  return (
-    <div className="card-hairline flex flex-col rounded-2xl p-4">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-[13.5px] font-bold text-slate-800">{title}</h3>
-        <InfoTip label={`About ${title.toLowerCase()}`} text={tip} />
-      </div>
-      <p className="mt-1">
-        <span className="font-display tabular text-[30px] font-extrabold leading-none text-slate-900">{value}</span>{" "}
-        <span className="text-[14px] text-slate-700">{unit}</span>
-      </p>
-      <p className="mt-1 text-[13px] text-slate-600">{line}</p>
-      <Link to={to} className="mt-auto inline-flex min-h-11 items-center gap-1 pt-1 text-sm font-bold text-psu-700 hover:underline">
-        {action}
-        <Icon name="arrow-right" size={15} />
-      </Link>
-    </div>
-  );
+/** A count of what waits, as a MetricCard (components/display.tsx): amber while something waits, grey when nothing does. */
+export function FactCard({ icon, title, value, unit, line, tip, to, action }: { icon: IconName; title: string; value: number; unit: string; line: string; tip: string; to: string; action: string }) {
+  return <MetricCard icon={icon} tone={value > 0 ? "warning" : "neutral"} title={title} tip={tip} value={value} unit={unit} line={line} to={to} action={action} />;
 }

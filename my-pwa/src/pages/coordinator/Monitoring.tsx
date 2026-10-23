@@ -3,6 +3,7 @@ import { Link, useSearchParams } from "react-router-dom";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import AttestedNote, { type OfflineAttestation } from "../../components/AttestedNote";
 import DateRangeFilter from "../../components/DateRangeFilter";
+import { SummaryTiles } from "../../components/display";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import InfoTip from "../../components/InfoTip";
@@ -12,7 +13,6 @@ import {
   CardHeader,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   FormError,
   Modal,
   ProgressBar,
@@ -260,16 +260,18 @@ export default function CoordinatorMonitoring() {
               placeholder="Search by student, company or supervisor"
               className="w-full sm:w-80"
             />
-            <FilterChips
-              label="Which students"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "all", label: "All students", count: rows.length },
-                { value: "attention", label: "Needs attention", count: attentionCount },
-                { value: "risk", label: "At risk", count: riskCount },
-              ]}
-            />
+            <div className="w-full">
+              <SummaryTiles
+                label="Which students"
+                value={scope}
+                onChange={setScope}
+                tiles={[
+                  { value: "all", label: "All students", count: rows.length, icon: "users", tone: "brand" },
+                  { value: "attention", label: "Needs attention", count: attentionCount, icon: "alert", tone: attentionCount > 0 ? "warning" : "neutral" },
+                  { value: "risk", label: "At risk", count: riskCount, icon: "hourglass", tone: riskCount > 0 ? "danger" : "neutral" },
+                ]}
+              />
+            </div>
             <DateRangeFilter
               from={dateFrom}
               to={dateTo}
@@ -414,7 +416,7 @@ export default function CoordinatorMonitoring() {
 
         <Card>
           <div id="flagged-logs" className="scroll-mt-4">
-            <CardHeader
+            <CardHeader icon="alert" tone="warning"
               title={focused ? `Flagged logs for ${focused.name}` : "Flagged attendance logs"}
               description="Rejected logs, logs with no time-out, and logs left unverified for more than 2 days."
               action={
