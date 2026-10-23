@@ -65,16 +65,25 @@ export default function EntryPictures({
     told.current = onCount;
   }, [onCount]);
 
+  // True when the list could not be had after its tries: said, with a way to try again.
+  const [failed, setFailed] = useState(false);
   const load = useCallback(async () => {
-    try {
-      const list = await listPictures(role, owner, ownerId);
-      setPictures(list.attachments);
-      setCanChange(list.can_add && role !== "coordinator");
-      told.current?.(list.attachments.length, list.can_add);
-    } catch {
-      // The entry reads without its pictures; nothing else on the page depends on them.
-      setPictures([]);
+    // A busy server or a moment without signal: two more tries, a second and a half apart.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      try {
+        const list = await listPictures(role, owner, ownerId);
+        setPictures(list.attachments);
+        setCanChange(list.can_add && role !== "coordinator");
+        setFailed(false);
+        told.current?.(list.attachments.length, list.can_add);
+        return;
+      } catch {
+        if (attempt < 2) await new Promise((resolve) => window.setTimeout(resolve, 1500));
+      }
     }
+    // The entry reads without its pictures, and says so, rather than hiding that it has some.
+    setPictures([]);
+    setFailed(true);
   }, [role, owner, ownerId]);
 
   const none = count === 0;
@@ -161,6 +170,17 @@ export default function EntryPictures({
 
   const touchStart = useRef<number | null>(null);
 
+  if (!none && failed && pictures.length === 0) {
+    return (
+      <p className={`flex flex-wrap items-center gap-2 text-sm text-slate-600 ${className}`}>
+        <Icon name="image" size={16} className="text-slate-500" />
+        {count === 1 ? "1 picture" : count ? `${count} pictures` : "Pictures"} could not be loaded.
+        <button type="button" onClick={() => void load()} className="inline-flex min-h-11 items-center font-semibold text-psu-700 hover:underline">
+          Try again
+        </button>
+      </p>
+    );
+  }
   if (none || pictures.length === 0) return null;
 
   const altOf = (picture: Picture, index: number) =>
