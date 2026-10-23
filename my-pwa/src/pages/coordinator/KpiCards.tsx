@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
-import Icon from "../../components/Icon";
-import InfoTip from "../../components/InfoTip";
+import { MetricCard } from "../../components/display";
+import Icon, { type IconName } from "../../components/Icon";
 import { Skeleton } from "../../components/ui";
 import { coordinatorRequest } from "./request";
 
@@ -12,7 +11,9 @@ import { coordinatorRequest } from "./request";
 |
 | PSU redesign, Section 7: plain figures. Each card is the value, one line
 | of what it was worked out from, and an "i" with exactly what is counted;
-| the title opens the list behind the figure. There are no targets, no
+| "See the list" opens the list behind the figure. System pass: drawn as a
+| MetricCard (components/display.tsx), with the figure's subject as an
+| icon and a meter for a share. There are no targets, no
 | comparison with an earlier week and no small charts, and nothing is
 | coloured as a score.
 |
@@ -38,24 +39,31 @@ function show(value: number, unit: Kpi["unit"]): { figure: string; unit: string 
   return { figure: String(value), unit: "" };
 }
 
+/** Each figure's subject, drawn as its icon. The tone is the role's own: a figure here is never coloured as a score. */
+const KPI_ICON: Record<string, IconName> = {
+  on_track: "trend-up",
+  attendance_rate: "calendar",
+  review_time: "hourglass",
+  requirements_complete: "document",
+  old_concerns: "flag",
+  agreements_ending: "briefcase",
+};
+
 function KpiCard({ kpi }: { kpi: Kpi }) {
   const shown = kpi.value === null ? null : show(kpi.value, kpi.unit);
   return (
-    <div className="card-hairline flex flex-col rounded-2xl p-4">
-      <div className="flex items-start justify-between gap-2">
-        <h3 className="text-[13.5px] font-bold text-slate-800">
-          <Link to={kpi.link} className="inline-flex min-h-11 items-center underline-offset-2 hover:underline">
-            {kpi.label}
-          </Link>
-        </h3>
-        <InfoTip label={`About ${kpi.label}`} text={kpi.definition} />
-      </div>
-      <p className="mt-1.5">
-        <span className="font-display tabular text-[30px] font-extrabold leading-none text-slate-900">{shown ? shown.figure : "–"}</span>
-        {shown?.unit && <span className="text-[14px] text-slate-700"> {shown.unit}</span>}
-      </p>
-      <p className="mt-1 text-[13px] text-slate-600">{kpi.value === null ? "Nothing to count yet" : kpi.basis}</p>
-    </div>
+    <MetricCard
+      icon={KPI_ICON[kpi.key] ?? "chart"}
+      title={kpi.label}
+      tip={kpi.definition}
+      value={shown ? shown.figure : "–"}
+      unit={shown?.unit}
+      meter={kpi.unit === "percent" && kpi.value !== null ? kpi.value / 100 : undefined}
+      meterLabel={kpi.label}
+      line={kpi.value === null ? "Nothing to count yet" : kpi.basis}
+      to={kpi.link}
+      action="See the list"
+    />
   );
 }
 
@@ -84,7 +92,7 @@ export default function KpiCards({ query }: { query: string }) {
 
   return (
     <section aria-labelledby="kpi-heading">
-      <h2 id="kpi-heading" className="mb-3 text-[16px] font-bold text-slate-900">
+      <h2 id="kpi-heading" className="sr-only">
         Key figures
       </h2>
       {failed && loading ? (
@@ -95,7 +103,7 @@ export default function KpiCards({ query }: { query: string }) {
       ) : loading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {[0, 1, 2, 3, 4, 5].map((card) => (
-            <Skeleton key={card} className="h-[118px] rounded-2xl" />
+            <Skeleton key={card} className="h-[204px] rounded-2xl" />
           ))}
         </div>
       ) : (

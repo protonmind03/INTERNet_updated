@@ -170,6 +170,35 @@ const PATHS = {
     </>
   ),
   chart: <path d="M4 20V11M10 20V4M16 20v-7M21.5 20h-19" />,
+  // System pass: glyphs for figures and summaries.
+  hourglass: <path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" />,
+  inbox: (
+    <>
+      <path d="M3 13h5l1.5 3h5l1.5-3h5" />
+      <path d="M5.5 5h13l2.5 8v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-6Z" />
+    </>
+  ),
+  layers: (
+    <>
+      <path d="m12 3 9 5-9 5-9-5Z" />
+      <path d="m3 13 9 5 9-5" />
+    </>
+  ),
+  shield: <path d="M12 3 4.5 6v5.5c0 4.6 3.2 8.4 7.5 9.5 4.3-1.1 7.5-4.9 7.5-9.5V6Z" />,
+  pie: (
+    <>
+      <path d="M12 3a9 9 0 1 0 9 9h-9Z" />
+      <path d="M15 3.5A9 9 0 0 1 20.5 9H15Z" />
+    </>
+  ),
+  "trend-up": <path d="m3 17 6-6 4 4 8-8M15 7h6v6" />,
+  "map-pin": (
+    <>
+      <path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21Z" />
+      <circle cx="12" cy="9.5" r="2.5" />
+    </>
+  ),
+  list: <path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01" />,
   briefcase: (
     <>
       <rect x="3" y="7" width="18" height="13" rx="2" />

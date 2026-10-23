@@ -8,13 +8,16 @@ import {
   ShareBar,
   type ColumnPoint,
 } from "../../components/charts";
-import Icon from "../../components/Icon";
+import { Callout, JumpNav, SectionTitle } from "../../components/display";
+import Icon, { type IconName } from "../../components/Icon";
+import type { Tone } from "../../components/tones";
 import {
   Button,
   Card,
   CardHeader,
   EmptyState,
   ErrorNotice,
+  IconTile,
   ProgressBar,
 } from "../../components/ui";
 import { BrandLoader } from "../../brand";
@@ -429,116 +432,112 @@ export default function CoordinatorAnalytics() {
       ) : (
         data && (
           <div
-            className={`space-y-8 transition-opacity duration-200 ${refreshing ? "opacity-60" : ""}`}
+            className={`space-y-10 transition-opacity duration-200 ${refreshing ? "opacity-60" : ""}`}
             aria-busy={refreshing}
           >
+            <JumpNav sections={SECTIONS} />
+
+            {/* KEY FIGURES: the six figures, and the chosen period in one sentence. */}
+            <section className="space-y-4">
+              <SectionTitle id="overview" icon="grid" title="Key figures" description="Six plain figures for the students the filters leave; the &ldquo;i&rdquo; on each says what is counted." />
+              <KpiCards query={term} />
+              <Callout icon="activity" tone="info">
+                <b className="text-slate-900">
+                  {words?.sentence}: {formatHours(data.period.hours)} verified
+                </b>{" "}
+                (<Change current={data.period.hours} previous={data.period.previousHours} versus={words?.previous ?? ""} />
+                ), from {data.period.logs} attendance {data.period.logs === 1 ? "log" : "logs"} by {data.period.studentsLogged} of{" "}
+                {data.progress.students} active {data.progress.students === 1 ? "student" : "students"}.{" "}
+                {data.period.logs > 0
+                  ? `${Math.round((data.period.verified / data.period.logs) * 100)}% of those logs are verified, ${data.period.pending} waiting and ${data.period.rejected} rejected.`
+                  : "No logs in this period."}
+              </Callout>
+            </section>
+
             {/* ATTENDANCE: follows the period chosen here. */}
             <section className="space-y-4">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <SectionTitle title="Attendance" note={`${words?.title}, active students only.`} />
-                {/* The days covered: a quick period, or any first and last day; and how the chart adds them up. */}
-                <div className="flex flex-wrap items-end gap-x-3 gap-y-2 print:hidden">
-                  <div
-                    role="tablist"
-                    aria-label="Period for the attendance figures"
-                    className="inline-flex rounded-lg bg-slate-100 p-1 ring-1 ring-inset ring-slate-200/70"
-                  >
-                    {PERIODS.map((period) => {
-                      const chosen = "days" in range && range.days === period;
-                      return (
-                        <button
-                          key={period}
-                          type="button"
-                          role="tab"
-                          aria-selected={chosen}
-                          onClick={() => choosePeriod(period)}
-                          className={`rounded-md px-3 py-1.5 text-sm font-semibold transition-colors ${
-                            chosen
-                              ? "bg-white text-psu-800 shadow-sm ring-1 ring-psu-600/10"
-                              : "text-slate-600 hover:text-slate-900"
-                          }`}
-                        >
-                          {period} days
-                        </button>
-                      );
-                    })}
+              <SectionTitle
+                id="attendance"
+                icon="clock"
+                title="Attendance"
+                description={`${words?.title}, active students only.`}
+                action={
+                  <div className="flex flex-wrap items-end gap-x-3 gap-y-2 print:hidden">
+                    <div role="tablist" aria-label="Period for the attendance figures" className="inline-flex rounded-xl bg-slate-100 p-1">
+                      {PERIODS.map((period) => {
+                        const chosen = "days" in range && range.days === period;
+                        return (
+                          <button
+                            key={period}
+                            type="button"
+                            role="tab"
+                            aria-selected={chosen}
+                            onClick={() => choosePeriod(period)}
+                            className={`min-h-10 rounded-lg px-3 text-sm font-semibold transition-colors ${
+                              chosen ? "bg-white text-psu-800 shadow-sm ring-1 ring-psu-600/10" : "text-slate-600 hover:text-slate-900"
+                            }`}
+                          >
+                            {period} days
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <label className="text-xs font-medium text-slate-600">
+                      From
+                      <input
+                        type="date"
+                        value={typed.from}
+                        max={typed.to || today}
+                        onChange={(event) => typeDate("from", event.target.value)}
+                        aria-describedby={dateProblem ? "analytics-range-problem" : undefined}
+                        className="field mt-1 block h-10 w-auto px-2.5"
+                      />
+                    </label>
+                    <label className="text-xs font-medium text-slate-600">
+                      To
+                      <input
+                        type="date"
+                        value={typed.to}
+                        min={typed.from || undefined}
+                        max={today}
+                        onChange={(event) => typeDate("to", event.target.value)}
+                        aria-describedby={dateProblem ? "analytics-range-problem" : undefined}
+                        className="field mt-1 block h-10 w-auto px-2.5"
+                      />
+                    </label>
+                    <label className="text-xs font-medium text-slate-600">
+                      Group by
+                      <select
+                        value={grouping}
+                        onChange={(event) => {
+                          setRefreshing(true);
+                          setGrouping(event.target.value as Grouping | "auto");
+                        }}
+                        className="field mt-1 block h-10 w-auto px-2.5"
+                      >
+                        <option value="auto">Automatic</option>
+                        <option value="day">Day</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                      </select>
+                    </label>
                   </div>
-                  <label className="text-xs font-medium text-slate-600">
-                    From
-                    <input
-                      type="date"
-                      value={typed.from}
-                      max={typed.to || today}
-                      onChange={(event) => typeDate("from", event.target.value)}
-                      aria-describedby={dateProblem ? "analytics-range-problem" : undefined}
-                      className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="text-xs font-medium text-slate-600">
-                    To
-                    <input
-                      type="date"
-                      value={typed.to}
-                      min={typed.from || undefined}
-                      max={today}
-                      onChange={(event) => typeDate("to", event.target.value)}
-                      aria-describedby={dateProblem ? "analytics-range-problem" : undefined}
-                      className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
-                    />
-                  </label>
-                  <label className="text-xs font-medium text-slate-600">
-                    Group by
-                    <select
-                      value={grouping}
-                      onChange={(event) => {
-                        setRefreshing(true);
-                        setGrouping(event.target.value as Grouping | "auto");
-                      }}
-                      className="mt-1 block h-10 rounded-lg border border-slate-300 bg-white px-2.5 text-sm text-slate-800 focus:border-psu-500 focus:outline-none"
-                    >
-                      <option value="auto">Automatic</option>
-                      <option value="day">Day</option>
-                      <option value="week">Week</option>
-                      <option value="month">Month</option>
-                    </select>
-                  </label>
-                </div>
-              </div>
+                }
+              />
               {dateProblem && (
                 <p id="analytics-range-problem" role="alert" className="text-sm text-red-700 print:hidden">
                   {dateProblem}
                 </p>
               )}
 
-              {/* The six figures with targets: the same cards as the dashboard. */}
-              <KpiCards query={term} />
-
-              {/* The chosen period in one line; the charts below break it down. */}
-              <p className="rounded-xl border border-slate-200/80 bg-white px-4 py-3 text-sm text-slate-700 shadow-card">
-                <span className="font-semibold text-slate-900">
-                  {words?.sentence}: {formatHours(data.period.hours)} verified
-                </span>{" "}
-                (
-                <Change
-                  current={data.period.hours}
-                  previous={data.period.previousHours}
-                  versus={words?.previous ?? ""}
-                />
-                ), from {data.period.logs} attendance {data.period.logs === 1 ? "log" : "logs"} by{" "}
-                {data.period.studentsLogged} of {data.progress.students} active{" "}
-                {data.progress.students === 1 ? "student" : "students"}.{" "}
-                {data.period.logs > 0
-                  ? `${Math.round((data.period.verified / data.period.logs) * 100)}% of those logs are verified, ${data.period.pending} waiting and ${data.period.rejected} rejected.`
-                  : "No logs in this period."}
-              </p>
-
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-3">
                 <Card className="min-w-0 lg:col-span-2">
                   <CardHeader
+                    icon="chart"
                     title={`Verified hours per ${GROUP_WORD[trend.group]}`}
                     description={
                       trend.group === "week"
-                        ? "Each column is a week, Monday first, labelled by its first day in the range. Scroll sideways for more; + and − change the column width."
+                        ? "Each column is a week, Monday first. Scroll sideways for more; + and − change the column width."
                         : trend.group === "month"
                           ? "Each column is a month. Scroll sideways for more; + and − change the column width."
                           : "Days with no column had no verified hours. Scroll sideways for more; + and − change the column width."
@@ -565,10 +564,7 @@ export default function CoordinatorAnalytics() {
                 </Card>
 
                 <Card className="min-w-0">
-                  <CardHeader
-                    title="Review of these logs"
-                    description={plural(data.period.logs, "log") + " in this period"}
-                  />
+                  <CardHeader icon="check-circle" tone="success" title="Review of these logs" description={plural(data.period.logs, "log") + " in this period"} />
                   <div className="px-4 pb-5 pt-4 sm:px-5">
                     {data.period.logs === 0 ? (
                       <p className="py-6 text-center text-sm text-slate-500">Nothing to review.</p>
@@ -577,32 +573,17 @@ export default function CoordinatorAnalytics() {
                         <ShareBar
                           label="Attendance logs by review status"
                           segments={[
-                            { label: "Verified", value: data.period.verified, color: "#10b981" },
-                            {
-                              label: "Waiting for a supervisor",
-                              value: data.period.pending,
-                              color: "#f59e0b",
-                            },
-                            { label: "Rejected", value: data.period.rejected, color: "#ef4444" },
+                            { label: "Verified", value: data.period.verified, color: "var(--status-success-ink)" },
+                            { label: "Waiting for a supervisor", value: data.period.pending, color: "var(--status-warning-ink)" },
+                            { label: "Rejected", value: data.period.rejected, color: "var(--status-late-ink)" },
                           ]}
                         />
-                        <p className="mt-5 border-t border-slate-100 pt-4 text-xs font-medium text-slate-500">
-                          How the time-in photos were taken
-                        </p>
-                        <dl className="mt-2 space-y-2 text-sm">
-                          <PhotoSource
-                            label="Camera check"
-                            count={data.period.capture.cameraChecked}
-                          />
-                          <PhotoSource
-                            label="Supervisor, in person"
-                            count={data.period.capture.bySupervisor}
-                          />
-                          <PhotoSource
-                            label="Not camera-checked"
-                            count={data.period.capture.unchecked}
-                          />
-                        </dl>
+                        <p className="mt-5 border-t border-(--role-hairline) pt-4 text-[13px] font-semibold text-slate-700">How the time-in photos were taken</p>
+                        <ul className="mt-2.5 grid gap-2">
+                          <PhotoSource icon="camera" tone="success" label="Camera check" count={data.period.capture.cameraChecked} />
+                          <PhotoSource icon="user" tone="info" label="Supervisor, in person" count={data.period.capture.bySupervisor} />
+                          <PhotoSource icon="alert" tone="warning" label="Not camera-checked" count={data.period.capture.unchecked} />
+                        </ul>
                       </>
                     )}
                   </div>
@@ -610,26 +591,19 @@ export default function CoordinatorAnalytics() {
               </div>
             </section>
 
-            {/* PROGRAMME: totals to date. */}
+            {/* PROGRESS: totals to date. */}
             <section className="space-y-4">
-              <SectionTitle
-                title="Programme to date"
-                note="All verified work so far, active students only."
-              />
-
+              <SectionTitle id="progress" icon="trend-up" title="Progress" description="All verified work so far, active students only." />
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
                 <Card className="min-w-0">
                   <CardHeader
+                    icon="hourglass"
                     title="Progress toward required hours"
-                    description={`${plural(data.progress.students, "active student")} · ${
-                      data.progress.averageCompletion
-                    }% complete on average`}
+                    description={`${plural(data.progress.students, "active student")} · ${data.progress.averageCompletion}% complete on average`}
                   />
                   <div className="px-4 pb-4 pt-7 sm:px-5">
                     {data.progress.students === 0 ? (
-                      <p className="py-8 text-center text-sm text-slate-500">
-                        No active students yet.
-                      </p>
+                      <p className="py-8 text-center text-sm text-slate-500">No active students yet.</p>
                     ) : (
                       <ColumnChart
                         points={data.progress.bands.map((band, index) => ({
@@ -648,10 +622,7 @@ export default function CoordinatorAnalytics() {
                         wholeNumbers
                       />
                     )}
-                    <ChartTable
-                      head={["Progress", "Students"]}
-                      rows={data.progress.bands.map((band) => [band.label, band.count])}
-                    />
+                    <ChartTable head={["Progress", "Students"]} rows={data.progress.bands.map((band) => [band.label, band.count])} />
                   </div>
                 </Card>
 
@@ -659,37 +630,44 @@ export default function CoordinatorAnalytics() {
                   <TaskStatus stages={data.taskFunnel} />
                 </Card>
               </div>
+            </section>
 
+            {/* COMPANIES */}
+            <section className="space-y-4">
+              <SectionTitle id="companies" icon="building" title="Partner companies" description="How interns at each company are progressing, and what they and others have reported." />
               <Card className="min-w-0">
-                <CardHeader
-                  title="Partner companies"
-                  description="How interns at each company are progressing, and what they and others have reported"
-                />
                 <CompanyTable companies={data.companies} />
               </Card>
+            </section>
 
-              {/* The company table's twins. */}
+            {/* PROGRAMS AND BLOCKS: the company table's twins. */}
+            <section className="space-y-4">
+              <SectionTitle id="groups" icon="layers" title="Programs and blocks" description="The same students, summed by program and by block." />
               <GroupSummary query={term} />
+            </section>
 
-              {/* Student by student, with its own CSV and PDF. */}
+            {/* STUDENTS: student by student, with its own CSV and PDF. */}
+            <section className="space-y-4">
+              <SectionTitle id="students" icon="users" title="Students" description="Each student's hours, finish, attendance and work. Filter by status; sort by any column." />
               <StudentPerformance query={term} covered={termName} />
+            </section>
 
+            {/* CONCERNS AND EVALUATIONS */}
+            <section className="space-y-4">
+              <SectionTitle id="concerns" icon="flag" title="Concerns and evaluations" description="What students and supervisors reported, and how they rated each other." />
               <div className="grid grid-cols-1 items-start gap-5 lg:grid-cols-2">
                 <Card className="min-w-0">
                   <CardHeader
+                    icon="flag"
+                    tone="warning"
                     title="Concerns by category"
                     description={(() => {
                       const total = data.complaintsByCategory.reduce((sum, row) => sum + row.count, 0);
                       const open = data.complaintsByCategory.reduce((sum, row) => sum + row.open, 0);
-                      return total === 0
-                        ? undefined
-                        : `${plural(total, "concern")} reported · ${open} still open`;
+                      return total === 0 ? undefined : `${plural(total, "concern")} reported · ${open} still open`;
                     })()}
                     action={
-                      <Link
-                        to="/coordinator/complaints"
-                        className="inline-flex items-center gap-1 text-sm font-semibold text-psu-700 hover:underline print:hidden"
-                      >
+                      <Link to="/coordinator/resolution" className="inline-flex min-h-11 items-center gap-1 text-sm font-semibold text-psu-700 hover:underline print:hidden">
                         Open
                         <Icon name="chevron-right" size={14} />
                       </Link>
@@ -711,24 +689,17 @@ export default function CoordinatorAnalytics() {
                 </Card>
 
                 <Card className="min-w-0">
-                  <CardHeader
-                    title="Evaluation averages"
-                    description="Average rating out of 5, by who gave it"
-                  />
+                  <CardHeader icon="star" title="Evaluation averages" description="Average rating out of 5, by who gave it" />
                   {data.evaluationSummary.length === 0 ? (
                     <EmptyState icon="star" title="No evaluations submitted yet" />
                   ) : (
                     <div className="space-y-5 px-4 pb-5 pt-4 sm:px-5">
                       {EVALUATORS.map((group) => {
-                        const rows = data.evaluationSummary.filter(
-                          (item) => item.evaluatorType === group.type
-                        );
+                        const rows = data.evaluationSummary.filter((item) => item.evaluatorType === group.type);
                         if (rows.length === 0) return null;
                         return (
                           <div key={group.type}>
-                            <p className="mb-2.5 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                              {group.label}
-                            </p>
+                            <p className="mb-2.5 text-[13px] font-semibold text-slate-700">{group.label}</p>
                             <BarList
                               max={5}
                               rows={rows.map((item) => ({
@@ -753,21 +724,24 @@ export default function CoordinatorAnalytics() {
   );
 }
 
-function SectionTitle({ title, note }: { title: string; note: string }) {
-  return (
-    <div className="min-w-0">
-      <h2 className="text-base font-semibold text-slate-900">{title}</h2>
-      <p className="text-sm text-slate-500">{note}</p>
-    </div>
-  );
-}
+/** The page's sections, for "On this page". */
+const SECTIONS: { id: string; label: string; icon: IconName }[] = [
+  { id: "overview", label: "Key figures", icon: "grid" },
+  { id: "attendance", label: "Attendance", icon: "clock" },
+  { id: "progress", label: "Progress", icon: "trend-up" },
+  { id: "companies", label: "Companies", icon: "building" },
+  { id: "groups", label: "Programs and blocks", icon: "layers" },
+  { id: "students", label: "Students", icon: "users" },
+  { id: "concerns", label: "Concerns and evaluations", icon: "flag" },
+];
 
-function PhotoSource({ label, count }: { label: string; count: number }) {
+function PhotoSource({ icon, tone, label, count }: { icon: IconName; tone: Tone; label: string; count: number }) {
   return (
-    <div className="flex items-baseline justify-between gap-3">
-      <dt className="text-slate-700">{label}</dt>
-      <dd className="tabular font-semibold text-slate-900">{count}</dd>
-    </div>
+    <li className="flex items-center gap-3 text-sm">
+      <IconTile icon={icon} tone={tone} size="sm" />
+      <span className="min-w-0 flex-1 text-slate-700">{label}</span>
+      <span className="tabular font-semibold text-slate-900">{count}</span>
+    </li>
   );
 }
 
@@ -777,6 +751,7 @@ function TaskStatus({ stages }: { stages: AnalyticsData["taskFunnel"] }) {
   return (
     <>
       <CardHeader
+        icon="tasks"
         title="Task status"
         description={
           total === 0

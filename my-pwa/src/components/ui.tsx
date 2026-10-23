@@ -8,6 +8,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import Icon, { type IconName } from "./Icon";
+import { TONE_TILE, type Tone } from "./tones";
 import { BrandLoader, CheckGlyph, type LoadProcess } from "../brand";
 
 /*
@@ -240,20 +241,52 @@ export function Card({
   );
 }
 
+/*
+|--------------------------------------------------------------------------
+| TONES AND ICON TILES (system pass)
+|--------------------------------------------------------------------------
+|
+| One meaning per colour, everywhere: brand is the role's own colour for
+| plain subjects; info, success, warning and danger are the status colours
+| (never a role colour, and always with words beside them); neutral is
+| for what needs nothing. A tone tints an icon tile, a card's accent, a
+| meter or a summary tile, so a page can be scanned by colour and read by
+| its words.
+|
+*/
+
+/** A rounded square with an icon in a tone: the subject of a card, a figure or a row at a glance. */
+export function IconTile({ icon, tone = "brand", size = "md", className = "" }: { icon: IconName; tone?: Tone; size?: "sm" | "md" | "lg"; className?: string }) {
+  const box = size === "sm" ? "h-8 w-8 rounded-lg" : size === "lg" ? "h-12 w-12 rounded-xl" : "h-10 w-10 rounded-xl";
+  return (
+    <span aria-hidden="true" className={`grid shrink-0 place-items-center ${box} ${TONE_TILE[tone]} ${className}`}>
+      <Icon name={icon} size={size === "sm" ? 16 : size === "lg" ? 22 : 19} />
+    </span>
+  );
+}
+
 export function CardHeader({
   title,
   description,
   action,
+  icon,
+  tone = "brand",
 }: {
   title: string;
   description?: string;
   action?: ReactNode;
+  /** The card's subject as an icon tile beside its title. */
+  icon?: IconName;
+  tone?: Tone;
 }) {
   return (
     <div className="flex items-start justify-between gap-3 px-4 pt-4 sm:px-5">
-      <div className="min-w-0">
-        <h2 className="text-[16px] font-bold text-slate-900">{title}</h2>
-        {description && <p className="mt-0.5 text-xs text-slate-500">{description}</p>}
+      <div className="flex min-w-0 items-start gap-3">
+        {icon && <IconTile icon={icon} tone={tone} size="sm" className="mt-0.5" />}
+        <div className="min-w-0">
+          <h2 className="text-[16px] font-bold text-slate-900">{title}</h2>
+          {description && <p className="mt-0.5 text-[13px] text-slate-600">{description}</p>}
+        </div>
       </div>
       {action && <div className="shrink-0">{action}</div>}
     </div>

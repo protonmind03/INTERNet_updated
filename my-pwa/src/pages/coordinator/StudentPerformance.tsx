@@ -1,5 +1,6 @@
 import { useEffect, useId, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
+import { Meter, SummaryTiles, type SummaryTile } from "../../components/display";
 import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import { Button, Card, CardHeader, EmptyState, SkeletonRows, StatusBadge } from "../../components/ui";
@@ -16,8 +17,19 @@ import {
   performancePdfSection,
   performanceSection,
   type PerformanceRules,
+  type PerformanceStatus,
   type PerformanceStudent,
 } from "./performance";
+
+type Shown = "all" | PerformanceStatus;
+
+/** The status tiles above the table: a count of each word, and the filter by it (system pass). */
+const STATUS_TILE: Record<PerformanceStatus, Pick<SummaryTile<Shown>, "icon" | "tone">> = {
+  "At risk": { icon: "alert", tone: "danger" },
+  Behind: { icon: "hourglass", tone: "warning" },
+  "On track": { icon: "trend-up", tone: "info" },
+  Completed: { icon: "check-circle", tone: "success" },
+};
 
 /*
 |--------------------------------------------------------------------------
@@ -112,6 +124,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
   const [failed, setFailed] = useState(false);
   const [sort, setSort] = useState<{ key: SortKey; down: boolean }>({ key: "status", down: false });
   const [buildingPdf, setBuildingPdf] = useState(false);
+  const [shown, setShown] = useState<Shown>("all");
 
   useEffect(() => {
     let current = true;
@@ -141,7 +154,17 @@ export default function StudentPerformance({ query, covered }: { query: string; 
     });
     return rows;
   }, [state, sort]);
-  const pager = usePagination(sorted, 25);
+  const visible = useMemo(() => (shown === "all" ? sorted : sorted.filter((row) => row.performance.status === shown)), [sorted, shown]);
+  const tiles: SummaryTile<Shown>[] = [
+    { value: "all", label: "All students", count: state ? sorted.length : null, icon: "users", tone: "brand" },
+    ...(Object.keys(STATUS_ORDER) as PerformanceStatus[]).map((status) => ({
+      value: status,
+      label: status,
+      count: state ? sorted.filter((row) => row.performance.status === status).length : null,
+      ...STATUS_TILE[status],
+    })),
+  ];
+  const pager = usePagination(visible, 10);
 
   const fileName = (extension: string) => `internet-student-performance-${phToday()}.${extension}`;
   const downloadCsv = () => {
@@ -178,6 +201,7 @@ export default function StudentPerformance({ query, covered }: { query: string; 
   return (
     <Card className="min-w-0">
       <CardHeader
+        icon="users"
         title="Student performance"
         description="Counted from each student's records. No score: sort by the column you care about."
         action={
@@ -193,9 +217,12 @@ export default function StudentPerformance({ query, covered }: { query: string; 
           ) : undefined
         }
       />
-      <div className="px-4 pt-2 sm:px-5">
-        <span className="text-sm text-slate-600">What the status words mean </span>
-        <StatusRules rules={state?.rules ?? null} />
+      <div className="px-4 pt-3 sm:px-5">
+        <SummaryTiles label="Show students by status" tiles={tiles} value={shown} onChange={setShown} />
+        <p className="mt-3">
+          <span className="text-sm text-slate-600">What the status words mean </span>
+          <StatusRules rules={state?.rules ?? null} />
+        </p>
       </div>
       <div className="mt-3">
         {failed && loading ? (
@@ -206,6 +233,8 @@ export default function StudentPerformance({ query, covered }: { query: string; 
           <SkeletonRows rows={4} />
         ) : sorted.length === 0 ? (
           <EmptyState icon="users" title="No active students" />
+        ) : visible.length === 0 ? (
+          <EmptyState icon="check-circle" title={`No students are ${shown === "all" ? "listed" : shown.toLowerCase()}`} />
         ) : (
           <>
             <div className="relative overflow-x-auto" tabIndex={0} role="group" aria-label="Student performance">
@@ -253,13 +282,19 @@ export default function StudentPerformance({ query, covered }: { query: string; 
                             {row.name}
                           </Link>
                           <span className="block text-xs text-slate-600">{row.block || row.program_code || row.program || "No program"}</span>
-                          <span className="mt-1 block max-w-md text-xs text-slate-600">{p.summary}</span>
+                          <span className="mt-1 line-clamp-2 max-w-md text-xs text-slate-600">{p.summary}</span>
                         </th>
                         <td className="px-3 py-3">
                           <StatusBadge status={p.status} tone={STATUS_TONE[p.status]} />
                         </td>
                         <td className="tabular whitespace-nowrap px-3 py-3 text-right text-slate-700">
                           {formatHours(row.verified_hours)} of {formatHours(row.required_hours)}
+                          <Meter
+                            value={row.required_hours > 0 ? row.verified_hours / row.required_hours : 0}
+                            tone={STATUS_TILE[p.status].tone}
+                            label={`${row.name}: hours`}
+                            className="ml-auto mt-1.5 w-24"
+                          />
                         </td>
                         <td className="whitespace-nowrap px-3 py-3 text-slate-700">
                           {p.status === "Completed" ? "Done" : row.projected_finish ? formatDate(row.projected_finish) : "No date"}
