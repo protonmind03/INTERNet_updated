@@ -1,3 +1,4 @@
+import { SummaryTiles } from "../../components/display";
 import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
@@ -196,17 +197,19 @@ export default function SupervisorTasks() {
         <>
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
-            <FilterChips
-              label="Filter tasks"
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: "all", label: "All", count: counts.all },
-                { value: "open", label: "With intern", count: counts.open },
-                { value: "Submitted", label: "To review", count: counts.Submitted },
-                { value: "Reviewed", label: "Reviewed", count: counts.Reviewed },
-              ]}
-            />
+            <div className="w-full">
+              <SummaryTiles
+                label="Filter tasks"
+                value={filter}
+                onChange={setFilter}
+                tiles={[
+                  { value: "all", label: "All", count: counts.all, icon: "list", tone: "brand" },
+                  { value: "open", label: "With intern", count: counts.open, icon: "hourglass", tone: "info" },
+                  { value: "Submitted", label: "To review", count: counts.Submitted, icon: "inbox", tone: (counts.Submitted) > 0 ? "warning" : "neutral" },
+                  { value: "Reviewed", label: "Reviewed", count: counts.Reviewed, icon: "check-circle", tone: "success" },
+                ]}
+              />
+            </div>
           </div>
           <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (

@@ -12586,8 +12586,11 @@ test("PSU redesign: the coordinator's Home reads the cohort, the open appeals an
 
   // The rule behind the three groups: almost done wins, then behind, then on the way.
   require("tsx/cjs");
-  const { stateOf, pickStations, ALMOST_DONE_SHARE } = require("../src/services/coordinatorHome.ts");
+  const { stateOf, pickStations, ALMOST_DONE_SHARE, MAX_TERM_WEEKS } = require("../src/services/coordinatorHome.ts");
   assert.equal(ALMOST_DONE_SHARE, 0.1);
+  // A week count is only shown for a term of a believable length.
+  assert.equal(MAX_TERM_WEEKS, 53);
+  if (data.week) assert.ok(data.week.of <= MAX_TERM_WEEKS, "no week count for a term longer than a year");
   assert.equal(stateOf({ required: 480, hours: 440, at_risk: true }), "almost-done");
   assert.equal(stateOf({ required: 480, hours: 100, at_risk: true }), "behind");
   assert.equal(stateOf({ required: 480, hours: 100, at_risk: false }), "on-the-way");

@@ -241,6 +241,32 @@ names match page titles; `e2e/tests/coordinator-hubs.spec.ts` and
 `student-folder.spec.ts` click every entry and check exactly one is
 marked.
 
+### Showing figures and lists (the display kit)
+
+The system pass gave every portal one way to show a figure, a section or
+a summary (`components/display.tsx`, `components/tones.ts`):
+
+- **Tones.** `brand` is the role's own colour, for plain subjects;
+  `info`, `success`, `warning` and `danger` are the status colours
+  (never a role colour, always with words beside them); `neutral` is for
+  what needs nothing. A count of work waiting on the person is `warning`
+  only while it is above zero; record statuses keep `StatusBadge`'s tones.
+- **IconTile / CardHeader `icon`.** Every card names its subject with an
+  icon tile; one subject, one icon (tasks, document, star, calendar …).
+- **MetricCard.** A figure: subject icon, the value, a meter for a share,
+  one line of context, an "i" for what is counted, and where to act.
+  Analytics' key figures are always `brand`: they are never coloured as
+  a score.
+- **SummaryTiles.** When a list's filter has counts, the counts are the
+  filter (one tile pressed). Filters without counts stay `FilterChips`;
+  views and periods stay tabs. **CountTiles** is the same look for counts
+  that only inform.
+- **SectionTitle + JumpNav.** A long page is in titled sections with an
+  "On this page" bar (Analytics).
+- **Server counts for paged lists**: `GET /api/coordinator/students/counts`
+  and `/api/coordinator/complaints/counts` take the list's own search and
+  filters, so a tile's number is what choosing it shows.
+
 ### Behind schedule
 
 One rule, in `backend/src/services/coordinatorHome.ts`:

@@ -112,7 +112,7 @@ export function SectionTitle({ id, icon, tone = "brand", title, description, act
         <h2 className="font-display text-[19px] font-extrabold leading-tight text-slate-900">{title}</h2>
         {description && <p className="mt-0.5 text-[13.5px] text-slate-600">{description}</p>}
       </div>
-      {action && <div className="flex shrink-0 flex-wrap gap-2">{action}</div>}
+      {action && <div className="flex w-full min-w-0 flex-wrap gap-2 md:w-auto">{action}</div>}
     </div>
   );
 }

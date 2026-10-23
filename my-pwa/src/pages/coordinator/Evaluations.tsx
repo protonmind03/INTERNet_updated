@@ -1,3 +1,4 @@
+import { SummaryTiles } from "../../components/display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Pagination from "../../components/Pagination";
 import {
@@ -6,7 +7,6 @@ import {
   ConfirmDialog,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   FormError,
   FormField,
   Modal,
@@ -166,17 +166,19 @@ export default function CoordinatorEvaluations() {
           />
         )}
 
-        <FilterChips
-          label="Filter evaluations"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "all", label: "All", count: counts.all },
-            { value: "supervisor", label: "By supervisors", count: counts.supervisor },
-            { value: "teacher", label: "By coordinator", count: counts.teacher },
-            { value: "student", label: "Company feedback", count: counts.student },
-          ]}
-        />
+        <div className="w-full">
+          <SummaryTiles
+            label="Filter evaluations"
+            value={filter}
+            onChange={setFilter}
+            tiles={[
+              { value: "all", label: "All", count: counts.all, icon: "list", tone: "brand" },
+              { value: "supervisor", label: "By supervisors", count: counts.supervisor, icon: "briefcase", tone: "brand" },
+              { value: "teacher", label: "By coordinator", count: counts.teacher, icon: "user", tone: "brand" },
+              { value: "student", label: "Company feedback", count: counts.student, icon: "building", tone: "brand" },
+            ]}
+          />
+        </div>
 
         <Card>
           {loading ? (

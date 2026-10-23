@@ -1,3 +1,4 @@
+import { SummaryTiles } from "../../components/display";
 import { useMemo, useState } from "react";
 import Icon from "../../components/Icon";
 import InternPanels from "../../components/InternPanels";
@@ -6,7 +7,6 @@ import {
   Card,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   Modal,
   SkeletonRows,
   StatusBadge,
@@ -92,17 +92,19 @@ export default function SupervisorDocuments() {
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
-            <FilterChips
-              label="Filter documents"
-              value={filter}
-              onChange={setFilter}
-              options={[
-                { value: "all", label: "All", count: counts.all },
-                { value: "Pending", label: "To review", count: counts.Pending },
-                { value: "Approved", label: "Approved", count: counts.Approved },
-                { value: "Rejected", label: "Rejected", count: counts.Rejected },
-              ]}
-            />
+            <div className="w-full">
+              <SummaryTiles
+                label="Filter documents"
+                value={filter}
+                onChange={setFilter}
+                tiles={[
+                  { value: "all", label: "All", count: counts.all, icon: "list", tone: "brand" },
+                  { value: "Pending", label: "To review", count: counts.Pending, icon: "inbox", tone: (counts.Pending) > 0 ? "warning" : "neutral" },
+                  { value: "Approved", label: "Approved", count: counts.Approved, icon: "check-circle", tone: "success" },
+                  { value: "Rejected", label: "Rejected", count: counts.Rejected, icon: "refresh", tone: (counts.Rejected) > 0 ? "danger" : "neutral" },
+                ]}
+              />
+            </div>
           </div>
           <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (

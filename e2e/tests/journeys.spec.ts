@@ -767,7 +767,7 @@ test.describe("the supervisor's day", () => {
       const studentPage = await (await browser.newContext()).newPage();
       await signIn(studentPage, "student");
       await studentPage.goto("/task");
-      await expect(studentPage.getByRole("tab", { name: /^Submitted/ })).toBeVisible();
+      await expect(studentPage.getByRole("button", { name: /Submitted/ })).toBeVisible();
       await expect(studentPage.getByText(title)).toHaveCount(0);
       await studentPage.context().close();
     } finally {

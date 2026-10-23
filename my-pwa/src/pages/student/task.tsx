@@ -1,3 +1,4 @@
+import { SummaryTiles } from "../../components/display";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Icon from "../../components/Icon";
 import {
@@ -5,7 +6,6 @@ import {
   Card,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   Modal,
   Skeleton,
   StatusBadge,
@@ -133,17 +133,19 @@ export default function MyTasks() {
       <div className="space-y-4">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-        <FilterChips
-          label="Filter tasks"
-          value={filter}
-          onChange={setFilter}
-          options={[
-            { value: "todo", label: "To do", count: counts.todo },
-            { value: "submitted", label: "Submitted", count: counts.submitted },
-            { value: "reviewed", label: "Reviewed", count: counts.reviewed },
-            { value: "all", label: "All", count: counts.all },
-          ]}
-        />
+        <div className="w-full">
+          <SummaryTiles
+            label="Filter tasks"
+            value={filter}
+            onChange={setFilter}
+            tiles={[
+              { value: "todo", label: "To do", count: counts.todo, icon: "inbox", tone: (counts.todo) > 0 ? "warning" : "neutral" },
+              { value: "submitted", label: "Submitted", count: counts.submitted, icon: "hourglass", tone: "info" },
+              { value: "reviewed", label: "Reviewed", count: counts.reviewed, icon: "check-circle", tone: "success" },
+              { value: "all", label: "All", count: counts.all, icon: "list", tone: "brand" },
+            ]}
+          />
+        </div>
 
         {loading ? (
           <div className="space-y-3">

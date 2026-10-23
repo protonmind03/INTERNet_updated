@@ -1,10 +1,10 @@
+import { SummaryTiles } from "../../components/display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Card,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   SkeletonRows,
   StatusBadge,
 } from "../../components/ui";
@@ -119,17 +119,19 @@ export default function SupervisorJournals() {
 
         <div className="flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
-            <FilterChips
-              label="Which weekly reports"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "all", label: "All", count: ofIntern.length },
-                { value: "Submitted", label: "Waiting for you", count: count("Submitted") },
-                { value: "Reviewed", label: "Reviewed", count: count("Reviewed") },
-                { value: "Returned", label: "Returned", count: count("Returned") },
-              ]}
-            />
+            <div className="w-full">
+              <SummaryTiles
+                label="Which weekly reports"
+                value={scope}
+                onChange={setScope}
+                tiles={[
+                  { value: "all", label: "All", count: ofIntern.length, icon: "list", tone: "brand" },
+                  { value: "Submitted", label: "Waiting for you", count: count("Submitted"), icon: "inbox", tone: (count("Submitted")) > 0 ? "warning" : "neutral" },
+                  { value: "Reviewed", label: "Reviewed", count: count("Reviewed"), icon: "check-circle", tone: "success" },
+                  { value: "Returned", label: "Returned", count: count("Returned"), icon: "refresh", tone: (count("Returned")) > 0 ? "danger" : "neutral" },
+                ]}
+              />
+            </div>
           </div>
           <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
           {interns.length > 1 && (

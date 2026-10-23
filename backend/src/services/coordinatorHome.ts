@@ -27,6 +27,8 @@ import { bindFilters, filterConditions, filterOfStudent, type StudentFilters } f
 
 /** Within this share of the requirement, a trainee is "almost done". */
 export const ALMOST_DONE_SHARE = 0.1;
+/** The longest term whose weeks are counted on Home (a year). */
+export const MAX_TERM_WEEKS = 53;
 /** Stations drawn on the line, at most. */
 const STATIONS = 12;
 
@@ -147,7 +149,10 @@ export async function coordinatorHome(pool: Pool, filters: StudentFilters, now: 
   for (const row of rows) requiredCounts.set(row.required, (requiredCounts.get(row.required) ?? 0) + 1);
   const required = [...requiredCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
   const termRow = term.rows[0];
-  const week = termRow
+  // "Week N of M" only for a term of a believable length: a term over
+  // MAX_TERM_WEEKS long is a data mistake, not a term to count weeks in.
+  const termWeeks = termRow ? Math.ceil((daysBetween(termRow.start, termRow.end) + 1) / 7) : 0;
+  const week = termRow && termWeeks <= MAX_TERM_WEEKS
     ? { number: Math.max(1, Math.min(Math.ceil((daysBetween(termRow.start, termRow.end) + 1) / 7), Math.floor(daysBetween(termRow.start, today) / 7) + 1)), of: Math.ceil((daysBetween(termRow.start, termRow.end) + 1) / 7), term: termRow.name }
     : null;
 
