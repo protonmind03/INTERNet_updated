@@ -152,7 +152,7 @@ export async function coordinatorHome(pool: Pool, filters: StudentFilters, now: 
     : null;
 
   const thisWeek: CoordinatorHome["this_week"] = [
-    ...deliverables.rows.map((row) => ({ date: row.date, kind: "deliverable" as const, title: `${row.name} due`, line: "Deliverable", link: "/coordinator/documents?tab=requirements" })),
+    ...deliverables.rows.map((row) => ({ date: row.date, kind: "deliverable" as const, title: `${row.name} due`, line: "Deliverable", link: "/coordinator/requirements" })),
     ...visits.rows.map((row) => ({ date: row.date, kind: "visit" as const, title: `Site visit${row.company ? ` · ${row.company}` : ""}`, line: `By ${row.by}`, link: "/coordinator/site-visits" })),
     ...holidays.rows.map((row) => ({ date: row.date, kind: "holiday" as const, title: `Holiday · ${row.name}`, line: "Not counted in schedules", link: "/coordinator/holidays" })),
     ...(termRow && termRow.end >= today && termRow.end <= weekEnd ? [{ date: termRow.end, kind: "term" as const, title: `${termRow.name} ends`, line: "Last day of the term", link: "/coordinator/terms" }] : []),

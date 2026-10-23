@@ -226,6 +226,8 @@ Keep to it when adding a page:
   A phone or the closed rail shows them. Underlined tabs are for sections;
   a filter inside a page is chips (`FilterChips`).
 - **A hub only joins pages of one menu group** (`pages/coordinator/hubs.ts`).
+  The coordinator's groups are Decide (what waits on you), Track (the
+  term as it runs), People, Setup (what is set once), Talk and Reports.
   A page that leaves a hub keeps its old tab address working through
   `DEPARTED`.
 - **Profile is the account**, at the foot of the side menu and at the

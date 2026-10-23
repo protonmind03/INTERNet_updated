@@ -24,21 +24,21 @@ const ENTRIES: [string, string, string][] = [
   ["Decide", "Concerns", "Concerns"],
   ["Decide", "Appeals", "Appeals"],
   ["Decide", "Needs attention", "Needs attention"],
+  ["Track", "Monitoring", "Monitoring"],
+  ["Track", "Submissions", "Submissions"],
+  ["Track", "Evaluations", "Evaluations"],
+  ["Track", "Site visits", "Site visits"],
   ["People", "Students", "Students"],
-  ["People", "Companies", "Companies"],
   ["People", "Supervisors", "Supervisors"],
+  ["People", "Companies", "Companies"],
   ["People", "Coordinators", "Coordinators"],
-  ["Term", "Terms", "Terms"],
-  ["Term", "Programs", "Programs"],
-  ["Term", "Holidays", "Holidays"],
-  ["Term", "Deliverables", "Deliverables"],
-  ["Term", "Submissions", "Submissions"],
-  ["Term", "Evaluations", "Evaluations"],
-  ["Term", "Site visits", "Site visits"],
+  ["Setup", "Terms", "Terms"],
+  ["Setup", "Programs", "Programs"],
+  ["Setup", "Holidays", "Holidays"],
+  ["Setup", "Deliverables", "Deliverables"],
   ["Talk", "Messages", "Messages"],
   ["Talk", "Announcements", "Announcements"],
   ["Reports", "Analytics", "Analytics"],
-  ["Reports", "Monitoring", "Monitoring"],
   ["Reports", "Audit log", "Audit log"],
   ["Reports", "System status", "System status"],
 ];
@@ -104,8 +104,9 @@ test("coordinator menu: one entry per page, one marked, its group stays open, no
   await expect(page.getByRole("heading", { name: "How to reach you" })).toBeVisible();
   await expect(menu.locator("a.role-side-account")).toHaveAttribute("aria-current", "page");
 
-  // Deliverables: a requirement opens its submissions, filtered to it.
+  // Deliverables: a requirement opens its submissions, filtered to it. The old tab address still leads there.
   await page.goto("/coordinator/documents?tab=requirements");
+  await expect.poll(address).toBe("/coordinator/requirements");
   const submissions = page.getByRole("link", { name: /^Submissions for / }).first();
   const requirement = ((await submissions.textContent()) ?? "").replace(/^Submissions for /, "").trim();
   await submissions.click();

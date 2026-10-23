@@ -484,12 +484,12 @@ function App() {
 
         <Route
           path="/coordinator/requirements"
-          element={<MovedPage />}
+          element={<CoordinatorRequirements />}
         />
 
         <Route
           path="/coordinator/documents"
-          element={<CoordinatorHub hub="documents" pages={{ submissions: CoordinatorDocuments, requirements: CoordinatorRequirements }} />}
+          element={<OwnPage><CoordinatorDocuments /></OwnPage>}
         />
 
         <Route

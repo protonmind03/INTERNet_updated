@@ -10,10 +10,10 @@
 |
 |   Decide   Resolution Center   Concerns · Appeals
 |   People   Companies           Companies · Supervisors
-|   Term     Documents           Submissions · Deliverables
 |
 | Evaluations, Site visits, Terms, Coordinators, Audit log and System
-| status were tabs of hubs in other groups; each is its own page again,
+| status were tabs of hubs in other groups, and Submissions (Track) and
+| Deliverables (Setup) since the system pass; each is its own page again,
 | and its old tab address is sent there (DEPARTED). The tab is in the
 | address (?tab=), and every older address redirects to its tab (MOVED),
 | keeping what else it carried (?focus= from a notification, an audit
@@ -24,7 +24,7 @@
 |
 */
 
-export type HubKey = "companies" | "documents" | "resolution";
+export type HubKey = "companies" | "resolution";
 
 export type HubTab = { id: string; label: string };
 
@@ -46,15 +46,6 @@ export const HUBS: Record<HubKey, Hub> = {
       { id: "supervisors", label: "Supervisors" },
     ],
   },
-  documents: {
-    title: "Documents",
-    path: "/coordinator/documents",
-    param: "tab",
-    tabs: [
-      { id: "submissions", label: "Submissions" },
-      { id: "requirements", label: "Deliverables" },
-    ],
-  },
   resolution: {
     title: "Resolution Center",
     path: "/coordinator/resolution",
@@ -69,7 +60,6 @@ export const HUBS: Record<HubKey, Hub> = {
 /** Where each page that moved used to be, and the tab it is now. */
 export const MOVED: { from: string; hub: HubKey; tab: string }[] = [
   { from: "/coordinator/supervisors", hub: "companies", tab: "supervisors" },
-  { from: "/coordinator/requirements", hub: "documents", tab: "requirements" },
   { from: "/coordinator/complaints", hub: "resolution", tab: "concerns" },
   { from: "/coordinator/appeals", hub: "resolution", tab: "appeals" },
 ];
@@ -87,6 +77,8 @@ export const DEPARTED: { path: string; param: "tab" | "section"; value: string; 
   { path: "/coordinator/profile", param: "section", value: "audit", to: "/coordinator/audit" },
   { path: "/coordinator/profile", param: "section", value: "status", to: "/coordinator/status" },
   { path: "/coordinator/profile", param: "section", value: "account", to: "/coordinator/profile" },
+  { path: "/coordinator/documents", param: "tab", value: "requirements", to: "/coordinator/requirements" },
+  { path: "/coordinator/documents", param: "tab", value: "submissions", to: "/coordinator/documents" },
 ];
 
 /** A departed tab's new address, with what else the old one carried; null for any other address. */

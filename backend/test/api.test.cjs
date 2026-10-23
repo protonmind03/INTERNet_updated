@@ -12636,7 +12636,7 @@ test("PSU redesign, menu review: one page, one menu entry, one name, and old tab
     assert.match(app, new RegExp(`path="${move.to}"`), `${move.to} is a route`);
   }
   // A hub only holds tabs of one menu group.
-  assert.deepEqual(Object.keys(HUBS).sort(), ["companies", "documents", "resolution"]);
+  assert.deepEqual(Object.keys(HUBS).sort(), ["companies", "resolution"]);
 
   // Each coordinator menu entry is listed once, with the title of its page.
   const layout = read("layouts/CoordinatorLayout.tsx");

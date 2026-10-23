@@ -29,12 +29,13 @@ import HubNav from "../pages/coordinator/HubNav";
 | text-first groups that open one at a time, with no icon tiles:
 |
 |   Home      Needs you, figures, this week
-|   Decide    Concerns, Appeals, Needs attention
-|   People    Students, Companies, Supervisors, Coordinators
-|   Term      Terms, Programs, Holidays, Deliverables, Submissions,
-|             Evaluations, Site visits
+|   Decide    Concerns, Appeals, Needs attention      what waits on you
+|   Track     Monitoring, Submissions, Evaluations,   the term as it runs
+|             Site visits
+|   People    Students, Supervisors, Companies, Coordinators
+|   Setup     Terms, Programs, Holidays, Deliverables what is set once
 |   Talk      Messages, Announcements
-|   Reports   Analytics, Monitoring, Audit log, System status
+|   Reports   Analytics, Audit log, System status
 |
 | Each entry is one page, named as the page is titled, in one group; the
 | shell marks the one entry the address belongs to (lib/navMatch.ts).
@@ -65,23 +66,29 @@ const MORE: DockGroup[] = [
     items: [{ label: "Needs attention", path: "/coordinator/monitoring?scope=attention", icon: "alert" }],
   },
   {
+    label: "Track",
+    items: [
+      { label: "Monitoring", path: "/coordinator/monitoring", icon: "activity" },
+      { label: "Submissions", path: "/coordinator/documents", icon: "inbox" },
+      { label: "Evaluations", path: "/coordinator/evaluations", icon: "star" },
+      { label: "Site visits", path: "/coordinator/site-visits", icon: "map-pin" },
+    ],
+  },
+  {
     label: "People",
     items: [
-      { label: "Companies", path: "/coordinator/companies", icon: "building" },
       { label: "Supervisors", path: "/coordinator/companies?tab=supervisors", icon: "briefcase" },
+      { label: "Companies", path: "/coordinator/companies", icon: "building" },
       { label: "Coordinators", path: "/coordinator/coordinators", icon: "user" },
     ],
   },
   {
-    label: "Term",
+    label: "Setup",
     items: [
       { label: "Terms", path: "/coordinator/terms", icon: "calendar" },
       { label: "Programs", path: "/coordinator/programs", icon: "cap" },
       { label: "Holidays", path: "/coordinator/holidays", icon: "clock" },
-      { label: "Deliverables", path: "/coordinator/documents?tab=requirements", icon: "clipboard" },
-      { label: "Submissions", path: "/coordinator/documents", icon: "document" },
-      { label: "Evaluations", path: "/coordinator/evaluations", icon: "star" },
-      { label: "Site visits", path: "/coordinator/site-visits", icon: "building" },
+      { label: "Deliverables", path: "/coordinator/requirements", icon: "clipboard" },
     ],
   },
   {
@@ -94,7 +101,6 @@ const MORE: DockGroup[] = [
   {
     label: "Reports",
     items: [
-      { label: "Monitoring", path: "/coordinator/monitoring", icon: "activity" },
       { label: "Audit log", path: "/coordinator/audit", icon: "clipboard" },
       { label: "System status", path: "/coordinator/status", icon: "sliders" },
     ],
@@ -161,28 +167,36 @@ export default function CoordinatorLayout({
       ],
     },
     {
+      label: "Track",
+      icon: "activity",
+      detail: "Monitoring, submissions, evaluations, visits",
+      children: [
+        { label: "Monitoring", path: "/coordinator/monitoring" },
+        { label: "Submissions", path: "/coordinator/documents" },
+        { label: "Evaluations", path: "/coordinator/evaluations" },
+        { label: "Site visits", path: "/coordinator/site-visits" },
+      ],
+    },
+    {
       label: "People",
       icon: "users",
-      detail: "Students, companies, supervisors",
+      detail: "Students, supervisors, companies",
       children: [
         { label: "Students", path: "/coordinator/students" },
-        { label: "Companies", path: "/coordinator/companies" },
         { label: "Supervisors", path: "/coordinator/companies?tab=supervisors", also: ["/coordinator/supervisors"] },
+        { label: "Companies", path: "/coordinator/companies" },
         { label: "Coordinators", path: "/coordinator/coordinators" },
       ],
     },
     {
-      label: "Term",
-      icon: "calendar",
-      detail: "Terms, programs, deliverables, visits",
+      label: "Setup",
+      icon: "sliders",
+      detail: "Terms, programs, holidays, deliverables",
       children: [
         { label: "Terms", path: "/coordinator/terms" },
         { label: "Programs", path: "/coordinator/programs" },
         { label: "Holidays", path: "/coordinator/holidays" },
-        { label: "Deliverables", path: "/coordinator/documents?tab=requirements" },
-        { label: "Submissions", path: "/coordinator/documents" },
-        { label: "Evaluations", path: "/coordinator/evaluations" },
-        { label: "Site visits", path: "/coordinator/site-visits" },
+        { label: "Deliverables", path: "/coordinator/requirements" },
       ],
     },
     {
@@ -197,10 +211,9 @@ export default function CoordinatorLayout({
     {
       label: "Reports",
       icon: "chart",
-      detail: "Analytics, monitoring, audit log",
+      detail: "Analytics, audit log, system status",
       children: [
         { label: "Analytics", path: "/coordinator/analytics" },
-        { label: "Monitoring", path: "/coordinator/monitoring" },
         { label: "Audit log", path: "/coordinator/audit" },
         { label: "System status", path: "/coordinator/status" },
       ],

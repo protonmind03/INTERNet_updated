@@ -6,7 +6,6 @@ import {
   Card,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   FormError,
   FormField,
   Modal,
@@ -16,6 +15,7 @@ import {
   StatusBadge,
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
+import { SummaryTiles } from "../../components/display";
 import { daysUntil, formatDate } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
@@ -220,16 +220,18 @@ export default function CoordinatorCompanies() {
               placeholder="Search by company or contact"
               className="w-full sm:w-80"
             />
-            <FilterChips
-              label="Which companies"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "active", label: "Active", count: companies.filter((c) => c.is_active).length },
-                { value: "expiring", label: "Agreement ending", count: companies.filter(needsRenewal).length },
-                { value: "inactive", label: "Inactive", count: companies.filter((c) => !c.is_active).length },
-              ]}
-            />
+            <div className="w-full">
+              <SummaryTiles
+                label="Which companies"
+                value={scope}
+                onChange={setScope}
+                tiles={[
+                  { value: "active", label: "Active", count: loading ? null : companies.filter((c) => c.is_active).length, icon: "building", tone: "brand" },
+                  { value: "expiring", label: "Agreement ending or expired", count: loading ? null : companies.filter(needsRenewal).length, icon: "briefcase", tone: companies.some(needsRenewal) ? "warning" : "neutral" },
+                  { value: "inactive", label: "Inactive", count: loading ? null : companies.filter((c) => !c.is_active).length, icon: "ban", tone: "neutral" },
+                ]}
+              />
+            </div>
           </div>
 
           {loading ? (
