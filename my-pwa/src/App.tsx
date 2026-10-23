@@ -141,6 +141,7 @@ const StudentMessages = page("student", () => import("./pages/student/Messages")
 const StudentJournal = page("student", () => import("./pages/student/Journal"));
 const StudentCompletion = page("student", () => import("./pages/student/Completion"));
 const SupervisorAnnouncements = page("supervisor", () => import("./pages/supervisor/Announcements"));
+const SupervisorMessages = page("supervisor", () => import("./pages/supervisor/Messages"));
 const SupervisorJournals = page("supervisor", () => import("./pages/supervisor/Journals"));
 
 /*
@@ -331,6 +332,11 @@ function App() {
         <Route
           path="/supervisor/announcements"
           element={<SupervisorAnnouncements />}
+        />
+
+        <Route
+          path="/supervisor/messages"
+          element={<SupervisorMessages />}
         />
 
         <Route

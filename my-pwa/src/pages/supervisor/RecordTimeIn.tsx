@@ -32,12 +32,15 @@ export default function RecordTimeIn({
   open,
   onClose,
   work,
+  intern,
 }: {
   open: boolean;
   onClose: () => void;
   work: SupervisorWork;
+  /** Chosen already (Record time-in on an intern's page). */
+  intern?: string;
 }) {
-  const [studentId, setStudentId] = useState("");
+  const [studentId, setStudentId] = useState(intern ?? "");
   const [reasonChoice, setReasonChoice] = useState(REASONS[0]);
   const [otherReason, setOtherReason] = useState("");
   const [note, setNote] = useState("");

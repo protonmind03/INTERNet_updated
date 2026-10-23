@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { NavLink, useLocation } from "react-router-dom";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { BrandIcon, PortalHeader, Wordmark, type Role } from "../brand";
 import { BRAND } from "../brand/geometry";
 import Icon, { type IconName } from "./Icon";
@@ -45,7 +45,8 @@ export type SideItem = {
 const onPath = (pathname: string, path?: string) => Boolean(path) && (pathname === path || pathname.startsWith(`${path}/`));
 
 function owns(item: SideItem, pathname: string): boolean {
-  return onPath(pathname, item.path) || (item.also ?? []).some((path) => onPath(pathname, path)) || (item.children ?? []).some((child) => onPath(pathname, child.path));
+  const bare = (path: string) => path.split("?")[0];
+  return onPath(pathname, item.path) || (item.also ?? []).some((path) => onPath(pathname, path)) || (item.children ?? []).some((child) => onPath(pathname, bare(child.path)));
 }
 
 function SideMenu({
@@ -63,7 +64,7 @@ function SideMenu({
   onToggle: () => void;
   canToggle: boolean;
 }) {
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const pane = useScrollPane<HTMLElement>();
   const current = items.find((item) => item.children && owns(item, pathname))?.label ?? null;
   const [open, setOpen] = useState<string | null>(current);
@@ -112,26 +113,47 @@ function SideMenu({
               {item.section && !collapsed && <p className="eyebrow mb-1.5 mt-4 px-3 text-white/70">{item.section}</p>}
               {item.children && !collapsed ? (
                 <>
-                  <button
-                    type="button"
-                    className="role-side-head"
-                    aria-expanded={expanded}
-                    onClick={() => setOpen(expanded ? null : item.label)}
-                    data-on={on || undefined}
-                  >
-                    {label}
-                    <Icon name="chevron-down" size={16} className={`role-side-chevron shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
-                  </button>
+                  {item.path ? (
+                    // A group that is also a page (the supervisor's Review): the name goes there, the chevron opens it.
+                    <div className="flex items-center">
+                      <Link to={item.path} className="role-side-link min-w-0 flex-1" aria-current={onPath(pathname, item.path) && !search ? "page" : undefined}>
+                        {label}
+                      </Link>
+                      <button
+                        type="button"
+                        className="role-side-toggle"
+                        aria-expanded={expanded}
+                        aria-label={`${expanded ? "Close" : "Open"} ${item.label}`}
+                        onClick={() => setOpen(expanded ? null : item.label)}
+                      >
+                        <Icon name="chevron-down" size={16} className={`shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      className="role-side-head"
+                      aria-expanded={expanded}
+                      onClick={() => setOpen(expanded ? null : item.label)}
+                      data-on={on || undefined}
+                    >
+                      {label}
+                      <Icon name="chevron-down" size={16} className={`role-side-chevron shrink-0 transition-transform ${expanded ? "rotate-180" : ""}`} />
+                    </button>
+                  )}
                   {expanded && (
                     <ul className="role-side-sub">
-                      {item.children.map((child) => (
-                        <li key={child.path}>
-                          <NavLink to={child.path} end className="role-side-link">
-                            <span className="min-w-0 flex-1 truncate">{child.label}</span>
-                            {child.count ? <span className="role-side-count">{child.count}</span> : null}
-                          </NavLink>
-                        </li>
-                      ))}
+                      {item.children.map((child) => {
+                        const childOn = child.path.includes("?") ? `${pathname}${search}` === child.path : onPath(pathname, child.path);
+                        return (
+                          <li key={child.path}>
+                            <Link to={child.path} className="role-side-link" aria-current={childOn ? "page" : undefined}>
+                              <span className="min-w-0 flex-1 truncate">{child.label}</span>
+                              {child.count ? <span className="role-side-count">{child.count}</span> : null}
+                            </Link>
+                          </li>
+                        );
+                      })}
                     </ul>
                   )}
                 </>

@@ -75,7 +75,8 @@ export default function SupervisorTasks() {
   // Interns of more than one program or block can be narrowed to one.
   const grouping = useInternGroups();
   const inGroup = grouping.has;
-  const [form, setForm] = useState<Form | null>(null);
+  // "?new=1" (Give a task, on an intern's page) opens the form at once.
+  const [form, setForm] = useState<Form | null>(() => (params.get("new") === "1" ? { mode: "new" } : null));
   const [reviewId, setReviewId] = useState<number | null>(null);
   // One intern's task, or a whole team task.
   const [cancelling, setCancelling] = useState<Row | null>(null);

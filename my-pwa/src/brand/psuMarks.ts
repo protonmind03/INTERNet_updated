@@ -121,3 +121,18 @@ export function markChoices(kind: "college" | "org"): PsuMark[] {
 export function sealChoices(): PsuMark[] {
   return SHOWN.filter((mark) => mark.kind === "university" || mark.kind === "college");
 }
+
+/**
+ * A short code from a program's typed name, for a trainee not yet linked to
+ * a program: "BS Information Technology" → "BSIT". It only finds a mark when
+ * it matches a program's short code; otherwise it is the monogram's text.
+ */
+export function programCodeOf(text: string | null | undefined): string {
+  return (text || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => (/^[A-Z]{2,}$/.test(word) ? word : word[0]))
+    .join("")
+    .toUpperCase()
+    .slice(0, 6);
+}

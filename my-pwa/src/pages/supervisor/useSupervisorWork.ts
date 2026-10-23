@@ -36,6 +36,10 @@ export type Intern = {
   /** Where the coordinator placed them: "BSIT" and "BSIT 4A". */
   program_code?: string | null;
   block_name?: string | null;
+  /** PSU redesign (migration 071): the major, and the program's or major's organisation mark and name. */
+  major?: string | null;
+  org_mark_key?: string | null;
+  org_name?: string | null;
 };
 
 import type { StepVerifications } from "../../components/StepMarks";
@@ -95,6 +99,8 @@ export type AttendanceEntry = {
   pictures?: number;
   /** The tasks the intern said they worked on that day. */
   tasks?: { id: number; title: string }[];
+  /** Minutes after the shift's start the time-in was made; 0 on time, null with no schedule (Iteration 18). */
+  late_minutes?: number | null;
   /** Set when the supervisor corrected the times on this log, with the reason. */
   time_corrected_at?: string | null;
   time_correction_reason?: string | null;

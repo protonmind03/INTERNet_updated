@@ -4157,6 +4157,8 @@ app.get(
             a.corrected_at,
             a.capture_method,
             a.recorded_offline,
+            -- PSU redesign: "12 min late" on the Review cards (Iteration 18's day rules).
+            a.late_minutes,
             -- Iteration 22: how each later step was made (passkey, not confirmed).
             a.step_verifications,
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,

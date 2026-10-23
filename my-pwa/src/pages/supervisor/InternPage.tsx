@@ -1,5 +1,12 @@
 import { useMemo, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { UnderlineTabs } from "../../brand/motifs";
+import { ProgramMark } from "../../brand/MarkImages";
+import { programCodeOf } from "../../brand/psuMarks";
+import ComposeMessage from "../../components/ComposeMessage";
+import RecordTimeIn from "./RecordTimeIn";
+import { todaysLogs } from "./reviewData";
+import type { Projection } from "../../lib/useProjections";
 import DtrSheet from "../../components/DtrSheet";
 import Icon from "../../components/Icon";
 import MonthCalendar from "../../components/MonthCalendar";
@@ -13,7 +20,6 @@ import {
   CardHeader,
   EmptyState,
   ErrorNotice,
-  FilterChips,
   Modal,
   ProgressBar,
   SkeletonRows,
@@ -27,6 +33,7 @@ import {
   formatDayDate,
   formatHours,
   formatTime,
+  getInitials,
 } from "../../lib/format";
 import { useAccount } from "../../lib/session";
 import { LATE_AFTER_MINUTES } from "../../lib/studentCalendar";
@@ -45,6 +52,7 @@ import { phStamp } from "../../lib/phTime";
 import {
   downloadDocument,
   useSupervisorWork,
+  type AttendanceEntry,
   type Intern,
   type QueueItem,
   type SupervisorWork,
@@ -85,6 +93,7 @@ function clockTime(value: string | null | undefined): string {
 export default function SupervisorInternPage() {
   const supervisor = useAccount("supervisor");
   const work = useSupervisorWork(supervisor?.supervisor_id);
+  const navigate = useNavigate();
   const { studentId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const asked = params.get("tab") as InternTab | null;
@@ -94,6 +103,10 @@ export default function SupervisorInternPage() {
   const intern = work.interns.find((item) => sameId(item.student_id, studentId));
   const [reviewKey, setReviewKey] = useState<string | null>(null);
   const reviewing = work.queue.find((item) => item.key === reviewKey);
+  // PSU redesign S2: the quick actions under the intern's hours.
+  const [recording, setRecording] = useState(false);
+  const [writing, setWriting] = useState(false);
+  const projection = useProjections("supervisor").get(intern?.student_id ?? "");
 
   const back = (
     <Link
@@ -141,12 +154,29 @@ export default function SupervisorInternPage() {
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
+        <InternSummary intern={intern} work={work} projection={projection} />
+
+        <div className="grid grid-cols-3 gap-2.5 print:hidden">
+          {[
+            { label: "Record time-in", icon: "camera" as const, run: () => setRecording(true) },
+            { label: "Message", icon: "chat" as const, run: () => setWriting(true) },
+            { label: "Give a task", icon: "plus" as const, run: () => navigate(`/supervisor/tasks?intern=${encodeURIComponent(intern.student_id)}&new=1`) },
+          ].map((action) => (
+            <button key={action.label} type="button" onClick={action.run} className="card-hairline flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-2xl px-2 py-3 text-center text-[13.5px] font-bold text-slate-900 hover:bg-psu-50/60">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-psu-50 text-psu-700">
+                <Icon name={action.icon} size={18} />
+              </span>
+              {action.label}
+            </button>
+          ))}
+        </div>
+
         <div className="print:hidden">
-          <FilterChips
+          <UnderlineTabs
             label="Section"
             value={tab}
             onChange={setTab}
-            options={INTERN_TABS.map((value) => ({ value, label: INTERN_TAB_LABELS[value] }))}
+            tabs={INTERN_TABS.map((value) => ({ value, label: INTERN_TAB_LABELS[value] }))}
           />
         </div>
 
@@ -181,7 +211,45 @@ export default function SupervisorInternPage() {
       >
         {reviewing && <ReviewDetail item={reviewing} work={work} onDecided={() => setReviewKey(null)} />}
       </Modal>
+      <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} intern={intern.student_id} />
+      {writing && (
+        <ComposeMessage role="supervisor" to={{ role: "student", id: intern.student_id, name: intern.name, email: intern.email }} subject="About your OJT" onClose={() => setWriting(false)} />
+      )}
     </SupervisorLayout>
+  );
+}
+
+/** Hours, the expected finish, today's time-in, and the program with its organisation's mark. */
+function InternSummary({ intern, work, projection }: { intern: Intern; work: SupervisorWork; projection: Projection | undefined }) {
+  const today = todaysLogs(work);
+  let log: AttendanceEntry | undefined;
+  for (const [id, entry] of today) if (sameId(id, intern.student_id)) log = entry;
+  const percent = intern.required_hours > 0 ? Math.min(100, (intern.hours_rendered / intern.required_hours) * 100) : 0;
+  return (
+    <Card className="p-4">
+      <div className="flex items-start gap-3">
+        <span aria-hidden="true" className="grid h-12 w-12 shrink-0 place-items-center rounded-full bg-psu-50 text-sm font-extrabold text-psu-800">
+          {getInitials(intern.name, "IN")}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="tabular text-[17px] font-bold text-slate-900">
+            {formatHours(intern.hours_rendered)} of {formatHours(intern.required_hours)} verified
+          </p>
+          {projection?.projected_finish && <p className="text-[13.5px] text-slate-600">Expected to finish {formatDate(projection.projected_finish)}</p>}
+        </div>
+        <span className="st-badge st-badge--neutral shrink-0">{log ? (log.time_out ? `Out · ${formatTime(log.time_out)}` : `In · ${formatTime(log.time_in)}`) : "Not in today"}</span>
+      </div>
+      <ProgressBar value={percent} className="mt-3" label={`${intern.name}: ${Math.round(percent)} percent of required hours`} />
+      {(intern.program_code || intern.program) && (
+        <div className="mt-3 flex items-center gap-2.5 border-t border-(--role-hairline) pt-3">
+          <ProgramMark shortCode={intern.program_code || programCodeOf(intern.program)} major={intern.major} markKey={intern.org_mark_key} size={28} alt={intern.org_name ? `${intern.org_name} logo` : ""} />
+          <span className="min-w-0 truncate text-[13.5px] text-slate-700">
+            {[intern.program || intern.program_code, intern.major].filter(Boolean).join(", ")}
+            {intern.org_name ? <span className="text-slate-500"> · {intern.org_name}</span> : null}
+          </span>
+        </div>
+      )}
+    </Card>
   );
 }
 
