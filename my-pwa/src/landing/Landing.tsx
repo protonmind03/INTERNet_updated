@@ -1,6 +1,6 @@
 import { BackToTop, Footer, Glyph, SealCoin, TopBar } from "./Chrome";
 import { ICON } from "./icons";
-import { DOOR_ROLES, DOORS, FOOL, HERO_ORDER, HOW_STEPS, ROLE_DEVICE } from "./content";
+import { DOOR_ROLES, DOORS, FOOL, HERO_ORDER, HOW_STEPS, ROLE_DEVICE, ROLE_PAGE_PATH } from "./content";
 import { Device, StepScreen } from "./Screens";
 
 /*
@@ -55,7 +55,8 @@ function Road() {
 }
 
 /*
-| The city on the horizon, drawn once at build time: a far row in the haze,
+| The city on the horizon, drawn once at build time (what OJT is: from the
+| campus out to the workplaces, each day checked in): a far row in the haze,
 | a near row with lit windows (a few of them flicker), the campus hall with
 | its clock tower and flag on the left, a tall tower with a blinking light
 | on the right, and a line of trees where the city meets the fields. The
@@ -104,8 +105,27 @@ function buildRow(seed: number, minH: number, maxH: number, gapAt: Array<[number
 }
 
 const FAR_ROW = buildRow(7, 30, 82, [], false);
-const NEAR_ROW = buildRow(23, 26, 74, [[330, 540], [1180, 1260]], true);
+const NEAR_ROW = buildRow(23, 26, 74, [[70, 326], [330, 540], [1180, 1260], [1280, 1374], [1400, 1520]], true);
 const TREES = Array.from({ length: 86 }, (_, i) => ({ x: i * 19 + ((i * 7) % 11), r: 7 + ((i * 13) % 7) }));
+
+/*
+| The workplaces trainees are sent to, each under a map pin: a hospital, an
+| IT company, a factory and a bank. Arcs run to them from the campus, with
+| a dot travelling along each (the network: what a trainee does reaches the
+| campus); now and then a time-in pops up over a pin.
+*/
+const CAMPUS = { x: 440, y: 24 };
+const WORKPLACES = [
+  { key: "hospital", pin: { x: 135, y: 46 }, glyph: "M-3.5 0h7M0 -3.5v7", time: "7:52" },
+  { key: "it", pin: { x: 1327, y: 26 }, glyph: "M-4.5 -2.5h9v5.5h-9zM-6 4h12", time: "7:58" },
+  { key: "factory", pin: { x: 252, y: 58 }, glyph: "M0 -4.5l1.3 2.2 2.6-.3-.9 2.4 1.9 1.8-2.5.9.1 2.6-2.5-1-2.5 1 .1-2.6-2.5-.9 1.9-1.8-.9-2.4 2.6.3z", time: "8:03" },
+  { key: "bank", pin: { x: 1460, y: 34 }, glyph: "M-5 -1.5h10v6h-10zM-2 -1.5v-2h4v2M-5 1h10", time: "7:56" },
+] as const;
+
+function arc(to: { x: number; y: number }) {
+  const lift = 22 + Math.abs(to.x - CAMPUS.x) * 0.025;
+  return `M${CAMPUS.x} ${CAMPUS.y} Q${(CAMPUS.x + to.x) / 2} ${Math.min(CAMPUS.y, to.y) - lift} ${to.x} ${to.y - 22}`;
+}
 
 function City() {
   return (
@@ -137,16 +157,20 @@ function City() {
           )
         )}
       </g>
-      {/* The campus hall: columns, a pediment, the clock tower and the flag. */}
+
+      {/* The campus: columns, a pediment marked PSU, the clock tower at eight and the flag. */}
       <g className="city-hall" transform="translate(350 0)">
         <rect x="0" y="104" width="180" height="46" />
         <path d="M-6 106 L90 78 L186 106 Z" />
+        <text className="city-label" x="90" y="101" textAnchor="middle">
+          PSU
+        </text>
         <rect x="70" y="40" width="40" height="44" />
         <path d="M66 42 L90 22 L114 42 Z" />
         <line className="city-pole" x1="90" y1="22" x2="90" y2="2" />
         <path className="city-flag" d="M90 3 q8 -2 16 1 t16 1 v9 q-8 -2 -16 -1 t-16 -1 z" />
         <circle className="city-clock" cx="90" cy="60" r="9" />
-        <path className="city-clock-hands" d="M90 60 V54 M90 60 L95 62" />
+        <path className="city-clock-hands" d="M90 60 V53.5 M90 60 L85.5 62.6" />
         {[14, 38, 62, 118, 142, 166].map((x) => (
           <rect key={x} className="city-col" x={x} y="112" width="5" height="38" />
         ))}
@@ -154,6 +178,48 @@ function City() {
           <rect key={x} className="city-win" x={x} y="118" width="7" height="10" />
         ))}
       </g>
+
+      {/* The hospital: a wide block, a lit cross on the roof. */}
+      <g className="city-work" transform="translate(80 0)">
+        <rect x="0" y="82" width="110" height="68" rx="2" />
+        <rect x="40" y="70" width="30" height="14" />
+        <rect className="city-sign" x="47" y="72" width="16" height="10" rx="2" />
+        <path className="city-cross" d="M55 74v6M52 77h6" />
+        {[0, 1, 2, 3].map((r) =>
+          [0, 1, 2, 3, 4, 5, 6].map((c) => <rect key={`${r}-${c}`} className={(r + c) % 3 === 0 ? "city-win city-win--cool" : "city-win city-win--dim"} x={8 + c * 14} y={92 + r * 13} width="8" height="7" />)
+        )}
+      </g>
+      {/* The IT company: a glass tower with a code sign. */}
+      <g className="city-work" transform="translate(1290 0)">
+        <rect x="0" y="40" width="74" height="110" rx="2" />
+        <rect className="city-glass" x="4" y="44" width="66" height="102" />
+        {Array.from({ length: 9 }, (_, r) => (
+          <rect key={r} className="city-band" x="4" y={50 + r * 11} width="66" height="1.4" />
+        ))}
+        <rect className="city-sign" x="20" y="30" width="34" height="11" rx="2" />
+        <text className="city-sign-text" x="37" y="38.4" textAnchor="middle">
+          {"</>"}
+        </text>
+      </g>
+      {/* The factory: saw-tooth roofs and a chimney with its smoke. */}
+      <g className="city-work" transform="translate(200 0)">
+        <path d="M0 150V100l24-16v16l24-16v16l24-16v16l24-16v66z" />
+        <rect x="104" y="66" width="12" height="84" />
+        <circle className="city-smoke" cx="110" cy="58" r="6" />
+        <circle className="city-smoke city-smoke--2" cx="116" cy="46" r="8" />
+        {[10, 34, 58, 82].map((x) => (
+          <rect key={x} className="city-win" x={x} y="112" width="12" height="8" />
+        ))}
+      </g>
+      {/* The bank: a small portico. */}
+      <g className="city-work" transform="translate(1410 0)">
+        <rect x="0" y="92" width="100" height="58" />
+        <path d="M-4 94 L50 70 L104 94 Z" />
+        {[10, 28, 46, 64, 82].map((x) => (
+          <rect key={x} className="city-col" x={x} y="100" width="5" height="50" />
+        ))}
+      </g>
+
       {/* The tall tower, with its blinking light. */}
       <g className="city-tower" transform="translate(1190 0)">
         <rect x="8" y="36" width="44" height="114" rx="2" />
@@ -166,6 +232,40 @@ function City() {
           ))
         )}
       </g>
+
+      {/* The network: arcs from the campus to each workplace, a dot travelling each. */}
+      <g className="city-net">
+        {WORKPLACES.map((place, index) => (
+          <g key={place.key}>
+            <path id={`net-${place.key}`} className="city-arc" d={arc(place.pin)} />
+            <circle className="city-packet" r="2.6">
+              <animateMotion dur={`${4 + index * 0.7}s`} begin={`${index * 0.9}s`} repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear">
+                <mpath href={`#net-${place.key}`} />
+              </animateMotion>
+            </circle>
+          </g>
+        ))}
+        <circle className="city-hub" cx={CAMPUS.x} cy={CAMPUS.y} r="4" />
+      </g>
+
+      {/* The map pins, and a time-in popping up over each in turn. */}
+      {WORKPLACES.map((place, index) => (
+        <g key={place.key} transform={`translate(${place.pin.x} ${place.pin.y})`}>
+          <g className="city-pin" style={{ animationDelay: `${-index * 0.8}s` }}>
+            <ellipse className="city-pin-shadow" cx="0" cy="1" rx="6" ry="2" />
+            <path className="city-pin-body" d="M0 0c-6-7.5-10-12-10-17.5a10 10 0 1 1 20 0C10-12 6-7.5 0 0z" />
+            <circle className="city-pin-face" cx="0" cy="-17.5" r="7" />
+            <path className="city-pin-glyph" d={place.glyph} transform="translate(0 -17.5)" />
+          </g>
+          <g className="city-timein" style={{ animationDelay: `${index * 3}s` }}>
+            <rect x="12" y="-34" width="48" height="16" rx="8" />
+            <text x="36" y="-22.6" textAnchor="middle">
+              {`✓ ${place.time}`}
+            </text>
+          </g>
+        </g>
+      ))}
+
       <g className="city-trees">
         {TREES.map((tree) => (
           <circle key={tree.x} cx={tree.x} cy={CITY_H + 2} r={tree.r} />
@@ -198,10 +298,6 @@ function Hero() {
       <Road />
       <div className="hero-inner">
         <div className="land-wrap hero-copy">
-          <p className="hero-eyebrow">
-            <span className="hero-live" aria-hidden="true" />
-            For trainees, supervisors and coordinators
-          </p>
           <h1 id="land-title" className="hero-title">
             One system. <em>Every role, every screen.</em>
           </h1>
@@ -210,15 +306,6 @@ function Hero() {
             <span>
               The on-the-job training system of <b>Pangasinan State University</b>, installable on any phone, tablet or computer.
             </span>
-          </p>
-          <p className="hero-cta">
-            <a href="#doors" className="hero-cta-primary">
-              Open your portal
-              <Glyph d={ICON.arrow} size={18} stroke={2.4} />
-            </a>
-            <a href="#how" className="hero-cta-secondary">
-              See how it works
-            </a>
           </p>
           <ul className="hero-chips" aria-label="Show a role">
             {DOOR_ROLES.map((role) => (
@@ -312,13 +399,20 @@ function PortalCard({ role }: { role: (typeof DOOR_ROLES)[number] }) {
         </div>
         <div className="portal-body">
           <h3 id={`portal-${role}-name`} className="portal-title">
-            {door.cardTitle}
+            {/* The title is the card's one link; it stretches over the whole card (landing.css). */}
+            <a href={ROLE_PAGE_PATH[role]} className="portal-link">
+              {door.cardTitle}
+            </a>
           </h3>
           <ul className="portal-bullets">
             {door.bullets.map((bullet) => (
               <li key={bullet}>{bullet}</li>
             ))}
           </ul>
+          <span className="portal-more" aria-hidden="true">
+            See the {door.cardTitle.toLowerCase()}
+            <Glyph d={ICON.arrow} size={16} stroke={2.4} />
+          </span>
         </div>
       </article>
     </li>
@@ -549,9 +643,6 @@ function Checks() {
           </div>
         </div>
       </div>
-      <p className="checks-zone-tip" aria-hidden="true">
-        Scroll inside the box to see all ten · scroll outside it to move on
-      </p>
     </section>
   );
 }

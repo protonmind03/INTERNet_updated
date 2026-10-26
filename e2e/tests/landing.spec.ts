@@ -13,6 +13,7 @@ import { ACCOUNTS, signIn } from "./helpers";
 */
 
 const ROLES = ["student", "supervisor", "coordinator"] as const;
+const ROLE_PAGE: Record<(typeof ROLES)[number], string> = { student: "/for-trainees", supervisor: "/for-supervisors", coordinator: "/for-coordinators" };
 
 test.describe("the landing page", () => {
   test("is the built page, without the app, and its doors lead to each role's sign-in", async ({ page }) => {
@@ -27,17 +28,17 @@ test.describe("the landing page", () => {
     await expect(page.locator("#root")).toHaveCount(0);
     expect(scripts.some((path) => /\/assets\/app-/.test(path))).toBe(false);
 
-    // The revision: the portal cards are an overview only; the top bar leads to each role's own page; Sign in lists the three doors.
+    // The portal cards and the top bar lead to each role's own page; Sign in lists the three doors.
     for (const role of ROLES) {
       await expect(page.locator(`#portal-${role}`)).toBeVisible();
-      await expect(page.locator(`#portal-${role}`).getByRole("link")).toHaveCount(0);
+      await expect(page.locator(`#portal-${role}`).getByRole("link")).toHaveAttribute("href", ROLE_PAGE[role]);
     }
     for (const [role, path] of [["trainees", "/for-trainees"], ["supervisors", "/for-supervisors"], ["coordinators", "/for-coordinators"]]) {
       // In the top bar on a computer, in the Menu sheet on a narrower screen.
       await expect(page.locator(".land-nav a", { hasText: `For ${role}` })).toHaveAttribute("href", path);
       await expect(page.locator(".land-sheet a", { hasText: `For ${role}` })).toHaveAttribute("href", path);
     }
-    // Home leads back to the landing page; "How it works" is reached from the hero, not the top bar.
+    // Home leads back to the landing page; "How it works" is not in the top bar.
     await expect(page.locator(".land-nav a", { hasText: "Home" })).toHaveAttribute("href", "/");
     await expect(page.locator(".land-nav a", { hasText: "How it works" })).toHaveCount(0);
     await page.locator(".land-top summary", { hasText: "Sign in" }).click();
@@ -47,6 +48,10 @@ test.describe("the landing page", () => {
       await expect(page.locator(`#land-signin-top a[href="/${role}/sign-in"]`)).toHaveAttribute("target", "_blank");
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    // Anywhere on a card goes to that role's page.
+    await page.keyboard.press("Escape");
+    await page.locator("#portal-supervisor").click({ position: { x: 40, y: 60 } });
+    await expect(page).toHaveURL(/\/for-supervisors$/);
   });
 
   test("the hero turns the roles and switches the device; How it works starts each role at step 1", async ({ page }) => {

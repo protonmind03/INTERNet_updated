@@ -206,12 +206,6 @@ html {
 @media (min-width: 1024px) { .hero-title { max-width: none; } .hero-title em { display: inline; } }
 .hero-sub { display: flex; max-width: 36rem; margin: clamp(8px, 1.8vh, 18px) auto 0; align-items: center; gap: 14px; text-align: left; font-size: clamp(14.5px, 2.1vh, 16.5px); line-height: 1.45; color: var(--land-on-night-muted); }
 .hero-sub b { color: var(--land-on-night); }
-.hero-cta { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin: clamp(10px, 2vh, 22px) 0 0; }
-.hero-cta a { display: inline-flex; min-height: clamp(42px, 5.6vh, 48px); align-items: center; padding: 0 22px; border-radius: 12px; font-weight: 800; text-decoration: none; }
-.hero-cta-primary { background: var(--land-gold); color: var(--land-on-gold); }
-.hero-cta-primary:hover { background: color-mix(in srgb, var(--land-gold) 88%, white); }
-.hero-cta-secondary { color: var(--land-on-night); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--land-on-night) 45%, transparent); }
-.hero-cta-secondary:hover { background: color-mix(in srgb, var(--land-on-night) 10%, transparent); }
 
 /* The seal coin: two faces, turning slowly. */
 .coin { position: relative; display: inline-block; flex-shrink: 0; transform-style: preserve-3d; animation: coin-turn 9s linear infinite; }
@@ -549,8 +543,6 @@ html {
 }
 /* The box answers the wheel: a gold ring says so while the pointer is inside. */
 .checks[data-scrolly] .checks-sticky:hover { box-shadow: 0 0 0 2px color-mix(in srgb, var(--land-gold) 80%, transparent), 0 0 0 8px color-mix(in srgb, var(--land-gold) 14%, transparent), 0 40px 80px -48px rgb(11 20 64 / 0.55); }
-.checks-zone-tip { position: absolute; left: 50%; bottom: calc(var(--checks-pad) * 0.5 - 9px); z-index: 2; display: none; translate: -50% 0; margin: 0; font-size: 12px; font-weight: 700; color: var(--land-muted); white-space: nowrap; }
-@media (min-width: 1024px) and (min-height: 600px) { .checks[data-scrolly] .checks-zone-tip { display: block; } }
 .checks-list { display: flex; min-height: 0; flex-direction: column; justify-content: center; padding: 36px 16px 28px; background: var(--land-paper); }
 @media (min-width: 768px) { .checks-list { padding-inline: 32px; } }
 @media (min-width: 1024px) { .checks-list { padding: clamp(12px, 2.6vh, 36px) clamp(24px, 2.6vw, 40px); } }
@@ -731,22 +723,11 @@ html {
 .role-install .get-title { margin-top: 0; }
 
 /* ---------- The hero, second pass (fix 10-26): copy, stage and controls ---------- */
-.hero-eyebrow { display: inline-flex; align-items: center; gap: 9px; margin: 0 0 clamp(6px, 1.4vh, 14px); padding: 5px 14px 5px 10px; border-radius: 9999px; background: rgb(255 255 255 / 0.07); box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.16); font-size: clamp(12px, 1.7vh, 13.5px); font-weight: 700; letter-spacing: 0.02em; color: var(--land-on-night-muted); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: hero-rise 700ms var(--inb-ease-out) both; }
-.hero-live { position: relative; width: 8px; height: 8px; border-radius: 9999px; background: #4ade80; }
-.hero-live::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #4ade80; animation: live-ping 2s var(--inb-ease-out) infinite; }
-@keyframes live-ping { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
 .hero-title { text-shadow: 0 6px 40px rgb(8 15 56 / 0.6); animation: hero-rise 800ms 80ms var(--inb-ease-out) both; }
 .hero-title em { background: linear-gradient(100deg, #fde68a 0%, var(--land-gold) 35%, #f59e0b 70%, var(--land-gold) 100%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: title-sheen 7s linear infinite; }
 @keyframes title-sheen { to { background-position: -200% 0; } }
 .hero-sub { animation: hero-rise 800ms 160ms var(--inb-ease-out) both; }
-.hero-cta { animation: hero-rise 800ms 240ms var(--inb-ease-out) both; }
 @keyframes hero-rise { from { opacity: 0; transform: translateY(14px); } }
-.hero-cta a { gap: 8px; transition: transform 180ms var(--inb-ease-out), box-shadow 180ms, background-color 180ms; }
-.hero-cta-primary { box-shadow: 0 10px 30px -10px rgb(250 204 21 / 0.65), inset 0 -2px 0 rgb(0 0 0 / 0.12); }
-.hero-cta-primary:hover { transform: translateY(-2px); box-shadow: 0 16px 34px -10px rgb(250 204 21 / 0.75), inset 0 -2px 0 rgb(0 0 0 / 0.12); }
-.hero-cta-primary svg { transition: transform 180ms var(--inb-ease-out); }
-.hero-cta-primary:hover svg { transform: translateX(3px); }
-.hero-cta-secondary { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); background: rgb(255 255 255 / 0.04); }
 
 /* The chosen device stands on a lit pedestal; the other two sit back, in the haze. */
 .hero-stage { margin-top: clamp(10px, 2.4vh, 26px); }
@@ -1064,9 +1045,58 @@ html {
 .role-install .get-steps li > .ia { margin-bottom: 4px; }
 @media (min-width: 900px) { .role-install .get-steps li { min-height: 0; } .role-install .get-steps li > .ia { height: 220px; } .role-install .get-steps li > .ia--tablet, .role-install .get-steps li > .ia--window { height: 190px; margin-block: 15px 19px; } }
 
+/* ---------- The hero, third pass (landing fix 10-26): the title and the line under it, then the stage ---------- */
+@keyframes live-ping { from { transform: scale(1); opacity: 0.7; } to { transform: scale(3); opacity: 0; } }
+.hero-inner { padding-top: calc(var(--top-h) + clamp(18px, 4.4vh, 52px)); }
+.hero-sub { margin-top: clamp(12px, 2.4vh, 24px); }
+.hero-stage { margin-top: clamp(18px, 3.6vh, 40px); }
+
+/* The city as OJT: the campus, the workplaces under their pins, the network between them. */
+.city-label { fill: var(--land-gold); font: 800 10px/1 var(--font-display); letter-spacing: 0.12em; }
+.city-work > rect:not(.city-win):not(.city-sign):not(.city-glass):not(.city-band):not(.city-col), .city-work > path:not(.city-cross) { fill: #0f1752; }
+.city-sign { fill: #fff7d6; opacity: 0.95; }
+.city-cross { fill: none; stroke: #e5484d; stroke-width: 2.4; stroke-linecap: round; }
+.city-sign-text { fill: #1a237e; font: 800 8px/1 var(--land-mono); }
+.city-glass { fill: #1b2a8a; opacity: 0.85; }
+.city-band { fill: #7f8cff; opacity: 0.35; }
+.city-smoke { fill: #c7cdf0; opacity: 0.18; animation: smoke-rise 5s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.city-smoke--2 { animation-delay: -2.5s; }
+@keyframes smoke-rise { 0% { opacity: 0; transform: translate(0, 8px) scale(0.6); } 30% { opacity: 0.22; } 100% { opacity: 0; transform: translate(10px, -16px) scale(1.5); } }
+.city-arc { fill: none; stroke: var(--land-gold); stroke-width: 1.3; stroke-dasharray: 4 6; opacity: 0.5; animation: arc-flow 1.6s linear infinite; }
+@keyframes arc-flow { to { stroke-dashoffset: -20; } }
+.city-packet { fill: #fff7d6; filter: drop-shadow(0 0 4px rgb(250 204 21 / 0.9)); }
+.city-hub { fill: var(--land-gold); filter: drop-shadow(0 0 6px rgb(250 204 21 / 0.9)); }
+.city-pin { animation: pin-bob 3.6s var(--inb-ease-in-out) infinite; }
+@keyframes pin-bob { 50% { translate: 0 -4px; } }
+.city-pin-shadow { fill: rgb(250 204 21 / 0.35); }
+.city-pin-body { fill: var(--land-gold); filter: drop-shadow(0 3px 4px rgb(0 0 0 / 0.45)); }
+.city-pin-face { fill: #ffffff; }
+.city-pin-glyph { fill: none; stroke: #1a237e; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.city-timein { opacity: 0; animation: timein-pop 12s var(--inb-ease-out) infinite; }
+.city-timein rect { fill: #dcfce7; }
+.city-timein text { fill: #166534; font: 800 9px/1 var(--font-sans); }
+@keyframes timein-pop { 0% { opacity: 0; translate: 0 6px; } 3%, 20% { opacity: 1; translate: 0 0; } 25%, 100% { opacity: 0; translate: 0 -4px; } }
+
+/* "Three portals, one road": each card leads to its role's page; the title's link covers the card. */
+.portal { position: relative; cursor: pointer; }
+.portal-link { color: inherit; text-decoration: none; }
+.portal-link::after { content: ""; position: absolute; inset: 0; z-index: 7; border-radius: inherit; }
+.portal-link:focus-visible { outline: none; }
+.portal:has(.portal-link:focus-visible) { outline: 3px solid var(--land-navy); outline-offset: 3px; }
+.portal-more { display: inline-flex; align-items: center; gap: 6px; margin-top: auto; padding-top: 4px; font-size: 14.5px; font-weight: 800; color: var(--role-primary); }
+.portal-more svg { transition: transform 200ms var(--inb-ease-out); }
+.portal:hover .portal-more svg { transform: translateX(4px); }
+.portal:hover .portal-title { text-decoration: underline; text-underline-offset: 4px; text-decoration-thickness: 2px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .city-smoke, .city-arc, .city-pin, .city-timein { animation: none !important; }
+  .city-timein { opacity: 0; }
+  .city-packet { display: none; }
+}
+
 /* ---------- Reduced motion: everything still ---------- */
 @media (prefers-reduced-motion: reduce) {
-  .rp-orbit-phone .dev, .rp-orbit-badge, .rp-orbit-rings span, .rp-live::after, .rp-bento-hero .dev, .rp-w-bars em, .role-install-motif, .role-install .get-steps li, .ia-bar b, .ia-apps svg, .ia-taskbar svg, .ia-dialog, .coin, .portal-device, .hero-slot, .role-hero-art .dev, .hero-star, .hero-shooting, .city-win--flicker, .city-flag, .city-beacon, .hero-ground, .hero-live::after, .hero-title, .hero-title em, .hero-eyebrow, .hero-sub, .hero-cta, .hero-pedestal::before, .hero-pedestal::after, .hero-device, .hero-note, .mini-face, .fool-scan, .checks-hint svg, .fool-answer, .fool-verdict, .fool-card-icon { animation: none !important; transition: none !important; }
+  .rp-orbit-phone .dev, .rp-orbit-badge, .rp-orbit-rings span, .rp-live::after, .rp-bento-hero .dev, .rp-w-bars em, .role-install-motif, .role-install .get-steps li, .ia-bar b, .ia-apps svg, .ia-taskbar svg, .ia-dialog, .coin, .portal-device, .hero-slot, .role-hero-art .dev, .hero-star, .hero-shooting, .city-win--flicker, .city-flag, .city-beacon, .hero-ground, .hero-title, .hero-title em, .hero-sub, .hero-pedestal::before, .hero-pedestal::after, .hero-device, .hero-note, .mini-face, .fool-scan, .checks-hint svg, .fool-answer, .fool-verdict, .fool-card-icon { animation: none !important; transition: none !important; }
   .how-step, .how-screen, .land-fab, .portal, .role-features li { transition: none; }
 }
 }
