@@ -651,6 +651,59 @@
   --land-on-gold: #1a237e;
   --land-paper-cool: #f7f8fc;
   --land-dot: #d8dceb;
+  /* The landing page's drawn scene (fix 10-26): the night city, the PSU campus, the devices,
+     the moon and the time-in tags. Named here so landing.css writes no colour by hand. */
+  --land-x-amber: #f59e0b;
+  --land-x-beacon: #ff5a5a;
+  --land-x-bezel-button: #3a4370;
+  --land-x-bezel-camera: #1f2747;
+  --land-x-bezel-deep: #0b1020;
+  --land-x-bezel-edge: #353d63;
+  --land-x-bezel-mid: #10162b;
+  --land-x-bezel-notch: #04060d;
+  --land-x-bezel-rim: #2a3256;
+  --land-x-calendar-off: #eef0f6;
+  --land-x-campus-body: #212b7c;
+  --land-x-campus-edge: #5562c4;
+  --land-x-campus-fin: #1a2370;
+  --land-x-campus-tower: #27328c;
+  --land-x-campus-trim: #34409f;
+  --land-x-campus-window: #35409c;
+  --land-x-city-block: #0f1752;
+  --land-x-city-column: #1e2a80;
+  --land-x-city-cool: #c7cdf0;
+  --land-x-city-far: #1d2878;
+  --land-x-city-glass: #1b2a8a;
+  --land-x-city-near: #111a5c;
+  --land-x-cross: #e5484d;
+  --land-x-door: #141b5c;
+  --land-x-door-lit: #8a7a4a;
+  --land-x-glass-band: #7f8cff;
+  --land-x-gold-light: #fde68a;
+  --land-x-ground: #0b1244;
+  --land-x-hinge-bottom: #171c36;
+  --land-x-hinge-mid: #2d3457;
+  --land-x-hinge-top: #59628c;
+  --land-x-lamp: #fff7d6;
+  --land-x-live: #4ade80;
+  --land-x-louvre: #c9a94a;
+  --land-x-moon-edge: #e8d27d;
+  --land-x-moon-light: #fffbe6;
+  --land-x-moon-mid: #f6e7a8;
+  --land-x-pole: #3a468f;
+  --land-x-psu-navy: #1a237e;
+  --land-x-skin: #f3d6bf;
+  --land-x-sky-ground: #0a1140;
+  --land-x-sky-horizon: #18227a;
+  --land-x-sky-low: #0c1348;
+  --land-x-sky-top: #080f38;
+  --land-x-timein-bg: #dcfce7;
+  --land-x-timein-ink: #166534;
+  --land-x-white: #ffffff;
+  --land-x-window-chrome: #e8eaf6;
+  --land-x-window-close: #ef4444;
+  --land-x-window-cool: #aab3e8;
+  --land-x-window-max: #22c55e;
 }
 
 /* =====================================================================

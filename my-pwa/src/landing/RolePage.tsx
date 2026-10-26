@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import BrandIcon from "../brand/BrandIcon";
 import { BRAND } from "../brand/geometry";
 import { HELP_ANSWERS } from "../lib/helpAnswers";
@@ -358,7 +357,8 @@ const INSTALL_LABEL: Partial<Record<DoorRole, Partial<Record<InstallKey, string>
 /** One install step drawn in the frame it happens in: a phone, a tablet, or a browser window. */
 function InstallArt({ role, device, step }: { role: DoorRole; device: InstallKey; step: number }) {
   const frame = device === "desktop" ? "window" : role === "supervisor" ? "tablet" : "phone";
-  let inner: ReactNode;
+  // A drawn element (typed from one, as this page imports only the brand kit and its own files).
+  let inner: ReturnType<typeof BrandIcon>;
   if (step === 3) {
     inner = (
       <span className="ia-home">

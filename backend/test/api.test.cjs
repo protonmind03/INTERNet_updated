@@ -12334,14 +12334,18 @@ const pwaRoot = nodePath.join(__dirname, "..", "..", "my-pwa");
 
 test("the landing page imports only the brand kit and its own files, and writes no colour by hand", () => {
   const dir = nodePath.join(pwaRoot, "src", "landing");
-  const allowed = [/^\.\//, /^\.\.\/brand\/(BrandLockup|PsuSeal|tokens|Wordmark|BrandIcon|geometry)$/, /^react-dom\/server$/, /^qrcode$/, /^tailwindcss$/, /^@fontsource-variable\//, /^\.\.\/brand\/brand\.css$/];
+  // ../lib/helpAnswers: a role's own page asks the Help centre's questions, written once (fix.md, 2026-10-25).
+  const allowed = [/^\.\//, /^\.\.\/brand\/(BrandLockup|PsuSeal|tokens|Wordmark|BrandIcon|geometry)$/, /^\.\.\/lib\/helpAnswers$/, /^react-dom\/server$/, /^qrcode$/, /^tailwindcss$/, /^@fontsource-variable\//, /^\.\.\/brand\/brand\.css$/];
   for (const file of fs.readdirSync(dir)) {
     const source = fs.readFileSync(nodePath.join(dir, file), "utf8");
-    for (const [, from] of source.matchAll(/(?:import|from)\s*\(?\s*["']([^"']+)["']/g)) {
+    // A type-only import ("import type { ReactNode } from 'react'") brings no code with it.
+    const runtime = source.replace(/^import type [^;]*;?$/gm, "");
+    for (const [, from] of runtime.matchAll(/(?:import|from)\s*\(?\s*["']([^"']+)["']/g)) {
       assert.ok(allowed.some((rule) => rule.test(from)), `${file} imports ${from}`);
     }
     if (file !== "qrcode.d.ts") assert.doesNotMatch(source, /#[0-9a-fA-F]{3,8}\b(?![\w-])/, `${file} has a colour written by hand`);
-    assert.doesNotMatch(source, /WCAG compliant|works fully offline|\bAI\b|gradient\(/i, `${file} makes a claim or uses a style the brief rules out`);
+    // Gradients were allowed on the public pages with the 10-26 landing revisions: the PSU palette, from tokens (the line above).
+    assert.doesNotMatch(source, /WCAG compliant|works fully offline|\bAI\b/i, `${file} makes a claim the brief rules out`);
   }
   // The doors and the first-open slides use the tokens too.
   for (const file of ["src/pages/Door.tsx", "src/components/Onboarding.tsx", "src/lib/doors.ts"]) {
@@ -12392,7 +12396,13 @@ test("three role apps beside the original: their own ids, names, colours, icons 
 
 test("Vercel: the landing page at /, the app everywhere else, /login to the doors, the security headers kept", () => {
   const vercel = JSON.parse(fs.readFileSync(nodePath.join(pwaRoot, "vercel.json"), "utf8"));
-  assert.deepEqual(vercel.rewrites, [{ source: "/(.*)", destination: "/app.html" }]);
+  // Each role's own public page is a built file (fix.md, 2026-10-25); everything else is the app.
+  assert.deepEqual(vercel.rewrites, [
+    { source: "/for-trainees", destination: "/for-trainees.html" },
+    { source: "/for-supervisors", destination: "/for-supervisors.html" },
+    { source: "/for-coordinators", destination: "/for-coordinators.html" },
+    { source: "/(.*)", destination: "/app.html" },
+  ]);
   assert.deepEqual(vercel.redirects, [{ source: "/login", destination: "/#doors", permanent: false }]);
   const all = vercel.headers.find((rule) => rule.source === "/(.*)").headers;
   const csp = all.find((header) => header.key === "Content-Security-Policy").value;
