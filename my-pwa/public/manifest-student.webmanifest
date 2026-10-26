@@ -14,6 +14,7 @@
     "education",
     "productivity"
   ],
+  "handle_links": "not-preferred",
   "launch_handler": {
     "client_mode": [
       "navigate-existing",

@@ -204,6 +204,8 @@ test.describe("the doors", () => {
       await expect(page.locator("#inb-login-id")).toBeVisible();
       const manifest = await (await page.request.get(`/manifest-${role}.webmanifest`)).json();
       expect(manifest.id).toBe(`/${role}/`);
+      // Links from the website open in the browser, not in an installed app (fix 10-26).
+      expect(manifest.handle_links).toBe("not-preferred");
     });
 
     test(`the ${role} door fits one screen and leads nowhere else`, async ({ page }) => {
