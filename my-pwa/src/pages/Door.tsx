@@ -6,7 +6,7 @@ import { errorText } from "../brand/roles";
 import { useRoleTheme } from "../brand/useRoleTheme";
 import { IosInstallGuide } from "../components/InstallApp";
 import { API_URL } from "../lib/api";
-import { DOOR_COPY, DOOR_ROLES, lastDoorRole, rememberDoorRole, signedInRole } from "../lib/doors";
+import { DOOR_COPY, lastDoorRole, rememberDoorRole, signedInRole } from "../lib/doors";
 import { HOME_PATH, preloadHome } from "../lib/homePages";
 import { rememberChoice } from "../lib/keepSignedIn";
 import { useInstallPrompt } from "../lib/useInstallPrompt";
@@ -23,16 +23,18 @@ import { useMediaQuery } from "../lib/useMediaQuery";
 | password change, someone already signed in taken to their own portal).
 | A failed sign-in says only what the role's endpoint says.
 |
-| Phones and tablets: one template. Only the flat header colour, the role
-| chip, the ID label and the accent change. Computers (1024 px and up): a
-| layout per role. The trainee's hands off to the phone with a QR code,
-| since time-in needs the phone's camera; the supervisor's frames the
-| review queue; the coordinator's is a card over the console, blurred.
+| Three looks, one form (the revision): on a computer (1024 px and up) the
+| trainee's form is a time card beside the road to graduation, with the
+| hand-off to the phone by QR code, since time-in needs the phone's
+| camera; the supervisor's sits on a clipboard beside today's register;
+| the coordinator's is a credential card under the university's seal, over
+| the console, blurred. Phones and tablets keep one form with each role's
+| own header. Each fits one screen.
 |
-| Installed (display-mode standalone), there is no link back to the
-| website. Passkey sign-in is not offered: a sign-in challenge has no
-| trainee yet (docs/PROGRESS-ITER-18-23.md); passkeys confirm the steps of
-| a day.
+| Nothing on a sign-in page leads away from it: no link to the website and
+| none to the other roles' doors, in a browser or installed. Passkey
+| sign-in is not offered: a sign-in challenge has no trainee yet
+| (docs/PROGRESS-ITER-18-23.md); passkeys confirm the steps of a day.
 |
 */
 
@@ -40,26 +42,26 @@ import { useMediaQuery } from "../lib/useMediaQuery";
 const DEV_ACCOUNTS: Record<Role, { identifier: string; password: string }> = {
   student: { identifier: "student.demo@internet.test", password: "StudentDemo123!" },
   supervisor: { identifier: "supervisor.demo@internet.test", password: "SupervisorDemo123!" },
-  coordinator: { identifier: "coordinator@internet.psu.edu.ph", password: "Coordinator123!" },
+  coordinator: { identifier: "coordinator.demo@internet.test", password: "CoordinatorDemo123!" },
 };
 
 /** Each role's words on its sign-in page. */
-const WORDS: Record<Role, { lead: string; deskTitle: string; deskLead: string; help: string }> = {
+const WORDS: Record<Role, { lead: string; phoneTitle: string; deskLead: string; help: string }> = {
   student: {
     lead: "Sign in to clock in and log your day.",
-    deskTitle: "Sign in",
+    phoneTitle: "Welcome back.",
     deskLead: "Use the student ID or email on your account.",
     help: "New here or locked out?",
   },
   supervisor: {
     lead: "Sign in to review your trainees' hours.",
-    deskTitle: "Sign in",
+    phoneTitle: "Good day, supervisor.",
     deskLead: "Verify your trainees' days, tasks and documents.",
     help: "Locked out?",
   },
   coordinator: {
     lead: "Sign in to manage your cohort.",
-    deskTitle: "Sign in",
+    phoneTitle: "Coordinator console",
     deskLead: "Oversee every OJT journey across the program.",
     help: "Locked out?",
   },
@@ -77,12 +79,6 @@ function Glyph({ d, size = 16 }: { d: string; size?: number }) {
       <path d={d} />
     </svg>
   );
-}
-
-/** True inside the installed app: no way back to the website. */
-function useStandalone(): boolean {
-  const query = useMediaQuery("(display-mode: standalone)");
-  return query || (typeof navigator !== "undefined" && (navigator as Navigator & { standalone?: boolean }).standalone === true);
 }
 
 type Phase = "idle" | "working" | "success" | "error";
@@ -254,8 +250,8 @@ function InstallBlock({ role, asked }: { role: Role; asked: boolean }) {
   );
 }
 
-/** The quiet lines under every form: help, the other doors, the seal. */
-function FormFooter({ role, standalone }: { role: Role; standalone: boolean }) {
+/** The quiet lines under every form: help and the university. Nothing leads away to the website or another door. */
+function FormFooter({ role }: { role: Role }) {
   return (
     <div className="signin-foot">
       <p className="m-0">
@@ -264,72 +260,79 @@ function FormFooter({ role, standalone }: { role: Role; standalone: boolean }) {
           Get help
         </a>
       </p>
-      <p className="m-0">
-        Not {DOOR_COPY[role].article}?{" "}
-        {DOOR_ROLES.filter((other) => other !== role).map((other, index) => (
-          <span key={other}>
-            {index > 0 && " · "}
-            <a className="signin-link signin-link--quiet" href={`/${other}/sign-in`}>
-              {DOOR_COPY[other].name}
-            </a>
-          </span>
-        ))}
-      </p>
       <p className="signin-seal-line">
-        <PsuSeal size={24} clearSpace={false} />
+        <PsuSeal size={22} clearSpace={false} />
         Pangasinan State University · Lingayen Campus
       </p>
-      {!standalone && (
-        <p className="m-0">
-          <a href="/" className="signin-link signin-link--quiet">
-            INTERNet home
-          </a>
-        </p>
-      )}
     </div>
   );
 }
 
-/** Phones and tablets: one template, the role's flat header over a white sheet. */
-function PhoneTemplate({ role, form, extra, standalone }: { role: Role; form: ReactNode; extra: ReactNode; standalone: boolean }) {
+function Logo({ tone = "onDark" }: { tone?: "onDark" | "onLight" }) {
   return (
-    <main className="signin-phone">
+    <span className="signin-logo">
+      <BrandIcon size={30} tile={tone === "onDark" ? BRAND.amber : BRAND.navy} fg={tone === "onDark" ? BRAND.navy : BRAND.amber} />
+      <Wordmark height={15} tone={tone} />
+    </span>
+  );
+}
+
+/** Today's date as a time card prints it: "SAT 25 OCT 2026". */
+function cardDate(): string {
+  const parts = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", weekday: "short", day: "2-digit", month: "short", year: "numeric" }).formatToParts(new Date());
+  const get = (type: string) => parts.find((part) => part.type === type)?.value ?? "";
+  return `${get("weekday")} ${get("day")} ${get("month")} ${get("year")}`.toUpperCase();
+}
+
+/*
+| Phones and tablets: one form, three faces. Each role keeps its own
+| header: the trainee's lane to graduation, the supervisor's clipboard,
+| the coordinator's seal.
+*/
+function PhoneTemplate({ role, form, extra }: { role: Role; form: ReactNode; extra: ReactNode }) {
+  return (
+    <main className={`signin-phone signin-phone--${role}`}>
       <header className="signin-phone-head">
-        <span className="signin-chip">
-          <span className="signin-chip-icon">
-            <Glyph d={CHIP_ICON[role]} size={14} />
+        <span className="signin-phone-top">
+          <Logo />
+          <span className="signin-chip">
+            <span className="signin-chip-icon">
+              <Glyph d={CHIP_ICON[role]} size={13} />
+            </span>
+            {DOOR_COPY[role].name}
           </span>
-          {DOOR_COPY[role].name}
         </span>
+        {role === "coordinator" && (
+          <span className="signin-phone-seal" aria-hidden="true">
+            <PsuSeal size={56} clearSpace={false} onDark />
+          </span>
+        )}
         <h1 id="door-title" className="signin-welcome">
-          Welcome back.
+          {WORDS[role].phoneTitle}
         </h1>
         <p className="signin-lead">{WORDS[role].lead}</p>
-        <svg className="signin-lane" viewBox="0 0 120 160" aria-hidden="true">
-          <path d="M20 160 L90 0" className="signin-lane-edge" />
-          <path d="M80 160 L118 0" className="signin-lane-dash" />
-        </svg>
+        {role === "student" && (
+          <svg className="signin-lane" viewBox="0 0 140 170" aria-hidden="true">
+            <path d="M24 170 L104 0" className="signin-lane-edge" />
+            <path d="M92 170 L138 0" className="signin-lane-dash" />
+          </svg>
+        )}
       </header>
       <section className="signin-sheet" aria-labelledby="door-title">
+        {role === "supervisor" && <span className="signin-clip" aria-hidden="true" />}
         {form}
         {extra}
-        <FormFooter role={role} standalone={standalone} />
+        <FormFooter role={role} />
       </section>
     </main>
   );
 }
 
-function Logo() {
-  return (
-    <span className="signin-logo">
-      <BrandIcon size={30} tile={BRAND.amber} fg={BRAND.navy} />
-      <Wordmark height={15} tone="onDark" />
-    </span>
-  );
-}
+const ROAD_PATH = "M10 100 C 140 100, 170 30, 290 40 S 450 80, 510 18";
+const ROAD_DONE = "M10 100 C 140 100, 170 30, 290 40";
 
-/** The trainee on a computer: what the computer is for, and the hand-off to the phone. */
-function TraineeDesk({ form, extra, standalone }: { form: ReactNode; extra: ReactNode; standalone: boolean }) {
+/** The trainee on a computer: the road to graduation, and the form as a time card. */
+function TraineeDesk({ form, extra }: { form: ReactNode; extra: ReactNode }) {
   const [qr, setQr] = useState("");
   useEffect(() => {
     let active = true;
@@ -343,163 +346,310 @@ function TraineeDesk({ form, extra, standalone }: { form: ReactNode; extra: Reac
     };
   }, []);
   return (
-    <main className="signin-desk">
+    <main className="signin-desk signin-desk--student">
       <aside className="signin-panel">
-        <Logo />
+        {/* Decoration: a rising sun of rings, and lane lines running down the panel. */}
+        <span className="signin-sun" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </span>
+        <span className="signin-lanes" aria-hidden="true" />
+        <div className="signin-panel-top">
+          <Logo />
+          <span className="signin-panel-tag">
+            <span className="signin-panel-tag-dot" aria-hidden="true" />
+            Trainee portal
+          </span>
+        </div>
         <div className="signin-panel-copy">
-          <p className="signin-kicker">Student portal</p>
+          <p className="signin-kicker">On-the-job training · PSU Lingayen</p>
           <h2 className="signin-panel-title">
             Your road to graduation, <em>one verified day</em> at a time.
           </h2>
+          {/* The road: three milestones, the trainee part of the way along. Example figures only. */}
+          <div className="signin-road" aria-hidden="true">
+            <svg viewBox="0 0 520 120" preserveAspectRatio="none">
+              <path d={ROAD_PATH} className="signin-road-bed" />
+              <path d={ROAD_PATH} className="signin-road-lane" />
+              <path d={ROAD_DONE} className="signin-road-done" pathLength={1} />
+            </svg>
+            <span className="signin-traveller" />
+            <span className="signin-mile signin-mile--1">
+              <b>Day 1</b>
+              <i>Timed in</i>
+            </span>
+            <span className="signin-mile signin-mile--2">
+              <b>Midterm</b>
+              <i>Reports in</i>
+            </span>
+            <span className="signin-mile signin-mile--3">
+              <b>Completion</b>
+              <i>Hours verified</i>
+            </span>
+            <span className="signin-you">You are here</span>
+            <span className="signin-float signin-float--check">
+              <span className="signin-float-icon">
+                <Glyph d="M5 12l4 4L19 6" size={14} />
+              </span>
+              <span>
+                <b>Camera check passed</b>
+                <i>Timed in 7:58 AM</i>
+              </span>
+            </span>
+            <span className="signin-float signin-float--ring">
+              <svg viewBox="0 0 44 44" className="signin-ring">
+                <circle cx="22" cy="22" r="18" className="signin-ring-track" />
+                <circle cx="22" cy="22" r="18" className="signin-ring-fill" pathLength={100} />
+              </svg>
+              <span>
+                <b>412 of 486 h</b>
+                <i>Finish · Nov 28</i>
+              </span>
+            </span>
+          </div>
           <ul className="signin-features">
-            <li>
-              <Glyph d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" /> Attendance with proof
+            <li style={{ ["--i" as string]: 0 }}>
+              <Glyph d="M12 7v5l3 2M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" />
+              <span>
+                <b>Attendance with proof</b>
+                <i>A camera check each time-in</i>
+              </span>
             </li>
-            <li>
-              <Glyph d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" /> Tasks and documents
+            <li style={{ ["--i" as string]: 1 }}>
+              <Glyph d="M9 11l3 3 8-8M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" />
+              <span>
+                <b>Tasks and documents</b>
+                <i>Hand in, see the review</i>
+              </span>
             </li>
-            <li>
-              <Glyph d="M4 20V10M10 20V4M16 20v-7M22 20H2" /> Progress you can see
+            <li style={{ ["--i" as string]: 2 }}>
+              <Glyph d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+              <span>
+                <b>Progress you can see</b>
+                <i>Your finish date, updated</i>
+              </span>
             </li>
           </ul>
         </div>
         <div className="signin-handoff">
-          <span className="signin-qr" aria-hidden="true" dangerouslySetInnerHTML={{ __html: qr }} />
+          <span className="signin-qr" aria-hidden="true">
+            <span dangerouslySetInnerHTML={{ __html: qr }} />
+            <span className="signin-qr-scan" />
+          </span>
           <span>
             <b>Time in from your phone</b>
-            <i>Your daily camera check works best on a phone. Scan to open INTERNet there, then install it.</i>
+            <i>The daily camera check works best on a phone. Scan to open INTERNet there, then install it.</i>
           </span>
         </div>
       </aside>
       <section className="signin-side" aria-labelledby="door-title">
-        <div className="signin-side-inner">
-          <h1 id="door-title" className="signin-title">
-            {WORDS.student.deskTitle}
-          </h1>
-          <p className="signin-sub">{WORDS.student.deskLead}</p>
+        <div className="signin-card signin-card--timecard">
+          <span className="signin-punch" aria-hidden="true" />
+          <div className="signin-card-head">
+            <span>
+              <h1 id="door-title" className="signin-title">
+                Sign in
+              </h1>
+              <p className="signin-sub">{WORDS.student.deskLead}</p>
+            </span>
+            <span className="signin-stamp" aria-hidden="true">
+              <i>Time card</i>
+              <b>{cardDate()}</b>
+            </span>
+          </div>
           {form}
           {extra}
-          <p className="signin-note">
-            <b>On a computer you can</b> check your hours, submit tasks and documents, write your weekly report and print your time record.
-          </p>
-          <FormFooter role="student" standalone={standalone} />
+          <FormFooter role="student" />
         </div>
       </section>
     </main>
   );
 }
 
-const QUEUE_EXAMPLE = [
-  { tag: "Time-in", what: "7:58 AM · camera check" },
-  { tag: "Task", what: "Inventory sheet · 2 files" },
-  { tag: "Document", what: "MOA copy" },
-  { tag: "Absence", what: "Friday, morning" },
-];
+const REGISTER_EXAMPLE = [
+  { who: "Ana", time: "7:58", state: "in" },
+  { who: "Ben", time: "8:12", state: "late" },
+  { who: "Cara", time: "8:00", state: "in" },
+  { who: "Dan", time: "8:03", state: "offline" },
+  { who: "Eli", time: "—", state: "out" },
+] as const;
 
-/** The supervisor on a computer: the review queue beside the form. */
-function SupervisorDesk({ form, extra, standalone }: { form: ReactNode; extra: ReactNode; standalone: boolean }) {
+/** The time on the register's head, in Manila, kept to the minute. */
+function useManilaClock(): string {
+  const format = () => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date());
+  const [now, setNow] = useState(format);
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(format()), 20_000);
+    return () => window.clearInterval(timer);
+  }, []);
+  return now;
+}
+
+/** The supervisor on a computer: the form on a clipboard, beside today's register. */
+function SupervisorDesk({ form, extra }: { form: ReactNode; extra: ReactNode }) {
+  const now = useManilaClock();
   return (
-    <main className="signin-desk signin-desk--wide">
+    <main className="signin-desk signin-desk--supervisor">
+      <section className="signin-side" aria-labelledby="door-title">
+        <div className="signin-side-top">
+          <Logo tone="onLight" />
+          <span className="signin-side-tag">Supervisor desk</span>
+        </div>
+        <div className="signin-side-middle">
+          <div className="signin-card signin-card--clipboard">
+            <span className="signin-clip" aria-hidden="true" />
+            <div className="signin-clipboard-head">
+              <h1 id="door-title" className="signin-title">
+                Sign in
+              </h1>
+              <p className="signin-sub">{WORDS.supervisor.deskLead}</p>
+            </div>
+            {form}
+            {extra}
+            <p className="signin-tip">
+              <Glyph d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" size={15} />
+              <span>
+                <b>On a shared office computer?</b> Leave &ldquo;Keep me signed in&rdquo; off.
+              </span>
+            </p>
+            <FormFooter role="supervisor" />
+          </div>
+        </div>
+      </section>
       <aside className="signin-panel">
-        <Logo />
+        <span className="signin-watermark" aria-hidden="true">
+          <Glyph d="M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" size={420} />
+        </span>
         <div className="signin-panel-copy">
-          <p className="signin-kicker">Your review queue</p>
-          <h2 className="signin-panel-title">Guide, verify and evaluate your interns.</h2>
-          <div className="signin-queue" aria-label="An example of the review queue">
-            <p className="signin-queue-head">
-              <b>Review</b>
-              <i>an example</i>
+          <p className="signin-kicker">Supervisor desk</p>
+          <h2 className="signin-panel-title">
+            Guide, verify and <em>evaluate</em> your interns.
+          </h2>
+          <ul className="signin-stats" aria-label="An example of a supervisor's morning">
+            <li style={{ ["--i" as string]: 0 }}>
+              <b>4/5</b>
+              <i>in today</i>
+            </li>
+            <li style={{ ["--i" as string]: 1 }}>
+              <b>6</b>
+              <i>to verify</i>
+            </li>
+            <li style={{ ["--i" as string]: 2 }}>
+              <b>92%</b>
+              <i>on time</i>
+            </li>
+          </ul>
+          <div className="signin-board" aria-label="An example of today's register">
+            <p className="signin-board-head">
+              <b>Today&rsquo;s register</b>
+              <span className="signin-board-live">
+                <span className="signin-board-dot" aria-hidden="true" />
+                {now}
+              </span>
             </p>
             <ul>
-              {QUEUE_EXAMPLE.map((row) => (
-                <li key={row.tag}>
-                  <span className="signin-queue-tag">{row.tag}</span>
-                  <span className="min-w-0 truncate">{row.what}</span>
-                  <span className="signin-queue-status">Pending</span>
+              {REGISTER_EXAMPLE.map((row, index) => (
+                <li key={row.who} data-state={row.state} style={{ ["--i" as string]: index }}>
+                  <span className="signin-avatar">{row.who.slice(0, 1)}</span>
+                  <span className="signin-board-who">{row.who}</span>
+                  <span className="signin-board-time">{row.time}</span>
+                  <span className="signin-board-state">{row.state === "in" ? "Verified" : row.state === "late" ? "Late 12 min" : row.state === "offline" ? "Confirm" : "Not in yet"}</span>
                 </li>
               ))}
             </ul>
+            <p className="signin-verify">
+              <span>Verify all 2</span> offline time-ins are confirmed one by one
+            </p>
           </div>
-          <p className="signin-verify">
-            <span>Verify all</span> offline time-ins are confirmed one by one
-          </p>
-          <ul className="signin-pills">
-            <li>One review queue</li>
-            <li>Reject the photo or the day</li>
-            <li>Tasks for teams</li>
-            <li>Message the coordinator</li>
-          </ul>
         </div>
+        <ul className="signin-pills">
+          <li>One review queue</li>
+          <li>Tasks for teams</li>
+          <li>Final evaluations</li>
+          <li>Certified time records</li>
+        </ul>
       </aside>
-      <section className="signin-side" aria-labelledby="door-title">
-        <div className="signin-side-inner">
-          <h1 id="door-title" className="signin-title">
-            {WORDS.supervisor.deskTitle}
-          </h1>
-          <p className="signin-sub">{WORDS.supervisor.deskLead}</p>
-          {form}
-          {extra}
-          <p className="signin-tip">
-            <b>On a shared office computer?</b> Leave &ldquo;Keep me signed in&rdquo; off.
-          </p>
-          <FormFooter role="supervisor" standalone={standalone} />
-        </div>
-      </section>
     </main>
   );
 }
 
 const CONSOLE_TOOLS = [
-  { title: "What needs you, first", line: "Appeals, concerns and who to nudge.", glyph: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" },
-  { title: "One filter for everything", line: "Term, college, program, block, company or supervisor.", glyph: "M3 5h18l-7 8v6l-4 2v-8z" },
-  { title: "Every change is recorded", line: "The audit log keeps who changed what, and when.", glyph: "M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 13l2 2 4-4" },
-  { title: "Reports to go", line: "Analytics as a PDF or CSV for the dean.", glyph: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
+  { title: "What needs you, first", glyph: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z" },
+  { title: "One filter for everything", glyph: "M3 5h18l-7 8v6l-4 2v-8z" },
+  { title: "Every change recorded", glyph: "M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2M9 5a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2M9 5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2M9 13l2 2 4-4" },
+  { title: "Reports for the dean", glyph: "M4 20V10M10 20V4M16 20v-7M22 20H2" },
 ];
 
-/** The coordinator on a computer: the same split page as the other doors, with the console's tools. */
-function CoordinatorDesk({ form, extra, standalone }: { form: ReactNode; extra: ReactNode; standalone: boolean }) {
+/** The coordinator on a computer: a credential card over the console, the university's seal on top. */
+function CoordinatorDesk({ form, extra }: { form: ReactNode; extra: ReactNode }) {
   return (
-    <main className="signin-desk">
-      <aside className="signin-panel">
-        <Logo />
-        <div className="signin-panel-copy">
-          <p className="signin-kicker">Coordinator console</p>
-          <h2 className="signin-panel-title">
-            Every trainee&rsquo;s OJT, <em>in one view</em>.
-          </h2>
-          <ul className="signin-tools-list">
-            {CONSOLE_TOOLS.map((tool) => (
-              <li key={tool.title}>
-                <span className="signin-tools-icon">
-                  <Glyph d={tool.glyph} size={18} />
-                </span>
-                <span>
-                  <b>{tool.title}</b>
-                  <i>{tool.line}</i>
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-        <p className="signin-panel-seal">
-          <PsuSeal size={34} clearSpace={false} onDark />
-          <span>
-            <b>Pangasinan State University</b>
-            <i>Lingayen Campus · OJT office</i>
+    <main className="signin-console">
+      {/* Soft lights drifting behind everything, and rings around the card like a seal's edge. */}
+      <span className="signin-aurora" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+      </span>
+      <span className="signin-floor" aria-hidden="true" />
+      <span className="signin-orbits" aria-hidden="true">
+        <span className="signin-orbit signin-orbit--1">
+          <i />
+        </span>
+        <span className="signin-orbit signin-orbit--2">
+          <i />
+        </span>
+        <span className="signin-orbit signin-orbit--3">
+          <i />
+        </span>
+      </span>
+      {/* The console behind, drawn and blurred: an example, not anyone's data. */}
+      <div className="signin-console-back" aria-hidden="true">
+        <span className="signin-console-side" />
+        <span className="signin-console-main">
+          <span className="signin-console-bar" />
+          <span className="signin-console-row">
+            <span />
+            <span />
+            <span />
           </span>
-        </p>
-      </aside>
-      <section className="signin-side" aria-labelledby="door-title">
-        <div className="signin-side-inner">
-          <h1 id="door-title" className="signin-title">
-            {WORDS.coordinator.deskTitle}
-          </h1>
-          <p className="signin-sub">{WORDS.coordinator.deskLead}</p>
-          {form}
-          {extra}
-          <FormFooter role="coordinator" standalone={standalone} />
-        </div>
+          <span className="signin-console-chart">
+            {[62, 80, 54, 90, 72, 86, 66, 94].map((height, index) => (
+              <em key={index} style={{ height: `${height}%` }} />
+            ))}
+          </span>
+        </span>
+      </div>
+      <header className="signin-console-top">
+        <Logo />
+        <span className="signin-console-office">
+          <b>Office of the OJT Coordinator</b>
+          <i>Pangasinan State University · Lingayen Campus</i>
+        </span>
+      </header>
+      <section className="signin-credential" aria-labelledby="door-title">
+        <span className="signin-credential-seal" aria-hidden="true">
+          <PsuSeal size={72} clearSpace={false} />
+        </span>
+        <p className="signin-credential-kicker">Coordinator console</p>
+        <h1 id="door-title" className="signin-title">
+          Sign in
+        </h1>
+        <p className="signin-sub">{WORDS.coordinator.deskLead}</p>
+        {form}
+        {extra}
+        <FormFooter role="coordinator" />
       </section>
+      <ul className="signin-console-tools" aria-label="In the console">
+        {CONSOLE_TOOLS.map((tool) => (
+          <li key={tool.title}>
+            <span className="signin-tools-icon">
+              <Glyph d={tool.glyph} size={16} />
+            </span>
+            {tool.title}
+          </li>
+        ))}
+      </ul>
     </main>
   );
 }
@@ -510,7 +660,6 @@ export default function Door({ role }: { role: Role }) {
   // Read once, when the door opens: signing in here must not trigger it.
   const [alreadySignedIn] = useState(signedInRole);
   const computer = useMediaQuery("(min-width: 1024px)");
-  const standalone = useStandalone();
   useRoleTheme(role);
 
   useEffect(() => {
@@ -529,10 +678,10 @@ export default function Door({ role }: { role: Role }) {
       {role === "student" && <IosInstallGuide />}
     </>
   );
-  if (!computer) return <PhoneTemplate role={role} form={form} extra={extra} standalone={standalone} />;
-  if (role === "student") return <TraineeDesk form={form} extra={extra} standalone={standalone} />;
-  if (role === "supervisor") return <SupervisorDesk form={form} extra={extra} standalone={standalone} />;
-  return <CoordinatorDesk form={form} extra={extra} standalone={standalone} />;
+  if (!computer) return <PhoneTemplate role={role} form={form} extra={extra} />;
+  if (role === "student") return <TraineeDesk form={form} extra={extra} />;
+  if (role === "supervisor") return <SupervisorDesk form={form} extra={extra} />;
+  return <CoordinatorDesk form={form} extra={extra} />;
 }
 
 /** "/": a signed-in person's portal, otherwise the door they used last. */

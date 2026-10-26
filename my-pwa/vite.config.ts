@@ -1,4 +1,5 @@
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { createServer, defineConfig, loadEnv, type Connect, type Plugin, type ViteDevServer } from 'vite'
 import react from '@vitejs/plugin-react'
@@ -53,6 +54,17 @@ function killSwitch(): Plugin {
  */
 const APP_VERSION = (process.env.VERCEL_GIT_COMMIT_SHA || '').slice(0, 7) || 'local'
 
+/**
+ * The role pages of the website: plain pages like the landing page, each
+ * its own .html file. Vercel serves them by the same names (vercel.json),
+ * and the service worker keeps them (src/service-worker.ts).
+ */
+const PUBLIC_PAGES: Record<string, string> = {
+  '/for-trainees': '/for-trainees.html',
+  '/for-supervisors': '/for-supervisors.html',
+  '/for-coordinators': '/for-coordinators.html',
+}
+
 function isAppAddress(url: string): boolean {
   const pathname = url.split(/[?#]/)[0]
   if (pathname === '/' || pathname === '/index.html') return false
@@ -62,15 +74,26 @@ function isAppAddress(url: string): boolean {
 
 const appPages: Connect.NextHandleFunction = (req, res, next) => {
   const url = req.url || '/'
-  if (url.split(/[?#]/)[0] === '/login') {
+  const pathname = url.split(/[?#]/)[0].replace(/\/$/, '')
+  if (pathname === '/login') {
     res.statusCode = 307
     res.setHeader('Location', '/#doors')
     return res.end()
   }
-  if ((req.method === 'GET' || req.method === 'HEAD') && isAppAddress(url)) {
-    req.url = '/app.html' + (url.includes('?') ? url.slice(url.indexOf('?')) : '')
+  const query = url.includes('?') ? url.slice(url.indexOf('?')) : ''
+  if ((req.method === 'GET' || req.method === 'HEAD') && PUBLIC_PAGES[pathname]) {
+    req.url = PUBLIC_PAGES[pathname] + query
+  } else if ((req.method === 'GET' || req.method === 'HEAD') && isAppAddress(url)) {
+    req.url = '/app.html' + query
   }
   next()
+}
+
+/** A throwaway cache folder for a landing renderer, removed when the build ends. */
+function makeCacheDir(): string {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'internet-landing-'))
+  process.once('exit', () => fs.rmSync(dir, { recursive: true, force: true }))
+  return dir
 }
 
 function landingPage(): Plugin {
@@ -94,7 +117,9 @@ function landingPage(): Plugin {
       // rendered markup is bundled like any other.
       order: 'pre',
       async handler(html) {
-        if (!html.includes('<!--landing-->')) return html
+        // <!--landing--> is the landing page; <!--landing:student--> a role's page.
+        const marker = html.match(/<!--landing(?::(student|supervisor|coordinator))?-->/)
+        if (!marker) return html
         const loader =
           dev ??
           (renderer ??= await createServer({
@@ -102,12 +127,16 @@ function landingPage(): Plugin {
             root,
             logLevel: 'error',
             appType: 'custom',
-            server: { middlewareMode: true, hmr: false, ws: false },
+            // No file watching: the build renders once, and a watcher would keep the process open after it.
+            server: { middlewareMode: true, hmr: false, ws: false, watch: null },
+            // A cache of its own, deleted on close: the service worker's build starts a second
+            // renderer, and two sharing one cache (or the dev server's) fail on Windows.
+            cacheDir: makeCacheDir(),
             define: { __APP_VERSION__: JSON.stringify(APP_VERSION) },
             plugins: [react(), tailwindcss()],
           }))
-        const module = (await loader.ssrLoadModule('/src/landing/render.tsx')) as { render: () => string }
-        return html.replace('<!--landing-->', module.render())
+        const module = (await loader.ssrLoadModule('/src/landing/render.tsx')) as { render: (page?: string) => string }
+        return html.replace(marker[0], module.render(marker[1] ?? 'home'))
       },
     },
     async closeBundle() {
@@ -172,8 +201,14 @@ export default defineConfig(({ mode }) => {
     plugins: [react(), tailwindcss(), landingPage(), serviceWorker, ...(phone ? [basicSsl()] : [])],
     build: {
       rollupOptions: {
-        // The landing page (index.html) and the app (app.html): two pages, two scripts.
-        input: { index: path.resolve('index.html'), app: path.resolve('app.html') },
+        // The landing page (index.html) and the role pages share one script; the app (app.html) has its own.
+        input: {
+          index: path.resolve('index.html'),
+          app: path.resolve('app.html'),
+          'for-trainees': path.resolve('for-trainees.html'),
+          'for-supervisors': path.resolve('for-supervisors.html'),
+          'for-coordinators': path.resolve('for-coordinators.html'),
+        },
       },
     },
     server: phone

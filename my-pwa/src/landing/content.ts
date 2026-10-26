@@ -98,6 +98,78 @@ export const DOORS: Record<
 export const doorPath = (role: DoorRole) => `/${role}/sign-in`;
 export const installPath = (role: DoorRole) => `/${role}/sign-in?install=1`;
 
+/** Each role's own page on the website ("For trainees" in the top bar). */
+export const ROLE_PAGE_PATH: Record<DoorRole, string> = {
+  student: "/for-trainees",
+  supervisor: "/for-supervisors",
+  coordinator: "/for-coordinators",
+};
+
+/** The device each role is shown on in "How it works" and on its own page. */
+export const ROLE_DEVICE: Record<DoorRole, DeviceKind> = { student: "phone", supervisor: "tablet", coordinator: "laptop" };
+
+export type RoleFeature = { title: string; body: string; icon: "camera" | "offline" | "road" | "tasks" | "report" | "print" | "board" | "check" | "team" | "star" | "filter" | "alert" | "audit" | "calendar" | "chart" | "chat" };
+
+/** The words of each role's own page: what the portal does today, nothing promised. */
+export const ROLE_PAGES: Record<
+  DoorRole,
+  {
+    kicker: string;
+    title: string;
+    titleEm: string;
+    intro: string;
+    features: RoleFeature[];
+    /** A short line beside the install section. */
+    installLead: string;
+  }
+> = {
+  student: {
+    kicker: "For trainees",
+    title: "Your OJT hours,",
+    titleEm: "proven one day at a time.",
+    intro: "Time in with your phone's camera, log what you did, hand in your work and see the day you will finish, all in one app made for your phone.",
+    features: [
+      { icon: "camera", title: "Time in with a camera check", body: "A short head turn proves it is you. Your supervisor sees the photo and verifies the day." },
+      { icon: "offline", title: "Works without signal", body: "No data in the field? Your time-in waits on the phone and is sent once you are back online." },
+      { icon: "road", title: "See the day you will finish", body: "Verified hours fill your road, and the expected finish date moves with every verified day." },
+      { icon: "tasks", title: "Tasks and documents", body: "Submit your work and your requirements, and read your supervisor's notes in one place." },
+      { icon: "report", title: "Weekly report", body: "Write the week's activities, learnings and challenges, and know when it has been reviewed." },
+      { icon: "print", title: "A time record to sign", body: "Print your monthly time record with your saved signature and your supervisor's certification." },
+    ],
+    installLead: "Install the Trainee app on the phone you bring to your OJT. Time-in needs its front camera.",
+  },
+  supervisor: {
+    kicker: "For supervisors",
+    title: "Guide your interns,",
+    titleEm: "verify their days in one tap.",
+    intro: "See who is in, verify the day's time-ins together, review tasks, documents and weekly reports, and evaluate your interns from a tablet or a computer.",
+    features: [
+      { icon: "board", title: "Today's register", body: "Each intern's time-in, lunch and time-out on one board, and who is not in yet." },
+      { icon: "check", title: "One review queue", body: "Time-ins, tasks, documents, absences and weekly reports wait in one list, oldest first." },
+      { icon: "team", title: "Tasks for teams", body: "Give a task to one intern or to a team. Each member hands in and is reviewed on their own." },
+      { icon: "star", title: "Evaluate and certify", body: "Rate your interns, submit the final evaluation and certify each month's time record." },
+      { icon: "camera", title: "Record a time-in yourself", body: "When an intern's phone fails, record the time-in in person. It is approved on the spot." },
+      { icon: "chat", title: "Talk to the OJT office", body: "Message the coordinator about an intern, or report a concern with evidence." },
+    ],
+    installLead: "Install the Supervisor app on the tablet or computer at your desk. The phone app works too.",
+  },
+  coordinator: {
+    kicker: "For coordinators",
+    title: "Every trainee's OJT,",
+    titleEm: "in one console.",
+    intro: "Run the term from a computer: what needs you comes first, every list narrows by college, program, block, company and supervisor, and reports are ready for the dean.",
+    features: [
+      { icon: "alert", title: "What needs you, first", body: "Appeals, concerns, flagged logs and trainees without a supervisor, oldest on top." },
+      { icon: "filter", title: "One filter for everything", body: "Term, college, program, block, company or supervisor. Save the views you use." },
+      { icon: "calendar", title: "Set up the term", body: "Programs, blocks, schedules, holidays and deliverables, in one place." },
+      { icon: "chart", title: "Analytics and reports", body: "Attendance, progress and companies, as a PDF or a spreadsheet for the dean." },
+      { icon: "audit", title: "Every change is recorded", body: "The audit log keeps who changed what, and when, and exports it." },
+      { icon: "chat", title: "Announcements and messages", body: "Reach every trainee, every supervisor, or one company, and keep the conversations." },
+    ],
+    installLead: "Install the Coordinator app on your office computer. The phone app keeps up on the go.",
+  },
+};
+
 /** "How it works": four steps per role, each what the portal does today. */
 export const HOW_STEPS: Record<DoorRole, { title: string; heading: string; steps: Array<{ title: string; body: string }> }> = {
   student: {

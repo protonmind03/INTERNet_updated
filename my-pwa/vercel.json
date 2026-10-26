@@ -8,6 +8,18 @@
   ],
   "rewrites": [
     {
+      "source": "/for-trainees",
+      "destination": "/for-trainees.html"
+    },
+    {
+      "source": "/for-supervisors",
+      "destination": "/for-supervisors.html"
+    },
+    {
+      "source": "/for-coordinators",
+      "destination": "/for-coordinators.html"
+    },
+    {
       "source": "/(.*)",
       "destination": "/app.html"
     }

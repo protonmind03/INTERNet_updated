@@ -27,13 +27,24 @@ test.describe("the landing page", () => {
     await expect(page.locator("#root")).toHaveCount(0);
     expect(scripts.some((path) => /\/assets\/app-/.test(path))).toBe(false);
 
-    // PSU redesign 1E: each portal's card leads to its app's install page; Sign in lists the three doors.
+    // The revision: the portal cards are an overview only; the top bar leads to each role's own page; Sign in lists the three doors.
     for (const role of ROLES) {
-      await expect(page.locator(`#portal-${role}`).getByRole("link", { name: /^Get the/ })).toHaveAttribute("href", `/${role}/sign-in?install=1`);
+      await expect(page.locator(`#portal-${role}`)).toBeVisible();
+      await expect(page.locator(`#portal-${role}`).getByRole("link")).toHaveCount(0);
     }
+    for (const [role, path] of [["trainees", "/for-trainees"], ["supervisors", "/for-supervisors"], ["coordinators", "/for-coordinators"]]) {
+      // In the top bar on a computer, in the Menu sheet on a narrower screen.
+      await expect(page.locator(".land-nav a", { hasText: `For ${role}` })).toHaveAttribute("href", path);
+      await expect(page.locator(".land-sheet a", { hasText: `For ${role}` })).toHaveAttribute("href", path);
+    }
+    // Home leads back to the landing page; "How it works" is reached from the hero, not the top bar.
+    await expect(page.locator(".land-nav a", { hasText: "Home" })).toHaveAttribute("href", "/");
+    await expect(page.locator(".land-nav a", { hasText: "How it works" })).toHaveCount(0);
     await page.locator(".land-top summary", { hasText: "Sign in" }).click();
     for (const role of ROLES) {
+      // fix 10-26: a door opens in a new tab, so the website stays open.
       await expect(page.locator(`#land-signin-top a[href="/${role}/sign-in"]`)).toBeVisible();
+      await expect(page.locator(`#land-signin-top a[href="/${role}/sign-in"]`)).toHaveAttribute("target", "_blank");
     }
     expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
   });
@@ -63,32 +74,94 @@ test.describe("the landing page", () => {
     await expect(page.locator("#fool-panel")).toContainText("There is one time-in a day.");
   });
 
+  test("the wheel inside the checks box walks the items; outside it, the page scrolls on", async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto("/");
+    await page.evaluate(() => {
+      document.documentElement.style.scrollBehavior = "auto";
+      const section = document.querySelector("#checks")!;
+      window.scrollTo(0, section.getBoundingClientRect().top + window.scrollY - 64);
+    });
+    const box = (await page.locator(".checks-sticky").boundingBox())!;
+    const picked = page.locator('[data-fool-pick][aria-pressed="true"]');
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    const before = await page.evaluate(() => window.scrollY);
+    for (let i = 0; i < 2; i++) {
+      await page.mouse.wheel(0, 100);
+      await page.waitForTimeout(400);
+    }
+    await expect(picked).toHaveAttribute("data-fool-pick", "2");
+    expect(await page.evaluate(() => window.scrollY)).toBe(before);
+    // In the margin beside the box the page moves and the item stays.
+    await page.mouse.move(Math.max(2, box.x / 2), box.y + box.height / 2);
+    await page.mouse.wheel(0, 200);
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeGreaterThan(before);
+    await expect(picked).toHaveAttribute("data-fool-pick", "2");
+  });
+
   test("on a phone, the menu is a sheet that opens, takes focus and closes", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/");
     await page.getByRole("button", { name: "Menu" }).click();
     const sheet = page.getByRole("dialog", { name: "Menu" });
     await expect(sheet).toBeVisible();
-    await sheet.getByRole("link", { name: "Get the app" }).click();
-    await expect(sheet).toBeHidden();
-    await expect(page).toHaveURL(/#download$/);
+    await sheet.getByRole("link", { name: "For trainees" }).click();
+    await expect(page).toHaveURL(/\/for-trainees$/);
+    await expect(page.getByRole("heading", { level: 1 })).toContainText("proven one day at a time");
   });
 
-  test("the Download module follows the role and the device, and draws the QR code on a computer", async ({ page }) => {
+  test("the top bar stays at the top, and Back to top shows only past the first section", async ({ page }) => {
     await page.goto("/");
+    const top = page.locator(".land-top");
+    // Off, it is hidden from assistive technology too, so it is found by its mark.
+    const fab = page.locator("[data-back-to-top]");
+    await expect(fab).not.toHaveAttribute("data-on", "");
+    await page.locator("#how").scrollIntoViewIfNeeded();
+    await expect(fab).toHaveAttribute("data-on", "");
+    expect((await top.boundingBox())?.y).toBe(0);
+    await fab.click();
+    await expect.poll(() => page.evaluate(() => window.scrollY)).toBeLessThan(5);
+    await expect(fab).not.toHaveAttribute("data-on", "");
+  });
+
+  test("each section of the landing page fits one screen at 100% zoom", async ({ page }) => {
+    await page.setViewportSize({ width: 1366, height: 768 });
+    await page.goto("/");
+    const heights = await page.$$eval("#doors, #how", (sections) => sections.map((section) => section.getBoundingClientRect().height));
+    for (const height of heights) expect(height).toBeLessThanOrEqual(768 - 64 + 1);
+    expect(await page.locator(".hero").evaluate((hero) => hero.getBoundingClientRect().height)).toBeLessThanOrEqual(768);
+    // The hero's controls are on the first screen.
+    const caption = await page.locator("[data-hero-caption]").boundingBox();
+    expect((caption?.y ?? 9999) + (caption?.height ?? 0)).toBeLessThanOrEqual(768);
+  });
+
+  test("a role's page installs that role's app: the device is detected, and the QR code drawn on a computer", async ({ page }) => {
+    await page.goto("/for-supervisors");
     const panel = page.locator("[data-download]");
-    // The device is detected in the browser: exactly one tile says so.
+    // The device is detected in the browser: exactly one tile says so, and the card says which.
     await expect(panel.locator("[data-detected]:not([hidden])")).toHaveCount(1);
-    await panel.getByText("Supervisor app").click();
-    await panel.getByText("Android", { exact: true }).click();
+    await expect(panel.locator("[data-install-title]")).toContainText(/^You're on/);
+    await panel.getByText("Android tablet or phone", { exact: true }).click();
     await expect(panel.locator('[data-device="android"] [data-install-link]')).toHaveAttribute("href", "/supervisor/sign-in?install=1");
     await expect(panel.locator('[data-device="android"]')).toBeVisible();
     await expect(panel.getByRole("heading", { level: 2 })).toContainText("Install INTERNet for supervisors");
     await panel.getByText("Computer", { exact: true }).click();
     await expect(panel.locator("[data-qr] svg")).toBeVisible();
     await expect(panel.locator('[data-device="desktop"]')).toContainText("supervisor sign-in");
-    await panel.getByText("iPhone and iPad", { exact: true }).click();
+    await panel.getByText("iPad or iPhone", { exact: true }).click();
     await expect(panel.locator('[data-device="ios"]')).toContainText("Add to Home Screen");
   });
+
+  for (const [path, role] of [["/for-trainees", "student"], ["/for-coordinators", "coordinator"]] as const) {
+    test(`${path} is a built page, without the app, and signs in at its own door`, async ({ page }) => {
+      const response = await page.goto(path);
+      expect(response?.status()).toBe(200);
+      await expect(page.locator("#root")).toHaveCount(0);
+      await expect(page.locator("main")).toHaveAttribute("data-role", role);
+      await expect(page.getByRole("link", { name: /^Sign in as a/ }).first()).toHaveAttribute("href", `/${role}/sign-in`);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+    });
+  }
 
   test("once the service worker is in, \"/\" opens the landing page with no connection, and a door the app", async ({ page, context }) => {
     await page.goto("/");
@@ -107,6 +180,14 @@ test.describe("the landing page", () => {
     await context.setOffline(false);
   });
 
+  test("the Help centre leads back to the landing page, not to a portal", async ({ page }) => {
+    await page.goto("/help");
+    const back = page.getByRole("link", { name: "Back to INTERNet" });
+    await expect(back).toHaveAttribute("href", "/");
+    await back.click();
+    await expect(page.locator("#doors")).toBeVisible();
+  });
+
   test("/login goes to the doors", async ({ page }) => {
     await page.goto("/login");
     await expect(page).toHaveURL(/\/#doors$/);
@@ -123,6 +204,18 @@ test.describe("the doors", () => {
       await expect(page.locator("#inb-login-id")).toBeVisible();
       const manifest = await (await page.request.get(`/manifest-${role}.webmanifest`)).json();
       expect(manifest.id).toBe(`/${role}/`);
+    });
+
+    test(`the ${role} door fits one screen and leads nowhere else`, async ({ page }) => {
+      for (const size of [{ width: 1366, height: 768 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(size);
+        await page.goto(`/${role}/sign-in`);
+        await expect(page.locator("#inb-login-id")).toBeVisible();
+        expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight)).toBeLessThanOrEqual(0);
+        await expect(page.getByText("INTERNet home")).toHaveCount(0);
+        await expect(page.getByText(/^Not an? (trainee|supervisor|coordinator)\?/)).toHaveCount(0);
+        await expect(page.locator('a[href="/"]')).toHaveCount(0);
+      }
     });
   }
 

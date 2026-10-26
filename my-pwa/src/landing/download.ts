@@ -3,7 +3,7 @@ import { DOORS, doorPath, installPath, type DoorRole } from "./content";
 
 /*
 |--------------------------------------------------------------------------
-| GET THE APP (PSU redesign, 3B)
+| GET THE APP (PSU redesign, 3B; on each role's page since the revision)
 |--------------------------------------------------------------------------
 |
 | Which app (a role) and which device. The device is detected in the
@@ -41,7 +41,8 @@ function notSafariOnIos(): boolean {
 export function setUpDownload(detected: Device): void {
   const panel = document.querySelector<HTMLElement>("[data-download]");
   if (!panel) return;
-  let role: DoorRole = "student";
+  // A role's own page installs that role's app; elsewhere the role is picked.
+  let role: DoorRole = (panel.dataset.fixedRole as DoorRole | undefined) ?? "student";
   let device: Device = detected;
   let qrFor = "";
 

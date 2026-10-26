@@ -54,9 +54,16 @@ async function loadPage(request: Request): Promise<Response> {
   try {
     return await fetch(request, { signal: controller.signal });
   } catch {
-    // Iteration 23: "/" is the landing page (index.html); every other
-    // address is the app (app.html). Neither is answered with the other.
-    const page = new URL(request.url).pathname === "/" ? "/index.html" : "/app.html";
+    // Iteration 23: "/" is the landing page (index.html) and the role pages
+    // are their own files (for-trainees.html…); every other address is the
+    // app (app.html). None is answered with another.
+    const pathname = new URL(request.url).pathname.replace(/(.)\/$/, "$1");
+    const page =
+      pathname === "/"
+        ? "/index.html"
+        : /^\/for-(trainees|supervisors|coordinators)$/.test(pathname)
+          ? `${pathname}.html`
+          : "/app.html";
     return (
       (await matchPrecache(page)) ??
       (await matchPrecache("/offline.html")) ??
