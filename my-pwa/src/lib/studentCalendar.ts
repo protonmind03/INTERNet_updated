@@ -66,6 +66,8 @@ export function weeklyShiftHours(shifts: Pick<CalendarShift, "hours" | "week">[]
 
 export type CalendarLog = {
   date: string;
+  /** A clean pending day counts on its own after this day (2026-10-27). */
+  auto_count_on?: string | null;
   time_in: string | null;
   break_time: string | null;
   break_end_time: string | null;

@@ -376,7 +376,13 @@ function DayRow({
             </Button>
           ) : (
             <>
-              {!working && <StatusBadge status={log.status === "Flagged" ? "Rejected" : log.status} />}
+              {!working &&
+                (log.status === "Pending" && log.auto_count_on ? (
+                  // A clean day counts on its own (2026-10-27).
+                  <StatusBadge status={`Counts after ${formatPhDay(log.auto_count_on, { weekday: "short", month: "short", day: "numeric" })}`} tone="info" />
+                ) : (
+                  <StatusBadge status={log.status === "Flagged" ? "Rejected" : log.status} />
+                ))}
               <AppealActions log={log} onChanged={onChanged} />
             </>
           )}

@@ -4,7 +4,7 @@ import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, Modal, SkeletonRows } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { formatDate, formatDayDate, formatHours, greetingFor, firstNameOf } from "../../lib/format";
+import { formatDate, formatDayDate, formatHours, formatTime, greetingFor, firstNameOf } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
@@ -17,12 +17,12 @@ import { FINAL_DUE_WITHIN_HOURS, finalEvaluationPath, useEvaluatedIds, useFinalD
 import FinalEvaluations from "./FinalEvaluations";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
-import { awaitsReview, bulkSkipReason } from "./attendanceView";
+import { awaitsReview, bulkSkipReason, countsOnItsOwn } from "./attendanceView";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
 import { DayBoard, DecidedRow, DecisionCard, RegisterCard, RegisterSkeleton, ThisWeek, type ReviewItem } from "./ReviewParts";
 import { todaysLogs } from "./reviewData";
-import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
+import { useSupervisorWork, type AttendanceEntry, type QueueItem } from "./useSupervisorWork";
 
 /*
 |--------------------------------------------------------------------------
@@ -39,6 +39,12 @@ import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 | bulk action. The list keeps each kind's colour on its rows, so a
 | document never reads as a time-in.
 |
+| Clean days (2026-10-27): a camera-checked day that timed out normally
+| counts on its own two working days after the day. It is not waiting, so
+| it is not in the counts or the list to verify; Time-ins shows it apart,
+| under "Counting on their own", with the day it counts, Reject, and
+| Verify now. Anything unusual stays in the list to verify.
+|
 | Unchanged from before: every decision (useSupervisorWork: version
 | checks, undo, the rules for what Verify all may take), the day board,
 | today's register on a phone, This week, Record time-in, decided-today
@@ -50,7 +56,7 @@ import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 type Tab = "all" | "time-ins" | "absences" | "tasks" | "docs" | "reports" | "final";
 
 /** The kinds that can be decided several at a time. */
-type BulkKind = "attendance" | "document" | "absence";
+type BulkKind = "attendance" | "document" | "absence" | "counting";
 
 type KindDef = {
   tab: Exclude<Tab, "all">;
@@ -90,6 +96,13 @@ const BULK: Record<BulkKind, { title: (count: number) => string; message: string
     confirm: "Approve all",
     done: (count) => `${count} ${count === 1 ? "document" : "documents"} approved.`,
     button: (count) => `Approve all ${count}`,
+  },
+  counting: {
+    title: (count) => `Verify ${count} clean days now?`,
+    message: "Each would count on its own after its two working days. Verifying now counts them at once. Reject one by itself first if it should not count.",
+    confirm: "Verify now",
+    done: (count) => `${count} clean ${count === 1 ? "day" : "days"} verified.`,
+    button: (count) => `Verify all ${count} now`,
   },
   absence: {
     title: (count) => `Excuse ${count} absences?`,
@@ -229,6 +242,21 @@ export default function SupervisorDashboard() {
     );
   }, [queue, internId, inGroup, search, sort]);
   const ofKind = (def: KindDef) => scoped.filter((item) => item.kind === def.kind);
+  // Clean days: counting on their own, narrowed by the same tools, the soonest to count first.
+  const counting = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    return work.attendance
+      .filter(
+        (entry) =>
+          countsOnItsOwn(entry) &&
+          (!internId || sameId(entry.student_id, internId)) &&
+          inGroup(entry.student_id) &&
+          (!text || `${entry.student_name} ${entry.student_id} ${formatDayDate(entry.date)}`.toLowerCase().includes(text))
+      )
+      .sort((a, b) => String(a.auto_count_on).localeCompare(String(b.auto_count_on)) || a.student_name.localeCompare(b.student_name));
+  }, [work.attendance, internId, inGroup, search]);
+  const [countingOpenId, setCountingOpenId] = useState<number | null>(null);
+  const countingOpen = work.attendance.find((entry) => entry.id === countingOpenId) ?? null;
   const visible = chosen ? ofKind(chosen) : scoped;
   const selected = queue.find((item) => item.key === selectedKey);
   const narrowed = Boolean(search.trim() || internId || grouping.group);
@@ -243,7 +271,8 @@ export default function SupervisorDashboard() {
   );
   const waitingDocuments = scoped.filter((item): item is Extract<QueueItem, { kind: "document" }> => item.kind === "document");
   const waitingAbsences = scoped.filter((item): item is Extract<QueueItem, { kind: "absence" }> => item.kind === "absence");
-  const bulkCount = (kind: BulkKind) => (kind === "attendance" ? verifiable.length : kind === "document" ? waitingDocuments.length : waitingAbsences.length);
+  const bulkCount = (kind: BulkKind) =>
+    kind === "attendance" ? verifiable.length : kind === "document" ? waitingDocuments.length : kind === "counting" ? counting.length : waitingAbsences.length;
   // Verify all takes even one; approving or excusing together is offered from two.
   const bulkOffered = (kind: BulkKind) => bulkCount(kind) >= (kind === "attendance" ? 1 : 2);
   const bulkRows: { key: string; name: string; what: string; id: number }[] =
@@ -253,7 +282,9 @@ export default function SupervisorDashboard() {
         ? waitingDocuments.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: item.entry.doc_type }))
         : confirmBulk === "absence"
           ? waitingAbsences.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: formatDate(item.entry.date) }))
-          : [];
+          : confirmBulk === "counting"
+            ? counting.map((entry) => ({ key: `counting-${entry.id}`, id: entry.id, name: entry.student_name, what: `${formatDate(entry.date)} · ${formatHours(entry.hours)}` }))
+            : [];
 
   const decideAll = async () => {
     if (!confirmBulk) return;
@@ -261,7 +292,7 @@ export default function SupervisorDashboard() {
     const ids = bulkRows.map((row) => row.id);
     setBulkBusy(true);
     try {
-      const { done, failure } = kind === "attendance" ? await work.verifyMany(ids) : await work.decideMany(kind, ids);
+      const { done, failure } = kind === "attendance" || kind === "counting" ? await work.verifyMany(ids) : await work.decideMany(kind, ids);
       if (failure) toast.error(`${done} of ${ids.length} saved, then it stopped: ${failure}`);
       else toast.success(BULK[kind].done(done));
     } catch (error) {
@@ -293,6 +324,9 @@ export default function SupervisorDashboard() {
       setBusyKey(null);
     }
   };
+
+  const verifyCleanNow = (entry: AttendanceEntry) =>
+    verifyOne({ kind: "attendance", key: `attendance-${entry.id}`, waitingSince: entry.time_out || entry.date, entry });
 
   const pickTab = (next: Tab) => {
     const copy = new URLSearchParams(params);
@@ -395,7 +429,11 @@ export default function SupervisorDashboard() {
             </span>
             <span className="rk-label">{def ? def.label : "Everything"}</span>
             <span className="rk-line">
-              {fresh > 0 ? <b className="rk-fresh">{fresh} new</b> : def?.kind === "final" ? (items.length ? "Ready to start" : "None due") : oldest ? `Oldest ${waitingText(oldest).toLowerCase()}` : "Nothing waiting"}
+              {fresh > 0 ? (
+                <b className="rk-fresh">{fresh} new</b>
+              ) : def?.kind === "attendance" && items.length === 0 && counting.length > 0 ? (
+                `${counting.length} count on their own`
+              ) : def?.kind === "final" ? (items.length ? "Ready to start" : "None due") : oldest ? `Oldest ${waitingText(oldest).toLowerCase()}` : "Nothing waiting"}
             </span>
           </button>
         );
@@ -447,8 +485,16 @@ export default function SupervisorDashboard() {
     <Card>
       <EmptyState
         icon="check-circle"
-        title={queue.length === 0 ? "You're all caught up" : narrowed ? "Nothing matches" : `No ${chosen ? chosen.label.toLowerCase() : "items"} waiting`}
-        description={queue.length === 0 ? "New time-ins, tasks, documents, absences and weekly reports appear here." : narrowed ? "Clear the search or the filters to see the rest." : undefined}
+        title={queue.length === 0 ? "Nothing needs you right now" : narrowed ? "Nothing matches" : `No ${chosen ? chosen.label.toLowerCase() : "items"} waiting`}
+        description={
+          queue.length === 0
+            ? counting.length > 0
+              ? "The clean days below count on their own. Anything unusual, and new tasks, documents, absences and weekly reports, appear here."
+              : "Anything unusual about a day, and new tasks, documents, absences and weekly reports, appear here."
+            : narrowed
+              ? "Clear the search or the filters to see the rest."
+              : undefined
+        }
         action={
           narrowed ? (
             <Button variant="secondary" onClick={clearTools}>
@@ -497,6 +543,53 @@ export default function SupervisorDashboard() {
   );
 
   const showDecided = decidedToday.length > 0 && (tab === "all" || tab === "time-ins");
+  const showCounting = counting.length > 0 && (tab === "all" || tab === "time-ins");
+  const countingGroup = showCounting ? (
+    <details className="rk--timein rk-counting" open={tab === "time-ins"}>
+      <summary className="rk-counting-head">
+        <span className="rk-icon rk-icon--sm" aria-hidden="true">
+          <Icon name="hourglass" size={14} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[14.5px] font-bold text-slate-900">
+            Counting on their own <span className="tabular text-slate-500">· {counting.length}</span>
+          </span>
+          <span className="block text-[12.5px] text-slate-600">Clean days: camera-checked and timed out. Each counts after two working days unless you reject it.</span>
+        </span>
+        <Icon name="chevron-down" size={16} className="rk-counting-caret text-slate-500" />
+      </summary>
+      {bulkOffered("counting") && <div className="flex justify-end px-4 pt-2">{bulkButton("counting", true)}</div>}
+      <ul className="divide-y divide-(--role-hairline)">
+        {counting.map((entry) => (
+          <li key={entry.id} className="rk-row flex flex-wrap items-center gap-3 px-4 py-2.5">
+            <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-full bg-psu-50 text-[12px] font-extrabold text-psu-800 ring-1 ring-inset ring-psu-100">
+              {entry.student_name
+                .split(/\s+/)
+                .filter(Boolean)
+                .map((part, index, parts) => (index === 0 || index === parts.length - 1 ? part[0] : ""))
+                .join("")
+                .toUpperCase()}
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-[14px] font-bold text-slate-900">{entry.student_name}</span>
+              <span className="block text-[12.5px] text-slate-600">
+                {formatDayDate(entry.date)} · {formatTime(entry.time_in)}–{formatTime(entry.time_out)} · <span className="whitespace-nowrap">{formatHours(entry.hours)}</span>
+              </span>
+            </span>
+            <span className="rk-countdown">Counts after {formatPhDay(String(entry.auto_count_on), { weekday: "short", month: "short", day: "numeric" })}</span>
+            <span className="flex gap-1.5">
+              <Button variant="outline" size="sm" onClick={() => setCountingOpenId(entry.id)} aria-label={`Reject or look at ${entry.student_name}'s day, ${formatDayDate(entry.date)}`}>
+                Reject
+              </Button>
+              <Button size="sm" busy={busyKey === `attendance-${entry.id}`} busyProcess="verify" onClick={() => void verifyCleanNow(entry)} aria-label={`Verify now ${entry.student_name}'s day, ${formatDayDate(entry.date)}`}>
+                Verify now
+              </Button>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </details>
+  ) : null;
   const title = chosen ? chosen.label : "Everything waiting";
   const headBulk = chosen ? (chosen.bulk ? bulkButton(chosen.bulk) : null) : bulkButton("attendance");
 
@@ -575,6 +668,7 @@ export default function SupervisorDashboard() {
               )}
               {!computer && chosen?.bulk && chosen.bulk !== "attendance" && bulkOffered(chosen.bulk) && <div className="mb-3">{bulkButton(chosen.bulk, true)}</div>}
               {list}
+              {countingGroup}
               {showDecided && (
                 <div className={computer ? "border-t border-(--role-hairline)" : "card-hairline mt-3 overflow-hidden rounded-2xl"}>
                   <h3 className="sr-only">Decided today</h3>
@@ -610,6 +704,16 @@ export default function SupervisorDashboard() {
 
       <Modal open={Boolean(selected) && selected?.kind !== "final"} onClose={() => setSelectedKey(null)} title={selected ? selected.entry.student_name : ""} size="lg">
         {selected && selected.kind !== "final" && <ReviewDetail item={selected} work={work} onDecided={() => setSelectedKey(null)} />}
+      </Modal>
+
+      <Modal open={countingOpen !== null} onClose={() => setCountingOpenId(null)} title={countingOpen ? countingOpen.student_name : ""} size="lg">
+        {countingOpen && (
+          <ReviewDetail
+            item={{ kind: "attendance", key: `attendance-${countingOpen.id}`, waitingSince: countingOpen.time_out || countingOpen.date, entry: countingOpen }}
+            work={work}
+            onDecided={() => setCountingOpenId(null)}
+          />
+        )}
       </Modal>
 
       <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />

@@ -60,6 +60,11 @@ export type AttendanceEntry = {
   hours: number | string | null;
   note: string | null;
   status: "Pending" | "Verified" | "Rejected" | "Flagged";
+  /** A clean pending day: the day ("YYYY-MM-DD") after which it counts on its own; null otherwise (2026-10-27). */
+  auto_count_on?: string | null;
+  /** Counted by the system after its two working days, not by a person. */
+  auto_counted?: boolean;
+  verifier_role?: string | null;
   /** Moves on every change (migration 062); sent back with a decision. Missing from an older server. */
   version?: number;
   image_url: string | null;
@@ -350,7 +355,9 @@ export function useSupervisorWork(
         .filter(
           (entry) =>
             entry.status === "Pending" &&
-            !(entry.capture_method === "supervisor" && !entry.time_out)
+            !(entry.capture_method === "supervisor" && !entry.time_out) &&
+            // A clean day counts on its own: it is not waiting for a decision (2026-10-27).
+            !entry.auto_count_on
         )
         .map((entry) => ({
           kind: "attendance" as const,

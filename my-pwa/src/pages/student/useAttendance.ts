@@ -34,6 +34,10 @@ export type AttendanceLog = {
   hours: number | string | null;
   note: string | null;
   status: AttendanceStatus;
+  /** A clean pending day: the day ("YYYY-MM-DD") after which it counts on its own (2026-10-27). */
+  auto_count_on?: string | null;
+  /** Counted by the system after its two working days. */
+  auto_counted?: boolean;
   image_url: string | null;
   review_notes?: string | null;
   verified_by?: string | null;

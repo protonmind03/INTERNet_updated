@@ -34,6 +34,7 @@ import {
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { startTimeOutReminderScheduler } from "./services/timeOutReminders";
+import { autoCountOnSql, cleanLogSql, startAutoCountScheduler } from "./services/autoCount";
 import { consentRequired, hasCurrentConsent } from "./services/privacy";
 import { allowsChannel, categoryOf } from "./services/notificationPreferences";
 import { startDigestScheduler } from "./services/digests";
@@ -2298,6 +2299,9 @@ app.get(
             photo_redo_due_at,
             ${DAY_RULE_COLUMNS},
             -- The latest appeal on this log, if any.
+            -- 2026-10-27: a clean pending day counts on its own after this day (services/autoCount.ts).
+            ${autoCountOnSql("attendance", "(SELECT st.liveness_strict FROM students st WHERE st.student_id = attendance.student_id)", MAX_SHIFT_HOURS)} AS auto_count_on,
+            auto_counted,
             (SELECT JSON_BUILD_OBJECT('id', p.id, 'kind', p.kind, 'status', p.status, 'decision_note', p.decision_note)
                FROM attendance_appeals p WHERE p.attendance_id = attendance.id
               ORDER BY p.created_at DESC, p.id DESC LIMIT 1) AS appeal,
@@ -4176,6 +4180,10 @@ app.get(
             a.time_correction_reason,
             a.liveness_checks,
             a.capture_reason,
+            -- 2026-10-27: a clean pending day counts on its own after this day; one counted so is marked.
+            ${autoCountOnSql("a", "s.liveness_strict", MAX_SHIFT_HOURS)} AS auto_count_on,
+            a.auto_counted,
+            a.verifier_role,
             (SELECT COALESCE(JSON_AGG(JSON_BUILD_OBJECT('id', wt.id, 'title', wt.title) ORDER BY wt.id), '[]'::json)
                FROM attendance_tasks wx JOIN tasks wt ON wt.id = wx.task_id
               WHERE wx.attendance_id = a.id) AS tasks
@@ -4386,7 +4394,7 @@ app.get(
     try {
       const auth = (req as AuthedRequest).auth;
       // Each kind separately too, for the side menu's Review entries.
-      const result = await pool.query<{ time_ins: string; tasks: string; documents: string; absences: string; reports: string }>(
+      const result = await pool.query<{ time_ins: string; counting: string; tasks: string; documents: string; absences: string; reports: string }>(
         `
         WITH mine AS (
           SELECT TRIM(student_id::text) AS student_id FROM students
@@ -4397,7 +4405,12 @@ app.get(
             WHERE TRIM(a.student_id::text) IN (SELECT student_id FROM mine)
               AND a.status = 'Pending'
               -- A time-in the supervisor recorded in person needs no review.
-              AND NOT (a.capture_method IS NOT DISTINCT FROM 'supervisor' AND a.time_out IS NULL)) AS time_ins,
+              AND NOT (a.capture_method IS NOT DISTINCT FROM 'supervisor' AND a.time_out IS NULL)
+              -- Nor a clean day, which counts on its own (services/autoCount.ts).
+              AND NOT ${cleanLogSql("a", "(SELECT st.liveness_strict FROM students st WHERE st.student_id = a.student_id)", MAX_SHIFT_HOURS)}) AS time_ins,
+          (SELECT COUNT(*) FROM attendance a
+            WHERE TRIM(a.student_id::text) IN (SELECT student_id FROM mine)
+              AND ${cleanLogSql("a", "(SELECT st.liveness_strict FROM students st WHERE st.student_id = a.student_id)", MAX_SHIFT_HOURS)}) AS counting,
           (SELECT COUNT(*) FROM tasks t
               WHERE TRIM(t.student_id::text) IN (SELECT student_id FROM mine) AND t.status = 'Submitted') AS tasks,
           (SELECT COUNT(*) FROM documents d
@@ -4418,7 +4431,8 @@ app.get(
         reports: Number(row?.reports) || 0,
       };
       const waiting = Object.values(byKind).reduce((sum, count) => sum + count, 0);
-      return res.json({ waiting, by_kind: byKind });
+      // Clean days that will count on their own: not waiting, said for information.
+      return res.json({ waiting, by_kind: byKind, counting_on_their_own: Number(row?.counting) || 0 });
     } catch (error) {
       console.error("SUPERVISOR REVIEW COUNT ERROR:", error);
       return res.status(500).json({ message: "Failed to count what is waiting." });
@@ -10467,6 +10481,18 @@ app.listen(
     startPostgresNotificationListener(pool);
     startDeadlineReminderScheduler(pool, createNotification);
     startTimeOutReminderScheduler(pool, createNotification);
+    // Clean days count on their own two working days after the day (services/autoCount.ts).
+    startAutoCountScheduler(
+      pool,
+      {
+        createNotification,
+        afterCounted: async (studentId) => {
+          await syncCompletion(studentId);
+          await syncLivenessStrict(pool, studentId);
+        },
+      },
+      MAX_SHIFT_HOURS
+    );
     // The nightly photo clean-up rides on the same check (services/photoPurge.ts).
     // The weekly pack of uploaded files to the backup bucket, while they are on this server's disk (Iteration 15).
     startDigestScheduler(pool, [sendCoordinatorDigests, runPhotoPurgeIfDue, runUploadsPackIfDue]);

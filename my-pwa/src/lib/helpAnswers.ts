@@ -85,7 +85,7 @@ export const HELP_ANSWERS: HelpAnswer[] = [
     roles: ["student"],
     topic: "Hours and rejections",
     question: "Why aren't my hours counting yet?",
-    answer: "Only days your supervisor has verified count. A pending day is added once it is verified.",
+    answer: "A day counts once it is verified. A clean day (camera check passed, timed out normally) counts on its own two working days later unless your supervisor rejects it; anything unusual waits for your supervisor. Attendance shows when each day counts.",
     screens: ["/student/dashboard", "/daily-log", "/schedule"],
   },
   {
@@ -157,7 +157,7 @@ export const HELP_ANSWERS: HelpAnswer[] = [
     roles: ["supervisor"],
     topic: "Reviewing",
     question: "Fastest way to verify logs",
-    answer: "Use Verify all for the ordinary time-ins. Time-ins made offline stay out of it: confirm each one on its own.",
+    answer: "Clean days count on their own after two working days, so only reject one that should not count. Use Verify all for the others that have a time-out; time-ins made offline are confirmed one by one.",
     screens: ["/supervisor/dashboard", "/supervisor/attendance"],
   },
   {

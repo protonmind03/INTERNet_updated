@@ -129,7 +129,7 @@ export const ROLE_PAGES: Record<
     titleEm: "proven one day at a time.",
     intro: "Time in with your phone's camera, log what you did, hand in your work and see the day you will finish, all in one app made for your phone.",
     features: [
-      { icon: "camera", title: "Time in with a camera check", body: "A short head turn proves it is you. Your supervisor sees the photo and verifies the day." },
+      { icon: "camera", title: "Time in with a camera check", body: "A short head turn proves it is you. Your supervisor sees the photo, and a clean day counts after two working days." },
       { icon: "offline", title: "Works without signal", body: "No data in the field? Your time-in waits on the phone and is sent once you are back online." },
       { icon: "road", title: "See the day you will finish", body: "Verified hours fill your road, and the expected finish date moves with every verified day." },
       { icon: "tasks", title: "Tasks and documents", body: "Submit your work and your requirements, and read your supervisor's notes in one place." },
@@ -187,7 +187,7 @@ export const HOW_STEPS: Record<DoorRole, { title: string; heading: string; steps
     heading: "supervisor's",
     steps: [
       { title: "See who is in", body: "Today's register shows each intern's time-in, and who is not in yet." },
-      { title: "Verify the day's time-ins", body: "Verify the ordinary ones together. Time-ins made offline are confirmed one by one." },
+      { title: "Check what is unusual", body: "Clean, camera-checked days count on their own after two working days unless you reject them. Offline or corrected time-ins wait for you." },
       { title: "Review tasks, documents and weekly reports", body: "Mark work reviewed, or return it with a note." },
       { title: "Evaluate and certify", body: "Fill in the final evaluation, and certify each month's time record." },
     ],
@@ -314,12 +314,12 @@ export const FOOL: Array<{
   {
     group: "Afterwards",
     try: "Count hours nobody checked",
-    tag: "Verified",
-    verdict: "Blocked",
-    answer: "Only verified days count.",
-    rule: "Hours count toward the requirement only once the supervisor verifies the day.",
+    tag: "Two-day window",
+    verdict: "Handled",
+    answer: "Only clean days count on their own, and only after two working days.",
+    rule: "A clean day (camera check passed, timed out normally, nothing offline, corrected or flagged) counts two working days later unless the supervisor rejects it first. Anything unusual waits for the supervisor to verify it.",
     checkedBy: ["Server", "Supervisor"],
-    screen: { kind: "hours", title: "Verified hours only", line: "pending days are not counted" },
+    screen: { kind: "hours", title: "Counts after two working days", line: "unless your supervisor rejects it" },
   },
 ];
 

@@ -20,7 +20,7 @@ import type { AttendanceEntry } from "./useSupervisorWork";
 
 export type GroupBy = "status" | "day" | "intern" | "team" | "block";
 export type SortBy = "waiting" | "newest" | "intern" | "hours";
-export type Chip = "review" | "verified" | "rejected" | "offline_photo" | "offline_attested" | "redo" | "corrected";
+export type Chip = "review" | "counting" | "verified" | "rejected" | "offline_photo" | "offline_attested" | "redo" | "corrected";
 
 export type AttendanceView = { group: GroupBy; sort: SortBy; chips: Chip[] };
 
@@ -43,6 +43,7 @@ export const SORT_OPTIONS: { value: SortBy; label: string }[] = [
 
 export const CHIPS: { value: Chip; label: string; status: boolean }[] = [
   { value: "review", label: "Needs review", status: true },
+  { value: "counting", label: "Counts on its own", status: true },
   { value: "offline_photo", label: "Offline · no photo", status: false },
   { value: "offline_attested", label: "Offline · attested", status: false },
   { value: "redo", label: "Photo redo pending", status: false },
@@ -51,9 +52,16 @@ export const CHIPS: { value: Chip; label: string; status: boolean }[] = [
   { value: "rejected", label: "Rejected", status: true },
 ];
 
-/** True when the log is waiting for this supervisor's decision. */
+/**
+ * A clean day (2026-10-27): camera-checked, timed out, nothing unusual. It
+ * counts on its own after auto_count_on unless the supervisor rejects or
+ * decides it first (backend services/autoCount.ts says which are clean).
+ */
+export const countsOnItsOwn = (entry: AttendanceEntry) => entry.status === "Pending" && Boolean(entry.auto_count_on);
+
+/** True when the log is waiting for this supervisor's decision: a clean day does not. */
 export const awaitsReview = (entry: AttendanceEntry) =>
-  entry.status === "Pending" && !(entry.capture_method === "supervisor" && !entry.time_out);
+  entry.status === "Pending" && !(entry.capture_method === "supervisor" && !entry.time_out) && !countsOnItsOwn(entry);
 
 /**
  * Why "Verify all" leaves a waiting log out, or null when it takes it.
@@ -72,6 +80,8 @@ export function chipMatches(entry: AttendanceEntry, chip: Chip): boolean {
   switch (chip) {
     case "review":
       return awaitsReview(entry);
+    case "counting":
+      return countsOnItsOwn(entry);
     case "verified":
       return entry.status === "Verified";
     case "rejected":
@@ -121,7 +131,8 @@ export type AttendanceGroup = { key: string; label: string; entries: AttendanceE
 
 const STATUS_GROUPS: { key: string; label: string; test: (entry: AttendanceEntry) => boolean }[] = [
   { key: "review", label: "Needs review", test: awaitsReview },
-  { key: "open", label: "Not finished yet", test: (entry) => entry.status === "Pending" && !awaitsReview(entry) },
+  { key: "counting", label: "Counts on its own", test: countsOnItsOwn },
+  { key: "open", label: "Not finished yet", test: (entry) => entry.status === "Pending" && !awaitsReview(entry) && !countsOnItsOwn(entry) },
   { key: "verified", label: "Verified", test: (entry) => entry.status === "Verified" },
   { key: "rejected", label: "Rejected", test: (entry) => entry.status === "Rejected" || entry.status === "Flagged" },
 ];

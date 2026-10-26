@@ -23,6 +23,7 @@ export const LOOP_LOCKS = {
   deadlineReminders: 7_031_101,
   timeOutReminders: 7_031_102,
   digests: 7_031_103,
+  autoCount: 7_031_104,
 } as const;
 
 /**

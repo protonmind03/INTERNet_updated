@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-249 routes in 16 files; 47 services in use.
+249 routes in 16 files; 48 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -42,6 +42,7 @@ flowchart LR
     services_academics["academics.ts"]
     services_analyticsRange["analyticsRange.ts"]
     services_audit["audit.ts"]
+    services_autoCount["autoCount.ts"]
     services_backups["backups.ts"]
     services_clientErrors["clientErrors.ts"]
     services_coordinatorActions["coordinatorActions.ts"]
@@ -176,6 +177,7 @@ flowchart LR
   server --> services_academics
   server --> services_analyticsRange
   server --> services_audit
+  server --> services_autoCount
   server --> services_backups
   server --> services_clientErrors
   server --> services_dayRules
@@ -208,6 +210,8 @@ flowchart LR
   server --> services_timeOutReminders
   server --> services_uploadQuota
   server --> services_versions
+  services_autoCount --> services_loopLock
+  services_autoCount --> services_phTime
   services_backups --> services_phTime
   services_backups --> services_privateFileStore
   services_coordinatorActions --> services_ids
@@ -278,6 +282,7 @@ flowchart LR
   server -.-> ext_push
   services_academics -.-> ext_postgres
   services_audit -.-> ext_postgres
+  services_autoCount -.-> ext_postgres
   services_backups -.-> ext_bucket
   services_backups -.-> ext_postgres
   services_coordinatorActions -.-> ext_postgres
@@ -348,6 +353,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `academics.ts` | `routes/academics.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts` |
 | `analyticsRange.ts` | `server.ts` |
 | `audit.ts` | `server.ts` |
+| `autoCount.ts` | `server.ts` |
 | `backups.ts` | `routes/console.ts`, `scripts/backup-cron.ts`, `server.ts` |
 | `clientErrors.ts` | `server.ts` |
 | `coordinatorActions.ts` | `routes/console.ts` |
@@ -366,7 +372,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `listQuery.ts` | `server.ts` |
 | `liveNotifications.ts` | `server.ts` |
 | `liveness.ts` | `routes/appeals.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
-| `loopLock.ts` | `services/deadlineReminders.ts`, `services/digests.ts`, `services/timeOutReminders.ts` |
+| `loopLock.ts` | `services/autoCount.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/timeOutReminders.ts` |
 | `mailer.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
 | `notificationKinds.ts` | `routes/extensions.ts`, `routes/messages.ts`, `server.ts` |
 | `notificationLinks.ts` | `server.ts` |
@@ -375,7 +381,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
 | `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
-| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
+| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
 | `photoPurge.ts` | `routes/console.ts`, `server.ts` |
 | `photoRedo.ts` | `routes/appeals.ts`, `server.ts`, `services/deadlineReminders.ts` |
 | `privacy.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `server.ts`, `services/photoPurge.ts` |

@@ -26,6 +26,7 @@ import {
   SORT_OPTIONS,
   awaitsReview,
   bulkSkipReason,
+  countsOnItsOwn,
   groupEntries,
   passesChips,
   readView,
@@ -124,6 +125,19 @@ function LogMarks({ entry }: { entry: AttendanceEntry }) {
       <StepMarks verifications={entry.step_verifications} compact />
     </span>
   );
+}
+
+/**
+ * A log's status as the supervisor reads it: a clean day says when it counts
+ * on its own; a day the system counted says so (2026-10-27).
+ */
+function LogStatus({ entry }: { entry: AttendanceEntry }) {
+  if (entry.capture_method === "supervisor" && !entry.time_out) return <StatusBadge status="Recorded by you" tone="info" />;
+  if (countsOnItsOwn(entry)) {
+    return <StatusBadge status={`Counts after ${formatPhDay(String(entry.auto_count_on), { weekday: "short", month: "short", day: "numeric" })}`} tone="info" />;
+  }
+  if (entry.status === "Verified" && entry.auto_counted) return <StatusBadge status="Verified · automatic" tone="good" />;
+  return <StatusBadge status={entry.status} />;
 }
 
 /** A group's name and counts, kept in view while its logs scroll past. */
@@ -620,7 +634,7 @@ export default function SupervisorAttendanceApproval() {
                                     {formatDayDate(entry.date)} · {formatTime(entry.time_in)} – {formatTime(entry.time_out)}
                                   </p>
                                 </div>
-                                <StatusBadge status={entry.status} />
+                                <LogStatus entry={entry} />
                               </div>
                               <p className="tabular mt-1 text-sm text-slate-500">
                                 {formatHours(entry.hours)} · Lunch {breakText(entry).toLowerCase()}
@@ -684,7 +698,7 @@ export default function SupervisorAttendanceApproval() {
                               <td className="tabular whitespace-nowrap px-3 py-3 text-slate-700">{formatTime(entry.time_out)}</td>
                               <td className="tabular whitespace-nowrap px-3 py-3 text-right font-medium text-slate-900">{formatHours(entry.hours)}</td>
                               <td className="px-3 py-3">
-                                {entry.capture_method === "supervisor" && !entry.time_out ? <StatusBadge status="Recorded by you" tone="info" /> : <StatusBadge status={entry.status} />}
+                                <LogStatus entry={entry} />
                               </td>
                               <td className="px-5 py-3">
                                 <div className="flex items-center justify-end gap-1">

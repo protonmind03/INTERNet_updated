@@ -5,7 +5,7 @@ import EntryPictures from "./EntryPictures";
 import Icon from "./Icon";
 import type { PictureRole } from "../lib/attachments";
 import { formatHours, formatLongDate, formatTime } from "../lib/format";
-import { daysBetween } from "../lib/phTime";
+import { daysBetween, formatPhDay } from "../lib/phTime";
 import { patternWeek } from "../lib/schedulePattern";
 import { dayStatus, type DayFacts, type DayStatus, type ShiftPattern } from "../lib/studentCalendar";
 import { timeColumns } from "../lib/timeColumns";
@@ -197,7 +197,13 @@ export default function DaySheet({
             log.time_out ? (
               <p>
                 <span className="font-semibold text-slate-900">{formatHours(log.hours)}</span> credited
-                {log.status === "Pending" ? <span className="text-slate-600"> · Waiting for your supervisor</span> : null}
+                {log.status === "Pending" ? (
+                  <span className="text-slate-600">
+                    {log.auto_count_on
+                      ? ` · Counts after ${formatPhDay(log.auto_count_on, { weekday: "short", month: "short", day: "numeric" })} unless your supervisor rejects it`
+                      : " · Waiting for your supervisor"}
+                  </span>
+                ) : null}
               </p>
             ) : (
               <p className="text-slate-700">Not timed out yet.</p>

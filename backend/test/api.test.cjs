@@ -3070,6 +3070,79 @@ function localTestPool() {
   return new Pool({ connectionString: url.toString(), options: "-c timezone=Asia/Manila" });
 }
 
+test("a clean day counts on its own two working days later; an unusual one waits for the supervisor", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  require("tsx/cjs");
+  const { countCleanDays, cleanLogSql } = require("../src/services/autoCount.ts");
+  const pool = localTestPool();
+  // Days long past (2001-01-01 was a Monday), and a "now" just after them, so no other log is due.
+  const monday = "2001-01-01";
+  const tuesday = "2001-01-02";
+  const id = student.student_id;
+  const sent = [];
+  const after = [];
+  const hooks = {
+    createNotification: async (notification) => void sent.push(notification),
+    afterCounted: async (studentId) => void after.push(studentId),
+  };
+  const day = (date) => new Date(`${date}T09:00:00+08:00`);
+  const strict = await pool.query(`SELECT liveness_strict FROM students WHERE student_id = $1`, [id]);
+  try {
+    // The working days: Monday counts after Wednesday; a Friday after the next Tuesday.
+    const due = await pool.query(`SELECT TO_CHAR(auto_count_on($1), 'YYYY-MM-DD') AS mon, TO_CHAR(auto_count_on('2001-01-05'), 'YYYY-MM-DD') AS fri`, [monday]);
+    assert.deepEqual(due.rows[0], { mon: "2001-01-03", fri: "2001-01-09" });
+
+    await pool.query(`UPDATE students SET liveness_strict = FALSE WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND date IN ($2, $3)`, [id, monday, tuesday]);
+    // Monday: camera-checked and timed out, nothing unusual. Tuesday: its time was corrected.
+    const clean = await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status, capture_method)
+       VALUES ($1, $2, $2::date + TIME '08:00', $2::date + TIME '17:00', 8, 'Pending', 'liveness') RETURNING id`,
+      [id, monday]
+    );
+    await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status, capture_method, time_correction_reason)
+       VALUES ($1, $2, $2::date + TIME '08:00', $2::date + TIME '17:00', 8, 'Pending', 'liveness', 'Left at five')`,
+      [id, tuesday]
+    );
+    const shown = await pool.query(
+      `SELECT a.date::text AS date, ${cleanLogSql("a", "s.liveness_strict", 16)} AS clean
+       FROM attendance a JOIN students s ON s.student_id = a.student_id
+       WHERE a.student_id = $1 AND a.date IN ($2, $3) ORDER BY a.date`,
+      [id, monday, tuesday]
+    );
+    assert.deepEqual(shown.rows.map((row) => row.clean), [true, false]);
+
+    // On its second working day it still waits; the day after, it counts.
+    assert.deepEqual(await countCleanDays(pool, hooks, 16, day("2001-01-03")), []);
+    const counted = await countCleanDays(pool, hooks, 16, day("2001-01-04"));
+    assert.deepEqual(counted.map((row) => row.id), [clean.rows[0].id]);
+    const logs = await pool.query(
+      `SELECT date::text AS date, status, auto_counted, verifier_role, verified_by FROM attendance WHERE student_id = $1 AND date IN ($2, $3) ORDER BY date`,
+      [id, monday, tuesday]
+    );
+    assert.deepEqual(logs.rows[0], { date: monday, status: "Verified", auto_counted: true, verifier_role: "system", verified_by: null });
+    // The corrected day still waits for the supervisor.
+    assert.equal(logs.rows[1].status, "Pending");
+    assert.equal(logs.rows[1].auto_counted, false);
+    // The trainee is told once; completion is checked for them.
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].studentId, id);
+    assert.equal(sent[0].title, "Your day counted");
+    assert.match(sent[0].message, /Mon, Jan 1/);
+    assert.deepEqual(after, [id]);
+    // A second round counts nothing again.
+    assert.deepEqual(await countCleanDays(pool, hooks, 16, day("2001-01-10")), []);
+  } finally {
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1 AND date IN ($2, $3)`, [id, monday, tuesday]);
+    await pool.query(`UPDATE students SET liveness_strict = $2 WHERE student_id = $1`, [id, Boolean(strict.rows[0]?.liveness_strict)]);
+    await pool.end();
+  }
+});
+
 test("a forgotten time-out is reminded once, an hour after the shift ended", async (t) => {
   require("tsx/cjs");
   const { sendTimeOutReminders, clockText, TIME_OUT_REMINDER_DELAY_MINUTES } = require("../src/services/timeOutReminders.ts");
