@@ -32,6 +32,9 @@
    - Student: `student.demo@internet.test` / `StudentDemo123!`
    - Second student, same supervisor: `student2.demo@internet.test` / `StudentDemo123!`
    - Supervisor: `supervisor.demo@internet.test` / `SupervisorDemo123!`
+   - Coordinator: `coordinator.demo@internet.test` / `CoordinatorDemo123!`
+
+   Under `npm run dev`, each portal's sign-in page fills in its demo account.
 5. Default coordinator login seeded by the migration:
    `coordinator@internet.psu.edu.ph` / `Coordinator123!` — change this
    after first login from `/coordinator/profile`.

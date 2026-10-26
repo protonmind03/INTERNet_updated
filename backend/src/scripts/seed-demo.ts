@@ -34,6 +34,16 @@ const demoStudentTwo = {
   company: demoSupervisor.company,
 };
 
+// A coordinator of its own, so the coordinator sign-in can be filled in
+// locally without touching the default COORD-0001 account.
+const demoCoordinator = {
+  id: "DEMO-COORD-0001",
+  email: "coordinator.demo@internet.test",
+  password: "CoordinatorDemo123!",
+  name: "Demo Coordinator",
+  department: "College of Computing Sciences",
+};
+
 async function seedDemoData() {
   const connectionString = process.env.DATABASE_PUBLIC_URL;
   if (!connectionString) {
@@ -166,6 +176,35 @@ async function seedDemoData() {
     }
     }
 
+    const coordinatorResult = await client.query(
+      `
+      INSERT INTO coordinators
+        (coordinator_id, email, password, name, department, is_active, must_change_password)
+      VALUES ($1, $2, $3, $4, $5, TRUE, FALSE)
+      ON CONFLICT (coordinator_id) DO UPDATE SET
+        email = EXCLUDED.email,
+        password = EXCLUDED.password,
+        name = EXCLUDED.name,
+        department = EXCLUDED.department,
+        is_active = TRUE,
+        must_change_password = FALSE
+      WHERE coordinators.email = EXCLUDED.email
+      RETURNING coordinator_id
+      `,
+      [
+        demoCoordinator.id,
+        demoCoordinator.email,
+        await bcrypt.hash(demoCoordinator.password, 10),
+        demoCoordinator.name,
+        demoCoordinator.department,
+      ]
+    );
+    if (coordinatorResult.rows.length !== 1) {
+      throw new Error(
+        "The demo coordinator ID is already used by a different account."
+      );
+    }
+
     // The second intern is placed where the first is (program, major, block),
     // when the coordinator has placed the first.
     await client.query(
@@ -218,6 +257,9 @@ async function seedDemoData() {
   );
   console.log(
     `Supervisor: ${demoSupervisor.email} / ${demoSupervisor.password} (${demoSupervisor.id})`
+  );
+  console.log(
+    `Coordinator: ${demoCoordinator.email} / ${demoCoordinator.password} (${demoCoordinator.id})`
   );
 }
 
