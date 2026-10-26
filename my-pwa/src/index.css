@@ -478,19 +478,15 @@ body {
 }
 
 /* ---------- The supervisor's live queue (sv10-26) ---------- */
-/* "Live · updated": a green dot that breathes while the list is current, grey once it is not. */
-.live-dot { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 9999px; background: #16a34a; }
-.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #16a34a; animation: live-ping 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
-.live-dot--stale { background: #94a3b8; }
-.live-dot--stale::after { display: none; }
-@keyframes live-ping { from { transform: scale(1); opacity: 0.6; } to { transform: scale(2.8); opacity: 0; } }
+/* An intern who is in: a still green dot (no blinking; the user asked for no live indicators). */
+.in-dot { display: inline-block; width: 7px; height: 7px; border-radius: 9999px; background: #16a34a; }
 /* What arrived while the page was open: a short gold wash, then a "New" tag for a few minutes. */
 .review-new { animation: review-arrive 1.6s ease-out; }
 @keyframes review-arrive { 0% { background: color-mix(in srgb, #facc15 32%, transparent); } 100% { background: transparent; } }
 .review-new-pill { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 9999px; background: #facc15; color: #1a237e; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; box-shadow: 0 4px 10px -4px rgb(250 204 21 / 0.8); }
 .review-section + .review-section { margin-top: 2px; }
 @media (prefers-reduced-motion: reduce) {
-  .live-dot::after, .review-new { animation: none; }
+  .review-new { animation: none; }
 }
 
 /* ---------- Interns (sv10-26) ---------- */
@@ -542,3 +538,52 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
   .att-tile { flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; }
   .att-tile-icon { width: 32px; height: 32px; border-radius: 10px; }
 }
+
+/* ---------- Review workspace (sv10-26, second pass) ---------- */
+/* Each kind of work in its own colour and icon, the same on its card, its heading and its rows. */
+.rk--all { --rk: var(--color-psu-700); --rk-soft: var(--color-psu-50); --rk-line: var(--color-psu-200); }
+.rk--timein { --rk: #0f766e; --rk-soft: #f0fdfa; --rk-line: #99f6e4; }
+.rk--absence { --rk: #b45309; --rk-soft: #fffbeb; --rk-line: #fcd34d; }
+.rk--task { --rk: #4338ca; --rk-soft: #eef2ff; --rk-line: #c7d2fe; }
+.rk--document { --rk: #7c3aed; --rk-soft: #f5f3ff; --rk-line: #ddd6fe; }
+.rk--report { --rk: #be123c; --rk-soft: #fff1f2; --rk-line: #fecdd3; }
+.rk--final { --rk: #a16207; --rk-soft: #fefce8; --rk-line: #fde047; }
+
+/* The strip of kinds. */
+.rk-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }
+.rk-strip--scroll { display: flex; overflow-x: auto; padding-bottom: 4px; scroll-snap-type: x proximity; }
+.rk-strip--scroll .rk-card { min-width: 9.5rem; scroll-snap-align: start; }
+.rk-card { position: relative; display: flex; min-width: 0; flex-direction: column; gap: 2px; padding: 12px 12px 11px; border-radius: 16px; background: #fff; text-align: left; box-shadow: inset 0 0 0 1px var(--role-hairline, #e2e8f0); transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms, background-color 180ms; }
+.rk-card::before { content: ""; position: absolute; left: 12px; right: 12px; top: 0; height: 3px; border-radius: 0 0 3px 3px; background: var(--rk); opacity: 0.35; transition: opacity 180ms; }
+.rk-card:hover { transform: translateY(-2px); box-shadow: inset 0 0 0 1.5px var(--rk-line), 0 12px 24px -18px rgb(15 23 42 / 0.45); }
+.rk-card--on { background: var(--rk-soft); box-shadow: inset 0 0 0 2px var(--rk), 0 14px 26px -18px rgb(15 23 42 / 0.5); }
+.rk-card--on::before { opacity: 1; }
+.rk-card--empty:not(.rk-card--on) .rk-count, .rk-card--empty:not(.rk-card--on) .rk-label { color: #94a3b8; }
+.rk-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.rk-icon { display: grid; width: 32px; height: 32px; flex-shrink: 0; place-items: center; border-radius: 10px; background: var(--rk-soft); color: var(--rk); box-shadow: inset 0 0 0 1px var(--rk-line); }
+.rk-card--on .rk-icon { background: var(--rk); color: #fff; box-shadow: none; }
+.rk-icon--sm { width: 26px; height: 26px; border-radius: 8px; }
+.rk-count { font-family: var(--font-display); font-size: 24px; font-weight: 800; line-height: 1; color: #0f172a; }
+.rk-card--on .rk-count { color: var(--rk); }
+.rk-label { margin-top: 6px; font-size: 13.5px; font-weight: 700; color: #0f172a; }
+.rk-line { overflow: hidden; font-size: 12px; color: #64748b; text-overflow: ellipsis; white-space: nowrap; }
+.rk-fresh { color: var(--rk); }
+
+/* One line of tools under the strip. */
+.rk-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+/* The list's panel, its heading and each kind's section, in the kind's colour. */
+.rk-panel { box-shadow: inset 0 0 0 1px var(--role-hairline, #e2e8f0), inset 0 4px 0 var(--rk); }
+.rk-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 16px 16px 12px; border-bottom: 1px solid var(--role-hairline, #e2e8f0); background: linear-gradient(180deg, var(--rk-soft), #fff); }
+.rk-section-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 16px; background: var(--rk-soft); box-shadow: inset 4px 0 0 var(--rk), inset 0 -1px 0 var(--rk-line); }
+.rk-section-head--sticky { position: sticky; top: calc(var(--inb-top-inset) + 4rem); z-index: 5; }
+.rk-pill { padding: 0 8px; border-radius: 9999px; background: var(--rk); color: #fff; font-size: 12px; font-weight: 700; line-height: 20px; }
+/* Each row keeps its kind's colour on its edge. */
+.rk-row { box-shadow: inset 3px 0 0 var(--rk-line); }
+.rk-row:hover { box-shadow: inset 3px 0 0 var(--rk); }
+@media (max-width: 1023.98px) {
+  .rk-row { box-shadow: none; }
+  .rk-row > .card-hairline, .rk-row > article { box-shadow: inset 4px 0 0 var(--rk), inset 0 0 0 1px var(--role-hairline, #e2e8f0); }
+  .rk-section-head { border-radius: 12px; }
+}
+@media (prefers-reduced-motion: reduce) { .rk-card { transition: none; } }

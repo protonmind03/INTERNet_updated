@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { UnderlineTabs } from "../../brand/motifs";
-import UnlessInMenu from "../../components/UnlessInMenu";
 import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, Modal, SkeletonRows } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { formatDate, formatHours, greetingFor, firstNameOf } from "../../lib/format";
+import { formatDate, formatDayDate, formatHours, greetingFor, firstNameOf } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
@@ -15,7 +13,7 @@ import { useFocus } from "../../lib/useFocusRecord";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { useProjections } from "../../lib/useProjections";
 import { sameId } from "../../lib/ids";
-import { finalEvaluationPath, useEvaluatedIds, useFinalDue } from "./finalDue";
+import { FINAL_DUE_WITHIN_HOURS, finalEvaluationPath, useEvaluatedIds, useFinalDue } from "./finalDue";
 import FinalEvaluations from "./FinalEvaluations";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
@@ -28,64 +26,77 @@ import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 
 /*
 |--------------------------------------------------------------------------
-| REVIEW (PSU redesign 10: S1 on phones, S6 and S7 on tablets and computers)
+| REVIEW: ONE WORKSPACE (sv10-26, second pass)
 |--------------------------------------------------------------------------
 |
-| The supervisor's logbook. Phones: today's register, underlined tabs (All,
-| Time-ins, Tasks, Docs), one card per decision with a solid main action and
-| an outlined choice ("Reject" asks photo or day in one menu), today's
-| decided time-ins with the grey Verified stamp, and a sticky bar to verify
-| the ordinary time-ins together. A time-in recorded offline is never in
-| that bar: it is confirmed on its own. Computers add the day board, This
-| week and plain fact cards. Every decision is the same call as before
-| (useSupervisorWork): version checks, undo and the rules are unchanged.
+| Everything that waits for the supervisor, in one module. The side menu
+| has one Review entry; inside, a strip of kinds (Everything, Time-ins,
+| Absences, Tasks, Documents, Weekly reports, Final evaluations), each
+| with its own colour and icon, its count and how long its oldest has
+| waited. The chosen kind is in the address (?tab=), so a link, Back and
+| a notification land on it. Under the strip, one line of tools for every
+| kind: search, program or block, intern, sort, and the chosen kind's
+| bulk action. The list keeps each kind's colour on its rows, so a
+| document never reads as a time-in.
+|
+| Unchanged from before: every decision (useSupervisorWork: version
+| checks, undo, the rules for what Verify all may take), the day board,
+| today's register on a phone, This week, Record time-in, decided-today
+| stamps, the "New" mark on what arrived while the page was open, and a
+| notification opening its item (?focus=) or, once decided, its own page.
 |
 */
 
-type Tab = "all" | "time-ins" | "tasks" | "docs" | "absences" | "reports" | "final";
-
-/** Each tab as the side menu names it, for the line shown in place of the tabs. */
-const MENU_NAME: Record<Tab, string> = {
-  all: "Everything",
-  "time-ins": "Time-ins",
-  tasks: "Submitted tasks",
-  docs: "Submitted documents",
-  absences: "Absences",
-  reports: "Submitted reports",
-  final: "Final evaluations",
-};
-
-const TAB_KINDS: Record<Tab, ReviewItem["kind"][] | null> = {
-  all: null,
-  "time-ins": ["attendance"],
-  tasks: ["task"],
-  docs: ["document"],
-  absences: ["absence"],
-  reports: ["journal"],
-  final: ["final"],
-};
+type Tab = "all" | "time-ins" | "absences" | "tasks" | "docs" | "reports" | "final";
 
 /** The kinds that can be decided several at a time. */
 type BulkKind = "attendance" | "document" | "absence";
 
-const BULK: Record<BulkKind, { title: (count: number) => string; message: string; confirm: string; done: (count: number) => string }> = {
+type KindDef = {
+  tab: Exclude<Tab, "all">;
+  kind: ReviewItem["kind"];
+  label: string;
+  /** What the supervisor does with this kind, in a few words. */
+  job: string;
+  icon: IconName;
+  /** The kind's colour (index.css: .rk--…). */
+  tone: string;
+  bulk?: BulkKind;
+};
+
+/** The kinds, in the order the strip and the full list show them. Time-ins first: they hold hours back. */
+const KINDS: KindDef[] = [
+  { tab: "time-ins", kind: "attendance", label: "Time-ins", job: "Verify the day, or reject the photo or the day", icon: "camera", tone: "timein", bulk: "attendance" },
+  { tab: "absences", kind: "absence", label: "Absences", job: "Excuse it, or mark it unexcused", icon: "calendar", tone: "absence", bulk: "absence" },
+  { tab: "tasks", kind: "task", label: "Tasks", job: "Rate the work, or return it with a note", icon: "tasks", tone: "task" },
+  { tab: "docs", kind: "document", label: "Documents", job: "Approve the file, or reject it with a note", icon: "document", tone: "document", bulk: "document" },
+  { tab: "reports", kind: "journal", label: "Weekly reports", job: "Mark it reviewed, or return it", icon: "note", tone: "report" },
+  { tab: "final", kind: "final", label: "Final evaluations", job: `Due within ${FINAL_DUE_WITHIN_HOURS} h of the requirement`, icon: "star", tone: "final" },
+];
+const KIND_OF_TAB = new Map(KINDS.map((def) => [def.tab, def]));
+const DEF_OF_KIND = new Map(KINDS.map((def) => [def.kind, def]));
+
+const BULK: Record<BulkKind, { title: (count: number) => string; message: string; confirm: string; done: (count: number) => string; button: (count: number) => string }> = {
   attendance: {
     title: (count) => `Verify ${count} ordinary time-ins?`,
     message: "Every pending log that has a time-out will be marked verified. Time-ins recorded offline stay for you to confirm one by one.",
     confirm: "Verify all",
     done: (count) => `${count} attendance ${count === 1 ? "log" : "logs"} verified.`,
+    button: (count) => `Verify all ${count}`,
   },
   document: {
     title: (count) => `Approve ${count} documents?`,
     message: "Every document waiting for you will be marked approved. Review one you want to reject by itself first.",
     confirm: "Approve all",
     done: (count) => `${count} ${count === 1 ? "document" : "documents"} approved.`,
+    button: (count) => `Approve all ${count}`,
   },
   absence: {
     title: (count) => `Excuse ${count} absences?`,
     message: "Every absence waiting for you will be marked excused. Review one you do not accept by itself first.",
     confirm: "Excuse all",
     done: (count) => `${count} ${count === 1 ? "absence" : "absences"} excused.`,
+    button: (count) => `Excuse all ${count}`,
   },
 };
 
@@ -97,22 +108,15 @@ const DECIDED_PAGE: Record<string, string> = {
   journal: "/supervisor/journals",
 };
 
-/**
-| "To verify" in sections (sv10-26): the full queue is listed kind by kind,
-| each under its own heading with its count and, where several can be
-| decided together, that one action. Time-ins come first: they are the
-| day's and they hold hours back.
-*/
-const KIND_SECTIONS: { kind: QueueItem["kind"]; label: string; icon: IconName; bulk?: BulkKind }[] = [
-  { kind: "attendance", label: "Time-ins", icon: "camera", bulk: "attendance" },
-  { kind: "absence", label: "Absences", icon: "calendar", bulk: "absence" },
-  { kind: "task", label: "Submitted tasks", icon: "tasks" },
-  { kind: "document", label: "Submitted documents", icon: "document", bulk: "document" },
-  { kind: "journal", label: "Weekly reports", icon: "note" },
-];
-
 /** How long an item stays marked "New" after it arrived on screen. */
 const NEW_FOR_MS = 3 * 60_000;
+
+type Sort = "oldest" | "newest" | "intern";
+const SORTS: { value: Sort; label: string }[] = [
+  { value: "oldest", label: "Oldest waiting first" },
+  { value: "newest", label: "Newest first" },
+  { value: "intern", label: "Intern A–Z" },
+];
 
 /** How long an item has been waiting, in plain words. */
 function waitingText(since: string | undefined): string {
@@ -123,6 +127,17 @@ function waitingText(since: string | undefined): string {
   if (hours < 24) return `${hours} h ago`;
   const days = Math.round(hours / 24);
   return days === 1 ? "From yesterday" : `${days} days old`;
+}
+
+/** When an item started waiting ("" for a final evaluation, which waits on hours, not a date). */
+const sinceOf = (item: ReviewItem) => (item.kind === "final" ? "" : item.waitingSince || "");
+
+/** What a search looks through: the intern and what the item is. */
+function searchText(item: ReviewItem): string {
+  const entry = item.entry as Record<string, unknown>;
+  const parts = [item.entry.student_name, item.entry.student_id, entry.title, entry.doc_type, entry.reason, entry.date, entry.week_start, DEF_OF_KIND.get(item.kind)?.label];
+  if (item.kind === "attendance" || item.kind === "absence") parts.push(formatDayDate(item.entry.date));
+  return parts.filter(Boolean).join(" ").toLowerCase();
 }
 
 export default function SupervisorDashboard() {
@@ -143,8 +158,8 @@ export default function SupervisorDashboard() {
     return () => window.clearInterval(timer);
   }, []);
 
-  // What arrived while the page was open is marked "New" for a few minutes (sv10-26). The first
-  // list seen is the baseline; each later one adds the keys it brings, with when they came.
+  // What arrived while the page was open is marked "New" for a few minutes. The first list
+  // seen is the baseline; each later one adds the keys it brings, with when they came.
   const queueKeys = queue.map((item) => item.key).join("|");
   const [arrivals, setArrivals] = useState<{ signature: string; known: Set<string>; since: Map<string, number> } | null>(null);
   if (!loading && arrivals?.signature !== queueKeys) {
@@ -162,12 +177,14 @@ export default function SupervisorDashboard() {
     return at !== undefined && now.getTime() - at < NEW_FOR_MS;
   };
 
-  // The tab is in the address (?tab=), the one place it is kept, so the
-  // side menu marks the same entry and Back returns to it.
+  // The kind is in the address (?tab=), the one place it is kept, so a link, Back and the menu agree.
   const asked = params.get("tab") as Tab | null;
-  const tab: Tab = asked && asked in TAB_KINDS ? asked : "all";
+  const tab: Tab = asked && (asked === "all" || KIND_OF_TAB.has(asked as Exclude<Tab, "all">)) ? asked : "all";
+  const chosen = tab === "all" ? null : KIND_OF_TAB.get(tab)!;
   const [internId, setInternId] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<Sort>("oldest");
+  const [toolsOpen, setToolsOpen] = useState(false);
   const grouping = useInternGroups();
   const inGroup = grouping.has;
 
@@ -194,13 +211,27 @@ export default function SupervisorDashboard() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
 
-  const scoped = useMemo(
-    () => (internId ? queue.filter((item) => sameId(item.entry.student_id, internId)) : queue).filter((item) => inGroup(item.entry.student_id)),
-    [queue, internId, inGroup]
-  );
-  const countOf = (which: Tab) => (TAB_KINDS[which] ? scoped.filter((item) => TAB_KINDS[which]!.includes(item.kind)).length : scoped.length);
-  const visible = TAB_KINDS[tab] ? scoped.filter((item) => TAB_KINDS[tab]!.includes(item.kind)) : scoped;
+  // The queue narrowed by the tools (everything but the kind): what the strip counts.
+  const scoped = useMemo(() => {
+    const text = search.trim().toLowerCase();
+    const list = queue.filter(
+      (item) =>
+        (!internId || sameId(item.entry.student_id, internId)) &&
+        inGroup(item.entry.student_id) &&
+        (!text || searchText(item).includes(text))
+    );
+    return [...list].sort((a, b) =>
+      sort === "intern"
+        ? a.entry.student_name.localeCompare(b.entry.student_name) || sinceOf(a).localeCompare(sinceOf(b))
+        : sort === "newest"
+          ? sinceOf(b).localeCompare(sinceOf(a))
+          : sinceOf(a).localeCompare(sinceOf(b))
+    );
+  }, [queue, internId, inGroup, search, sort]);
+  const ofKind = (def: KindDef) => scoped.filter((item) => item.kind === def.kind);
+  const visible = chosen ? ofKind(chosen) : scoped;
   const selected = queue.find((item) => item.key === selectedKey);
+  const narrowed = Boolean(search.trim() || internId || grouping.group);
 
   const verifiable = useMemo(
     () =>
@@ -212,6 +243,9 @@ export default function SupervisorDashboard() {
   );
   const waitingDocuments = scoped.filter((item): item is Extract<QueueItem, { kind: "document" }> => item.kind === "document");
   const waitingAbsences = scoped.filter((item): item is Extract<QueueItem, { kind: "absence" }> => item.kind === "absence");
+  const bulkCount = (kind: BulkKind) => (kind === "attendance" ? verifiable.length : kind === "document" ? waitingDocuments.length : waitingAbsences.length);
+  // Verify all takes even one; approving or excusing together is offered from two.
+  const bulkOffered = (kind: BulkKind) => bulkCount(kind) >= (kind === "attendance" ? 1 : 2);
   const bulkRows: { key: string; name: string; what: string; id: number }[] =
     confirmBulk === "attendance"
       ? verifiable.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: `${formatDate(item.entry.date)} · ${formatHours(item.entry.hours)}` }))
@@ -264,7 +298,13 @@ export default function SupervisorDashboard() {
     const copy = new URLSearchParams(params);
     if (next === "all") copy.delete("tab");
     else copy.set("tab", next);
+    copy.delete("focus");
     setParams(copy, { replace: true });
+  };
+  const clearTools = () => {
+    setSearch("");
+    setInternId("");
+    grouping.setGroup("");
   };
 
   const logs = todaysLogs(work);
@@ -275,111 +315,190 @@ export default function SupervisorDashboard() {
   const shownInterns = interns.filter((intern) => inGroup(intern.student_id));
   const firstName = firstNameOf(supervisor?.name);
   const company = supervisor?.company || "your company";
-  const oldest = queue.filter((item): item is QueueItem => item.kind !== "final").map((item) => item.waitingSince).sort()[0];
-  const tabs = [
-    { value: "all" as Tab, label: "All", count: countOf("all") },
-    { value: "time-ins" as Tab, label: "Time-ins", count: countOf("time-ins") },
-    { value: "tasks" as Tab, label: "Tasks", count: countOf("tasks") },
-    { value: "docs" as Tab, label: "Docs", count: countOf("docs") },
-    ...(countOf("absences") > 0 || tab === "absences" ? [{ value: "absences" as Tab, label: "Absences", count: countOf("absences") }] : []),
-    ...(countOf("reports") > 0 || tab === "reports" ? [{ value: "reports" as Tab, label: "Reports", count: countOf("reports") }] : []),
-    ...(countOf("final") > 0 || tab === "final" ? [{ value: "final" as Tab, label: "Final evaluations", count: countOf("final") }] : []),
-  ];
+  const oldestOf = (items: ReviewItem[]) => items.map(sinceOf).filter(Boolean).sort()[0];
 
-  /** One waiting item: a decision card, or a final evaluation to start. Marked while it is new. */
-  const renderItem = (item: ReviewItem, grouped = false) => (
-    <div key={item.key} className={isNew(item.key) ? "review-new relative" : "relative"} data-new={isNew(item.key) || undefined}>
-      {isNew(item.key) && (
-        <span className="review-new-pill pointer-events-none absolute right-3 top-1 z-[1]" aria-label="New">
-          New
-        </span>
-      )}
-      {item.kind === "final" ? (
-        <div className={computer ? "flex items-center justify-between gap-3 px-4 py-3" : "card-hairline flex items-center justify-between gap-3 rounded-2xl p-3.5"}>
-          <span className="min-w-0">
-            <span className="eyebrow block text-slate-600">Final evaluation</span>
-            <span className="block truncate text-[15px] font-bold text-slate-900">{item.entry.student_name}</span>
-            <span className="block text-[13px] text-slate-600">
-              {formatHours(item.entry.hours_rendered)} of {formatHours(item.entry.required_hours)}
-            </span>
+  /** One waiting item, on its kind's colour: a decision card, or a final evaluation to start. */
+  const renderItem = (item: ReviewItem) => {
+    const def = DEF_OF_KIND.get(item.kind)!;
+    const fresh = isNew(item.key);
+    return (
+      <div key={item.key} className={`rk-row rk--${def.tone} relative ${fresh ? "review-new" : ""}`} data-new={fresh || undefined}>
+        {fresh && (
+          <span className="review-new-pill pointer-events-none absolute right-3 top-1 z-[1]" aria-label="New">
+            New
           </span>
-          <Link to={finalEvaluationPath(item.entry.student_id)} className="inline-flex min-h-11 items-center rounded-lg bg-psu-600 px-4 text-sm font-bold text-white hover:bg-psu-700">
-            Start
-          </Link>
-        </div>
-      ) : (
-        <DecisionCard
-          item={item}
-          layout={computer ? "row" : "card"}
-          grouped={grouped}
-          busy={busyKey === item.key}
-          onVerify={() => item.kind === "attendance" && void verifyOne(item)}
-          onOpen={() => setSelectedKey(item.key)}
-          onRejectChoice={() => setSelectedKey(item.key)}
-        />
+        )}
+        {item.kind === "final" ? (
+          <div className={computer ? "flex items-center justify-between gap-3 px-4 py-3" : "card-hairline flex items-center justify-between gap-3 rounded-2xl p-3.5"}>
+            <span className="min-w-0">
+              <span className="eyebrow block text-slate-600">Final evaluation</span>
+              <span className="block truncate text-[15px] font-bold text-slate-900">{item.entry.student_name}</span>
+              <span className="block text-[13px] text-slate-600">
+                {formatHours(item.entry.hours_rendered)} of {formatHours(item.entry.required_hours)}
+              </span>
+            </span>
+            <Link to={finalEvaluationPath(item.entry.student_id)} className="inline-flex min-h-11 items-center rounded-lg bg-psu-600 px-4 text-sm font-bold text-white hover:bg-psu-700">
+              Start
+            </Link>
+          </div>
+        ) : (
+          <DecisionCard
+            item={item}
+            layout={computer ? "row" : "card"}
+            grouped={computer}
+            busy={busyKey === item.key}
+            onVerify={() => item.kind === "attendance" && void verifyOne(item)}
+            onOpen={() => setSelectedKey(item.key)}
+            onRejectChoice={() => setSelectedKey(item.key)}
+          />
+        )}
+      </div>
+    );
+  };
+
+  /** The bulk action of one kind, when it can be offered. */
+  const bulkButton = (kind: BulkKind, compact = false) =>
+    bulkOffered(kind) ? (
+      <span className="flex items-center gap-1">
+        <Button variant={compact ? "secondary" : "primary"} icon={kind === "attendance" ? undefined : "check-circle"} onClick={() => setConfirmBulk(kind)}>
+          {BULK[kind].button(bulkCount(kind))}
+        </Button>
+        {kind === "attendance" && !compact && (
+          <InfoTip label="About Verify all" text="Verifies the ordinary time-ins that have a time-out. Time-ins recorded offline stay for you to confirm one by one." />
+        )}
+      </span>
+    ) : null;
+
+  // The kind strip: Everything first, then each kind in its colour.
+  const strip = (
+    <div role="tablist" aria-label="What to review" className={computer ? "rk-strip" : "rk-strip rk-strip--scroll"}>
+      {[null, ...KINDS].map((def) => {
+        const key: Tab = def ? def.tab : "all";
+        const items = def ? ofKind(def) : scoped;
+        const on = tab === key;
+        const fresh = items.filter((item) => isNew(item.key)).length;
+        const oldest = oldestOf(items);
+        return (
+          <button
+            key={key}
+            type="button"
+            role="tab"
+            aria-selected={on}
+            onClick={() => pickTab(key)}
+            className={`rk-card ${def ? `rk--${def.tone}` : "rk--all"} ${on ? "rk-card--on" : ""} ${items.length === 0 ? "rk-card--empty" : ""}`}
+          >
+            <span className="rk-card-top">
+              <span className="rk-icon" aria-hidden="true">
+                <Icon name={def ? def.icon : "inbox"} size={17} />
+              </span>
+              <span className="rk-count tabular">{loading ? "…" : items.length}</span>
+            </span>
+            <span className="rk-label">{def ? def.label : "Everything"}</span>
+            <span className="rk-line">
+              {fresh > 0 ? <b className="rk-fresh">{fresh} new</b> : def?.kind === "final" ? (items.length ? "Ready to start" : "None due") : oldest ? `Oldest ${waitingText(oldest).toLowerCase()}` : "Nothing waiting"}
+            </span>
+          </button>
+        );
+      })}
+    </div>
+  );
+
+  // One line of tools, the same for every kind.
+  const tools = (
+    <div className="rk-tools">
+      <label className="relative block min-w-0 flex-1 basis-52 sm:max-w-xs">
+        <span className="sr-only">Search what is waiting</span>
+        <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+        <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by intern, task or file" className="field pl-9" />
+      </label>
+      <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
+      {interns.length > 1 && (
+        <label className="block">
+          <span className="sr-only">Intern</span>
+          <select value={internId} onChange={(event) => setInternId(event.target.value)} className="field w-auto max-w-56">
+            <option value="">All interns</option>
+            {shownInterns.map((intern) => (
+              <option key={intern.student_id} value={intern.student_id}>
+                {intern.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="block">
+        <span className="sr-only">Sort</span>
+        <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="field w-auto" aria-label="Sort what is waiting">
+          {SORTS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {narrowed && (
+        <button type="button" onClick={clearTools} className="inline-flex min-h-11 items-center rounded-lg px-2.5 text-sm font-semibold text-psu-700 hover:bg-psu-50">
+          Clear
+        </button>
       )}
     </div>
   );
 
-  const list = (
-    <>
-      {loading ? (
-        <SkeletonRows rows={4} />
-      ) : visible.length === 0 ? (
-        <Card>
-          <EmptyState
-            icon="check-circle"
-            title={queue.length === 0 ? "You're all caught up" : "Nothing of this kind"}
-            description={queue.length === 0 ? "New time-ins, tasks, documents and absences appear here." : undefined}
-          />
-        </Card>
-      ) : (
-        tab === "all" ? (
-          // The whole queue, kind by kind, each under its heading.
-          <div className={computer ? "" : "space-y-5"}>
-            {[...KIND_SECTIONS, { kind: "final" as const, label: "Final evaluations due", icon: "star" as IconName, bulk: undefined }].map((section) => {
-              const items = visible.filter((item) => item.kind === section.kind);
-              if (items.length === 0) return null;
-              const bulkCount =
-                section.bulk === "attendance" ? verifiable.length : section.bulk === "document" ? waitingDocuments.length : section.bulk === "absence" ? waitingAbsences.length : 0;
-              const fresh = items.filter((item) => isNew(item.key)).length;
-              return (
-                <section key={section.kind} aria-label={`${section.label}, ${items.length}`} className="review-section">
-                  <div className={`flex flex-wrap items-center gap-2.5 ${computer ? "sticky top-[calc(var(--inb-top-inset)+4rem)] z-[5] border-y border-(--role-hairline) bg-slate-50/95 px-4 py-2 backdrop-blur" : "px-1 pb-2"}`}>
-                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-white text-psu-700 ring-1 ring-inset ring-(--role-hairline)">
-                      <Icon name={section.icon} size={15} />
-                    </span>
-                    <h3 className="text-[14.5px] font-bold text-slate-900">{section.label}</h3>
-                    <span className="tabular rounded-full bg-psu-700 px-2 text-[12px] font-bold leading-5 text-white">{items.length}</span>
-                    {fresh > 0 && <span className="review-new-pill">{fresh} new</span>}
-                    {section.bulk && section.bulk !== "attendance" && bulkCount > 1 && (
-                      <button type="button" onClick={() => setConfirmBulk(section.bulk!)} className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-bold text-psu-700 hover:bg-psu-50">
-                        <Icon name="check-circle" size={15} />
-                        {section.bulk === "document" ? `Approve all ${bulkCount}` : `Excuse all ${bulkCount}`}
-                      </button>
-                    )}
-                  </div>
-                  <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>{items.map((item) => renderItem(item, true))}</div>
-                </section>
-              );
-            })}
-          </div>
-        ) : (
-          <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>{visible.map((item) => renderItem(item))}</div>
-        )
-      )}
-      {decidedToday.length > 0 && tab !== "tasks" && tab !== "docs" && (
-        <div className={computer ? "border-t border-(--role-hairline)" : "card-hairline mt-3 overflow-hidden rounded-2xl"}>
-          <h3 className="sr-only">Decided today</h3>
-          <div className="divide-y divide-(--role-hairline)">
-            {decidedToday.map((entry) => (
-              <DecidedRow key={entry.id} entry={entry} />
-            ))}
-          </div>
-        </div>
-      )}
-    </>
+  const empty = (
+    <Card>
+      <EmptyState
+        icon="check-circle"
+        title={queue.length === 0 ? "You're all caught up" : narrowed ? "Nothing matches" : `No ${chosen ? chosen.label.toLowerCase() : "items"} waiting`}
+        description={queue.length === 0 ? "New time-ins, tasks, documents, absences and weekly reports appear here." : narrowed ? "Clear the search or the filters to see the rest." : undefined}
+        action={
+          narrowed ? (
+            <Button variant="secondary" onClick={clearTools}>
+              Clear filters
+            </Button>
+          ) : undefined
+        }
+      />
+    </Card>
   );
+
+  const list = loading ? (
+    <SkeletonRows rows={4} />
+  ) : visible.length === 0 ? (
+    empty
+  ) : chosen ? (
+    <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>{visible.map(renderItem)}</div>
+  ) : (
+    // Everything, kind by kind, each under a heading in its colour.
+    <div className={computer ? "" : "space-y-5"}>
+      {KINDS.map((def) => {
+        const items = ofKind(def);
+        if (items.length === 0) return null;
+        return (
+          <section key={def.kind} aria-label={`${def.label}, ${items.length}`} className={`rk-section rk--${def.tone}`}>
+            <div className={`rk-section-head ${computer ? "rk-section-head--sticky" : ""}`}>
+              <span className="rk-icon rk-icon--sm" aria-hidden="true">
+                <Icon name={def.icon} size={14} />
+              </span>
+              <h3 className="text-[14.5px] font-bold text-slate-900">{def.label}</h3>
+              <span className="rk-pill tabular">{items.length}</span>
+              <span className="hidden text-[12.5px] text-slate-600 sm:inline">{def.job}</span>
+              <span className="ml-auto flex items-center gap-1">
+                {def.bulk && def.bulk !== "attendance" && bulkButton(def.bulk, true)}
+                <button type="button" onClick={() => pickTab(def.tab)} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-[13px] font-bold text-slate-700 hover:bg-white">
+                  Only these
+                  <Icon name="chevron-right" size={14} />
+                </button>
+              </span>
+            </div>
+            <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>{items.map(renderItem)}</div>
+          </section>
+        );
+      })}
+    </div>
+  );
+
+  const showDecided = decidedToday.length > 0 && (tab === "all" || tab === "time-ins");
+  const title = chosen ? chosen.label : "Everything waiting";
+  const headBulk = chosen ? (chosen.bulk ? bulkButton(chosen.bulk) : null) : bulkButton("attendance");
 
   return (
     <SupervisorLayout
@@ -401,106 +520,74 @@ export default function SupervisorDashboard() {
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
         {computer ? (
-          // The day as a whole on the full queue; a chosen kind (Absences, Submitted tasks…) opens straight on its list.
+          // The day as a whole on Everything; a chosen kind opens straight on its list.
           tab === "all" && !loading && shownInterns.length > 0 && <DayBoard company={company} interns={shownInterns} logs={logs} now={now} />
+        ) : loading ? (
+          <RegisterSkeleton />
         ) : (
-          loading ? <RegisterSkeleton /> : shownInterns.length > 0 && <RegisterCard interns={shownInterns} logs={logs} />
+          shownInterns.length > 0 && <RegisterCard interns={shownInterns} logs={logs} />
         )}
+
+        <section aria-labelledby="review-title" className="space-y-3">
+          <h2 id="review-title" className="sr-only">
+            What waits for your review
+          </h2>
+          {strip}
+          {computer ? (
+            tools
+          ) : (
+            <>
+              <button type="button" onClick={() => setToolsOpen((value) => !value)} aria-expanded={toolsOpen} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">
+                <Icon name="filter" size={16} />
+                Search and filter{narrowed ? " (on)" : ""}
+              </button>
+              {toolsOpen && tools}
+            </>
+          )}
+        </section>
 
         {tab === "final" ? (
           // Final evaluations: every intern and where theirs stands, not a queue to clear.
-          <FinalEvaluations interns={shownInterns} evaluated={evaluated} loading={loading} />
+          <FinalEvaluations interns={shownInterns.filter((intern) => !internId || sameId(intern.student_id, internId))} evaluated={evaluated} loading={loading} />
         ) : (
-        <div className={computer ? "grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}>
-          <section aria-labelledby="to-verify-title" className={computer ? "overflow-hidden rounded-2xl border-2 border-psu-600/40 bg-white" : ""}>
-            {computer && (
-              <div className="flex flex-wrap items-center gap-3 border-b border-(--role-hairline) bg-psu-50/40 px-4 py-3">
-                <span className="grid h-9 min-w-9 place-items-center rounded-lg bg-psu-700 px-2 font-display text-[18px] font-extrabold text-white tabular">{scoped.length}</span>
-                <h2 id="to-verify-title" className="font-display text-[22px] font-extrabold text-slate-900">
-                  To verify
-                </h2>
-                {oldest && <span className="text-[13.5px] text-slate-600">Oldest {waitingText(oldest).toLowerCase()}</span>}
-                <LiveLine updatedAt={work.updatedAt} now={now} />
-                {verifiable.length > 0 && (tab === "all" || tab === "time-ins") ? (
-                  <span className="ml-auto flex items-center gap-1">
-                    <Button onClick={() => setConfirmBulk("attendance")}>Verify all {verifiable.length}</Button>
-                    <InfoTip label="About Verify all" text="Verifies the ordinary time-ins that have a time-out. Time-ins recorded offline stay for you to confirm one by one." />
+          <div className={computer ? "grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}>
+            <section aria-labelledby="to-verify-title" className={computer ? `overflow-hidden rounded-2xl bg-white rk-panel ${chosen ? `rk--${chosen.tone}` : "rk--all"}` : ""}>
+              {computer ? (
+                <div className="rk-panel-head">
+                  <span className="rk-icon" aria-hidden="true">
+                    <Icon name={chosen ? chosen.icon : "inbox"} size={18} />
                   </span>
-                ) : tab === "docs" && waitingDocuments.length > 1 ? (
-                  <Button className="ml-auto" icon="check-circle" onClick={() => setConfirmBulk("document")}>
-                    Approve all {waitingDocuments.length}
-                  </Button>
-                ) : tab === "absences" && waitingAbsences.length > 1 ? (
-                  <Button className="ml-auto" icon="check-circle" onClick={() => setConfirmBulk("absence")}>
-                    Excuse all {waitingAbsences.length}
-                  </Button>
-                ) : null}
-              </div>
-            )}
-            {!computer && (
-              <div className="mb-2 flex items-center justify-between gap-2 px-1">
-                <LiveLine updatedAt={work.updatedAt} now={now} />
-              </div>
-            )}
-            {!computer && <h2 id="to-verify-title" className="sr-only">To verify</h2>}
-            <div className={computer ? "px-4 pt-2" : "mb-3"}>
-              <div className="flex items-end gap-3">
-                <div className="min-w-0 flex-1">
-                  {/* The side menu lists these when it is open (components/sideMenuState.ts). */}
-                  <UnlessInMenu
-                    instead={
-                      tab !== "all" && (
-                        <p className="flex min-h-11 items-center gap-2 text-sm text-slate-700">
-                          Showing <b className="text-slate-900">{MENU_NAME[tab]}</b>
-                          <button type="button" onClick={() => pickTab("all")} className="inline-flex min-h-11 items-center font-bold text-psu-700 hover:underline">
-                            Show all
-                          </button>
-                        </p>
-                      )
-                    }
-                  >
-                    <UnderlineTabs label="Show" tabs={tabs} value={tab} onChange={pickTab} />
-                  </UnlessInMenu>
+                  <span className="min-w-0">
+                    <h2 id="to-verify-title" className="font-display text-[21px] font-extrabold leading-tight text-slate-900">
+                      {title} <span className="tabular text-slate-500">· {visible.length}</span>
+                    </h2>
+                    <span className="block text-[13px] text-slate-600">
+                      {chosen ? chosen.job : "Every kind, oldest first within each"}
+                      {oldestOf(visible) ? ` · oldest ${waitingText(oldestOf(visible)).toLowerCase()}` : ""}
+                    </span>
+                  </span>
+                  <span className="ml-auto">{headBulk}</span>
                 </div>
-                <button type="button" onClick={() => setShowFilters((value) => !value)} aria-expanded={showFilters} className="mb-1 inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100">
-                  <Icon name="filter" size={16} />
-                  Filter
-                </button>
-              </div>
-              {showFilters && (
-                <div className="flex flex-wrap items-center gap-3 py-3">
-                  <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
-                  {interns.length > 1 && (
-                    <label className="block w-full sm:w-56">
-                      <span className="sr-only">Intern</span>
-                      <select value={internId} onChange={(event) => setInternId(event.target.value)} className="field">
-                        <option value="">All interns</option>
-                        {shownInterns.map((intern) => (
-                          <option key={intern.student_id} value={intern.student_id}>
-                            {intern.name}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  )}
-                  {/* Phones: the bulk choices for documents and absences (computers have them on each section). */}
-                  {!computer && waitingDocuments.length > 1 && (
-                    <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("document")}>
-                      Approve {waitingDocuments.length} documents
-                    </Button>
-                  )}
-                  {!computer && waitingAbsences.length > 1 && (
-                    <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("absence")}>
-                      Excuse {waitingAbsences.length} absences
-                    </Button>
-                  )}
+              ) : (
+                <h2 id="to-verify-title" className="mb-2 px-1 text-[15px] font-bold text-slate-900">
+                  {title} <span className="tabular text-slate-500">· {visible.length}</span>
+                </h2>
+              )}
+              {!computer && chosen?.bulk && chosen.bulk !== "attendance" && bulkOffered(chosen.bulk) && <div className="mb-3">{bulkButton(chosen.bulk, true)}</div>}
+              {list}
+              {showDecided && (
+                <div className={computer ? "border-t border-(--role-hairline)" : "card-hairline mt-3 overflow-hidden rounded-2xl"}>
+                  <h3 className="sr-only">Decided today</h3>
+                  <div className="divide-y divide-(--role-hairline)">
+                    {decidedToday.map((entry) => (
+                      <DecidedRow key={entry.id} entry={entry} />
+                    ))}
+                  </div>
                 </div>
               )}
-            </div>
-            {list}
-          </section>
-          {computer && <ThisWeek work={work} finalDue={finalDue} projections={projections} />}
-        </div>
+            </section>
+            {computer && <ThisWeek work={work} finalDue={finalDue} projections={projections} />}
+          </div>
         )}
 
         {!loading && interns.length === 0 && !work.error && (
@@ -509,7 +596,7 @@ export default function SupervisorDashboard() {
       </div>
 
       {/* Phones and tablets: verify the ordinary time-ins together, above the dock. */}
-      {!computer && verifiable.length > 0 && (
+      {!computer && verifiable.length > 0 && (tab === "all" || tab === "time-ins") && (
         <div className="sticky bottom-[calc(var(--inb-bottom-bar)+0.75rem)] z-20 mt-4">
           <div className="card-hairline flex items-center gap-3 rounded-2xl px-4 py-3 shadow-raised">
             <span className="min-w-0 flex-1">
@@ -547,18 +634,5 @@ export default function SupervisorDashboard() {
         </ul>
       </ConfirmDialog>
     </SupervisorLayout>
-  );
-}
-
-/** "Live · updated 8:14 PM": the queue is kept current on its own (lib/liveRefresh.ts). */
-function LiveLine({ updatedAt, now }: { updatedAt: Date | null; now: Date }) {
-  if (!updatedAt) return null;
-  const stale = now.getTime() - updatedAt.getTime() > 2 * 60_000;
-  const time = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit" }).format(updatedAt);
-  return (
-    <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-600" title="New work appears here as your interns send it.">
-      <span className={`live-dot ${stale ? "live-dot--stale" : ""}`} aria-hidden="true" />
-      {stale ? "Updated" : "Live · updated"} {time}
-    </span>
   );
 }

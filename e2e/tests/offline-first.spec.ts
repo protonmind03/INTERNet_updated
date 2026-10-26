@@ -136,8 +136,9 @@ test("a decision on a record someone else changed meanwhile is refused, says how
   await page.route(/\/api\/events/, (route) => route.abort());
   try {
     await signIn(page, "supervisor");
-    // On a computer the queue's kinds are entries of the side menu (PSU menu review).
-    await page.locator("aside.role-side").getByRole("link", { name: /^Absences/ }).click();
+    // Review is one module (sv10-26): its kinds are a strip of tabs inside the page.
+    await page.locator("aside.role-side").getByRole("link", { name: /^Review/ }).click();
+    await page.getByRole("tab", { name: /Absences/ }).click();
     await page.getByRole("button", { name: new RegExp(`Absence · ${label}`) }).first().click();
     await expect(page.getByRole("button", { name: "Excuse", exact: true })).toBeVisible();
 

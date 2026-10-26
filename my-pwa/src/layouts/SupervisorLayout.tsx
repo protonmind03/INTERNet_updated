@@ -25,9 +25,9 @@ import { signOut as endSession, useAccount } from "../lib/session";
 | the company at the top, the account at the bottom, and groups that open
 | one at a time:
 |
-|   Review       (the queue) Time-ins, Submitted tasks, Submitted
-|                documents, Absences, Submitted reports: what waits
-|                for a decision
+|   Review       (the queue) one entry; inside, the kinds that wait for
+|                a decision (time-ins, absences, tasks, documents,
+|                weekly reports, final evaluations) in their own colours
 |   Interns
 |   Attendance
 |   Work         Tasks, Weekly reports, Documents: everything, decided or not
@@ -108,19 +108,8 @@ export default function SupervisorLayout({
 
   const waiting = counts[REVIEW] ?? 0;
   const side: SideItem[] = [
-    {
-      label: "Review",
-      path: REVIEW,
-      icon: "tasks",
-      count: waiting,
-      children: [
-        { label: "Time-ins", path: `${REVIEW}?tab=time-ins`, count: counts[`${REVIEW}?tab=time-ins`] },
-        { label: "Submitted tasks", path: `${REVIEW}?tab=tasks`, count: counts[`${REVIEW}?tab=tasks`] },
-        { label: "Submitted documents", path: `${REVIEW}?tab=docs`, count: counts[`${REVIEW}?tab=docs`] },
-        { label: "Absences", path: `${REVIEW}?tab=absences`, count: counts[`${REVIEW}?tab=absences`] },
-        { label: "Submitted reports", path: `${REVIEW}?tab=reports`, count: counts[`${REVIEW}?tab=reports`] },
-      ],
-    },
+    // One module (sv10-26): its kinds are chosen inside the page, each in its own colour.
+    { label: "Review", path: REVIEW, icon: "tasks", count: waiting, detail: "Everything waiting for you" },
     { label: "Interns", path: "/supervisor/interns", icon: "users", detail: "Progress, today, this week" },
     { label: "Attendance", path: "/supervisor/attendance", icon: "clock", detail: "Logs, week, absences" },
     {

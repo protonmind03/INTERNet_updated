@@ -267,8 +267,6 @@ export function useSupervisorWork(
   const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  /** When the lists last came back from the server: the "Live · updated" line. */
-  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   // A burst of live notifications should not start a burst of reloads: while
   // one is running, later requests share it and at most one more follows.
@@ -310,7 +308,6 @@ export function useSupervisorWork(
       if (absenceData) setAbsences((absenceData.absences as AbsenceEntry[]) || []);
       if (journalData) setJournals((journalData.journals as JournalEntry[]) || []);
       setError("");
-      setUpdatedAt(new Date());
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your interns' records."));
     } finally {
@@ -691,7 +688,6 @@ export function useSupervisorWork(
     queue,
     loading,
     error,
-    updatedAt,
     reload: load,
     decideAttendance,
     rejectTimeIn,

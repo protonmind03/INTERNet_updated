@@ -475,9 +475,9 @@ const REGISTER_EXAMPLE = [
   { who: "Eli", time: "—", state: "out" },
 ] as const;
 
-/** The time on the register's head, in Manila, kept to the minute. */
+/** The day on the register's head, in Manila (a date only: no live clock). */
 function useManilaClock(): string {
-  const format = () => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }).format(new Date());
+  const format = () => new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", weekday: "short", day: "numeric", month: "short" }).format(new Date());
   const [now, setNow] = useState(format);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(format()), 20_000);
@@ -544,7 +544,6 @@ function SupervisorDesk({ form, extra }: { form: ReactNode; extra: ReactNode }) 
             <p className="signin-board-head">
               <b>Today&rsquo;s register</b>
               <span className="signin-board-live">
-                <span className="signin-board-dot" aria-hidden="true" />
                 {now}
               </span>
             </p>

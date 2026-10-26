@@ -361,7 +361,7 @@ export default function SupervisorInterns() {
                           {[intern.block_name || intern.program_code || intern.program, intern.student_id].filter(Boolean).join(" · ")}
                         </span>
                         <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-bold ring-1 ring-inset ${TODAY_TONE[now.tone]}`}>
-                          {now.tone === "in" && <span className="live-dot" aria-hidden="true" />}
+                          {now.tone === "in" && <span className="in-dot" aria-hidden="true" />}
                           {now.text}
                         </span>
                       </span>

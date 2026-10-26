@@ -850,7 +850,6 @@ html {
 .rp-bento-hero-head, .rp-bento-hero-foot { display: inline-flex; align-items: center; gap: 8px; padding: 5px 13px; border-radius: 9999px; background: rgb(255 255 255 / 0.12); font-size: 13px; font-weight: 700; }
 .rp-bento-hero-foot b { color: var(--role-accent); font-size: 15px; }
 .rp-live { position: relative; width: 8px; height: 8px; border-radius: 9999px; background: var(--land-x-live); }
-.rp-live::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: var(--land-x-live); animation: live-ping 2s var(--inb-ease-out) infinite; }
 .rp-bento-tile { position: relative; display: flex; flex-direction: column; gap: 6px; overflow: hidden; padding: 22px; border-radius: 22px; background: var(--land-paper); box-shadow: inset 0 0 0 1px var(--role-hairline), 0 18px 36px -30px rgb(4 47 46 / 0.5); transition: transform 220ms var(--inb-ease-out), box-shadow 220ms; }
 .rp-bento-tile::after { content: ""; position: absolute; right: -40px; top: -40px; width: 120px; height: 120px; border-radius: 9999px; background: radial-gradient(circle, color-mix(in srgb, var(--role-primary) 12%, transparent), transparent 70%); transition: transform 300ms var(--inb-ease-out); }
 .rp-bento-tile:hover { transform: translateY(-3px); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--role-primary) 40%, transparent), 0 24px 44px -28px rgb(4 47 46 / 0.55); }
@@ -1110,7 +1109,7 @@ html {
 
 /* ---------- Reduced motion: everything still ---------- */
 @media (prefers-reduced-motion: reduce) {
-  .rp-orbit-phone .dev, .rp-orbit-badge, .rp-orbit-rings span, .rp-live::after, .rp-bento-hero .dev, .rp-w-bars em, .role-install-motif, .role-install .get-steps li, .ia-bar b, .ia-apps svg, .ia-taskbar svg, .ia-dialog, .coin, .portal-device, .hero-slot, .role-hero-art .dev, .hero-star, .hero-shooting, .city-win--flicker, .city-flag, .city-beacon, .hero-ground, .hero-title, .hero-title em, .hero-sub, .hero-pedestal::before, .hero-pedestal::after, .hero-device, .hero-note, .mini-face, .fool-scan, .checks-hint svg, .fool-answer, .fool-verdict, .fool-card-icon { animation: none !important; transition: none !important; }
+  .rp-orbit-phone .dev, .rp-orbit-badge, .rp-orbit-rings span, .rp-bento-hero .dev, .rp-w-bars em, .role-install-motif, .role-install .get-steps li, .ia-bar b, .ia-apps svg, .ia-taskbar svg, .ia-dialog, .coin, .portal-device, .hero-slot, .role-hero-art .dev, .hero-star, .hero-shooting, .city-win--flicker, .city-flag, .city-beacon, .hero-ground, .hero-title, .hero-title em, .hero-sub, .hero-pedestal::before, .hero-pedestal::after, .hero-device, .hero-note, .mini-face, .fool-scan, .checks-hint svg, .fool-answer, .fool-verdict, .fool-card-icon { animation: none !important; transition: none !important; }
   .how-step, .how-screen, .land-fab, .portal, .role-features li { transition: none; }
 }
 }

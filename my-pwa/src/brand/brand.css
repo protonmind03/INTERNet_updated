@@ -961,7 +961,6 @@
 .signin-desk--supervisor .signin-board { margin-top: clamp(10px, 2vh, 18px); animation: signin-rise 700ms 250ms var(--inb-ease-out) both; }
 .signin-board-live { display: inline-flex; align-items: center; gap: 7px; padding: 2px 10px; border-radius: 9999px; background: color-mix(in srgb, var(--role-chrome) 8%, white); font-size: 12px; font-weight: 700; color: var(--role-chrome); }
 .signin-board-dot { position: relative; width: 7px; height: 7px; border-radius: 9999px; background: #16a34a; }
-.signin-board-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #16a34a; animation: traveller-ping 1.8s var(--inb-ease-out) infinite; }
 .signin-desk--supervisor .signin-board li { min-height: clamp(32px, 4.8vh, 40px); }
 .signin-board-state { animation: state-pop 420ms var(--inb-ease-out) both; animation-delay: calc(var(--i) * 110ms + 700ms); }
 @keyframes state-pop { from { transform: scale(0.6); opacity: 0; } }
@@ -998,7 +997,7 @@
 .signin-console-office { animation: signin-rise 600ms 200ms var(--inb-ease-out) both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .signin-card, .signin-credential, .signin-sheet, .signin-sun span, .signin-lanes, .signin-desk--student .signin-panel-copy, .signin-road-done, .signin-traveller, .signin-traveller::after, .signin-desk--student .signin-you, .signin-float, .signin-ring-fill, .signin-desk--student .signin-features li, .signin-desk--student .signin-handoff, .signin-qr-scan, .signin-desk--supervisor .signin-panel-copy, .signin-stats li, .signin-desk--supervisor .signin-board, .signin-board-dot::after, .signin-board-state, .signin-board li[data-state="offline"] .signin-board-state, .signin-pills li, .signin-console-tools, .signin-aurora span, .signin-floor, .signin-orbit, .signin-credential-seal, .signin-credential-seal::after, .signin-console-office { animation: none !important; }
+  .signin-card, .signin-credential, .signin-sheet, .signin-sun span, .signin-lanes, .signin-desk--student .signin-panel-copy, .signin-road-done, .signin-traveller, .signin-traveller::after, .signin-desk--student .signin-you, .signin-float, .signin-ring-fill, .signin-desk--student .signin-features li, .signin-desk--student .signin-handoff, .signin-qr-scan, .signin-desk--supervisor .signin-panel-copy, .signin-stats li, .signin-desk--supervisor .signin-board, .signin-board-state, .signin-board li[data-state="offline"] .signin-board-state, .signin-pills li, .signin-console-tools, .signin-aurora span, .signin-floor, .signin-orbit, .signin-credential-seal, .signin-credential-seal::after, .signin-console-office { animation: none !important; }
   .signin-road-done { stroke-dashoffset: 0; }
   .signin-ring-fill { stroke-dashoffset: 15; }
 }

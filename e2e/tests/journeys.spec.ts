@@ -158,8 +158,10 @@ test.describe("weekly report", () => {
 
     const supervisorPage = await (await browser.newContext({ viewport: { width: 1280, height: 900 }, isMobile: false })).newPage();
     await signIn(supervisorPage, "supervisor");
-    // On a computer the queue's kinds are entries of the side menu (PSU menu review).
-    await supervisorPage.locator("aside.role-side").getByRole("link", { name: /^Submitted reports/ }).click();
+    // Review is one module (sv10-26): its kinds are a strip of tabs inside the page.
+    await supervisorPage.locator("aside.role-side").getByRole("link", { name: /^Review/ }).click();
+    await supervisorPage.getByRole("tab", { name: /Weekly reports/ }).click();
+    await expect(supervisorPage).toHaveURL(/tab=reports/);
     // Each card names what it opens; the report is read in its decision.
     await supervisorPage.getByRole("button", { name: /^Review Weekly report · .*, Demo Student$/ }).first().click();
     await expect(supervisorPage.getByText(did)).toBeVisible();
