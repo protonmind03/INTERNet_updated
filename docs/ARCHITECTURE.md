@@ -332,7 +332,7 @@ flowchart LR
 
 ## The app's pages and installable apps
 
-Pages built: `index.html`, `app.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`.
+Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.html`, `for-coordinators.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`.
 
 | Manifest | App | id |
 |---|---|---|
