@@ -134,8 +134,20 @@ function setUpHero(): void {
     const scale = Math.max(0.42, Math.min(1, (stage.clientHeight - 8) / 440));
     hero.style.setProperty("--hero-scale", scale.toFixed(3));
   };
-  if (stage && "ResizeObserver" in window) new ResizeObserver(fit).observe(stage);
-  fit();
+  // The featured device starts just under the PSU sign on the skyline, so the campus's name is never behind it.
+  const sign = hero.querySelector<SVGTextElement>("[data-psu-sign]");
+  const place = () => {
+    if (!stage) return;
+    stage.style.marginTop = "";
+    if (sign) {
+      const gap = sign.getBoundingClientRect().bottom + 10 - stage.getBoundingClientRect().top;
+      if (gap > 0) stage.style.marginTop = `${parseFloat(getComputedStyle(stage).marginTop) + gap}px`;
+    }
+    fit();
+  };
+  window.addEventListener("resize", place);
+  void document.fonts?.ready.then(place);
+  place();
 
   const draw = () => {
     const role = HERO_ORDER[centre];

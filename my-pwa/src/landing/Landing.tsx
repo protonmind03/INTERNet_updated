@@ -55,12 +55,9 @@ function Road() {
 }
 
 /*
-| The city on the horizon, drawn once at build time (what OJT is: from the
-| campus out to the workplaces, each day checked in): a far row in the haze,
-| a near row with lit windows (a few of them flicker), the campus hall with
-| its clock tower and flag on the left, a tall tower with a blinking light
-| on the right, and a line of trees where the city meets the fields. The
-| same seed draws the same city on every build.
+| The city on the horizon, drawn once at build time: the PSU campus in the
+| middle, the workplaces trainees are sent to on either side, linked to it.
+| The same seed draws the same city on every build.
 */
 
 function seeded(seed: number) {
@@ -104,27 +101,99 @@ function buildRow(seed: number, minH: number, maxH: number, gapAt: Array<[number
   return row;
 }
 
-const FAR_ROW = buildRow(7, 30, 82, [], false);
-const NEAR_ROW = buildRow(23, 26, 74, [[70, 326], [330, 540], [1180, 1260], [1280, 1374], [1400, 1520]], true);
+// The middle is the campus's alone; the workplaces sit two to a side, as far out as each other.
+const FAR_ROW = buildRow(7, 26, 70, [], false);
+const NEAR_ROW = buildRow(23, 24, 64, [[130, 262], [350, 492], [548, 1052], [1130, 1232], [1338, 1462], [1500, 1580]], true);
 const TREES = Array.from({ length: 86 }, (_, i) => ({ x: i * 19 + ((i * 7) % 11), r: 7 + ((i * 13) % 7) }));
 
 /*
-| The workplaces trainees are sent to, each under a map pin: a hospital, an
-| IT company, a factory and a bank. Arcs run to them from the campus, with
-| a dot travelling along each (the network: what a trainee does reaches the
-| campus); now and then a time-in pops up over a pin.
+| The campus: Pangasinan State University's building in the middle of the
+| skyline, the tallest thing on it (its central tower carries the PSU sign).
+| Drawn after the reference the user gave: a long two-storey front, a
+| central tower with a flared cap, louvres and the sign, and a side tower
+| with fins at each end. Every workplace is linked to its tower.
 */
-const CAMPUS = { x: 440, y: 24 };
+const PSU_WINDOWS = Array.from({ length: 24 }, (_, k) => 564 + k * 20).filter((x) => !(x + 12 > 633 && x < 677) && !(x + 12 > 768 && x < 832) && !(x + 12 > 923 && x < 967));
+const WINDOW_TONE = ["lit", "", "", "cool", "", "lit", "", "", "", "lit", "", "cool", "", "", "lit", "", "", "", "cool", "lit", "", ""];
+const CAMPUS = { x: 800, y: 11 };
+
 const WORKPLACES = [
-  { key: "hospital", pin: { x: 135, y: 46 }, glyph: "M-3.5 0h7M0 -3.5v7", time: "7:52" },
-  { key: "it", pin: { x: 1327, y: 26 }, glyph: "M-4.5 -2.5h9v5.5h-9zM-6 4h12", time: "7:58" },
-  { key: "factory", pin: { x: 252, y: 58 }, glyph: "M0 -4.5l1.3 2.2 2.6-.3-.9 2.4 1.9 1.8-2.5.9.1 2.6-2.5-1-2.5 1 .1-2.6-2.5-.9 1.9-1.8-.9-2.4 2.6.3z", time: "8:03" },
-  { key: "bank", pin: { x: 1460, y: 34 }, glyph: "M-5 -1.5h10v6h-10zM-2 -1.5v-2h4v2M-5 1h10", time: "7:56" },
+  { key: "hospital", pin: { x: 196, y: 56 }, glyph: "M-3.5 0h7M0 -3.5v7", time: "7:52" },
+  { key: "factory", pin: { x: 404, y: 80 }, glyph: "M0 -4.5l1.3 2.2 2.6-.3-.9 2.4 1.9 1.8-2.5.9.1 2.6-2.5-1-2.5 1 .1-2.6-2.5-.9 1.9-1.8-.9-2.4 2.6.3z", time: "8:03" },
+  { key: "it", pin: { x: 1180, y: 50 }, glyph: "M-4.5 -2.5h9v5.5h-9zM-6 4h12", time: "7:58" },
+  { key: "bank", pin: { x: 1400, y: 66 }, glyph: "M-5 -1.5h10v6h-10zM-2 -1.5v-2h4v2M-5 1h10", time: "7:56" },
 ] as const;
 
+/** An arc from the campus tower to a pin's head, kept low enough to stay under the words above. */
 function arc(to: { x: number; y: number }) {
-  const lift = 22 + Math.abs(to.x - CAMPUS.x) * 0.025;
-  return `M${CAMPUS.x} ${CAMPUS.y} Q${(CAMPUS.x + to.x) / 2} ${Math.min(CAMPUS.y, to.y) - lift} ${to.x} ${to.y - 22}`;
+  // The farther the workplace, the higher its arc, so the two on each side never lie on one line.
+  const lift = 4 - Math.abs(to.x - CAMPUS.x) * 0.04;
+  return `M${CAMPUS.x} ${CAMPUS.y} Q${(CAMPUS.x + to.x) / 2} ${lift.toFixed(1)} ${to.x} ${to.y - 24}`;
+}
+
+function Campus() {
+  return (
+    <g className="psu">
+      {/* The long front, its roof boxes, floors and trim. */}
+      <rect className="psu-mass" x="710" y="44" width="30" height="14" />
+      <rect className="psu-mass" x="860" y="49" width="25" height="9" />
+      <rect className="psu-body" x="560" y="56" width="480" height="94" />
+      <rect className="psu-trim" x="560" y="56" width="480" height="3" />
+      <rect className="psu-trim" x="560" y="87" width="480" height="2" />
+      <rect className="psu-trim" x="560" y="117" width="480" height="2" />
+      <rect className="psu-trim" x="560" y="122" width="480" height="3" />
+      {[72, 102].map((y, row) =>
+        PSU_WINDOWS.map((x, k) => {
+          const tone = WINDOW_TONE[(k + row * 7) % WINDOW_TONE.length];
+          return <rect key={`${y}-${x}`} className={`psu-win${tone ? ` psu-win--${tone}` : ""}`} x={x} y={y} width="12" height="11" />;
+        })
+      )}
+      {/* The ground floor: glass doors and lit entrances. */}
+      {[
+        [583, 34],
+        [703, 34],
+        [743, 22],
+        [834, 24],
+        [863, 34],
+        [983, 34],
+      ].map(([x, w]) => (
+        <rect key={x} className="psu-door" x={x} y="131" width={w} height="19" />
+      ))}
+      {[
+        [560, 17],
+        [679, 20],
+        [903, 22],
+        [1023, 17],
+      ].map(([x, w]) => (
+        <rect key={x} className="psu-door psu-door--lit" x={x} y="131" width={w} height="19" />
+      ))}
+      {/* The side towers: flared caps, fins and a V brace. */}
+      {[635, 925].map((x) => (
+        <g key={x}>
+          <rect className="psu-tower" x={x} y="34" width="40" height="116" />
+          <path className="psu-cap" d={`M${x - 11} 24 H${x + 51} L${x + 44} 34 H${x - 4} Z`} />
+          {Array.from({ length: 8 }, (_, i) => (
+            <line key={i} className="psu-fin" x1={x + 10 + i * 3} y1="40" x2={x + 10 + i * 3} y2="115" />
+          ))}
+          <path className="psu-brace" d={`M${x + 7} 35 L${x + 20} 94 L${x + 33} 35`} />
+        </g>
+      ))}
+      {/* The central tower: cap, braces, the sign, louvres and the main door. */}
+      <rect className="psu-tower" x="770" y="22" width="60" height="128" />
+      <path className="psu-cap" d="M747 11 H853 L845 22 H755 Z" />
+      <path className="psu-brace" d="M778 23 L790 39 M822 23 L810 39" />
+      <text className="psu-sign" x="800" y="57" textAnchor="middle" data-psu-sign>
+        PSU
+      </text>
+      <rect className="psu-louvre-bg" x="784" y="65" width="32" height="52" />
+      {Array.from({ length: 14 }, (_, i) => (
+        <rect key={i} className="psu-louvre" x="786" y={67 + i * 3.6} width="28" height="1.3" />
+      ))}
+      <rect className="psu-trim" x="769" y="124" width="62" height="3" />
+      <rect className="psu-door psu-door--lit" x="788" y="131" width="11.5" height="19" />
+      <rect className="psu-door psu-door--lit" x="800.5" y="131" width="11.5" height="19" />
+    </g>
+  );
 }
 
 function City() {
@@ -158,88 +227,68 @@ function City() {
         )}
       </g>
 
-      {/* The campus: columns, a pediment marked PSU, the clock tower at eight and the flag. */}
-      <g className="city-hall" transform="translate(350 0)">
-        <rect x="0" y="104" width="180" height="46" />
-        <path d="M-6 106 L90 78 L186 106 Z" />
-        <text className="city-label" x="90" y="101" textAnchor="middle">
-          PSU
-        </text>
-        <rect x="70" y="40" width="40" height="44" />
-        <path d="M66 42 L90 22 L114 42 Z" />
-        <line className="city-pole" x1="90" y1="22" x2="90" y2="2" />
-        <path className="city-flag" d="M90 3 q8 -2 16 1 t16 1 v9 q-8 -2 -16 -1 t-16 -1 z" />
-        <circle className="city-clock" cx="90" cy="60" r="9" />
-        <path className="city-clock-hands" d="M90 60 V53.5 M90 60 L85.5 62.6" />
-        {[14, 38, 62, 118, 142, 166].map((x) => (
-          <rect key={x} className="city-col" x={x} y="112" width="5" height="38" />
-        ))}
-        {[24, 48, 128, 152].map((x) => (
-          <rect key={x} className="city-win" x={x} y="118" width="7" height="10" />
-        ))}
-      </g>
+      <Campus />
 
       {/* The hospital: a wide block, a lit cross on the roof. */}
-      <g className="city-work" transform="translate(80 0)">
-        <rect x="0" y="82" width="110" height="68" rx="2" />
-        <rect x="40" y="70" width="30" height="14" />
-        <rect className="city-sign" x="47" y="72" width="16" height="10" rx="2" />
-        <path className="city-cross" d="M55 74v6M52 77h6" />
+      <g className="city-work" transform="translate(140 0)">
+        <rect x="0" y="80" width="112" height="70" rx="2" />
+        <rect x="41" y="68" width="30" height="14" />
+        <rect className="city-sign" x="48" y="70" width="16" height="10" rx="2" />
+        <path className="city-cross" d="M56 72v6M53 75h6" />
         {[0, 1, 2, 3].map((r) =>
-          [0, 1, 2, 3, 4, 5, 6].map((c) => <rect key={`${r}-${c}`} className={(r + c) % 3 === 0 ? "city-win city-win--cool" : "city-win city-win--dim"} x={8 + c * 14} y={92 + r * 13} width="8" height="7" />)
+          [0, 1, 2, 3, 4, 5, 6].map((c) => <rect key={`${r}-${c}`} className={(r + c) % 3 === 0 ? "city-win city-win--cool" : "city-win city-win--dim"} x={8 + c * 14} y={90 + r * 13} width="8" height="7" />)
         )}
       </g>
-      {/* The IT company: a glass tower with a code sign. */}
-      <g className="city-work" transform="translate(1290 0)">
-        <rect x="0" y="40" width="74" height="110" rx="2" />
-        <rect className="city-glass" x="4" y="44" width="66" height="102" />
-        {Array.from({ length: 9 }, (_, r) => (
-          <rect key={r} className="city-band" x="4" y={50 + r * 11} width="66" height="1.4" />
+      {/* The factory: saw-tooth roofs and a chimney with its smoke. */}
+      <g className="city-work" transform="translate(358 0)">
+        <path d="M0 150V108l24-16v16l24-16v16l24-16v16l24-16v58z" />
+        <rect x="106" y="76" width="12" height="74" />
+        <circle className="city-smoke" cx="112" cy="68" r="6" />
+        <circle className="city-smoke city-smoke--2" cx="118" cy="56" r="8" />
+        {[10, 34, 58, 82].map((x) => (
+          <rect key={x} className="city-win" x={x} y="118" width="12" height="8" />
         ))}
-        <rect className="city-sign" x="20" y="30" width="34" height="11" rx="2" />
-        <text className="city-sign-text" x="37" y="38.4" textAnchor="middle">
+      </g>
+      {/* The IT company: a glass tower with a code sign. */}
+      <g className="city-work" transform="translate(1143 0)">
+        <rect x="0" y="64" width="74" height="86" rx="2" />
+        <rect className="city-glass" x="4" y="68" width="66" height="78" />
+        {Array.from({ length: 7 }, (_, r) => (
+          <rect key={r} className="city-band" x="4" y={74 + r * 11} width="66" height="1.4" />
+        ))}
+        <rect className="city-sign" x="20" y="54" width="34" height="11" rx="2" />
+        <text className="city-sign-text" x="37" y="62.4" textAnchor="middle">
           {"</>"}
         </text>
       </g>
-      {/* The factory: saw-tooth roofs and a chimney with its smoke. */}
-      <g className="city-work" transform="translate(200 0)">
-        <path d="M0 150V100l24-16v16l24-16v16l24-16v16l24-16v66z" />
-        <rect x="104" y="66" width="12" height="84" />
-        <circle className="city-smoke" cx="110" cy="58" r="6" />
-        <circle className="city-smoke city-smoke--2" cx="116" cy="46" r="8" />
-        {[10, 34, 58, 82].map((x) => (
-          <rect key={x} className="city-win" x={x} y="112" width="12" height="8" />
-        ))}
-      </g>
       {/* The bank: a small portico. */}
-      <g className="city-work" transform="translate(1410 0)">
+      <g className="city-work" transform="translate(1350 0)">
         <rect x="0" y="92" width="100" height="58" />
-        <path d="M-4 94 L50 70 L104 94 Z" />
+        <path d="M-4 94 L50 72 L104 94 Z" />
         {[10, 28, 46, 64, 82].map((x) => (
           <rect key={x} className="city-col" x={x} y="100" width="5" height="50" />
         ))}
       </g>
-
-      {/* The tall tower, with its blinking light. */}
-      <g className="city-tower" transform="translate(1190 0)">
-        <rect x="8" y="36" width="44" height="114" rx="2" />
-        <rect x="18" y="20" width="24" height="18" />
-        <line className="city-pole" x1="30" y1="20" x2="30" y2="0" />
-        <circle className="city-beacon" cx="30" cy="2" r="2.6" />
-        {Array.from({ length: 9 }, (_, r) =>
+      {/* An office tower at the far edge, lower than the campus, with its blinking light. */}
+      <g className="city-tower" transform="translate(1505 0)">
+        <rect x="8" y="62" width="44" height="88" rx="2" />
+        <rect x="18" y="48" width="24" height="16" />
+        <line className="city-pole" x1="30" y1="48" x2="30" y2="32" />
+        <circle className="city-beacon" cx="30" cy="33" r="2.6" />
+        {Array.from({ length: 7 }, (_, r) =>
           [0, 1, 2].map((c) => (
-            <rect key={`${r}-${c}`} className={(r * 3 + c) % 4 === 1 ? "city-win city-win--cool" : "city-win city-win--dim"} x={15 + c * 11} y={44 + r * 11} width="7" height="6" />
+            <rect key={`${r}-${c}`} className={(r * 3 + c) % 4 === 1 ? "city-win city-win--cool" : "city-win city-win--dim"} x={15 + c * 11} y={70 + r * 11} width="7" height="6" />
           ))
         )}
       </g>
 
-      {/* The network: arcs from the campus to each workplace, a dot travelling each. */}
+      {/* The network: arcs from the campus tower to each workplace, a dot travelling each. */}
       <g className="city-net">
         {WORKPLACES.map((place, index) => (
           <g key={place.key}>
             <path id={`net-${place.key}`} className="city-arc" d={arc(place.pin)} />
             <circle className="city-packet" r="2.6">
-              <animateMotion dur={`${4 + index * 0.7}s`} begin={`${index * 0.9}s`} repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear">
+              <animateMotion dur={`${4.4 + (index % 2) * 0.6}s`} begin={`${index * 0.8}s`} repeatCount="indefinite" keyPoints="1;0" keyTimes="0;1" calcMode="linear">
                 <mpath href={`#net-${place.key}`} />
               </animateMotion>
             </circle>
@@ -248,7 +297,7 @@ function City() {
         <circle className="city-hub" cx={CAMPUS.x} cy={CAMPUS.y} r="4" />
       </g>
 
-      {/* The map pins, and a time-in popping up over each in turn. */}
+      {/* The map pins, and a time-in popping up beside each in turn. */}
       {WORKPLACES.map((place, index) => (
         <g key={place.key} transform={`translate(${place.pin.x} ${place.pin.y})`}>
           <g className="city-pin" style={{ animationDelay: `${-index * 0.8}s` }}>
@@ -258,8 +307,8 @@ function City() {
             <path className="city-pin-glyph" d={place.glyph} transform="translate(0 -17.5)" />
           </g>
           <g className="city-timein" style={{ animationDelay: `${index * 3}s` }}>
-            <rect x="12" y="-34" width="48" height="16" rx="8" />
-            <text x="36" y="-22.6" textAnchor="middle">
+            <rect x={place.pin.x > CAMPUS.x ? 12 : -60} y="-34" width="48" height="16" rx="8" />
+            <text x={place.pin.x > CAMPUS.x ? 36 : -36} y="-22.6" textAnchor="middle">
               {`✓ ${place.time}`}
             </text>
           </g>

@@ -171,7 +171,22 @@ html {
 .city { position: absolute; left: 50%; bottom: calc(100% - var(--horizon) - 42px); z-index: -1; width: max(100%, 1240px); height: auto; translate: -50% 0; overflow: visible; }
 .city-far rect { fill: #1d2878; opacity: 0.55; }
 .city-near rect { fill: #111a5c; }
-.city-hall > rect, .city-hall > path:not(.city-flag):not(.city-clock-hands), .city-tower > rect:not(.city-win) { fill: #0f1752; }
+.city-tower > rect:not(.city-win) { fill: #0f1752; }
+/* The PSU campus, after the user's reference: a shade lighter than the city, so it reads first. */
+.psu-body, .psu-mass { fill: #212b7c; }
+.psu-tower { fill: #27328c; }
+.psu-cap { fill: #34409f; stroke: #5562c4; stroke-width: 1; stroke-linejoin: round; }
+.psu-trim { fill: #34409f; }
+.psu-win { fill: #35409c; }
+.psu-win--lit { fill: var(--land-gold); }
+.psu-win--cool { fill: #aab3e8; }
+.psu-door { fill: #141b5c; }
+.psu-door--lit { fill: #8a7a4a; }
+.psu-fin { stroke: #1a2370; stroke-width: 1.2; }
+.psu-brace { fill: none; stroke: #5562c4; stroke-width: 1; }
+.psu-sign { fill: var(--land-gold); font: 800 17px/1 var(--font-display); letter-spacing: 0.14em; filter: drop-shadow(0 0 6px rgb(250 204 21 / 0.45)); }
+.psu-louvre-bg { fill: #1a2370; }
+.psu-louvre { fill: #c9a94a; opacity: 0.85; }
 .city-col { fill: #1e2a80 !important; }
 .city-win { fill: var(--land-gold); opacity: 0.8; }
 .city-win--dim { opacity: 0.18; }
@@ -242,8 +257,8 @@ html {
 .hero-note-icon { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: color-mix(in srgb, var(--role-primary) 12%, white); color: var(--role-primary); }
 @media (min-width: 1024px) {
   .hero-slot[data-pos="center"] .hero-note { display: inline-flex; }
-  .hero-note--1 { top: 50px; right: calc(100% + 26px); }
-  .hero-note--2 { top: 220px; left: calc(100% + 26px); }
+  .hero-note--1 { top: 140px; right: calc(100% + 26px); }
+  .hero-note--2 { top: 240px; left: calc(100% + 26px); }
 }
 
 .hero-controls { position: relative; z-index: 3; display: flex; flex: none; flex-direction: column; align-items: center; gap: clamp(6px, 1.2vh, 10px); text-align: center; }
@@ -1052,7 +1067,6 @@ html {
 .hero-stage { margin-top: clamp(18px, 3.6vh, 40px); }
 
 /* The city as OJT: the campus, the workplaces under their pins, the network between them. */
-.city-label { fill: var(--land-gold); font: 800 10px/1 var(--font-display); letter-spacing: 0.12em; }
 .city-work > rect:not(.city-win):not(.city-sign):not(.city-glass):not(.city-band):not(.city-col), .city-work > path:not(.city-cross) { fill: #0f1752; }
 .city-sign { fill: #fff7d6; opacity: 0.95; }
 .city-cross { fill: none; stroke: #e5484d; stroke-width: 2.4; stroke-linecap: round; }
