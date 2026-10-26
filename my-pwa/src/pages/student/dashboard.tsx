@@ -7,7 +7,7 @@ import type { Tone } from "../../components/tones";
 import { Card, ErrorNotice, IconTile, Skeleton, SkeletonRows } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
-import { daysUntil, dueLabel, formatDate, formatHours, greetingFor } from "../../lib/format";
+import { daysUntil, dueLabel, formatDate, formatHours, greetingFor, firstNameOf } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { savedFetch } from "../../lib/offlineStore";
 import { formatPhDay, phToday } from "../../lib/phTime";
@@ -145,7 +145,7 @@ function DashboardPage() {
   const appealable = attendance.logs.filter((log) => appealableKinds(log).length > 0 && (log.status === "Rejected" || log.photo_rejected_at || log.time_corrected_at));
   const missed = attendance.openPastLog;
 
-  const firstName = (student?.name || "").trim().split(/\s+/)[0] || "there";
+  const firstName = firstNameOf(student?.name, "there");
   const timeCard = <TodayCard large={wide} />;
 
   const needs = (

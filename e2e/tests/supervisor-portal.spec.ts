@@ -62,7 +62,8 @@ test("supervisor portal: a panel per intern, the attendance view bar, and notifi
 
     // Documents: the intern's panel is first and open, with what waits and since when.
     await sp.goto("/supervisor/documents");
-    const panel = sp.getByRole("button", { name: new RegExp(name) });
+    // The intern's panel (the requirements grid above also names the intern on its cells).
+    const panel = sp.locator("button[aria-expanded]").filter({ hasText: name });
     await expect(panel).toHaveAttribute("aria-expanded", "true", { timeout: 20_000 });
     await expect(panel).toContainText("1 to review");
     await expect(panel).toContainText("since");
@@ -103,7 +104,7 @@ test("supervisor portal: a panel per intern, the attendance view bar, and notifi
     await sp.goto(about!.link!);
     await expect(sp).toHaveURL(new RegExp(`/supervisor/documents\\?focus=document-${documentId}$`), { timeout: 20_000 });
     await expect(sp.getByText("That one is already decided. Here it is with the rest.")).toBeVisible();
-    await expect(sp.getByRole("button", { name: new RegExp(name) })).toHaveAttribute("aria-expanded", "true");
+    await expect(sp.locator("button[aria-expanded]").filter({ hasText: name })).toHaveAttribute("aria-expanded", "true");
     await context.close();
 
     // The coordinator: the file in the intern's panel, inside their block.

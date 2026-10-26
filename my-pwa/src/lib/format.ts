@@ -117,6 +117,15 @@ export function getInitials(name: string | null | undefined, fallback = "?"): st
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
 
+/** Titles a name may start with ("Engr.", "Dr.", "Atty."): skipped when only the first name is wanted. */
+const TITLES = /^(engr|dr|atty|prof|mr|mrs|ms|miss|sir|maam|ma'am|hon|arch|rev|fr|sr|sra|srta|mx)\.?$/i;
+
+/** The first name, after any title: "Engr. Paolo Navarro" gives "Paolo". */
+export function firstNameOf(name: string | null | undefined, fallback = ""): string {
+  const parts = (name || "").trim().split(/\s+/).filter(Boolean);
+  return parts.find((part) => !TITLES.test(part.replace(/[,]/g, ""))) ?? parts[0] ?? fallback;
+}
+
 export function greetingFor(date: Date): string {
   const hour = phHour(date);
   if (hour < 12) return "Good morning";

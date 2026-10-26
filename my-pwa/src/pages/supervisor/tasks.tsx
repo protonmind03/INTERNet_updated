@@ -26,6 +26,7 @@ import { usePagination } from "../../lib/usePagination";
 import ReviewDetail from "./ReviewDetail";
 import InternGroupSelect from "./InternGroups";
 import { internPath } from "./internPath";
+import TaskBoard from "./TaskBoard";
 import Teams from "./Teams";
 import { useInternGroups } from "./useInternGroups";
 import { useTeams, type Team } from "./useTeams";
@@ -71,6 +72,14 @@ export default function SupervisorTasks() {
   const [params, setParams] = useSearchParams();
   const view: View = params.get("view") === "teams" ? "teams" : "tasks";
   const setView = (next: View) => setParams(next === "teams" ? { view: "teams" } : {}, { replace: true });
+  // "?layout=board": the tasks as columns by where they stand (TaskBoard.tsx).
+  const board = params.get("layout") === "board";
+  const setBoard = (on: boolean) => {
+    const copy = new URLSearchParams(params);
+    if (on) copy.set("layout", "board");
+    else copy.delete("layout");
+    setParams(copy, { replace: true });
+  };
   const [filter, setFilter] = useState<Filter>("all");
   const [internId, setInternId] = useState(() => params.get("intern") || "");
   // Interns of more than one program or block can be narrowed to one.
@@ -229,8 +238,38 @@ export default function SupervisorTasks() {
               </select>
             </label>
           )}
+          <div role="group" aria-label="Layout" className="inline-flex rounded-xl bg-slate-100 p-1">
+            {[false, true].map((on) => (
+              <button
+                key={String(on)}
+                type="button"
+                aria-pressed={board === on}
+                onClick={() => setBoard(on)}
+                className={`inline-flex min-h-9 items-center gap-1.5 rounded-lg px-3 text-sm font-semibold transition-colors ${
+                  board === on ? "bg-white text-psu-800 shadow-sm" : "text-slate-600 hover:text-slate-900"
+                }`}
+              >
+                <Icon name={on ? "grid" : "list"} size={15} />
+                {on ? "Board" : "List"}
+              </button>
+            ))}
+          </div>
         </div>
 
+        {board ? (
+          loading ? (
+            <SkeletonRows rows={5} />
+          ) : (
+            <TaskBoard
+              tasks={scoped}
+              onReview={setReviewId}
+              onShowReviewed={() => {
+                setBoard(false);
+                setFilter("Reviewed");
+              }}
+            />
+          )
+        ) : (
         <Card>
           {loading ? (
             <SkeletonRows rows={5} />
@@ -280,6 +319,7 @@ export default function SupervisorTasks() {
             </>
           )}
         </Card>
+        )}
         </>
         )}
       </div>

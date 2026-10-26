@@ -1,3 +1,4 @@
+import { firstNameOf } from "../../lib/format";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import AccountDetailsForm from "../../components/AccountDetailsForm";
@@ -86,7 +87,7 @@ export default function SupervisorPage() {
             </Link>
             {supervisor.is_active && (
               <Button icon="mail" onClick={() => setWriting(true)}>
-                Message {supervisor.name.split(" ")[0]}
+                Message {firstNameOf(supervisor.name)}
               </Button>
             )}
           </>

@@ -10,7 +10,7 @@ import RoleShell, { type SideItem } from "../components/RoleShell";
 import type { DockGroup, DockItem } from "../components/RoleDock";
 import ScreenHelp from "../components/ScreenHelp";
 import { Button, ConfirmDialog } from "../components/ui";
-import { getInitials } from "../lib/format";
+import { getInitials, firstNameOf } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { HUBS, useHub } from "../pages/coordinator/hubConfig";
@@ -264,7 +264,7 @@ export default function CoordinatorLayout({
           {recordStudentId && (
             <div className="mb-3 flex justify-end print:hidden">
               <Button variant="secondary" icon="mail" onClick={() => setWriting(true)}>
-                Message {title.split(" ")[0]}
+                Message {firstNameOf(title)}
               </Button>
             </div>
           )}

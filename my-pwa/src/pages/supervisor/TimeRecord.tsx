@@ -1,7 +1,9 @@
 import { Link, useSearchParams } from "react-router-dom";
 import DtrSheet from "../../components/DtrSheet";
 import Icon from "../../components/Icon";
-import { Card, EmptyState, ErrorNotice } from "../../components/ui";
+import { Avatar, Card, EmptyState, ErrorNotice } from "../../components/ui";
+import { formatHours } from "../../lib/format";
+import { formatPhDay, phToday } from "../../lib/phTime";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
 import { useAccount } from "../../lib/session";
 import { toast } from "../../lib/toast";
@@ -19,6 +21,7 @@ export default function SupervisorTimeRecord() {
   const studentId = params.get("student") || "";
   const intern = work.interns.find((item) => sameId(item.student_id, studentId));
   const dtr = useDtrCertifications("supervisor", intern?.student_id);
+  const month = phToday().slice(0, 7);
 
   return (
     <SupervisorLayout
@@ -83,15 +86,45 @@ export default function SupervisorTimeRecord() {
             }}
           />
         ) : (
-          !work.loading && (
+          !work.loading &&
+          (work.interns.length === 0 ? (
             <Card>
-              <EmptyState
-                icon="clock"
-                title="Choose an intern"
-                description="Their time record for the month will appear here."
-              />
+              <EmptyState icon="clock" title="No interns yet" description="Time records are for the interns assigned to you." />
             </Card>
-          )
+          ) : (
+            // Who to open: each intern's month so far (sv10-26), in place of an empty box.
+            <section aria-labelledby="dtr-pick-title" className="print:hidden">
+              <h2 id="dtr-pick-title" className="mb-3 text-[15px] font-bold text-slate-900">
+                {formatPhDay(`${month}-01`, { month: "long", year: "numeric" })} so far
+              </h2>
+              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {work.interns.map((item, index) => {
+                  const logs = work.attendance.filter((entry) => sameId(entry.student_id, item.student_id) && String(entry.date).startsWith(month));
+                  const verified = logs.filter((entry) => entry.status === "Verified").reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
+                  const pending = logs.filter((entry) => entry.status === "Pending").length;
+                  return (
+                    <li key={item.student_id} className="intern-card" style={{ ["--i" as string]: index }}>
+                      <button
+                        type="button"
+                        onClick={() => setParams({ student: item.student_id })}
+                        className="flex w-full items-center gap-3 rounded-2xl bg-white p-4 text-left ring-1 ring-inset ring-(--role-hairline) transition-all hover:-translate-y-0.5 hover:shadow-raised"
+                      >
+                        <Avatar name={item.name} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[15px] font-bold text-slate-900">{item.name}</span>
+                          <span className="block text-[13px] text-slate-600">
+                            {formatHours(verified)} verified · {logs.length} {logs.length === 1 ? "day" : "days"}
+                            {pending > 0 && <span className="font-semibold text-amber-800"> · {pending} to verify</span>}
+                          </span>
+                        </span>
+                        <Icon name="printer" size={18} className="text-psu-700" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          ))
         )}
       </div>
     </SupervisorLayout>

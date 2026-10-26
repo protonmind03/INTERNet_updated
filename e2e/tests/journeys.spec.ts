@@ -515,6 +515,8 @@ test.describe("programs, blocks and the filter bar", () => {
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expect(page.getByRole("combobox", { name: /^Program and block/ })).toHaveCount(0);
     await page.goto("/supervisor/attendance");
+    // sv10-26: one intern or one program is chosen behind Filters.
+    await page.getByRole("button", { name: /^Filters/ }).click();
     await expect(page.getByRole("combobox", { name: /^Intern/ })).toBeVisible();
     await expect(page.getByRole("combobox", { name: /^Program and block/ })).toHaveCount(0);
   });

@@ -15,6 +15,7 @@ import {
   formatHours,
   formatLongDate,
   formatTime,
+  firstNameOf,
 } from "../../lib/format";
 import { errorText, toast, withWorkingToast } from "../../lib/toast";
 import { PH_TIME_ZONE } from "../../lib/phTime";
@@ -425,7 +426,7 @@ function MessageIntern({ entry }: { entry: AttendanceEntry }) {
         className="inline-flex items-center gap-1.5 text-sm font-semibold text-psu-700 hover:underline"
       >
         <Icon name="mail" size={15} />
-        Message {entry.student_name.split(" ")[0]}
+        Message {firstNameOf(entry.student_name)}
       </button>
       {writing && (
         <ComposeMessage

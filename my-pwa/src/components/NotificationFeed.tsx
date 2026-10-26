@@ -9,6 +9,9 @@ import type { NotificationItem } from "../lib/useNotifications";
 
 type Filter = "all" | "unread";
 
+/** How many are listed at first, and added by "Show older" (sv10-26: a long term leaves hundreds). */
+const PAGE = 40;
+
 /**
  * The full notification list for a portal: grouped by day, filterable to
  * unread, and each row opens the page it is about (lib/notificationTargets.ts).
@@ -33,10 +36,11 @@ export default function NotificationFeed({
 }) {
   const navigate = useNavigate();
   const [filter, setFilter] = useState<Filter>("all");
+  const [limit, setLimit] = useState(PAGE);
+  const matching = filter === "unread" ? notifications.filter((item) => !item.is_read) : notifications;
 
   const groups = useMemo(() => {
-    const visible =
-      filter === "unread" ? notifications.filter((item) => !item.is_read) : notifications;
+    const visible = (filter === "unread" ? notifications.filter((item) => !item.is_read) : notifications).slice(0, limit);
     const today = phDateKey(new Date());
     const byDay = new Map<string, NotificationItem[]>();
     for (const item of visible) {
@@ -48,7 +52,7 @@ export default function NotificationFeed({
       label: key === today ? "Today" : formatLongDate(key),
       items,
     }));
-  }, [notifications, filter]);
+  }, [notifications, filter, limit]);
 
   const open = (item: NotificationItem) => {
     if (!item.is_read) onRead(item.id);
@@ -137,6 +141,19 @@ export default function NotificationFeed({
             </Card>
           </section>
         ))
+      )}
+
+      {!loading && matching.length > limit && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={() => setLimit((value) => value + PAGE)}
+            className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-5 text-sm font-semibold text-psu-700 ring-1 ring-inset ring-slate-300 hover:bg-psu-50"
+          >
+            <Icon name="chevron-down" size={16} />
+            Show older ({matching.length - limit} more)
+          </button>
+        </div>
       )}
     </div>
   );

@@ -10,7 +10,6 @@ import type { Projection } from "../../lib/useProjections";
 import DtrSheet from "../../components/DtrSheet";
 import Icon from "../../components/Icon";
 import MonthCalendar from "../../components/MonthCalendar";
-import ProjectionLine from "../../components/ProjectionLine";
 import StudentNotes from "../../components/StudentNotes";
 import EntryPictures from "../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
@@ -48,7 +47,7 @@ import { fetchFinalEvaluation, internSummarySections } from "./internSummary";
 import { INTERN_TAB_LABELS, INTERN_TABS, type InternTab } from "./internPath";
 import ReviewDetail from "./ReviewDetail";
 import { useInternSchedules } from "./useInternSchedules";
-import { phStamp } from "../../lib/phTime";
+import { phAddDays, phStamp, phToday } from "../../lib/phTime";
 import {
   downloadDocument,
   useSupervisorWork,
@@ -312,19 +311,9 @@ function Overview({ intern, work, onReview }: Reviewable) {
   return (
     <div className="grid items-start gap-5 lg:grid-cols-2">
       <Card className="p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">Hours</h2>
-        <div className="mt-3 flex items-baseline justify-between text-sm">
-          <span className="text-slate-600">Verified</span>
-          <span className="tabular font-medium text-slate-900">
-            {formatHours(intern.hours_rendered)} of {formatHours(intern.required_hours)} ({intern.completion}%)
-          </span>
-        </div>
-        <ProgressBar
-          value={intern.completion}
-          className="mt-2"
-          label={`${intern.completion} percent of required hours`}
-        />
-        <ProjectionLine projection={projection} className="mt-2" />
+        {/* The totals and the finish are in the card above; here, how this week and month are going (sv10-26). */}
+        <h2 className="text-base font-semibold text-slate-900">This week and month</h2>
+        <RecentFacts studentId={intern.student_id} attendance={work.attendance} />
         <div className="mt-4">
           <Button
             variant="secondary"
@@ -866,3 +855,32 @@ function TimeRecord({ intern, work, supervisorName }: TabProps & { supervisorNam
   );
 }
 
+
+/** This week's and this month's verified hours, the days logged and the last time-in: what the header does not say. */
+function RecentFacts({ studentId, attendance }: { studentId: string; attendance: SupervisorWork["attendance"] }) {
+  const today = phToday();
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const monday = phAddDays(today, weekday === 0 ? -6 : 1 - weekday);
+  const mine = attendance.filter((entry) => sameId(entry.student_id, studentId));
+  const verifiedSince = (from: string) =>
+    mine.filter((entry) => entry.status === "Verified" && String(entry.date).slice(0, 10) >= from).reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
+  const monthStart = `${today.slice(0, 8)}01`;
+  const daysThisMonth = mine.filter((entry) => String(entry.date).slice(0, 10) >= monthStart).length;
+  const last = [...mine].sort((a, b) => String(b.date).localeCompare(String(a.date)))[0];
+  const facts = [
+    { label: "Verified this week", value: formatHours(verifiedSince(monday)) },
+    { label: "Verified this month", value: formatHours(verifiedSince(monthStart)) },
+    { label: "Days logged this month", value: String(daysThisMonth) },
+    { label: "Last time-in", value: last ? `${formatDayDate(last.date)}, ${formatTime(last.time_in)}` : "None yet" },
+  ];
+  return (
+    <dl className="mt-3 grid grid-cols-2 gap-2">
+      {facts.map((fact) => (
+        <div key={fact.label} className="rounded-xl bg-slate-50 px-3 py-2.5">
+          <dt className="text-[12px] font-semibold text-slate-500">{fact.label}</dt>
+          <dd className="tabular mt-0.5 text-[15px] font-bold text-slate-900">{fact.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}

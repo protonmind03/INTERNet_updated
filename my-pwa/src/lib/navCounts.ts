@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { announceDataChanged, useLiveRefresh } from "./liveRefresh";
 import { API_URL, withRoleAuth } from "./api";
 import { phDateKey } from "./format";
 import { savedFetch } from "./offlineStore";
@@ -19,13 +20,12 @@ import type { SessionRole } from "./session";
 export type NavCounts = Record<string, number>;
 
 const FRESH_FOR_MS = 20_000;
-const CHANGED_EVENT = "internet-data-changed";
 
 const cache: Partial<Record<SessionRole, { at: number; counts: NavCounts }>> = {};
 
-/** Call after saving something that could change a count. */
+/** Call after saving something that could change a count: in this tab and in the person's other tabs (lib/liveRefresh.ts). */
 export function notifyDataChanged(): void {
-  window.dispatchEvent(new Event(CHANGED_EVENT));
+  announceDataChanged();
 }
 
 /** `saveAs` names the copy kept for offline reading; without it nothing is kept. */
@@ -102,6 +102,10 @@ async function loadCounts(role: SessionRole): Promise<NavCounts> {
 export function useNavCounts(role: SessionRole): NavCounts {
   const [counts, setCounts] = useState<NavCounts>(() => cache[role]?.counts ?? {});
 
+  // Fetched again on a live notification, a save here or in another tab, and every 30 s while in view.
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((value) => value + 1));
+
   useEffect(() => {
     let active = true;
     const refresh = (force: boolean) => {
@@ -116,17 +120,11 @@ export function useNavCounts(role: SessionRole): NavCounts {
           // A badge is a convenience; a failed refresh keeps the last counts.
         });
     };
-    const onChange = () => refresh(true);
-
-    refresh(false);
-    window.addEventListener("internet-notification", onChange);
-    window.addEventListener(CHANGED_EVENT, onChange);
+    refresh(tick > 0);
     return () => {
       active = false;
-      window.removeEventListener("internet-notification", onChange);
-      window.removeEventListener(CHANGED_EVENT, onChange);
     };
-  }, [role]);
+  }, [role, tick]);
 
   return counts;
 }

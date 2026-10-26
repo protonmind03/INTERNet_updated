@@ -1,5 +1,5 @@
 import { SummaryTiles } from "../../components/display";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Icon from "../../components/Icon";
 import InternPanels from "../../components/InternPanels";
 import { panelsByIntern } from "../../lib/internPanels";
@@ -18,6 +18,7 @@ import { useAccount } from "../../lib/session";
 import { recordId, useFocusRecord } from "../../lib/useFocusRecord";
 import { errorText, toast } from "../../lib/toast";
 import ReviewDetail from "./ReviewDetail";
+import RequirementGrid from "./RequirementGrid";
 import { downloadDocument, useSupervisorWork, type DocumentEntry } from "./useSupervisorWork";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
@@ -126,6 +127,15 @@ export default function SupervisorDocuments() {
           )}
         </div>
 
+        {!loading && (
+          <RequirementGrid
+            documents={scoped}
+            interns={interns.filter((intern) => inGroup(intern.student_id) && (!internId || sameId(intern.student_id, internId)))}
+            onReview={setReviewId}
+            onDownload={(item) => void download(item)}
+          />
+        )}
+
         <Card>
           {loading ? (
             <SkeletonRows rows={5} />
@@ -145,8 +155,10 @@ export default function SupervisorDocuments() {
               waitingLabel="to review"
               focusStudentId={focusedFile?.student_id}
               renderItems={(items) => (
-                <ul className="divide-y divide-slate-100">
-                  {items.map((item) => (
+                <FileGroups
+                  items={items}
+                  focusedId={focusedFile?.id}
+                  render={(item) => (
                     <li
                       key={item.id}
                       id={recordId("document", item.id)}
@@ -202,8 +214,8 @@ export default function SupervisorDocuments() {
                         )}
                       </div>
                     </li>
-                  ))}
-                </ul>
+                  )}
+                />
               )}
             />
           )}
@@ -230,5 +242,27 @@ export default function SupervisorDocuments() {
         )}
       </Modal>
     </SupervisorLayout>
+  );
+}
+
+/**
+ * One intern's files: what needs a look (waiting or rejected) in view, the approved ones
+ * folded under one line (sv10-26), opened when a notification points at one of them.
+ */
+function FileGroups({ items, focusedId, render }: { items: DocumentEntry[]; focusedId?: number; render: (item: DocumentEntry) => ReactNode }) {
+  const attention = items.filter((item) => item.status !== "Approved");
+  const approved = items.filter((item) => item.status === "Approved");
+  if (attention.length === 0 || approved.length === 0) return <ul className="divide-y divide-slate-100">{items.map(render)}</ul>;
+  return (
+    <>
+      <ul className="divide-y divide-slate-100">{attention.map(render)}</ul>
+      <details className="group border-t border-slate-100" open={approved.some((item) => item.id === focusedId)}>
+        <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2 px-4 text-sm font-semibold text-psu-700 hover:bg-slate-50 sm:px-5 [&::-webkit-details-marker]:hidden">
+          <Icon name="chevron-right" size={16} className="transition-transform group-open:rotate-90" />
+          Show {approved.length} approved {approved.length === 1 ? "file" : "files"}
+        </summary>
+        <ul className="divide-y divide-slate-100 border-t border-slate-100">{approved.map(render)}</ul>
+      </details>
+    </>
   );
 }

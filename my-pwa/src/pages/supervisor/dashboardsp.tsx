@@ -2,11 +2,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { UnderlineTabs } from "../../brand/motifs";
 import UnlessInMenu from "../../components/UnlessInMenu";
-import Icon from "../../components/Icon";
+import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, Modal, SkeletonRows } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { formatDate, formatHours, greetingFor } from "../../lib/format";
+import { formatDate, formatHours, greetingFor, firstNameOf } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
@@ -15,13 +15,14 @@ import { useFocus } from "../../lib/useFocusRecord";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import { useProjections } from "../../lib/useProjections";
 import { sameId } from "../../lib/ids";
-import { finalEvaluationPath, useFinalDue } from "./finalDue";
+import { finalEvaluationPath, useEvaluatedIds, useFinalDue } from "./finalDue";
+import FinalEvaluations from "./FinalEvaluations";
 import RecordTimeIn from "./RecordTimeIn";
 import ReviewDetail from "./ReviewDetail";
 import { awaitsReview, bulkSkipReason } from "./attendanceView";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
-import { DayBoard, DecidedRow, DecisionCard, FactCard, RegisterCard, RegisterSkeleton, ThisWeek, type ReviewItem } from "./ReviewParts";
+import { DayBoard, DecidedRow, DecisionCard, RegisterCard, RegisterSkeleton, ThisWeek, type ReviewItem } from "./ReviewParts";
 import { todaysLogs } from "./reviewData";
 import { useSupervisorWork, type QueueItem } from "./useSupervisorWork";
 
@@ -96,6 +97,23 @@ const DECIDED_PAGE: Record<string, string> = {
   journal: "/supervisor/journals",
 };
 
+/**
+| "To verify" in sections (sv10-26): the full queue is listed kind by kind,
+| each under its own heading with its count and, where several can be
+| decided together, that one action. Time-ins come first: they are the
+| day's and they hold hours back.
+*/
+const KIND_SECTIONS: { kind: QueueItem["kind"]; label: string; icon: IconName; bulk?: BulkKind }[] = [
+  { kind: "attendance", label: "Time-ins", icon: "camera", bulk: "attendance" },
+  { kind: "absence", label: "Absences", icon: "calendar", bulk: "absence" },
+  { kind: "task", label: "Submitted tasks", icon: "tasks" },
+  { kind: "document", label: "Submitted documents", icon: "document", bulk: "document" },
+  { kind: "journal", label: "Weekly reports", icon: "note" },
+];
+
+/** How long an item stays marked "New" after it arrived on screen. */
+const NEW_FOR_MS = 3 * 60_000;
+
 /** How long an item has been waiting, in plain words. */
 function waitingText(since: string | undefined): string {
   const then = since ? new Date(since).getTime() : NaN;
@@ -115,14 +133,34 @@ export default function SupervisorDashboard() {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const finalDue = useFinalDue(interns);
+  const evaluated = useEvaluatedIds();
   const projections = useProjections("supervisor");
   const queue = useMemo<ReviewItem[]>(() => [...work.queue, ...finalDue], [work.queue, finalDue]);
   const computer = useMediaQuery("(min-width: 1024px)");
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
-    const timer = window.setInterval(() => setNow(new Date()), 60_000);
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // What arrived while the page was open is marked "New" for a few minutes (sv10-26). The first
+  // list seen is the baseline; each later one adds the keys it brings, with when they came.
+  const queueKeys = queue.map((item) => item.key).join("|");
+  const [arrivals, setArrivals] = useState<{ signature: string; known: Set<string>; since: Map<string, number> } | null>(null);
+  if (!loading && arrivals?.signature !== queueKeys) {
+    const keys = queue.map((item) => item.key);
+    if (!arrivals) {
+      setArrivals({ signature: queueKeys, known: new Set(keys), since: new Map() });
+    } else {
+      const since = new Map(arrivals.since);
+      for (const key of keys) if (!arrivals.known.has(key)) since.set(key, now.getTime());
+      setArrivals({ signature: queueKeys, known: new Set([...arrivals.known, ...keys]), since });
+    }
+  }
+  const isNew = (key: string) => {
+    const at = arrivals?.since.get(key);
+    return at !== undefined && now.getTime() - at < NEW_FOR_MS;
+  };
 
   // The tab is in the address (?tab=), the one place it is kept, so the
   // side menu marks the same entry and Back returns to it.
@@ -235,7 +273,7 @@ export default function SupervisorDashboard() {
     .filter((entry) => (entry.status === "Verified" || entry.status === "Rejected") && entry.verified_at && String(entry.verified_at).slice(0, 10) === today)
     .slice(0, 4);
   const shownInterns = interns.filter((intern) => inGroup(intern.student_id));
-  const firstName = (supervisor?.name || "").trim().split(/\s+/)[0] || "";
+  const firstName = firstNameOf(supervisor?.name);
   const company = supervisor?.company || "your company";
   const oldest = queue.filter((item): item is QueueItem => item.kind !== "final").map((item) => item.waitingSince).sort()[0];
   const tabs = [
@@ -247,6 +285,41 @@ export default function SupervisorDashboard() {
     ...(countOf("reports") > 0 || tab === "reports" ? [{ value: "reports" as Tab, label: "Reports", count: countOf("reports") }] : []),
     ...(countOf("final") > 0 || tab === "final" ? [{ value: "final" as Tab, label: "Final evaluations", count: countOf("final") }] : []),
   ];
+
+  /** One waiting item: a decision card, or a final evaluation to start. Marked while it is new. */
+  const renderItem = (item: ReviewItem, grouped = false) => (
+    <div key={item.key} className={isNew(item.key) ? "review-new relative" : "relative"} data-new={isNew(item.key) || undefined}>
+      {isNew(item.key) && (
+        <span className="review-new-pill pointer-events-none absolute right-3 top-1 z-[1]" aria-label="New">
+          New
+        </span>
+      )}
+      {item.kind === "final" ? (
+        <div className={computer ? "flex items-center justify-between gap-3 px-4 py-3" : "card-hairline flex items-center justify-between gap-3 rounded-2xl p-3.5"}>
+          <span className="min-w-0">
+            <span className="eyebrow block text-slate-600">Final evaluation</span>
+            <span className="block truncate text-[15px] font-bold text-slate-900">{item.entry.student_name}</span>
+            <span className="block text-[13px] text-slate-600">
+              {formatHours(item.entry.hours_rendered)} of {formatHours(item.entry.required_hours)}
+            </span>
+          </span>
+          <Link to={finalEvaluationPath(item.entry.student_id)} className="inline-flex min-h-11 items-center rounded-lg bg-psu-600 px-4 text-sm font-bold text-white hover:bg-psu-700">
+            Start
+          </Link>
+        </div>
+      ) : (
+        <DecisionCard
+          item={item}
+          layout={computer ? "row" : "card"}
+          grouped={grouped}
+          busy={busyKey === item.key}
+          onVerify={() => item.kind === "attendance" && void verifyOne(item)}
+          onOpen={() => setSelectedKey(item.key)}
+          onRejectChoice={() => setSelectedKey(item.key)}
+        />
+      )}
+    </div>
+  );
 
   const list = (
     <>
@@ -261,34 +334,39 @@ export default function SupervisorDashboard() {
           />
         </Card>
       ) : (
-        <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>
-          {visible.map((item) =>
-            item.kind === "final" ? (
-              <div key={item.key} className={computer ? "flex items-center justify-between gap-3 px-4 py-3" : "card-hairline flex items-center justify-between gap-3 rounded-2xl p-3.5"}>
-                <span className="min-w-0">
-                  <span className="eyebrow block text-slate-600">Final evaluation</span>
-                  <span className="block truncate text-[15px] font-bold text-slate-900">{item.entry.student_name}</span>
-                  <span className="block text-[13px] text-slate-600">
-                    {formatHours(item.entry.hours_rendered)} of {formatHours(item.entry.required_hours)}
-                  </span>
-                </span>
-                <Link to={finalEvaluationPath(item.entry.student_id)} className="inline-flex min-h-11 items-center rounded-lg bg-psu-600 px-4 text-sm font-bold text-white hover:bg-psu-700">
-                  Start
-                </Link>
-              </div>
-            ) : (
-              <DecisionCard
-                key={item.key}
-                item={item}
-                layout={computer ? "row" : "card"}
-                busy={busyKey === item.key}
-                onVerify={() => item.kind === "attendance" && void verifyOne(item)}
-                onOpen={() => setSelectedKey(item.key)}
-                onRejectChoice={() => setSelectedKey(item.key)}
-              />
-            )
-          )}
-        </div>
+        tab === "all" ? (
+          // The whole queue, kind by kind, each under its heading.
+          <div className={computer ? "" : "space-y-5"}>
+            {[...KIND_SECTIONS, { kind: "final" as const, label: "Final evaluations due", icon: "star" as IconName, bulk: undefined }].map((section) => {
+              const items = visible.filter((item) => item.kind === section.kind);
+              if (items.length === 0) return null;
+              const bulkCount =
+                section.bulk === "attendance" ? verifiable.length : section.bulk === "document" ? waitingDocuments.length : section.bulk === "absence" ? waitingAbsences.length : 0;
+              const fresh = items.filter((item) => isNew(item.key)).length;
+              return (
+                <section key={section.kind} aria-label={`${section.label}, ${items.length}`} className="review-section">
+                  <div className={`flex flex-wrap items-center gap-2.5 ${computer ? "sticky top-[calc(var(--inb-top-inset)+4rem)] z-[5] border-y border-(--role-hairline) bg-slate-50/95 px-4 py-2 backdrop-blur" : "px-1 pb-2"}`}>
+                    <span className="grid h-7 w-7 place-items-center rounded-lg bg-white text-psu-700 ring-1 ring-inset ring-(--role-hairline)">
+                      <Icon name={section.icon} size={15} />
+                    </span>
+                    <h3 className="text-[14.5px] font-bold text-slate-900">{section.label}</h3>
+                    <span className="tabular rounded-full bg-psu-700 px-2 text-[12px] font-bold leading-5 text-white">{items.length}</span>
+                    {fresh > 0 && <span className="review-new-pill">{fresh} new</span>}
+                    {section.bulk && section.bulk !== "attendance" && bulkCount > 1 && (
+                      <button type="button" onClick={() => setConfirmBulk(section.bulk!)} className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 text-[13px] font-bold text-psu-700 hover:bg-psu-50">
+                        <Icon name="check-circle" size={15} />
+                        {section.bulk === "document" ? `Approve all ${bulkCount}` : `Excuse all ${bulkCount}`}
+                      </button>
+                    )}
+                  </div>
+                  <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>{items.map((item) => renderItem(item, true))}</div>
+                </section>
+              );
+            })}
+          </div>
+        ) : (
+          <div className={computer ? "divide-y divide-(--role-hairline)" : "space-y-3"}>{visible.map((item) => renderItem(item))}</div>
+        )
       )}
       {decidedToday.length > 0 && tab !== "tasks" && tab !== "docs" && (
         <div className={computer ? "border-t border-(--role-hairline)" : "card-hairline mt-3 overflow-hidden rounded-2xl"}>
@@ -312,7 +390,7 @@ export default function SupervisorDashboard() {
           : `${supervisor?.company ?? ""}${interns.length ? ` · ${interns.length} ${interns.length === 1 ? "intern" : "interns"}` : ""}`
       }
       actions={
-        computer && (loading || interns.length > 0) ? (
+        computer && tab !== "final" && (loading || interns.length > 0) ? (
           <Button variant="secondary" icon="camera" disabled={loading} onClick={() => setRecording(true)}>
             Record time-in
           </Button>
@@ -329,6 +407,10 @@ export default function SupervisorDashboard() {
           loading ? <RegisterSkeleton /> : shownInterns.length > 0 && <RegisterCard interns={shownInterns} logs={logs} />
         )}
 
+        {tab === "final" ? (
+          // Final evaluations: every intern and where theirs stands, not a queue to clear.
+          <FinalEvaluations interns={shownInterns} evaluated={evaluated} loading={loading} />
+        ) : (
         <div className={computer ? "grid items-start gap-4 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)]" : ""}>
           <section aria-labelledby="to-verify-title" className={computer ? "overflow-hidden rounded-2xl border-2 border-psu-600/40 bg-white" : ""}>
             {computer && (
@@ -338,12 +420,26 @@ export default function SupervisorDashboard() {
                   To verify
                 </h2>
                 {oldest && <span className="text-[13.5px] text-slate-600">Oldest {waitingText(oldest).toLowerCase()}</span>}
-                {verifiable.length > 0 && (
+                <LiveLine updatedAt={work.updatedAt} now={now} />
+                {verifiable.length > 0 && (tab === "all" || tab === "time-ins") ? (
                   <span className="ml-auto flex items-center gap-1">
                     <Button onClick={() => setConfirmBulk("attendance")}>Verify all {verifiable.length}</Button>
                     <InfoTip label="About Verify all" text="Verifies the ordinary time-ins that have a time-out. Time-ins recorded offline stay for you to confirm one by one." />
                   </span>
-                )}
+                ) : tab === "docs" && waitingDocuments.length > 1 ? (
+                  <Button className="ml-auto" icon="check-circle" onClick={() => setConfirmBulk("document")}>
+                    Approve all {waitingDocuments.length}
+                  </Button>
+                ) : tab === "absences" && waitingAbsences.length > 1 ? (
+                  <Button className="ml-auto" icon="check-circle" onClick={() => setConfirmBulk("absence")}>
+                    Excuse all {waitingAbsences.length}
+                  </Button>
+                ) : null}
+              </div>
+            )}
+            {!computer && (
+              <div className="mb-2 flex items-center justify-between gap-2 px-1">
+                <LiveLine updatedAt={work.updatedAt} now={now} />
               </div>
             )}
             {!computer && <h2 id="to-verify-title" className="sr-only">To verify</h2>}
@@ -387,12 +483,13 @@ export default function SupervisorDashboard() {
                       </select>
                     </label>
                   )}
-                  {waitingDocuments.length > 1 && (
+                  {/* Phones: the bulk choices for documents and absences (computers have them on each section). */}
+                  {!computer && waitingDocuments.length > 1 && (
                     <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("document")}>
                       Approve {waitingDocuments.length} documents
                     </Button>
                   )}
-                  {waitingAbsences.length > 1 && (
+                  {!computer && waitingAbsences.length > 1 && (
                     <Button variant="secondary" icon="check-circle" onClick={() => setConfirmBulk("absence")}>
                       Excuse {waitingAbsences.length} absences
                     </Button>
@@ -404,53 +501,6 @@ export default function SupervisorDashboard() {
           </section>
           {computer && <ThisWeek work={work} finalDue={finalDue} projections={projections} />}
         </div>
-
-        {computer && !loading && (
-          // The same counts the side menu shows; only drawn while it is closed to a rail.
-          <UnlessInMenu>
-          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <FactCard
-              icon="clock"
-              title="Time-ins to verify"
-              value={countOf("time-ins")}
-              unit={countOf("time-ins") === 1 ? "log" : "logs"}
-              line={oldest ? `Oldest ${waitingText(oldest).toLowerCase()}` : "None waiting"}
-              tip="Pending logs of your interns, including ones still on the clock."
-              to="/supervisor/attendance"
-              action="Start"
-            />
-            <FactCard
-              icon="tasks"
-              title="Tasks to review"
-              value={countOf("tasks")}
-              unit={countOf("tasks") === 1 ? "task" : "tasks"}
-              line="Submitted by your interns"
-              tip="Tasks an intern has submitted and you have not reviewed."
-              to="/supervisor/dashboard?tab=tasks"
-              action="Open"
-            />
-            <FactCard
-              icon="note"
-              title="Weekly reports to read"
-              value={countOf("reports")}
-              unit={countOf("reports") === 1 ? "report" : "reports"}
-              line="Written or sent again"
-              tip="Weekly reports waiting for you to mark reviewed or return."
-              to="/supervisor/journals"
-              action="Read"
-            />
-            <FactCard
-              icon="star"
-              title="Evaluations due"
-              value={finalDue.length}
-              unit={finalDue.length === 1 ? "intern" : "interns"}
-              line={finalDue[0] ? finalDue[0].entry.student_name : "None due"}
-              tip="Interns close to their required hours with no final evaluation yet."
-              to="/supervisor/dashboard?tab=final"
-              action="Start"
-            />
-          </div>
-          </UnlessInMenu>
         )}
 
         {!loading && interns.length === 0 && !work.error && (
@@ -497,5 +547,18 @@ export default function SupervisorDashboard() {
         </ul>
       </ConfirmDialog>
     </SupervisorLayout>
+  );
+}
+
+/** "Live · updated 8:14 PM": the queue is kept current on its own (lib/liveRefresh.ts). */
+function LiveLine({ updatedAt, now }: { updatedAt: Date | null; now: Date }) {
+  if (!updatedAt) return null;
+  const stale = now.getTime() - updatedAt.getTime() > 2 * 60_000;
+  const time = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit" }).format(updatedAt);
+  return (
+    <span className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-slate-600" title="New work appears here as your interns send it.">
+      <span className={`live-dot ${stale ? "live-dot--stale" : ""}`} aria-hidden="true" />
+      {stale ? "Updated" : "Live · updated"} {time}
+    </span>
   );
 }

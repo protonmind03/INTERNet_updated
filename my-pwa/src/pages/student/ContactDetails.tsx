@@ -1,3 +1,4 @@
+import { firstNameOf } from "../../lib/format";
 import { useState } from "react";
 import ComposeMessage from "../../components/ComposeMessage";
 import { Button, Card, FormError, FormField } from "../../components/ui";
@@ -191,7 +192,7 @@ export function CoordinatorCard({ coordinator, role = "student" }: { coordinator
           : "For questions about your interns, their hours or the OJT programme. To report a concern, use Concerns."}
       </p>
       <Button variant="secondary" icon="mail" className="mt-3" onClick={() => setWriting(true)}>
-        Message {coordinator.name.split(" ")[0]}
+        Message {firstNameOf(coordinator.name)}
       </Button>
       {writing && (
         <ComposeMessage
@@ -230,7 +231,7 @@ export function SupervisorCard({ supervisor }: { supervisor: Supervisor | null }
       <ReachLines person={supervisor} />
       <p className="mt-2 text-xs text-slate-500">For your schedule, tasks and attendance at the company.</p>
       <Button variant="secondary" icon="mail" className="mt-3" onClick={() => setWriting(true)}>
-        Message {supervisor.name.split(" ")[0]}
+        Message {firstNameOf(supervisor.name)}
       </Button>
       {writing && (
         <ComposeMessage

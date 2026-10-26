@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
+import { useLiveRefresh } from "../../lib/liveRefresh";
 import { notifyDataChanged } from "../../lib/navCounts";
 import { savedFetch } from "../../lib/offlineStore";
 import { errorText, withWorkingToast } from "../../lib/toast";
@@ -266,6 +267,8 @@ export function useSupervisorWork(
   const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  /** When the lists last came back from the server: the "Live · updated" line. */
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
 
   // A burst of live notifications should not start a burst of reloads: while
   // one is running, later requests share it and at most one more follows.
@@ -307,6 +310,7 @@ export function useSupervisorWork(
       if (absenceData) setAbsences((absenceData.absences as AbsenceEntry[]) || []);
       if (journalData) setJournals((journalData.journals as JournalEntry[]) || []);
       setError("");
+      setUpdatedAt(new Date());
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your interns' records."));
     } finally {
@@ -332,22 +336,14 @@ export function useSupervisorWork(
   }, [fetchAll]);
 
   useEffect(() => {
-    const refresh = () => {
-      void load();
-    };
-    refresh();
-    // An intern timing in or submitting work raises a live notification.
-    window.addEventListener("internet-notification", refresh);
-    // Coming back to the tab is the other moment new work may be waiting.
-    const onVisible = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    return () => {
-      window.removeEventListener("internet-notification", refresh);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
+    void load();
   }, [load]);
+  // Kept current without a reload (sv10-26). An intern timing in or handing in work raises a live
+  // notification; a decision made in another tab, coming back to the tab, and a quiet check every
+  // 30 s while it is in view cover the times the live stream is down (lib/liveRefresh.ts).
+  useLiveRefresh(() => {
+    void load();
+  });
 
   const queue = useMemo<QueueItem[]>(() => {
     const items: QueueItem[] = [
@@ -695,6 +691,7 @@ export function useSupervisorWork(
     queue,
     loading,
     error,
+    updatedAt,
     reload: load,
     decideAttendance,
     rejectTimeIn,

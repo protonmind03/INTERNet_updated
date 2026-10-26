@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { API_URL, withSupervisorAuth } from "../../lib/api";
+import { useLiveRefresh } from "../../lib/liveRefresh";
 import { internPath } from "./internPath";
 import type { Intern } from "./useSupervisorWork";
 
@@ -41,39 +42,39 @@ export function nearlyDone(intern: Pick<Intern, "hours_rendered" | "required_hou
 }
 
 /**
- * The interns whose final evaluation is due. Empty until the server has
- * said who already has one: an intern is never listed on a guess.
+ * The ids of the interns who already have a final evaluation, or null until
+ * the server has said: an intern is never listed on a guess. Kept current
+ * like the rest of the supervisor's lists (lib/liveRefresh.ts).
  */
-export function useFinalDue(interns: Intern[]): FinalDue[] {
-  // The ids of the interns who already have a final evaluation.
+export function useEvaluatedIds(): Set<string> | null {
   const [evaluated, setEvaluated] = useState<Set<string> | null>(null);
+  const [tick, setTick] = useState(0);
+  useLiveRefresh(() => setTick((value) => value + 1), 60_000);
 
   useEffect(() => {
     let current = true;
     const load = async () => {
       try {
-        const response = await fetch(
-          `${API_URL}/api/supervisor/final-evaluations`,
-          withSupervisorAuth()
-        );
+        const response = await fetch(`${API_URL}/api/supervisor/final-evaluations`, withSupervisorAuth());
         const data = await response.json().catch(() => ({}));
         if (!current || !response.ok || !Array.isArray(data.student_ids)) return;
-        setEvaluated(new Set((data.student_ids as unknown[]).map(String)));
+        setEvaluated(new Set((data.student_ids as unknown[]).map((id) => String(id).trim())));
       } catch {
         // No connection: nothing is listed until it can be checked.
       }
     };
     void load();
-    const onVisible = () => {
-      if (document.visibilityState === "visible") void load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
     return () => {
       current = false;
-      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [tick]);
 
+  return evaluated;
+}
+
+/** The interns whose final evaluation is due. Empty until the server has said who already has one. */
+export function useFinalDue(interns: Intern[]): FinalDue[] {
+  const evaluated = useEvaluatedIds();
   return useMemo(() => {
     if (!evaluated) return [];
     return interns

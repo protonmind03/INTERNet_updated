@@ -89,6 +89,17 @@ const JOURNAL_COLUMNS = `
 `;
 
 /** "YYYY-MM-DD" a number of days from a given date. */
+/** A day as people read it in a notification: "Wed, Oct 28, 2026" (sv10-26; it read "2026-10-28"). */
+function dayWords(value: string | Date): string {
+  // pg reads a DATE as that day's local midnight: its local parts are the day.
+  const key =
+    value instanceof Date
+      ? `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, "0")}-${String(value.getDate()).padStart(2, "0")}`
+      : String(value).slice(0, 10);
+  if (!DATE_PATTERN.test(key)) return String(value);
+  return new Intl.DateTimeFormat("en-US", { timeZone: "UTC", weekday: "short", month: "short", day: "numeric", year: "numeric" }).format(new Date(`${key}T00:00:00Z`));
+}
+
 function shiftDate(date: string, days: number): string {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + days);
@@ -224,7 +235,7 @@ export function registerExtensionRoutes(
           await createNotification({
             supervisorId: owner.rows[0].supervisor_id,
             title: "Absence filed for review",
-            message: `${owner.rows[0].name} filed an absence for ${date}${PART_NAMES[part]}.`,
+            message: `${owner.rows[0].name} filed an absence for ${dayWords(date)}${PART_NAMES[part]}.`,
             type: "attendance",
             entity: { type: "absence", id: result.rows[0]?.id },
           });
@@ -299,7 +310,7 @@ export function registerExtensionRoutes(
           await createNotification({
             supervisorId: owner.rows[0].supervisor_id,
             title: "Absence withdrawn",
-            message: `${owner.rows[0].name} withdrew the absence filed for ${result.rows[0].date}. No decision is needed.`,
+            message: `${owner.rows[0].name} withdrew the absence filed for ${dayWords(result.rows[0].date)}. No decision is needed.`,
             type: "attendance",
           });
         }

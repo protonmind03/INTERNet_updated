@@ -1,5 +1,8 @@
 import { SummaryTiles } from "../../components/display";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Icon from "../../components/Icon";
+import { useLiveRefresh } from "../../lib/liveRefresh";
+import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 import { Link } from "react-router-dom";
 import {
   Card,
@@ -31,6 +34,11 @@ import { sameId } from "../../lib/ids";
 | Every journal the supervisor's interns have written, to read back. A
 | journal that is waiting is decided in the Review queue; this page is for
 | reading, including the ones already reviewed.
+|
+| sv10-26: a grid first, interns down and the last six weeks across, each
+| cell the week's report by its state (or none sent), so a gap shows at
+| once; a cell opens that report. Below, each report is one line (the week,
+| when it was sent, its state, how it begins) that opens to be read.
 |
 */
 
@@ -76,14 +84,32 @@ export default function SupervisorJournals() {
   }, []);
 
   useEffect(() => {
-    const refresh = () => {
+    const first = () => {
       void load();
     };
-    refresh();
-    // A new or resubmitted journal arrives as a live notification.
-    window.addEventListener("internet-notification", refresh);
-    return () => window.removeEventListener("internet-notification", refresh);
+    first();
   }, [load]);
+  // A new or resubmitted journal arrives as a live notification; the rest as everywhere (lib/liveRefresh.ts).
+  useLiveRefresh(() => {
+    void load();
+  }, 60_000);
+  // The reports opened to be read: any opened by hand, or from the grid.
+  const [opened, setOpened] = useState<Set<number>>(() => new Set());
+  // Waiting reports start open; one the supervisor closes stays closed.
+  const [closedByHand, setClosedByHand] = useState<Set<number>>(() => new Set());
+  const toggle = (id: number, open: boolean) =>
+    setOpened((current) => {
+      if (current.has(id) === open) return current;
+      const next = new Set(current);
+      if (open) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  const openReport = (journal: JournalEntry) => {
+    setScope("all");
+    toggle(journal.id, true);
+    window.setTimeout(() => document.getElementById(recordId("journal", journal.id))?.scrollIntoView({ behavior: "smooth", block: "center" }), 60);
+  };
 
   const interns = useMemo(() => {
     const byId = new Map(journals.map((item) => [item.student_id, item.student_name]));
@@ -153,6 +179,10 @@ export default function SupervisorJournals() {
           )}
         </div>
 
+        {!loading && journals.length > 0 && (
+          <WeekGrid journals={ofIntern} interns={interns.filter(([id]) => inGroup(id) && (!internId || sameId(id, internId)))} onOpen={openReport} />
+        )}
+
         <Card>
           {loading ? (
             <SkeletonRows rows={3} />
@@ -174,20 +204,43 @@ export default function SupervisorJournals() {
               renderItems={(items) => (
                 <ul className="divide-y divide-slate-100">
                   {items.map((journal) => (
-                    <li key={journal.id} id={recordId("journal", journal.id)} className="space-y-2.5 px-4 py-4 sm:px-5">
-                      <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-slate-900">
-                            Week of {formatDate(journal.week_start)} to{" "}
-                            {formatDate(weekEnd(journal.week_start))} · sent{" "}
-                            {formatDateTime(journal.submitted_at)}
-                          </p>
-                        </div>
-                        <StatusBadge
-                          status={STATE[journal.status].label}
-                          tone={STATE[journal.status].tone}
-                        />
-                      </div>
+                    <li key={journal.id} id={recordId("journal", journal.id)}>
+                      <details
+                        className="group"
+                        // One waiting for the supervisor starts open, to be read; the rest start as one line.
+                        open={opened.has(journal.id) || focusedReport?.id === journal.id || (journal.status === "Submitted" && !closedByHand.has(journal.id))}
+                        onToggle={(event) => {
+                          const open = (event.currentTarget as HTMLDetailsElement).open;
+                          toggle(journal.id, open);
+                          if (!open && journal.status === "Submitted") setClosedByHand((current) => (current.has(journal.id) ? current : new Set(current).add(journal.id)));
+                        }}
+                      >
+                      <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3.5 hover:bg-slate-50 sm:px-5 [&::-webkit-details-marker]:hidden">
+                        <span className="att-date" aria-hidden="true">
+                          <b>{formatPhDay(String(journal.week_start).slice(0, 10), { day: "numeric" })}</b>
+                          <i>{formatPhDay(String(journal.week_start).slice(0, 10), { month: "short" })}</i>
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block text-sm font-semibold text-slate-900">
+                            Week of {formatDate(journal.week_start)} to {formatDate(weekEnd(journal.week_start))}
+                          </span>
+                          <span className="block truncate text-[13px] text-slate-600">
+                            Sent {formatDateTime(journal.submitted_at)} · {journal.activities}
+                          </span>
+                        </span>
+                        <StatusBadge status={STATE[journal.status].label} tone={STATE[journal.status].tone} />
+                        {journal.status === "Submitted" && (
+                          <Link
+                            to={`/supervisor/dashboard?focus=journal-${journal.id}`}
+                            onClick={(event) => event.stopPropagation()}
+                            className="inline-flex min-h-9 items-center rounded-lg bg-psu-600 px-3 text-[13px] font-bold text-white hover:bg-psu-700"
+                          >
+                            Review now
+                          </Link>
+                        )}
+                        <Icon name="chevron-down" size={18} className="text-slate-400 transition-transform group-open:rotate-180" />
+                      </summary>
+                      <div className="space-y-2.5 border-t border-slate-100 bg-slate-50/40 px-4 py-4 sm:px-5">
                       <ReportParts report={journal} />
                       <EntryPictures role="supervisor" owner="journal" ownerId={journal.id} count={journal.pictures} className="" />
                       <DailyAccomplishments
@@ -202,14 +255,8 @@ export default function SupervisorJournals() {
                           {journal.review_notes}
                         </p>
                       )}
-                      {journal.status === "Submitted" && (
-                        <Link
-                          to="/supervisor/dashboard"
-                          className="inline-block text-sm font-semibold text-psu-700 hover:underline"
-                        >
-                          Decide it in the Review queue
-                        </Link>
-                      )}
+                      </div>
+                      </details>
                     </li>
                   ))}
                 </ul>
@@ -222,3 +269,88 @@ export default function SupervisorJournals() {
   );
 }
 
+
+const CELL: Record<JournalEntry["status"] | "none" | "ahead", { cls: string; word: string }> = {
+  Submitted: { cls: "bg-amber-100 text-amber-900 ring-amber-300", word: "Waiting" },
+  Reviewed: { cls: "bg-psu-600 text-white ring-psu-600", word: "Reviewed" },
+  Returned: { cls: "bg-red-100 text-red-800 ring-red-300", word: "Returned" },
+  none: { cls: "bg-white text-slate-400 ring-slate-200", word: "None sent" },
+  ahead: { cls: "bg-transparent text-slate-400 ring-transparent", word: "" },
+};
+
+/** Interns down, the last six weeks across: each week's report by its state, or the gap. */
+function WeekGrid({ journals, interns, onOpen }: { journals: JournalEntry[]; interns: [string, string][]; onOpen: (journal: JournalEntry) => void }) {
+  const today = phToday();
+  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
+  const thisMonday = phAddDays(today, weekday === 0 ? -6 : 1 - weekday);
+  const weeks = [5, 4, 3, 2, 1, 0].map((back) => phAddDays(thisMonday, -7 * back));
+  if (interns.length === 0) return null;
+  return (
+    <section aria-labelledby="report-grid-title" className="overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-(--role-hairline)">
+      <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-4 py-3 sm:px-5">
+        <h2 id="report-grid-title" className="text-[15px] font-bold text-slate-900">
+          The last six weeks
+        </h2>
+        <ul className="ml-auto flex flex-wrap gap-3 text-[12px] text-slate-600" aria-label="Key">
+          {(["Reviewed", "Submitted", "Returned", "none"] as const).map((state) => (
+            <li key={state} className="inline-flex items-center gap-1.5">
+              <span className={`h-2.5 w-2.5 rounded-sm ring-1 ring-inset ${CELL[state].cls}`} aria-hidden="true" />
+              {CELL[state].word}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[640px] table-fixed text-sm">
+          <colgroup>
+            <col className="w-56" />
+            {weeks.map((week) => (
+              <col key={week} />
+            ))}
+          </colgroup>
+          <thead>
+            <tr className="text-xs text-slate-500">
+              <th scope="col" className="px-4 py-2 text-left font-medium">
+                Intern
+              </th>
+              {weeks.map((week) => (
+                <th key={week} scope="col" className="px-1 py-2 text-center font-medium">
+                  {week === thisMonday ? "This week" : formatPhDay(week, { month: "short", day: "numeric" })}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {interns.map(([id, name]) => (
+              <tr key={id}>
+                <th scope="row" className="truncate px-4 py-1.5 text-left font-semibold text-slate-900">
+                  {name}
+                </th>
+                {weeks.map((week) => {
+                  const report = journals.find((item) => sameId(item.student_id, id) && String(item.week_start).slice(0, 10) === week);
+                  const state = report ? report.status : week === thisMonday ? "ahead" : "none";
+                  return (
+                    <td key={week} className="px-1 py-1.5">
+                      {report ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpen(report)}
+                          className={`report-cell ring-1 ring-inset ${CELL[state].cls}`}
+                          aria-label={`${name}, week of ${formatPhDay(week, { month: "long", day: "numeric" })}: ${CELL[state].word}`}
+                        >
+                          {CELL[state].word}
+                        </button>
+                      ) : (
+                        <span className={`report-cell ring-1 ring-inset ${CELL[state].cls}`}>{state === "ahead" ? "Due Sun" : "—"}</span>
+                      )}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}

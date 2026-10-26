@@ -121,12 +121,12 @@ export default function SupervisorLayout({
         { label: "Submitted reports", path: `${REVIEW}?tab=reports`, count: counts[`${REVIEW}?tab=reports`] },
       ],
     },
-    { label: "Interns", path: "/supervisor/interns", icon: "users", detail: "Interns, teams, schedules" },
-    { label: "Attendance", path: "/supervisor/attendance", icon: "clock", detail: "Every time-in, by day" },
+    { label: "Interns", path: "/supervisor/interns", icon: "users", detail: "Progress, today, this week" },
+    { label: "Attendance", path: "/supervisor/attendance", icon: "clock", detail: "Logs, week, absences" },
     {
       label: "Work",
       icon: "clipboard",
-      detail: "Tasks, weekly reports, documents",
+      detail: "Tasks, teams, weekly reports, documents",
       children: [
         { label: "Tasks", path: "/supervisor/tasks" },
         { label: "Weekly reports", path: "/supervisor/journals" },

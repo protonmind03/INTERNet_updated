@@ -248,9 +248,12 @@ export function DecisionCard({
   onVerify,
   onOpen,
   onRejectChoice,
+  grouped = false,
 }: {
   item: QueueItem;
   layout: "card" | "row";
+  /** Listed under its kind's heading (sv10-26): the row leads with the intern, not the kind again. */
+  grouped?: boolean;
   busy: boolean;
   /** The solid main action for an ordinary time-in, or "Confirm on its own" for an offline one. */
   onVerify: () => void;
@@ -344,11 +347,19 @@ export function DecisionCard({
 
   if (layout === "row") {
     return (
-      <div className="grid grid-cols-[2.5rem_6.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3">
-        <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-lg bg-psu-50 text-psu-700">
-          <Icon name={offline ? "clock" : KIND_ICON[item.kind]} size={18} />
-        </span>
-        <span className="eyebrow text-slate-600">{KIND_LABEL[item.kind]}</span>
+      <div className={`grid items-center gap-3 px-4 py-3 ${grouped ? "grid-cols-[2.5rem_minmax(0,1fr)_auto]" : "grid-cols-[2.5rem_6.5rem_minmax(0,1fr)_auto]"}`}>
+        {grouped ? (
+          <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-full bg-psu-50 text-[13px] font-extrabold text-psu-800 ring-1 ring-inset ring-psu-100">
+            {getInitials(item.entry.student_name)}
+          </span>
+        ) : (
+          <>
+            <span aria-hidden="true" className="grid h-10 w-10 place-items-center rounded-lg bg-psu-50 text-psu-700">
+              <Icon name={offline ? "clock" : KIND_ICON[item.kind]} size={18} />
+            </span>
+            <span className="eyebrow text-slate-600">{KIND_LABEL[item.kind]}</span>
+          </>
+        )}
         <span className="min-w-0">
           <span className="block truncate text-[14.5px] font-bold text-slate-900">{item.entry.student_name}</span>
           <span className="block truncate text-[13px] text-slate-600">

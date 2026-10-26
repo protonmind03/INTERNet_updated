@@ -476,3 +476,69 @@ body {
   outline-offset: 3px;
   border-radius: 0.75rem;
 }
+
+/* ---------- The supervisor's live queue (sv10-26) ---------- */
+/* "Live · updated": a green dot that breathes while the list is current, grey once it is not. */
+.live-dot { position: relative; display: inline-block; width: 8px; height: 8px; border-radius: 9999px; background: #16a34a; }
+.live-dot::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: #16a34a; animation: live-ping 2.2s cubic-bezier(0.22, 1, 0.36, 1) infinite; }
+.live-dot--stale { background: #94a3b8; }
+.live-dot--stale::after { display: none; }
+@keyframes live-ping { from { transform: scale(1); opacity: 0.6; } to { transform: scale(2.8); opacity: 0; } }
+/* What arrived while the page was open: a short gold wash, then a "New" tag for a few minutes. */
+.review-new { animation: review-arrive 1.6s ease-out; }
+@keyframes review-arrive { 0% { background: color-mix(in srgb, #facc15 32%, transparent); } 100% { background: transparent; } }
+.review-new-pill { display: inline-flex; align-items: center; padding: 1px 8px; border-radius: 9999px; background: #facc15; color: #1a237e; font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; box-shadow: 0 4px 10px -4px rgb(250 204 21 / 0.8); }
+.review-section + .review-section { margin-top: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .live-dot::after, .review-new { animation: none; }
+}
+
+/* ---------- Interns (sv10-26) ---------- */
+/* The group banner: the supervisor's green, ruled like a logbook, a soft light top right. */
+.interns-hero { background-color: var(--role-chrome, #0f5f4f); background-image: radial-gradient(ellipse 60% 90% at 100% 0%, rgb(255 255 255 / 0.16), transparent 60%), url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='22'%3E%3Crect y='21' width='8' height='1' fill='%23FFFFFF' fill-opacity='.08'/%3E%3C/svg%3E"), linear-gradient(135deg, color-mix(in srgb, var(--role-chrome, #0f5f4f) 85%, white), var(--role-chrome, #0f5f4f) 55%, color-mix(in srgb, var(--role-chrome, #0f5f4f) 75%, black)); box-shadow: 0 24px 40px -30px rgb(4 47 46 / 0.7); }
+.interns-hero svg circle:first-of-type { stroke: rgb(255 255 255 / 0.18); }
+.interns-hero svg circle:last-of-type { stroke: #facc15; }
+/* Cards arrive one after another. */
+.intern-card { animation: intern-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(min(var(--i, 0), 12) * 45ms); }
+@keyframes intern-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) { .intern-card { animation: none; } }
+
+/* ---------- Attendance (sv10-26) ---------- */
+.att-tile { display: flex; width: 100%; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px; background: #fff; text-align: left; box-shadow: inset 0 0 0 1px var(--role-hairline, #e2e8f0); transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms; }
+.att-tile:hover { transform: translateY(-2px); box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--role-primary, #0f5f4f) 40%, transparent), 0 14px 28px -20px rgb(4 47 46 / 0.5); }
+.att-tile-icon { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; border-radius: 12px; background: color-mix(in srgb, var(--role-primary, #0f5f4f) 10%, white); color: var(--role-primary, #0f5f4f); }
+.att-tile--warn .att-tile-icon { background: #fef3c7; color: #92400e; }
+.att-tile--warn { box-shadow: inset 0 0 0 1.5px #fcd34d; }
+.att-more { animation: att-open 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes att-open { from { opacity: 0; transform: translateY(-6px); } }
+.att-row--waiting td:first-child { box-shadow: inset 3px 0 0 #0ea5e9; }
+.att-date { display: grid; width: 46px; flex-shrink: 0; place-items: center; padding: 4px 0; border-radius: 12px; background: color-mix(in srgb, var(--role-primary, #0f5f4f) 8%, white); color: var(--role-ink, #0f172a); line-height: 1.1; }
+.att-date b { font-family: var(--font-display); font-size: 18px; font-weight: 800; }
+.att-date i { font-size: 11px; font-style: normal; font-weight: 700; text-transform: uppercase; color: #64748b; }
+.week-cell { display: grid; min-height: 44px; width: 100%; place-content: center; border-radius: 10px; padding: 4px 6px; text-align: center; transition: transform 150ms, box-shadow 150ms; }
+button.week-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12px rgb(15 23 42 / 0.5); }
+@media (prefers-reduced-motion: reduce) { .att-more, .att-tile, button.week-cell { animation: none; transition: none; } }
+
+/* ---------- Tasks board (sv10-26) ---------- */
+.board-col { display: flex; min-width: 0; flex-direction: column; border-radius: 18px; background: #f1f5f4; box-shadow: inset 0 3px 0 var(--board-accent, #94a3b8); }
+.board-col--with { --board-accent: #64748b; }
+.board-col--back { --board-accent: #0ea5e9; }
+.board-col--review { --board-accent: #f59e0b; background: #fffbeb; }
+.board-col--done { --board-accent: var(--role-primary, #0f5f4f); }
+.board-col-icon { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 8px; background: #fff; color: var(--board-accent); box-shadow: inset 0 0 0 1px #e2e8f0; }
+.board-card { animation: intern-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both; animation-delay: calc(min(var(--i, 0), 10) * 35ms); }
+.board-card-inner { display: block; width: 100%; padding: 12px; border-radius: 14px; background: #fff; text-align: left; box-shadow: 0 1px 0 rgb(15 23 42 / 0.04), inset 0 0 0 1px #e2e8f0; transition: transform 160ms, box-shadow 160ms; }
+.board-card-inner:hover { transform: translateY(-2px); box-shadow: 0 12px 22px -16px rgb(15 23 42 / 0.45), inset 0 0 0 1px color-mix(in srgb, var(--role-primary, #0f5f4f) 35%, transparent); }
+@media (prefers-reduced-motion: reduce) { .board-card { animation: none; } .board-card-inner { transition: none; } }
+
+/* ---------- Weekly reports grid (sv10-26) ---------- */
+.report-cell { display: grid; min-height: 34px; width: 100%; place-items: center; border-radius: 9px; font-size: 12px; font-weight: 700; transition: transform 150ms, box-shadow 150ms; }
+button.report-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12px rgb(15 23 42 / 0.5); }
+
+/* ---------- Requirements grid (sv10-26) ---------- */
+.req-cell { display: inline-grid; height: 30px; min-width: 30px; place-items: center; border-radius: 9px; transition: transform 150ms, box-shadow 150ms; }
+button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12px rgb(15 23 42 / 0.5); }
+@media (max-width: 639.98px) {
+  .att-tile { flex-direction: column; align-items: flex-start; gap: 6px; padding: 12px; }
+  .att-tile-icon { width: 32px; height: 32px; border-radius: 10px; }
+}

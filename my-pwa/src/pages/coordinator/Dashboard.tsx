@@ -9,7 +9,7 @@ import type { Tone } from "../../components/tones";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ErrorNotice, Skeleton, SkeletonRows } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatDayDate, formatHours, getInitials, greetingFor } from "../../lib/format";
+import { formatDayDate, formatHours, getInitials, greetingFor, firstNameOf } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
@@ -149,7 +149,7 @@ export default function CoordinatorDashboard() {
     };
   }, [load]);
 
-  const firstName = coordinatorName.split(/\s+/)[0] || "";
+  const firstName = firstNameOf(coordinatorName);
   const scopeWords = [home?.scope.college?.short_name, home?.scope.program?.short_code].filter(Boolean).join(" · ");
   const weekWords = home?.week ? `Week ${home.week.number} of ${home.week.of}` : "";
   const rows = actions ? actions.groups.flatMap((group) => group.rows) : [];

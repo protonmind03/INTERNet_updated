@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import AttendancePhoto from "../../components/AttendancePhoto";
 import { Button, Card, EmptyState, ErrorNotice, FilterChips, FormError, SkeletonRows, StatusBadge } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
-import { formatDateTime, formatLongDate, formatTime } from "../../lib/format";
+import { formatDateTime, formatLongDate, formatTime, firstNameOf } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { changedByOthers, coordinatorRequest } from "./request";
 
@@ -151,7 +151,7 @@ function AppealCard({ appeal, onDecided }: { appeal: Appeal; onDecided: () => vo
   const [choice, setChoice] = useState<"upheld" | "overturned" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const firstName = appeal.student_name.split(/\s+/)[0] || appeal.student_name;
+  const firstName = firstNameOf(appeal.student_name, appeal.student_name);
 
   const send = async () => {
     if (!choice) return setError("Choose Uphold or Overturn first.");
