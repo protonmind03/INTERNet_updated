@@ -335,6 +335,59 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     }
   });
 
+  /* ---------- The album ---------- */
+
+  /*
+  | Every picture and document image the trainee has in the app, in one list
+  | for the album on their profile: report photos (events, weekly reports,
+  | time-out notes) and the files they uploaded as requirements. Medical and
+  | psychological certificates are health information and are left out by
+  | their requirement's name, as are concern attachments (a concern may be
+  | about someone). Time-in camera photos are not here: they are checks of
+  | who timed in, kept only for a while, not keepsakes. Nothing is copied:
+  | the album points at the files already stored.
+  */
+  app.get("/api/students/:studentId/album", requireRole(["student", "coordinator"]), async (req, res) => {
+    try {
+      const studentId = String(req.params.studentId);
+      if (!(await mayRead(req, studentId))) return res.status(403).json({ message: "You can only see your own album." });
+      const pictures = await pool.query(
+        `SELECT a.id::int AS id, a.owner_type AS source, a.owner_id::int AS owner_id, a.mime_type, a.width, a.height, a.caption,
+                (a.preview_path IS NOT NULL) AS has_preview, a.captured_in_app, a.created_at,
+                COALESCE(a.taken_at, a.created_at) AS taken_at,
+                CASE a.owner_type
+                  WHEN 'report_entry' THEN COALESCE(NULLIF(e.title, ''), 'An event')
+                  WHEN 'journal' THEN 'Weekly report'
+                  ELSE 'Time-out note'
+                END AS title,
+                TO_CHAR(COALESCE(r.report_date, j.week_start, at.date), 'YYYY-MM-DD') AS day
+         FROM attachments a
+         LEFT JOIN daily_report_entries e ON a.owner_type = 'report_entry' AND e.id = a.owner_id
+         LEFT JOIN daily_reports r ON r.id = e.report_id
+         LEFT JOIN journals j ON a.owner_type = 'journal' AND j.id = a.owner_id
+         LEFT JOIN attendance at ON a.owner_type = 'attendance' AND at.id = a.owner_id
+         WHERE a.student_id = $1 AND a.removed_at IS NULL AND a.owner_type IN ('report_entry', 'journal', 'attendance')
+         ORDER BY COALESCE(a.taken_at, a.created_at) DESC
+         LIMIT 2000`,
+        [studentId]
+      );
+      const documents = await pool.query(
+        `SELECT d.id::int AS id, d.doc_type AS title, d.original_filename, d.file_path, d.mime_type, d.status, d.uploaded_at AS taken_at
+         FROM documents d
+         WHERE d.student_id = $1
+           AND (d.mime_type LIKE 'image/%' OR d.mime_type = 'application/pdf')
+           AND d.doc_type !~* '(medical|psycholog|health|diagnos)'
+         ORDER BY d.uploaded_at DESC
+         LIMIT 500`,
+        [studentId]
+      );
+      return res.json({ pictures: pictures.rows, documents: documents.rows });
+    } catch (error) {
+      console.error("GET ALBUM ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the album." });
+    }
+  });
+
   /* ---------- The narrative report's written parts ---------- */
 
   app.get("/api/students/:studentId/narrative", anyone, async (req, res) => {

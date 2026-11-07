@@ -297,6 +297,18 @@ export default function StudentProfilePage() {
         )}
       </Card>
 
+      {/* Revisions, November 2026: the album of every photo and file. */}
+      <Link to="/profile/album" className="mb-5 flex min-h-16 items-center gap-3 rounded-xl bg-white px-4 py-3 ring-1 ring-inset ring-(--role-hairline) hover:bg-psu-50/60">
+        <span aria-hidden="true" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gold-200 text-psu-900">
+          <Icon name="album" size={21} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-bold text-slate-900">Album</span>
+          <span className="block truncate text-[13px] text-slate-600">Every photo from your reports and every file you uploaded, by month</span>
+        </span>
+        <Icon name="chevron-right" size={18} className="shrink-0 text-slate-400" />
+      </Link>
+
       <ProfileGroups groups={groups} onSignOut={() => setConfirmSignOut(true)} />
 
       <ConfirmDialog

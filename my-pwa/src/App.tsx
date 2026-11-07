@@ -150,6 +150,7 @@ const SupervisorDashboard = page("supervisor", HOME_PAGE.supervisor);
 const SupervisorAttendanceApproval = page("supervisor", () => import("./pages/supervisor/attendance"));
 const SupervisorTasks = page("supervisor", () => import("./pages/supervisor/tasks"));
 const StudentProfilePage = page("student", () => import("./pages/student/Profile"));
+const StudentAlbum = page("student", () => import("./pages/student/Album"));
 const SupervisorInterns = page("supervisor", () => import("./pages/supervisor/interns"));
 const SupervisorInternPage = page("supervisor", () => import("./pages/supervisor/InternPage"));
 const SupervisorEvaluation = page("supervisor", () => import("./pages/supervisor/evaluation"));
@@ -384,6 +385,8 @@ function App() {
   path="/profile"
   element={<StudentProfilePage />}
 />
+{/* Revisions, November 2026: every photo and file, by month. */}
+<Route path="/profile/album" element={<StudentAlbum />} />
 
 <Route
   path="/supervisor/interns"

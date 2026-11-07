@@ -12941,3 +12941,16 @@ test("a weighted form (FM-AA-INT-13) is checked when saved, and a final evaluati
     for (const row of formsBefore) await pool.query(`UPDATE evaluation_forms SET is_active = $2 WHERE id = $1`, [row.id, row.is_active]);
   }
 });
+
+test("the album lists the trainee's own report photos and document files, leaving health certificates out", async () => {
+  const id = encodeURIComponent(student.student_id);
+  const album = await jsonRequest(`/api/students/${id}/album`, { headers: authHeaders(studentToken) });
+  assert.equal(album.response.status, 200, JSON.stringify(album.body));
+  assert.ok(Array.isArray(album.body.pictures));
+  assert.ok(Array.isArray(album.body.documents));
+  for (const doc of album.body.documents) assert.doesNotMatch(doc.title, /medical|psycholog/i);
+  for (const picture of album.body.pictures) assert.ok(["report_entry", "journal", "attendance"].includes(picture.source));
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/album", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(`/api/students/${id}/album`, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+  assert.equal((await jsonRequest(`/api/students/${id}/album`)).response.status, 401);
+});

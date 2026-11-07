@@ -82,4 +82,11 @@ test("a day's report saves as it is typed, and an event takes photos, kept on th
   await expect(page).toHaveURL(/view=monthly/);
   await expect(page.getByRole("heading", { name: "In your own words" })).toBeVisible();
   await expect(page.getByText(eventTitle).first()).toBeVisible();
+
+  // The photos are in the album on the profile, under Reports, without being copied.
+  await page.goto("/profile");
+  await page.getByRole("link", { name: /^Album/ }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Album" })).toBeVisible();
+  await page.getByRole("tab", { name: /^Reports/ }).click();
+  await expect(page.getByRole("button", { name: new RegExp(`^Open ${eventTitle.replace(/[()]/g, ".")}`) }).first()).toBeVisible();
 });
