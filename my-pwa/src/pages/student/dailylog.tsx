@@ -10,7 +10,7 @@ import StudentLayout from "../../layouts/StudentLayout";
 import { getProtectedUploadUrl } from "../../lib/api";
 import { isWithinDateRange } from "../../lib/dateRange";
 import { formatDayDate, formatDuration, formatHours, formatLongDate, formatTime, phDateKey } from "../../lib/format";
-import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
+import { formatPhDay } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
 import { focusId, recordId, useFocus, useFocusRecord } from "../../lib/useFocusRecord";
 import { usePagination } from "../../lib/usePagination";
@@ -18,6 +18,7 @@ import Absences from "./Absences";
 import { AppealActions } from "./Appeals";
 import { appealableKinds } from "./appealRules";
 import { LateTimeOutDialog, MissedTimeOutNotice, ResubmitDialog } from "./AttendanceCorrections";
+import ThisWeek from "./ThisWeek";
 import TimeInProvider from "./TimeInProvider";
 import { useTimeIn } from "./timeInContext";
 import { logDateKey, workedMinutes, type AttendanceLog } from "./useAttendance";
@@ -143,9 +144,10 @@ function DailyLogPage() {
         {attendance.error && <ErrorNotice message={attendance.error} onRetry={() => void attendance.reload()} />}
 
         <div className="grid grid-cols-2 gap-2.5">
-          <Link to="/time-record" className="card-hairline flex min-h-12 items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-psu-700 hover:bg-psu-50">
-            <Icon name="printer" size={18} />
-            Time record
+          {/* The time record is a tab of this folder now; the day's report is the next thing to do. */}
+          <Link to="/journal" className="card-hairline flex min-h-12 items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-psu-700 hover:bg-psu-50">
+            <Icon name="note" size={18} />
+            Today's report
           </Link>
           <a href="#absences" className="card-hairline flex min-h-12 items-center justify-center gap-2 rounded-xl text-[15px] font-bold text-psu-700 hover:bg-psu-50">
             <Icon name="calendar" size={18} />
@@ -155,7 +157,7 @@ function DailyLogPage() {
 
         <MissedTimeOutNotice attendance={attendance} />
 
-        <WeekBars logs={logs} now={now} loading={loading} />
+        <ThisWeek logs={logs} now={now} loading={loading} />
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <FilterChips
@@ -252,49 +254,6 @@ function DailyLogPage() {
 }
 
 /* ---------- This week, as bars ---------- */
-
-function WeekBars({ logs, now, loading }: { logs: AttendanceLog[]; now: Date; loading: boolean }) {
-  const today = phToday();
-  const weekday = new Date(`${today}T00:00:00Z`).getUTCDay();
-  const monday = phAddDays(today, -((weekday + 6) % 7));
-  const days = Array.from({ length: 5 }, (_, index) => {
-    const key = phAddDays(monday, index);
-    const log = logs.find((item) => logDateKey(item) === key);
-    const working = Boolean(log?.time_in && !log.time_out && key === today);
-    const minutes = log ? (working ? workedMinutes(log, now) : (Number(log.hours) || 0) * 60) : 0;
-    return { key, minutes, working, logged: Boolean(log?.time_in), label: formatPhDay(key, { weekday: "short" }) };
-  });
-  const total = days.reduce((sum, day) => sum + day.minutes, 0);
-  const logged = days.filter((day) => day.logged).length;
-  const scale = Math.max(8 * 60, ...days.map((day) => day.minutes));
-  return (
-    <Card className="p-4">
-      <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-[16px] font-bold text-slate-900">This week</h2>
-        <p className="tabular text-[13.5px] text-slate-600">
-          {formatDuration(total)} · {logged} of 5 days
-        </p>
-      </div>
-      {loading ? (
-        <SkeletonRows rows={1} />
-      ) : (
-        <div className="mt-3 grid grid-cols-5 gap-2" role="list" aria-label="Hours each day this week">
-          {days.map((day) => (
-            <div key={day.key} role="listitem" className="flex flex-col items-center gap-1.5" aria-label={`${day.label}: ${day.minutes > 0 ? formatDuration(day.minutes) : "no hours"}${day.working ? ", working now" : ""}`}>
-              <div className="flex h-16 w-full items-end" aria-hidden="true">
-                <div
-                  className={`w-full rounded-md ${day.working ? "bg-psu-600" : day.minutes > 0 ? "bg-psu-100" : "h-1 bg-slate-200"}`}
-                  style={day.minutes > 0 ? { height: `${Math.max(10, Math.round((day.minutes / scale) * 64))}px` } : undefined}
-                />
-              </div>
-              <span className={`text-[12.5px] ${day.key === today ? "font-bold text-slate-900" : "text-slate-600"}`}>{day.label}</span>
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
-  );
-}
 
 /* ---------- One day ---------- */
 

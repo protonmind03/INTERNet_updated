@@ -4,7 +4,7 @@ import ProjectionHow from "../../components/ProjectionHow";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { formatDayDate, formatHours, phDateKey } from "../../lib/format";
 import { savedFetch } from "../../lib/offlineStore";
-import { daysBetween } from "../../lib/phTime";
+import { daysBetween, formatPh } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
@@ -163,8 +163,44 @@ export default function ScheduleProgress({
     series.finish ? `Projected finish ${formatDayDate(series.finish)}.` : "No projected finish yet."
   }`;
 
+  // At a glance (November 2026): where the trainee stands, in a sentence and four numbers.
+  const pendingNow = series.points.filter((point) => point.date <= today).at(-1)?.pending ?? verifiedNow;
+  const monthAgo = addDays(today, -28);
+  const recent = logs
+    .filter((log) => log.time_in && logDateKey(log) > monthAgo && logDateKey(log) <= today && (log.status === "Verified" || log.status === "Pending"))
+    .reduce((sum, log) => sum + (Number(log.hours) || 0), 0);
+  const pace = Math.round((recent / 4) * 10) / 10;
+  const percent = required > 0 ? Math.min(100, Math.round((verifiedNow / required) * 100)) : 0;
+  const left = Math.max(0, required - verifiedNow);
+  const finishWords = series.finish ? formatPh(new Date(`${series.finish}T12:00:00+08:00`), { month: "long", day: "numeric", year: "numeric" }) : null;
+
   return (
     <div className="space-y-5">
+      <section aria-labelledby="at-a-glance" className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline) sm:p-5">
+        <h2 id="at-a-glance" className="text-[16px] font-extrabold text-slate-900">
+          At a glance
+        </h2>
+        <p className="mt-1 text-[14.5px] leading-relaxed text-slate-700">
+          {required === 0
+            ? "Your required hours have not been set yet."
+            : left === 0
+              ? `You have completed your ${required} required hours.`
+              : `You have ${Math.round(verifiedNow * 10) / 10} of ${required} hours verified (${percent}%)${pendingNow > verifiedNow ? `, and ${Math.round((pendingNow - verifiedNow) * 10) / 10} more waiting for your supervisor` : ""}. ${pace > 0 ? `At about ${pace} hours a week` : "Keeping to your schedule"}, you are expected to finish${finishWords ? ` on ${finishWords}` : " once your schedule is set"}.`}
+        </p>
+        <dl className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          {[
+            { label: "Done", value: `${percent}%` },
+            { label: "Hours left", value: `${Math.round(left * 10) / 10} h` },
+            { label: "Pace, last 4 weeks", value: `${pace} h/week` },
+            { label: "Expected finish", value: finishWords ? formatPh(new Date(`${series.finish}T12:00:00+08:00`), { month: "short", day: "numeric" }) : "—" },
+          ].map((fact) => (
+            <div key={fact.label} className="rounded-xl bg-psu-50 px-3 py-2.5">
+              <dt className="text-[11.5px] font-bold uppercase tracking-wide text-slate-500">{fact.label}</dt>
+              <dd className="font-display tabular mt-0.5 text-[21px] font-extrabold text-slate-900">{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      </section>
       <Card>
         <CardHeader icon="chart" title="Hours over time" description="If you keep to your schedule." />
         <div className="px-4 pb-4 sm:px-5">

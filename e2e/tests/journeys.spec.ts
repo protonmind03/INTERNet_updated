@@ -547,10 +547,11 @@ test.describe("what a student reads about their days", () => {
     await page.getByRole("button", { name: "This month" }).click();
     await expect(todayCell).toHaveCount(1);
 
-    // My progress (Iteration 21): the burn-up chart, milestones, the change since last week, the rhythm.
-    await page.getByRole("tab", { name: "My progress" }).click();
+    // My progress (Iteration 21; its own tab of the Attendance folder since November 2026): at a glance,
+    // the burn-up chart, milestones, the change since last week, the rhythm.
+    await page.locator("main nav").getByRole("link", { name: /^My progress/ }).click();
     await expect(page).toHaveURL(/view=progress$/);
-    for (const name of ["Hours over time", "Milestones", "Change since last week", "Rhythm"]) {
+    for (const name of ["At a glance", "Hours over time", "Milestones", "Change since last week", "Rhythm"]) {
       await expect(page.getByRole("heading", { name })).toBeVisible();
     }
     await expect(page.getByRole("img", { name: /^Burn-up chart/ })).toBeVisible();
