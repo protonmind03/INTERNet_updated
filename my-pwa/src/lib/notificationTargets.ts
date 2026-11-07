@@ -61,7 +61,7 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
     absence: () => "/daily-log",
     task: (id) => focus("/task", "task", id),
     document: () => "/documents",
-    journal: () => "/journal",
+    journal: () => "/journal?view=weekly",
     complaint: () => "/student/resolution?tab=concerns",
     student: () => HOME.student,
     message: (id) => `${HOME.student}?thread=${encodeURIComponent(id)}`,
@@ -119,7 +119,7 @@ function fromWording(role: NotificationRole, item: ResolvableNotification): Noti
     if (kind === "document") return { icon: "document", path: "/documents" };
     if (kind === "evaluation" || title.includes("evaluation")) return { icon: "star", path: "/student/feedback" };
     if (concern) return { icon: "flag", path: "/student/resolution?tab=concerns" };
-    if (report) return { icon: "note", path: "/journal" };
+    if (report) return { icon: "note", path: "/journal?view=weekly" };
     if (title.includes("supervisor assigned") || title.includes("schedule")) return { icon: "calendar", path: "/schedule" };
     if (title.includes("welcome")) return { icon: "home", path: HOME.student };
     if (title.includes("task") || title.includes("revision")) return { icon: "tasks", path: "/task" };
@@ -183,7 +183,7 @@ export const STUDENT_ROUTES: StudentRoute[] = [
   { match: /^task past its deadline|^revisions requested/, icon: "tasks", path: (_item, id) => (id ? spot(`/task?focus=task-${encodeURIComponent(id)}`, `submit-${id}`) : "/task") },
   { match: /^new task assigned|^task updated/, icon: "tasks", path: (_item, id) => (id ? spot(`/task?focus=task-${encodeURIComponent(id)}`, `task-${id}`) : "/task") },
   { match: /^requirement due|^new document required|^document (rejected|returned)/, icon: "document", path: () => spot("/documents", "requirements") },
-  { match: /^weekly report returned/, icon: "note", path: () => spot("/journal", "supervisor-note") },
+  { match: /^weekly report returned/, icon: "note", path: () => spot("/journal?view=weekly", "supervisor-note") },
   // A trainee's appeal lives on its log (pages/student/Appeals.tsx), so it opens there.
   { match: /^appeal decided/, icon: "flag", path: (_item, id) => (id ? `/daily-log?focus=attendance-${encodeURIComponent(id)}` : "/daily-log") },
 ];

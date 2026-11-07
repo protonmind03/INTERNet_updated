@@ -27,7 +27,8 @@ export default function PsuFormSheet({
   className = "",
 }: {
   title: string;
-  form: FormCode;
+  /** The form's code at the top right; none for a page the university has no form for (the monthly report). */
+  form?: FormCode;
   /** The campus name without "Campus". */
   campus?: string;
   /** Shown on screen too (a preview); otherwise only when printed. */
@@ -37,13 +38,15 @@ export default function PsuFormSheet({
 }) {
   return (
     <article className={`psu-form ${onScreen ? "" : "hidden print:block"} ${className}`} aria-label={title}>
-      <p className="psu-form-code">
-        {form.code}
-        <br />
-        {form.rev}
-        <br />
-        {form.date}
-      </p>
+      {form && (
+        <p className="psu-form-code">
+          {form.code}
+          <br />
+          {form.rev}
+          <br />
+          {form.date}
+        </p>
+      )}
       <header className="psu-form-head">
         <span className="psu-form-seal">
           <PsuSeal size={84} clearSpace={false} decorative />

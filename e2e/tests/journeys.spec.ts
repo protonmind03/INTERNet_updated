@@ -132,7 +132,7 @@ test.describe("weekly report", () => {
     const did = `Sorted and encoded delivery receipts for the accounting desk (${Date.now()}).`;
     const studentPage = await (await browser.newContext()).newPage();
     await signIn(studentPage, "student");
-    await studentPage.goto("/journal");
+    await studentPage.goto("/journal?view=weekly");
     await studentPage
       .getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing })
       .first()
@@ -573,10 +573,11 @@ test.describe("what a student reads about their days", () => {
     test.skip(existing?.status === "Reviewed", "This week's report is already reviewed and closed.");
 
     await signIn(page, "student");
-    // Iteration 21: on a phone the weekly report is under the dock's More.
-    await page.getByRole("navigation", { name: "Main" }).getByRole("button", { name: /^More/ }).click();
-    await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: /^Weekly report/ }).click();
+    // Revisions, November 2026: Reports is in the phone's dock; the weekly report is its Weekly part.
+    await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Reports/ }).click();
     await expect(page).toHaveURL(/\/journal$/);
+    await page.getByRole("tab", { name: "Weekly" }).click();
+    await expect(page).toHaveURL(/\/journal\?view=weekly$/);
     await page.getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing }).first().click();
     const form = page.getByRole("dialog");
     await expect(form.getByRole("region", { name: "Daily accomplishments this week" })).toBeVisible();
@@ -1158,7 +1159,7 @@ test.describe("pictures on an entry", () => {
     test.skip(existing?.status === "Reviewed", "The second demo student's report for this week is already reviewed and closed.");
 
     await signIn(page, "student", SECOND_STUDENT);
-    await page.goto("/journal");
+    await page.goto("/journal?view=weekly");
     // A real JPEG, larger than the app keeps, with the kind of block a camera writes into a photo
     // (where it was taken) put in after the first two bytes.
     const drawn = await page.evaluate(() => {

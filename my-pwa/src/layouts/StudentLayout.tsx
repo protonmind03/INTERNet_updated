@@ -12,6 +12,7 @@ import { ConfirmDialog } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { waitingSteps } from "../lib/offlineQueue";
+import { pendingPhotos, usePendingPhotoSender } from "../lib/pendingPhotos";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useSpotlightParam } from "../lib/spotlight";
 import { useWaitingCount } from "../lib/useWaitingCount";
@@ -117,11 +118,17 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
   const [confirmSignOut, setConfirmSignOut] = useState(false);
   // Steps recorded offline and not sent yet. Signing out erases them, so the question says how many there are.
   const [unsent, setUnsent] = useState(0);
+  // Report photos kept on this phone are sent whenever it comes back online, from any page.
+  usePendingPhotoSender();
+  const [unsentPhotos, setUnsentPhotos] = useState(0);
   useEffect(() => {
     if (!confirmSignOut) return;
     let current = true;
     void waitingSteps().then((steps) => {
       if (current) setUnsent(steps.length);
+    });
+    void pendingPhotos().then((photos) => {
+      if (current) setUnsentPhotos(photos.length);
     });
     return () => {
       current = false;
@@ -216,10 +223,12 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
         title="Sign out?"
         message={
           unsent > 0
-            ? `${unsent === 1 ? "1 attendance step you recorded offline has" : `${unsent} attendance steps you recorded offline have`} not been sent yet. Signing out now erases ${unsent === 1 ? "it" : "them"}. To keep ${unsent === 1 ? "it" : "them"}, stay signed in until this phone is connected and ${unsent === 1 ? "it has" : "they have"} been sent.`
-            : "You will need your password to sign in again."
+            ? `${unsent === 1 ? "1 attendance step you recorded offline has" : `${unsent} attendance steps you recorded offline have`} not been sent yet. Signing out now erases ${unsent === 1 ? "it" : "them"}. To keep ${unsent === 1 ? "it" : "them"}, stay signed in until this phone is connected and ${unsent === 1 ? "it has" : "they have"} been sent.${unsentPhotos > 0 ? ` ${unsentPhotos === 1 ? "1 report photo is" : `${unsentPhotos} report photos are`} waiting too.` : ""}`
+            : unsentPhotos > 0
+              ? `${unsentPhotos === 1 ? "1 report photo is" : `${unsentPhotos} report photos are`} saved on this phone and not sent yet. Signing out erases ${unsentPhotos === 1 ? "it" : "them"}: stay signed in until you're back online, or save copies to your phone from Progress reports first.`
+              : "You will need your password to sign in again."
         }
-        confirmLabel={unsent > 0 ? "Sign out and erase" : "Sign out"}
+        confirmLabel={unsent > 0 || unsentPhotos > 0 ? "Sign out and erase" : "Sign out"}
         cancelLabel="Stay signed in"
         tone="danger"
         onConfirm={signOut}

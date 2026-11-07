@@ -14,7 +14,7 @@ import {
 import EntryPictures from "../../components/EntryPictures";
 import PicturePicker from "../../components/PicturePicker";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
-import StudentLayout from "../../layouts/StudentLayout";
+import PracticumWeeklyReport from "./PracticumWeeklyReport";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { MAX_PICTURES, uploadPictures, type PictureDraft } from "../../lib/attachments";
 import { formatDate, formatDateTime } from "../../lib/format";
@@ -74,6 +74,11 @@ function standing(journal: Journal): { label: string; tone: "good" | "waiting" |
   return { label: "Waiting for your supervisor", tone: "waiting" };
 }
 
+/**
+ * The Weekly part of Progress reports (November 2026): the page around it is
+ * pages/student/ProgressReports.tsx. Print gives the whole OJT as the
+ * university's Practicum Weekly Report (FM-AA-INT-19).
+ */
 export default function WeeklyJournal() {
   const student = useAccount("student");
   const studentId = student?.student_id;
@@ -133,11 +138,14 @@ export default function WeeklyJournal() {
   const earlier = journals.filter((item) => item.week_start !== thisWeek);
 
   return (
-    <StudentLayout
-      title="Weekly report"
-      subtitle="Once a week, write what you did, what you learned, and the problems you met. Your supervisor reviews it."
-    >
-      <div className="space-y-5">
+    <>
+      <div className="space-y-5 print:hidden">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-inset ring-(--role-hairline)">
+          <p className="text-[13.5px] text-slate-600">Once a week, write what you did, what you learned and the problems you met. Your supervisor reviews it.</p>
+          <Button variant="secondary" size="sm" icon="printer" disabled={journals.length === 0} onClick={() => window.print()}>
+            Print FM-AA-INT-19
+          </Button>
+        </div>
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <Card>
@@ -212,7 +220,8 @@ export default function WeeklyJournal() {
           }}
         />
       )}
-    </StudentLayout>
+      <PracticumWeeklyReport journals={journals} />
+    </>
   );
 }
 

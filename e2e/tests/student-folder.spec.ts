@@ -29,7 +29,7 @@ const ROUTES: [string, string, Where][] = [
   ["/time-record", "Time record", { menu: "Attendance", tab: "Time record" }],
   ["/task", "Tasks", { menu: "Tasks", tab: "Tasks" }],
   ["/documents", "Documents", { menu: "Tasks", tab: "Documents" }],
-  ["/journal", "Weekly report", { menu: "Tasks", tab: "Reports" }],
+  ["/journal", "Progress reports", { menu: "Tasks", tab: "Reports" }],
   ["/student/completion", "Completion", { menu: "Tasks", tab: "Completion" }],
   ["/messages", "Messages", { menu: "Messages", tab: "Messages" }],
   ["/announcements", "Announcements", { menu: "Announcements", tab: "Announcements" }],

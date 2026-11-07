@@ -30,7 +30,8 @@ import { API_URL, withRoleAuth } from "./api";
 */
 
 export type PictureRole = "student" | "supervisor" | "coordinator";
-export type PictureOwner = "attendance" | "journal" | "complaint";
+/** What a picture belongs to; report_entry is an event on a day's progress report (November 2026). */
+export type PictureOwner = "attendance" | "journal" | "complaint" | "report_entry";
 
 export type Picture = {
   id: number;
@@ -66,6 +67,9 @@ export type PictureDraft = {
   thumb?: Blob;
   /** The id this picture is sent with, so sending it twice keeps it once. */
   ref: string;
+  /** Taken with INTERNet's own camera button, and when (for the album). */
+  capturedInApp?: boolean;
+  takenAt?: string;
 };
 
 function newRef(): string {
@@ -205,7 +209,7 @@ export async function pictureUrl(role: PictureRole, id: number, preview = false)
 export function pictureForm(
   owner: PictureOwner,
   ownerId: number,
-  picture: { file: Blob; thumb?: Blob; width: number; height: number; caption: string; ref: string },
+  picture: { file: Blob; thumb?: Blob; width: number; height: number; caption: string; ref: string; capturedInApp?: boolean; takenAt?: string },
   occurredAt?: string
 ): FormData {
   const form = new FormData();
@@ -215,6 +219,8 @@ export function pictureForm(
   form.append("height", String(picture.height));
   form.append("client_ref", picture.ref);
   if (occurredAt) form.append("occurred_at", occurredAt);
+  if (picture.capturedInApp) form.append("captured_in_app", "true");
+  if (picture.takenAt) form.append("taken_at", picture.takenAt);
   if (picture.caption.trim()) form.append("caption", picture.caption.trim());
   form.append("file", picture.file instanceof File ? picture.file : new File([picture.file], "picture.jpg", { type: picture.file.type || "image/jpeg" }));
   if (picture.thumb) form.append("preview", new File([picture.thumb], "preview.webp", { type: "image/webp" }));

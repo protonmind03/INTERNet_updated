@@ -147,7 +147,7 @@ export function attentionItems({
       urgency: "now",
       when: "Send it again soon",
       why: "That week's days can't be closed until your supervisor reviews the report again.",
-      action: { label: "Edit report", to: "/journal" },
+      action: { label: "Edit report", to: "/journal?view=weekly" },
     });
   }
 

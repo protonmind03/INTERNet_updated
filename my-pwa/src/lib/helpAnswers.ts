@@ -36,7 +36,7 @@ export const SCREEN_NAMES: Record<string, string> = {
   "/schedule": "Schedule",
   "/task": "Tasks",
   "/documents": "Documents",
-  "/journal": "Weekly report",
+  "/journal": "Progress reports",
   "/profile": "Profile",
   "/supervisor/dashboard": "Review",
   "/supervisor/attendance": "Attendance",

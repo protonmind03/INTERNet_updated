@@ -40,6 +40,7 @@ export function useAutosave<T>({
   save,
   enabled = true,
   delay = 1200,
+  start,
 }: {
   role: OfflineRole;
   /** What this form is ("daily-report:2026-11-08"); null while nothing is open. */
@@ -50,6 +51,12 @@ export function useAutosave<T>({
   /** False until the form has its starting value, so the start is not sent back. */
   enabled?: boolean;
   delay?: number;
+  /**
+   * What the server already has, when the form opens with something else
+   * (a day's report filled in from the time-out note): that difference is
+   * then saved at once. Left out, the value the form opens with is the start.
+   */
+  start?: T;
 }): { state: SaveState; message: string; flush: () => Promise<void>; savedAt: Date | null } {
   const [state, setState] = useState<SaveState>("idle");
   const [message, setMessage] = useState("");
@@ -62,7 +69,7 @@ export function useAutosave<T>({
 
   // The value the form opened with is not a change.
   useEffect(() => {
-    baseline.current = enabled ? JSON.stringify(value) : null;
+    baseline.current = enabled ? JSON.stringify(start !== undefined ? start : value) : null;
     void Promise.resolve().then(() => setState("idle"));
     // Only when the form (key) opens or becomes ready, not on every keystroke.
     // eslint-disable-next-line react-hooks/exhaustive-deps

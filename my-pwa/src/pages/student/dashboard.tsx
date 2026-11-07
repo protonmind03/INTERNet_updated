@@ -197,7 +197,7 @@ function DashboardPage() {
     const week = journals.week;
     if (week && !journals.list.some((journal) => journal.week_start === week)) {
       const friday = fridayOf(today);
-      items.push({ key: `report:${week}`, kind: "report", date: friday < today ? today : friday, title: "This week's weekly report", detail: "Write it from your daily reports", to: "/journal", action: "Write report" });
+      items.push({ key: `report:${week}`, kind: "report", date: friday < today ? today : friday, title: "This week's weekly report", detail: "Write it from your daily reports", to: "/journal?view=weekly", action: "Write report" });
     }
     for (const holiday of holidays) {
       const days = daysUntil(holiday.date);
