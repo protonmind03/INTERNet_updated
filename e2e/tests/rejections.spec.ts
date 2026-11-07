@@ -63,13 +63,18 @@ test("a rejected time-in photo: the supervisor's choice, the student's banner, a
     await expect(sp.getByText(/Time-in photo rejected\. .* has been asked to retake it\./)).toBeVisible();
     await supervisorContext.close();
 
-    // The student: a banner on every page, with the deadline and the button.
+    // The student: on Today, an item in "Needs your attention" with the deadline and the button
+    // (revisions, November 2026); on every other page, a banner.
     const studentContext = await browser.newContext();
     const page = await studentContext.newPage();
     await signIn(page, "student", { ...ACCOUNTS.student, email, password: "RejectCheck456!" });
+    const item = page.locator("section.attention-card").getByRole("listitem").filter({ hasText: "Retake your time-in photo" });
+    await expect(item).toContainText("Due before End break");
+    await expect(item).toContainText("The photo is too dark to see your face.");
+    await expect(item.getByRole("button", { name: "Retake now" })).toBeVisible();
+    await page.goto("/task");
     const banner = page.getByRole("status").filter({ hasText: "Retake your time-in photo" });
     await expect(banner).toContainText("due before End break");
-    await expect(banner).toContainText("The photo is too dark to see your face.");
     await expect(banner.getByRole("button", { name: "Retake now" })).toBeVisible();
 
     // An appeal instead, from the Attendance page.

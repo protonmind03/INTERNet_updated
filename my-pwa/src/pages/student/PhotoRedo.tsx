@@ -54,7 +54,7 @@ export function PhotoRedoBanner() {
 
 type Capture = { photo: File; preview: string; report: LivenessReport };
 
-function PhotoRedoDialog({ logId, onClose }: { logId: number; onClose: () => void }) {
+export function PhotoRedoDialog({ logId, onClose }: { logId: number; onClose: () => void }) {
   const { attendance } = useTimeIn();
   const [challenge, setChallenge] = useState<LivenessChallenge | null>(null);
   const [capture, setCapture] = useState<Capture | null>(null);
