@@ -21,6 +21,7 @@
     "@mediapipe/tasks-vision": "0.10.14",
     "@simplewebauthn/browser": "13.3.0",
     "@tailwindcss/vite": "^4.3.3",
+    "docx": "9.5.1",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.8",
     "qrcode": "1.5.4",

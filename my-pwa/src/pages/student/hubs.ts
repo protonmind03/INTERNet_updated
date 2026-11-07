@@ -12,7 +12,7 @@ import { currentEntry } from "../../lib/navMatch";
 | part inside.
 |
 |   Attendance   Days · Schedule · My progress · Time record
-|   Tasks        Tasks · Documents · Reports · Completion (Narrative to come)
+|   Tasks        Tasks · Documents · Reports · Narrative · Completion
 |   Support      Messages · Announcements · Resolution Center
 |
 | Every part keeps its own address, so old links, notifications and Back
@@ -64,6 +64,7 @@ export const HUBS: Hub[] = [
       { label: "Tasks", path: "/task", icon: "tasks", blurb: "Work assigned by your supervisor" },
       { label: "Documents", path: "/documents", icon: "document", blurb: "Requirements to upload and their review" },
       { label: "Reports", path: "/journal", icon: "note", blurb: "Daily, weekly and monthly progress reports" },
+      { label: "Narrative", path: "/student/narrative", icon: "book", blurb: "Your Narrative Report on Internship Training" },
       { label: "Completion", path: "/student/completion", icon: "check-circle", blurb: "What is left before your OJT is done" },
     ],
   },
