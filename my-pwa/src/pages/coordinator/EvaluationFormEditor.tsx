@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { Button, FormError, FormField, Modal } from "../../components/ui";
 import { errorText, toast } from "../../lib/toast";
-import type { EvaluationForm } from "../../lib/useFinalEvaluation";
+import type { EvaluationForm, FormCriterion } from "../../lib/useFinalEvaluation";
 import { coordinatorRequest } from "./request";
 
-type Row = { id: number; label: string; description: string };
+/** A criterion as edited. Weight and rating sentences are optional (PSU's FM-AA-INT-13 has both, November 2026). */
+type Row = { id: number; label: string; description: string; weight: string; levels: string[] };
 
 /**
  * The final evaluation form: its name, the top of the rating scale, and
@@ -23,10 +24,12 @@ export default function EvaluationFormEditor({
   const [name, setName] = useState(form && !form.is_sample ? form.name : "");
   const [scale, setScale] = useState(String(form?.scale_max ?? 5));
   const [rows, setRows] = useState<Row[]>(() =>
-    (form?.criteria ?? [{ label: "", description: "" }]).map((criterion, index) => ({
+    (form?.criteria ?? ([{ key: "", label: "", description: "" }] as FormCriterion[])).map((criterion, index) => ({
       id: index,
       label: criterion.label,
       description: criterion.description,
+      weight: criterion.weight !== undefined ? String(criterion.weight) : "",
+      levels: criterion.levels ?? [],
     }))
   );
   const [nextId, setNextId] = useState(rows.length);
@@ -49,7 +52,12 @@ export default function EvaluationFormEditor({
         body: {
           name,
           scale_max: Number(scale),
-          criteria: criteria.map(({ label, description }) => ({ label, description })),
+          criteria: criteria.map(({ label, description, weight, levels }) => ({
+            label,
+            description,
+            ...(weight.trim() ? { weight: Number(weight) } : {}),
+            ...(levels.length === Number(scale) && levels.every((level) => level.trim()) ? { levels } : {}),
+          })),
         },
       });
       toast.success(data.message);
@@ -140,6 +148,46 @@ export default function EvaluationFormEditor({
                       placeholder="What it means (optional)"
                       className="field"
                     />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-2 text-sm text-slate-700">
+                        Weight
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          min={0}
+                          max={100}
+                          step={0.5}
+                          aria-label={`Weight of criterion ${index + 1}, in percent`}
+                          value={row.weight}
+                          onChange={(event) => change(row.id, { weight: event.target.value })}
+                          placeholder="—"
+                          className="field w-20 py-1.5"
+                        />
+                        %
+                      </label>
+                    </div>
+                    <details className="rounded-lg bg-slate-50 px-3 py-2 text-sm" open={row.levels.length > 0}>
+                      <summary className="cursor-pointer font-medium text-slate-700">A sentence for each rating (optional)</summary>
+                      <ol className="mt-2 space-y-1.5">
+                        {Array.from({ length: Number(scale) }, (_, step) => Number(scale) - step).map((value) => (
+                          <li key={value} className="flex items-start gap-2">
+                            <span className="tabular mt-2 w-5 shrink-0 text-right font-bold text-slate-500">{value}</span>
+                            <input
+                              type="text"
+                              maxLength={300}
+                              aria-label={`Criterion ${index + 1}, rating ${value}`}
+                              value={row.levels[value - 1] ?? ""}
+                              onChange={(event) => {
+                                const levels = Array.from({ length: Number(scale) }, (_, at) => row.levels[at] ?? "");
+                                levels[value - 1] = event.target.value;
+                                change(row.id, { levels });
+                              }}
+                              className="field py-1.5"
+                            />
+                          </li>
+                        ))}
+                      </ol>
+                    </details>
                   </div>
                   <Button
                     variant="secondary"
@@ -162,7 +210,7 @@ export default function EvaluationFormEditor({
             icon="plus"
             disabled={rows.length >= 20}
             onClick={() => {
-              setRows((current) => [...current, { id: nextId, label: "", description: "" }]);
+              setRows((current) => [...current, { id: nextId, label: "", description: "", weight: "", levels: [] }]);
               setNextId((value) => value + 1);
             }}
           >
@@ -171,6 +219,12 @@ export default function EvaluationFormEditor({
         </fieldset>
 
         <p className="text-sm text-slate-500">
+          {(() => {
+            const total = rows.reduce((sum, row) => sum + (Number(row.weight) || 0), 0);
+            return rows.some((row) => row.weight.trim())
+              ? `Weights add up to ${Math.round(total * 10) / 10}%. With every criterion weighted to 100%, supervisors see an OJT grade (points ÷ highest rating × 50 + 50). `
+              : "";
+          })()}
           Evaluations already submitted keep the criteria they were written on.
         </p>
         <FormError message={error} />

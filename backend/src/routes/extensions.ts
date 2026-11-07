@@ -5,6 +5,7 @@ import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
 import { loadCatalogue, resolvePlacement } from "../services/academics";
 import { phClock, phSql, phToday } from "../services/phTime";
+import { isWeighted, ojtGrade, readGrading, readOutcome, type GradedCriterion } from "../services/evaluationGrade";
 import { readReleaseDay, released, scheduledLater } from "../services/taskRelease";
 import { deleteKeeping } from "../services/removedRecords";
 import { appliesTo, oneOff, syncItemWithDocument } from "../services/deliverables";
@@ -3571,12 +3572,15 @@ export function registerExtensionRoutes(
   |
   */
 
-  type FormCriterion = { key: string; label: string; description: string };
+  // Since November 2026 (migration 074) a criterion may carry a weight and a
+  // sentence for each rating, as PSU's FM-AA-INT-13 does; a weighted form
+  // gives an OJT grade (services/evaluationGrade.ts).
+  type FormCriterion = GradedCriterion;
 
   const FORM_COLUMNS = `f.id, f.name, f.scale_max, f.criteria, f.is_sample, f.created_at`;
   const FINAL_COLUMNS = `
     e.id, e.student_id, e.form_snapshot, e.supervisor_name, e.ratings,
-    e.average::float AS average, e.remarks, e.submitted_at, e.updated_at
+    e.average::float AS average, e.grade::float AS grade, e.outcome, e.remarks, e.submitted_at, e.updated_at
   `;
 
   const activeForm = () =>
@@ -3627,7 +3631,14 @@ export function registerExtensionRoutes(
         if (criteria.some((other) => other.label.toLowerCase() === label.toLowerCase())) {
           return res.status(400).json({ message: `"${label}" is on the form twice.` });
         }
-        criteria.push({ key: `c${index + 1}`, label, description });
+        const grading = readGrading(item, label, scale);
+        if ("problem" in grading) return res.status(400).json({ message: grading.problem });
+        criteria.push({ key: `c${index + 1}`, label, description, ...grading });
+      }
+      // Weights are all or nothing, and add up to 100.
+      const weighted = criteria.filter((criterion) => criterion.weight !== undefined).length;
+      if (weighted > 0 && (weighted < criteria.length || !isWeighted(criteria))) {
+        return res.status(400).json({ message: "Give every criterion a weight, adding up to 100%, or give none." });
       }
 
       const client = await pool.connect();
@@ -3744,15 +3755,18 @@ export function registerExtensionRoutes(
       if (remarks.length < 10 || remarks.length > 2000) {
         return res.status(400).json({ message: "Write your overall remarks (10 to 2000 characters)." });
       }
+      const outcome = readOutcome(req.body?.outcome);
+      if ("problem" in outcome) return res.status(400).json({ message: outcome.problem });
       const values = Object.values(ratings);
       const average = Math.round((values.reduce((sum, value) => sum + value, 0) / values.length) * 100) / 100;
+      const graded = ojtGrade(form.criteria, ratings, form.scale_max);
       const snapshot = { name: form.name, scale_max: form.scale_max, criteria: form.criteria };
 
       const result = await pool.query(
         `
         INSERT INTO final_evaluations AS e
-          (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks)
-        VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7, $8)
+          (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks, grade, outcome)
+        VALUES ($1, $2, $3::jsonb, $4, $5, $6::jsonb, $7, $8, $9, $10::jsonb)
         ON CONFLICT (student_id) DO UPDATE
           SET form_id = EXCLUDED.form_id,
               form_snapshot = EXCLUDED.form_snapshot,
@@ -3761,19 +3775,26 @@ export function registerExtensionRoutes(
               ratings = EXCLUDED.ratings,
               average = EXCLUDED.average,
               remarks = EXCLUDED.remarks,
+              grade = EXCLUDED.grade,
+              outcome = EXCLUDED.outcome,
               updated_at = NOW()
         RETURNING ${FINAL_COLUMNS}, (e.submitted_at = e.updated_at) AS is_new
         `,
-        [id, form.id, JSON.stringify(snapshot), auth.id, owner.rows[0].supervisor_name, JSON.stringify(ratings), average, remarks]
+        [
+          id, form.id, JSON.stringify(snapshot), auth.id, owner.rows[0].supervisor_name, JSON.stringify(ratings), average, remarks,
+          graded?.grade ?? null, JSON.stringify(outcome),
+        ]
       );
       const { is_new: isNew, ...evaluation } = result.rows[0];
+      const score = graded ? `an OJT grade of ${graded.grade.toFixed(2)}` : `${average} out of ${form.scale_max} on average`;
 
       await quietly("FINAL EVALUATION NOTIFICATION ERROR", async () => {
         await createNotification({
           studentId: id,
-          link: "/student/feedback",
+          // The Resolution Center's Internship evaluation (November 2026).
+          link: "/student/resolution?tab=evaluation",
           title: isNew ? "Final evaluation submitted" : "Final evaluation updated",
-          message: `${owner.rows[0].supervisor_name} ${isNew ? "submitted" : "updated"} your final evaluation: ${average} out of ${form.scale_max} on average.`,
+          message: `${owner.rows[0].supervisor_name} ${isNew ? "submitted" : "updated"} your final evaluation: ${score}.`,
           type: "evaluation",
         });
         if (isNew) {
@@ -3781,7 +3802,7 @@ export function registerExtensionRoutes(
             entity: { type: "student", id },
             link: `/coordinator/students/${encodeURIComponent(id)}`,
             title: "Final evaluation submitted",
-            message: `${owner.rows[0].supervisor_name} submitted the final evaluation of ${owner.rows[0].name}: ${average} out of ${form.scale_max} on average.`,
+            message: `${owner.rows[0].supervisor_name} submitted the final evaluation of ${owner.rows[0].name}: ${score}.`,
             type: "info",
           });
         }

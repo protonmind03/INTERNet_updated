@@ -3956,7 +3956,11 @@ test("the evaluation form is read by everyone signed in and changed only by the 
     assert.ok(body.form, "there is a form to fill in");
     assert.ok(body.form.criteria.length >= 2);
     assert.equal(typeof body.form.is_sample, "boolean");
-    for (const criterion of body.form.criteria) assert.deepEqual(Object.keys(criterion).sort(), ["description", "key", "label"]);
+    // Since November 2026 a criterion may also carry a weight and a sentence per rating (FM-AA-INT-13).
+    for (const criterion of body.form.criteria) {
+      for (const key of ["description", "key", "label"]) assert.ok(key in criterion, key);
+      for (const key of Object.keys(criterion)) assert.ok(["description", "key", "label", "weight", "levels"].includes(key), key);
+    }
   }
   const save = (body, token = coordinatorToken) => jsonRequest("/api/coordinator/evaluation-form", jsonBody(token, "PUT", body));
   const good = { name: "Final evaluation", scale_max: 5, criteria: [{ label: "Quality of work", description: "" }, { label: "Conduct", description: "" }] };
@@ -4037,7 +4041,7 @@ test("a final evaluation rates every criterion once per student and keeps the fo
     const download = await jsonRequest(`/api/students/${id}/data-export`, { headers: authHeaders(studentToken) });
     assert.equal(download.body.final_evaluation.remarks, "Reliable and quick to learn.");
     const notes = await jsonRequest(`/api/notifications/student/${id}`, { headers: authHeaders(studentToken) });
-    assert.equal(notes.body.notifications.find((item) => item.title === "Final evaluation submitted")?.link, "/student/feedback");
+    assert.equal(notes.body.notifications.find((item) => item.title === "Final evaluation submitted")?.link, "/student/resolution?tab=evaluation");
 
     // The coordinator changes the form: a new one is in use, no longer a sample; the evaluation keeps its own.
     const saved = await jsonRequest("/api/coordinator/evaluation-form", jsonBody(coordinatorToken, "PUT", {
@@ -12879,4 +12883,61 @@ test("daily and monthly progress reports and the narrative's parts: the trainee'
   assert.equal(part.body.part.text, "To my family.");
   const read = await jsonRequest(`/api/students/${id}/narrative`, { headers: authHeaders(coordinatorToken) });
   assert.equal(read.body.parts.dedication.text, "To my family.");
+});
+
+test("a weighted form (FM-AA-INT-13) is checked when saved, and a final evaluation on it gets the OJT grade", async (t) => {
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const supervisor = await supervisorSession();
+  const pool = localTestPool();
+  const formsBefore = (await pool.query(`SELECT id, is_active FROM evaluation_forms ORDER BY id`)).rows;
+  const kept = (await pool.query(`SELECT * FROM final_evaluations WHERE student_id = $1`, [student.student_id])).rows[0];
+  const save = (body) => jsonRequest("/api/coordinator/evaluation-form", jsonBody(coordinatorToken, "PUT", body));
+  const levels = ["One.", "Two.", "Three.", "Four.", "Five."];
+  const weighted = (weights) => ({
+    name: "Weighted test form",
+    scale_max: 5,
+    criteria: weights.map((weight, index) => ({ label: `Competency ${index + 1}`, description: "", weight, levels })),
+  });
+  try {
+    // Weights add up to 100, or are left out altogether; one sentence per rating.
+    assert.equal((await save(weighted([50, 40]))).response.status, 400, "adds up to 90");
+    assert.equal((await save({ ...weighted([50, 50]), criteria: [{ label: "With", weight: 50 }, { label: "Without" }] })).response.status, 400, "only some weighted");
+    assert.equal((await save({ ...weighted([50, 50]), criteria: [{ label: "Short", weight: 50, levels: ["One."] }, { label: "Other", weight: 50 }] })).response.status, 400, "too few sentences");
+    assert.equal((await save(weighted([0, 100]))).response.status, 400, "a weight of 0");
+    // The university's weights.
+    const form = await save(weighted([10, 15, 10, 10, 20, 10, 15, 10]));
+    assert.equal(form.response.status, 200, JSON.stringify(form.body));
+    assert.equal(form.body.form.criteria[4].weight, 20);
+    assert.deepEqual(form.body.form.criteria[0].levels, levels);
+
+    // All 4 but the third (Conduct on the paper form), rated 5: 4.1 points and a grade of 91, as on the filled-in form.
+    const id = encodeURIComponent(student.student_id);
+    const ratings = Object.fromEntries(form.body.form.criteria.map((criterion, index) => [criterion.key, index === 2 ? 5 : 4]));
+    const sent = await jsonRequest(`/api/final-evaluations/${id}`, jsonBody(supervisor.token, "PUT", {
+      form_id: form.body.form.id,
+      ratings,
+      remarks: "Reliable and quick to learn.",
+      outcome: { employ: true, terminated: [] },
+    }));
+    assert.ok([200, 201].includes(sent.response.status), JSON.stringify(sent.body));
+    assert.equal(sent.body.evaluation.grade, 91);
+    assert.equal(sent.body.evaluation.outcome.employ, true);
+    assert.equal((await jsonRequest(`/api/final-evaluations/${id}`, jsonBody(supervisor.token, "PUT", {
+      form_id: form.body.form.id, ratings, remarks: "Reliable and quick to learn.", outcome: { terminated: ["Not a reason on the form"] },
+    }))).response.status, 400);
+  } finally {
+    await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [student.student_id]);
+    if (kept) {
+      await pool.query(
+        `INSERT INTO final_evaluations (id, student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks, submitted_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+        [kept.id, kept.student_id, kept.form_id, kept.form_snapshot, kept.supervisor_id, kept.supervisor_name, kept.ratings, kept.average, kept.remarks, kept.submitted_at, kept.updated_at]
+      );
+    }
+    await pool.query(`DELETE FROM evaluation_forms WHERE id <> ALL($1::int[])`, [formsBefore.map((row) => row.id)]);
+    for (const row of formsBefore) await pool.query(`UPDATE evaluation_forms SET is_active = $2 WHERE id = $1`, [row.id, row.is_active]);
+  }
 });

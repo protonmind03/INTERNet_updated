@@ -2,7 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import { API_URL, withRoleAuth } from "./api";
 import type { OfflineRole } from "./offlineStore";
 
-export type FormCriterion = { key: string; label: string; description: string };
+/**
+ * A criterion of the form. Since November 2026 it may carry a weight (its
+ * share, in percent) and a sentence for each rating, from 1 up, as PSU's
+ * FM-AA-INT-13 does (lib/ojtGrade.ts).
+ */
+export type FormCriterion = { key: string; label: string; description: string; weight?: number; levels?: string[] };
 
 /** The form the supervisor fills in, as the coordinator keeps it. */
 export type EvaluationForm = {
@@ -22,6 +27,10 @@ export type FinalEvaluation = {
   supervisor_name: string;
   ratings: Record<string, number>;
   average: number;
+  /** The OJT grade, when the form is weighted. */
+  grade?: number | null;
+  /** The boxes at the foot of the form. */
+  outcome?: { employ?: boolean; improve?: boolean; terminated?: string[]; other?: string };
   remarks: string;
   submitted_at: string;
   updated_at: string;

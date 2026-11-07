@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
 import PsuFormSheet, { FormField } from "../../components/PsuFormSheet";
@@ -13,6 +13,8 @@ import { FEEDBACK_CHOICES, FEEDBACK_CRITERIA, traineeRecord, type FeedbackForm }
 import { useTimeRecordHeader } from "../../lib/timeRecordHeader";
 import { toast } from "../../lib/toast";
 import SubTabs from "./SubTabs";
+import { useTimeIn } from "./timeInContext";
+import { logDateKey } from "./useAttendance";
 
 /*
 |--------------------------------------------------------------------------
@@ -321,8 +323,10 @@ function FeedbackFormPanel() {
 function SupervisorEvaluationPanel() {
   const student = useAccount("student");
   const final = useFinalEvaluation("student", student?.student_id);
+  const header = useTimeRecordHeader("student", student?.student_id, null);
+  const { attendance } = useTimeIn();
   const evaluation = final.evaluation;
-  const body = useMemo(() => (evaluation ? <FinalEvaluationView evaluation={evaluation} /> : null), [evaluation]);
+  const worked = attendance.logs.filter((log) => log.time_in).map(logDateKey).sort();
   if (!final.loaded) return <SkeletonRows rows={4} />;
   if (!evaluation) {
     return (
@@ -337,8 +341,28 @@ function SupervisorEvaluationPanel() {
   }
   return (
     <Card>
-      <CardHeader icon="star" title="Internship Evaluation Form" description="PSU form FM-AA-INT-13, filled in by your supervisor" />
-      <div className="border-t border-(--role-hairline) px-4 py-4 sm:px-5">{body}</div>
+      <CardHeader
+        icon="star"
+        title="Internship Evaluation Form"
+        description="PSU form FM-AA-INT-13, filled in by your supervisor"
+        action={
+          <Button variant="secondary" size="sm" icon="printer" onClick={() => window.print()}>
+            Print
+          </Button>
+        }
+      />
+      <div className="border-t border-(--role-hairline) px-4 py-4 sm:px-5">
+        <FinalEvaluationView
+          evaluation={evaluation}
+          printable={{
+            name: header?.trainee.name ?? student?.name ?? "",
+            company: header?.trainee.company ?? student?.company ?? "",
+            started: worked[0],
+            ended: worked[worked.length - 1],
+            campus: header?.institution.campus_name,
+          }}
+        />
+      </div>
     </Card>
   );
 }
