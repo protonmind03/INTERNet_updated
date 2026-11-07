@@ -12781,3 +12781,102 @@ test("the Concerns page's status tiles: one count for each status, for the same 
   assert.equal(none.body.counts.all, 0);
   assert.equal((await jsonRequest("/api/coordinator/complaints/counts", { headers: authHeaders(studentToken) })).response.status, 403);
 });
+
+/*
+| Revisions, November 2026: the trainee's own record (routes/traineeRecord.ts,
+| migration 073). The Student-Intern's Feedback Form, daily and monthly
+| progress reports with events, and the narrative report's written parts.
+| The trainee writes only their own; their supervisor and coordinators read.
+*/
+
+test("the trainee's feedback form (FM-AA-INT-20) is their own, rated 1 to 5, and submitted only when complete", async (t) => {
+  const id = encodeURIComponent(student.student_id);
+  const path = `/api/students/${id}/feedback-form`;
+  const read = await jsonRequest(`/api/students/${id}/feedback-form`, { headers: authHeaders(studentToken) });
+  assert.equal(read.response.status, 200);
+  assert.equal(read.body.criteria.length, 7);
+  assert.equal(read.body.scale[5], "Strongly Agree");
+  // Only the trainee writes it, and only their own; no one else reads another's.
+  assert.equal((await jsonRequest(path, { method: "PUT" })).response.status, 401);
+  assert.equal((await jsonRequest(path, jsonBody(coordinatorToken, "PUT", { ratings: {} }))).response.status, 403);
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/feedback-form", jsonBody(studentToken, "PUT", { ratings: {} }))).response.status, 403);
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/feedback-form", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(path, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+  // What is checked before anything is saved.
+  for (const bad of [{ ratings: { aligned: 6 } }, { ratings: { nothing: 3 } }, { ratings: { aligned: 2.5 } }, { ratings: {}, problems_met: "x".repeat(3001) }]) {
+    assert.equal((await jsonRequest(path, jsonBody(studentToken, "PUT", bad))).response.status, 400, JSON.stringify(bad).slice(0, 60));
+  }
+  assert.equal((await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: { aligned: 5 }, submit: true }))).response.status, 400, "not every statement is rated");
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to save a form on a throwaway database");
+    return;
+  }
+  const draft = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: { aligned: 5, challenging: 4 }, problems_met: "  Slow internet in the office. " }));
+  assert.equal(draft.response.status, 200);
+  assert.equal(draft.body.form.problems_met, "Slow internet in the office.");
+  const all = Object.fromEntries(read.body.criteria.map((criterion) => [criterion.key, 4]));
+  const sent = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: all, submit: true }));
+  assert.equal(sent.response.status, 200);
+  assert.ok(sent.body.form.submitted_at, "submitted once complete");
+  // Still editable after; the submission date stays.
+  const again = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: { ...all, safety: 5 } }));
+  assert.equal(again.body.form.submitted_at, sent.body.form.submitted_at);
+  assert.equal(again.body.form.ratings.safety, 5);
+});
+
+test("daily and monthly progress reports and the narrative's parts: the trainee's own, checked, and readable by the coordinator", async (t) => {
+  const id = encodeURIComponent(student.student_id);
+  const day = "2020-01-08";
+  const list = await jsonRequest(`/api/students/${id}/daily-reports?from=2020-01-01&to=2020-01-31`, { headers: authHeaders(studentToken) });
+  assert.equal(list.response.status, 200);
+  assert.ok(Array.isArray(list.body.reports));
+  assert.ok(Array.isArray(list.body.closed_weeks));
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports`, { headers: authHeaders(coordinatorToken) })).response.status, 200);
+  assert.equal((await jsonRequest("/api/students/SOMEONE-ELSE/daily-reports", { headers: authHeaders(studentToken) })).response.status, 403);
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports?from=2020-02-01&to=2020-01-01`, { headers: authHeaders(studentToken) })).response.status, 400);
+  // Writing: only the trainee, a real day not in the future, and text within limits.
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports/${day}`, jsonBody(coordinatorToken, "PUT", { summary: "x" }))).response.status, 403);
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports/2020-02-30`, jsonBody(studentToken, "PUT", { summary: "x" }))).response.status, 400);
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports/2999-01-01`, jsonBody(studentToken, "PUT", { summary: "x" }))).response.status, 409);
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports/${day}`, jsonBody(studentToken, "PUT", { summary: "x".repeat(5001) }))).response.status, 400);
+  assert.equal((await jsonRequest(`/api/students/${id}/daily-reports/${day}/entries`, jsonBody(studentToken, "POST", { title: "Event", happened_at: "25:00" }))).response.status, 400);
+  assert.equal((await jsonRequest(`/api/students/${id}/report-entries/999999999`, jsonBody(studentToken, "PUT", { title: "x" }))).response.status, 404);
+  assert.equal((await jsonRequest(`/api/students/${id}/report-entries/999999999`, { method: "DELETE", headers: authHeaders(studentToken) })).response.status, 404);
+  assert.equal((await jsonRequest(`/api/students/${id}/monthly-reports`, { headers: authHeaders(studentToken) })).response.status, 200);
+  assert.equal((await jsonRequest(`/api/students/${id}/monthly-reports/2020-13`, jsonBody(studentToken, "PUT", { summary: "x" }))).response.status, 400);
+  assert.equal((await jsonRequest(`/api/students/${id}/monthly-reports/2999-01`, jsonBody(studentToken, "PUT", { summary: "x" }))).response.status, 409);
+  const narrative = await jsonRequest(`/api/students/${id}/narrative`, { headers: authHeaders(studentToken) });
+  assert.equal(narrative.response.status, 200);
+  assert.ok(narrative.body.keys.includes("dedication"));
+  assert.equal((await jsonRequest(`/api/students/${id}/narrative/not-a-part`, jsonBody(studentToken, "PUT", { text: "x" }))).response.status, 404);
+  assert.equal((await jsonRequest(`/api/students/${id}/narrative/dedication`, jsonBody(coordinatorToken, "PUT", { text: "x" }))).response.status, 403);
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to write reports on a throwaway database");
+    return;
+  }
+  const saved = await jsonRequest(`/api/students/${id}/daily-reports/${day}`, jsonBody(studentToken, "PUT", { summary: "Encoded index cards." }));
+  assert.equal(saved.response.status, 200);
+  assert.equal(saved.body.report.report_date, day);
+  const added = await jsonRequest(`/api/students/${id}/daily-reports/${day}/entries`, jsonBody(studentToken, "POST", { title: "Library event", details: "Helped at registration.", happened_at: "14:30" }));
+  assert.equal(added.response.status, 201);
+  assert.equal(added.body.entry.happened_at, "14:30");
+  assert.equal(added.body.entry.pictures, 0);
+  const entryId = added.body.entry.id;
+  const changed = await jsonRequest(`/api/students/${id}/report-entries/${entryId}`, jsonBody(studentToken, "PUT", { title: "Library event", details: "Registration and ushering." }));
+  assert.equal(changed.body.entry.details, "Registration and ushering.");
+  const month = await jsonRequest(`/api/students/${id}/daily-reports?from=2020-01-01&to=2020-01-31`, { headers: authHeaders(coordinatorToken) });
+  const report = month.body.reports.find((item) => item.report_date === day);
+  assert.equal(report.summary, "Encoded index cards.");
+  assert.ok(report.entries.some((entry) => entry.id === entryId));
+  assert.equal((await jsonRequest(`/api/students/${id}/report-entries/${entryId}`, { method: "DELETE", headers: authHeaders(studentToken) })).response.status, 200);
+  const after = await jsonRequest(`/api/students/${id}/daily-reports?from=2020-01-01&to=2020-01-31`, { headers: authHeaders(studentToken) });
+  assert.ok(!after.body.reports.find((item) => item.report_date === day).entries.some((entry) => entry.id === entryId), "a removed event is off the day");
+  const monthly = await jsonRequest(`/api/students/${id}/monthly-reports/2020-01`, jsonBody(studentToken, "PUT", { summary: "A month at the library.", highlights: "The reading event." }));
+  assert.equal(monthly.response.status, 200);
+  assert.equal(monthly.body.month.month, "2020-01");
+  const part = await jsonRequest(`/api/students/${id}/narrative/dedication`, jsonBody(studentToken, "PUT", { text: "To my family." }));
+  assert.equal(part.response.status, 200);
+  assert.equal(part.body.part.text, "To my family.");
+  const read = await jsonRequest(`/api/students/${id}/narrative`, { headers: authHeaders(coordinatorToken) });
+  assert.equal(read.body.parts.dedication.text, "To my family.");
+});

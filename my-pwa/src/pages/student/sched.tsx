@@ -33,12 +33,15 @@ import { formatPh } from "../../lib/phTime";
 import { patternWeek } from "../../lib/schedulePattern";
 import { weeklyShiftHours, type ShiftPattern } from "../../lib/studentCalendar";
 
-/** The page's three views. The one shown is in the address, so Back returns to it. */
+/**
+ * The page's three views. The one shown is in the address, so Back returns to it.
+ * Since November 2026 "My progress" is its own tab of the Attendance folder
+ * (pages/student/hubs.ts), so the switcher offers only Week and Month.
+ */
 type View = "week" | "month" | "progress";
 const VIEWS: readonly { value: View; label: string }[] = [
   { value: "week", label: "Week" },
   { value: "month", label: "Month" },
-  { value: "progress", label: "My progress" },
 ];
 
 type Absence = { date: string; status: string; reason?: string | null };
@@ -245,11 +248,14 @@ export default function OjtSchedule() {
   const [patternHelp, setPatternHelp] = useState(false);
 
   return (
-    <StudentLayout title="Schedule" subtitle="Your OJT days, what happened on each, and how you are getting on.">
+    <StudentLayout
+      title={view === "progress" ? "My progress" : "Schedule"}
+      subtitle={view === "progress" ? "Your hours, milestones and pace" : "Your OJT days, and what happened on each."}
+    >
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
-        <div>
+        <div hidden={view === "progress"}>
           <FilterChips
             label="View"
             value={view}

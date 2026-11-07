@@ -216,12 +216,8 @@ body {
   padding-top: var(--inb-top-inset);
 }
 
-/* The floating next-step button rests just above the tab bar (or the safe area). */
-.float-fab {
-  bottom: calc(var(--inb-bottom-bar) + 1rem);
-}
-
-/* The push prompt rests above that button when it shows, else where it would be. */
+/* The push prompt rests above the tab bar. --inb-fab stays 0 since the trainee's floating
+   button gave way to the header's Scan button (November 2026); kept for any later one. */
 .float-card {
   bottom: calc(var(--inb-bottom-bar) + var(--inb-fab) + 1rem);
 }
@@ -595,3 +591,31 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
 .rk-counting[open] .rk-counting-caret { transform: rotate(180deg); }
 .rk-counting-caret { transition: transform 180ms; }
 .rk-countdown { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 9999px; background: var(--rk-soft); color: var(--rk); font-size: 12px; font-weight: 700; box-shadow: inset 0 0 0 1px var(--rk-line); white-space: nowrap; }
+
+/*
+| PSU forms as printed (components/PsuFormSheet.tsx, November 2026): black on
+| white, Arial-like, ruled boxes, the form code at the top right, as on the
+| university's own forms.
+*/
+.psu-form { position: relative; color: #000; background: #fff; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; font-size: 11pt; line-height: 1.3; }
+.psu-form + .psu-form { break-before: page; }
+.psu-form-code { position: absolute; top: 0; right: 0; margin: 0; text-align: right; font-size: 8pt; font-style: italic; font-weight: 700; line-height: 1.25; }
+.psu-form-head { display: flex; align-items: center; gap: 14px; border: 1.5px solid #000; border-bottom: 0; padding: 8px 10px; margin-top: 34px; }
+.psu-form-seal { flex-shrink: 0; }
+.psu-form-titles { display: flex; flex: 1; flex-direction: column; align-items: center; text-align: center; }
+.psu-form-title { font-size: 19pt; font-weight: 800; letter-spacing: 0.01em; text-transform: uppercase; }
+.psu-form-university { font-size: 9pt; letter-spacing: 0.02em; }
+.psu-form-campus { font-size: 9pt; }
+.psu-form table { width: 100%; border-collapse: collapse; }
+.psu-form th, .psu-form td { border: 1px solid #000; padding: 4px 6px; vertical-align: top; text-align: left; }
+.psu-form-label { width: 26%; font-weight: 400; text-transform: uppercase; font-size: 9.5pt; }
+.psu-form-value { font-weight: 400; text-transform: uppercase; font-size: 10pt; }
+.psu-form-box { border: 1.5px solid #000; border-top: 0; padding: 6px 10px; min-height: 2.4in; }
+.psu-form-box h3 { margin: 0 0 4px; font-size: 10pt; font-weight: 800; text-transform: uppercase; }
+.psu-form-sign { border: 1.5px solid #000; border-top: 0; padding: 18px 10px 12px; text-align: center; font-size: 10pt; }
+.psu-form-line { display: inline-block; min-width: 2.8in; border-bottom: 1px solid #000; padding-bottom: 2px; }
+.psu-form-check { text-align: center !important; font-size: 13pt; }
+@media print {
+  @page { margin: 12mm; }
+  .psu-form { font-size: 10.5pt; }
+}

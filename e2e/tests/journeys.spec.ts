@@ -71,10 +71,10 @@ test.describe("time-in", () => {
   });
 });
 
-test.describe("the floating next-step button", () => {
+test.describe("the Scan button", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone it is on Tasks and Attendance, not on Today (the time card is there), and opens the time-in dialog", async ({ page }) => {
+  test("on a phone it is in the header of every page, says the next step, and opens the time-in dialog at once", async ({ page }) => {
     const student = await apiSession("student");
     const log = await api<{ attendance: { date: string }[] }>(
       student.token,
@@ -93,41 +93,27 @@ test.describe("the floating next-step button", () => {
     );
 
     await signIn(page, "student");
-    const main = page.getByRole("navigation", { name: "Main" });
-    const button = page.locator("button.float-fab");
-    // Today carries the step on its time card, so the button stays away (PSU redesign 7).
-    await expect(page.getByRole("button", { name: "Time in", exact: true })).toBeVisible();
-    await expect(button).toHaveCount(0);
+    // Revisions, November 2026: the header's Scan button replaced the floating one. On a phone it is the day's next step.
+    await expect(page.locator("button.float-fab")).toHaveCount(0);
+    const scan = page.locator("[data-testid=scan-button]:visible");
+    for (const path of ["/task", "/daily-log", "/student/dashboard"]) {
+      await page.goto(path);
+      await expect(scan).toBeVisible();
+      await expect(scan).toHaveAccessibleName(/^Time in/);
+    }
+    // In the header, beside the bell.
+    const box = (await scan.boundingBox())!;
+    expect(box.y).toBeLessThan(120);
 
-    await main.getByRole("link", { name: "Tasks" }).click();
-    await expect(page).toHaveURL(/\/task$/);
-    await expect(button).toBeVisible();
-    await expect(button).toHaveAccessibleName(/^Time in, opens the camera check/);
-    // 56 px tall, in the bottom right corner, above the dock (Iteration 21).
-    const box = (await button.boundingBox())!;
-    const screen = page.viewportSize()!;
-    expect(box.height).toBe(56);
-    expect(box.x + box.width).toBeGreaterThan(390 - 24);
-    expect(box.y + box.height).toBeLessThanOrEqual(screen.height - 16);
-
-    // Attendance no longer has the time card, so the button is there too.
-    await main.getByRole("link", { name: "Attendance" }).click();
-    await expect(page).toHaveURL(/\/daily-log$/);
-    await expect(button).toBeVisible();
-
-    // Iteration 21: the first tap opens it into "Time in · Tap again"; the second acts.
-    await button.click();
-    await expect(button).toHaveAttribute("aria-expanded", "true");
-    await expect(button).toContainText("Tap again");
-    await button.click();
+    // One tap opens the step: there is no first tap that only opens a pill.
+    await page.goto("/task");
+    await scan.click();
     if (!privacy.body.current) {
       const notice = page.getByRole("dialog", { name: "Privacy notice" });
       await expect(notice).toBeVisible();
       await notice.getByRole("button", { name: "I agree" }).click();
     }
     await expect(page.getByRole("dialog", { name: "Time in" })).toBeVisible();
-    // A dialog is open: the button is out of its way.
-    await expect(button).toHaveCount(0);
   });
 });
 

@@ -30,3 +30,7 @@ internet-brand-kit*/
 # The PSU redesign drop folder: its boards and original artwork stay local; the shipped marks live in my-pwa/public/brand/psu
 internet-revisions/design/
 internet-revisions/assets/
+
+# Photos of real PSU forms filled in by students (personal and health data, RA 10173). Reference only.
+Docu-*/
+INTERNet_Revisions-Enhancements.docx

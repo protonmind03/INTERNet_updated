@@ -289,6 +289,27 @@ const PATHS = {
   chat: <path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.4A7.5 7.5 0 1 1 20 11.5Z" />,
   "chevrons-left": <path d="m11 17-5-5 5-5M18 17l-5-5 5-5" />,
   "chevrons-right": <path d="m13 17 5-5-5-5M6 17l5-5-5-5" />,
+  // Revisions 2026-11: the header's Scan button, the folders, the album and the narrative report.
+  scan: (
+    <>
+      <path d="M4 8V5.5A1.5 1.5 0 0 1 5.5 4H8M16 4h2.5A1.5 1.5 0 0 1 20 5.5V8M20 16v2.5a1.5 1.5 0 0 1-1.5 1.5H16M8 20H5.5A1.5 1.5 0 0 1 4 18.5V16" />
+      <path d="M8 9h3v3H8zM13 9h3M13 12h1M16 12v3M8 15h5" />
+    </>
+  ),
+  folder: <path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V18a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />,
+  album: (
+    <>
+      <rect x="6.5" y="3" width="14.5" height="14.5" rx="2" />
+      <path d="M3 7v12a2 2 0 0 0 2 2h12" />
+      <path d="m6.5 14 3.6-3.6a1.2 1.2 0 0 1 1.7 0l4.2 4.2M14.5 8.6h.01" />
+    </>
+  ),
+  book: (
+    <>
+      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
+      <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8.5 7.5h7M8.5 11h5" />
+    </>
+  ),
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof PATHS;

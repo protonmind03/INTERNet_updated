@@ -48,6 +48,7 @@ import { projectionsChanged } from "./services/projection";
 import { staleDecision } from "./services/versions";
 import { readRange } from "./services/analyticsRange";
 import { registerDeliverableRoutes } from "./routes/deliverables";
+import { registerTraineeRecordRoutes } from "./routes/traineeRecord";
 import {
   appliesTo,
   attachItem,
@@ -10374,6 +10375,8 @@ registerPasskeyRoutes(app, { pool, requireRole });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
+// Revisions, November 2026: the trainee's feedback form, progress reports and narrative drafts.
+registerTraineeRecordRoutes(app, { pool, requireRole });
 
 registerExtensionRoutes(app, {
   pool,

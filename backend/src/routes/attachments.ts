@@ -19,7 +19,10 @@ import { offlineMaxAgeHoursFor, CLOCK_SKEW_MS } from "../services/offlineActions
 |--------------------------------------------------------------------------
 |
 | Up to three pictures on the note written at time-out (an attendance
-| log), on a weekly report (a journal) and on a concern (a complaint).
+| log), on a weekly report (a journal), on a concern (a complaint) and,
+| since November 2026, on an event added to a day's progress report (a
+| report_entry, migration 073). A picture taken with the app's own camera
+| says so (captured_in_app, taken_at), for the trainee's album.
 | Migration 050 has the table.
 |
 | WHO MAY ADD ONE: whoever wrote the entry, and only while it can still
@@ -65,7 +68,7 @@ export const PREVIEW_SIDE = 480;
 const CLIENT_REF = /^[A-Za-z0-9-]{8,64}$/;
 const CAPTION_MAX = 200;
 
-type OwnerType = "attendance" | "journal" | "complaint";
+type OwnerType = "attendance" | "journal" | "complaint" | "report_entry";
 type Auth = { role: "student" | "supervisor" | "coordinator"; id: string };
 type Authed = express.Request & { auth?: Auth };
 
@@ -111,6 +114,17 @@ export function lateProblem(
   return null;
 }
 
+/**
+ * When the app says a picture was taken (with its own camera, November 2026),
+ * or null: an unreadable time, or one in the future, is not kept.
+ */
+export function takenAt(value: unknown, now: Date = new Date()): string | null {
+  if (typeof value !== "string" || value === "") return null;
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime()) || when.getTime() > now.getTime() + CLOCK_SKEW_MS) return null;
+  return when.toISOString();
+}
+
 /** The entry a picture hangs on, as far as access is concerned. */
 type Entry = {
   /** The student the entry belongs to; null for a concern a supervisor filed. */
@@ -127,7 +141,7 @@ const whole = (value: unknown): number | null =>
   /^[0-9]{1,9}$/.test(String(value ?? "")) ? Number(value) : null;
 
 const isOwnerType = (value: unknown): value is OwnerType =>
-  value === "attendance" || value === "journal" || value === "complaint";
+  value === "attendance" || value === "journal" || value === "complaint" || value === "report_entry";
 
 /** Who wrote the entry: the only one who may add to it or take from it. */
 export function isAuthor(type: OwnerType, entry: Entry, auth: Auth): boolean {
@@ -161,6 +175,9 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
       complaint: `SELECT c.student_id, c.filed_by_supervisor_id AS filed_by, s.supervisor_id,
                          (c.status NOT IN ('Resolved', 'Dismissed')) AS open
                   FROM complaints c LEFT JOIN students s ON s.student_id = c.student_id WHERE c.id = $1`,
+      // An event on a day's progress report (migration 073): open while it has not been taken off.
+      report_entry: `SELECT e.student_id, NULL AS filed_by, s.supervisor_id, (e.removed_at IS NULL) AS open
+                     FROM daily_report_entries e LEFT JOIN students s ON s.student_id = e.student_id WHERE e.id = $1`,
     };
     const found = await pool.query<{ student_id: string | null; filed_by: string | null; supervisor_id: string | null; open: boolean }>(
       sql[type],
@@ -266,10 +283,11 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
           added = await pool.query(
             `INSERT INTO attachments
                (owner_type, owner_id, student_id, uploaded_by_role, uploaded_by_id, file_path, mime_type,
-                size_bytes, width, height, sha256, caption, position, preview_path, preview_size_bytes, client_ref)
+                size_bytes, width, height, sha256, caption, position, preview_path, preview_size_bytes, client_ref,
+                captured_in_app, taken_at)
              SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
                     COALESCE((SELECT MAX(position) + 1 FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL), 0),
-                    $14, $15, $16
+                    $14, $15, $16, $17, $18::timestamptz
              WHERE (SELECT COUNT(*) FROM attachments WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL) < $13
              RETURNING ${LIST_COLUMNS}`,
             [
@@ -277,6 +295,7 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
               picture.buffer.length, side(req.body?.width), side(req.body?.height),
               createHash("sha256").update(picture.buffer).digest("hex"), caption || null, MAX_PICTURES,
               storedPreview ? `/uploads/${storedPreview}` : null, preview?.buffer.length ?? null, clientRef,
+              req.body?.captured_in_app === "true", takenAt(req.body?.taken_at),
             ]
           );
         } catch (insertError) {

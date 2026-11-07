@@ -1,42 +1,62 @@
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useSearchParams } from "react-router-dom";
 import StudentLayout from "../../layouts/StudentLayout";
 import EvaluationsPanel from "./Feedback";
+import InternshipEvaluation from "./InternshipEvaluation";
 import ConcernsPanel from "./report";
-import { FEEDBACK_PATH } from "./resolutionTabs";
+import SubTabs from "./SubTabs";
+import { RESOLUTION_PATH, resolutionTabOf, type ResolutionTab } from "./resolutionTabs";
 
 /*
 |--------------------------------------------------------------------------
-| RESOLUTION CENTER AND FEEDBACK
+| RESOLUTION CENTER (revisions, November 2026)
 |--------------------------------------------------------------------------
 |
-| Two pages, as More lists them: the Resolution Center, for a concern the
-| trainee reports to the coordinator; and Feedback, for the evaluations
-| written about them and their own rating of the company. They were two
-| tabs of one page, so More's "Feedback" opened the Resolution Center and
-| lit the wrong entry; an old ?tab=evaluations address is sent to
-| Feedback, with whatever else it carried.
+| In the Support folder. Three sections, named in the address (?tab=) so
+| Back and links return to the right one:
+|
+|   Concerns                a concern the trainee reports to the coordinator
+|   Feedback                the evaluations written about them, and their
+|                           rating of the company
+|   Internship evaluation   their Student-Intern's Feedback Form
+|                           (FM-AA-INT-20) and the supervisor's Internship
+|                           Evaluation Form (FM-AA-INT-13)
+|
+| Feedback was its own page until now; /student/feedback opens its section.
 |
 */
 
+const SECTIONS: readonly { value: ResolutionTab; label: string; short?: string; icon: "flag" | "star" | "clipboard"; subtitle: string }[] = [
+  { value: "concerns", label: "Concerns", icon: "flag", subtitle: "Report a concern to the OJT coordinator" },
+  { value: "feedback", label: "Feedback", icon: "star", subtitle: "Your evaluations, and your rating of the company" },
+  { value: "evaluation", label: "Internship evaluation", short: "Evaluation", icon: "clipboard", subtitle: "Your feedback form, and your supervisor's evaluation" },
+];
+
 export default function ResolutionCenter() {
-  const { search, hash } = useLocation();
-  const params = new URLSearchParams(search);
-  if (params.get("tab") === "evaluations") {
-    params.delete("tab");
-    const rest = params.toString();
-    return <Navigate to={{ pathname: FEEDBACK_PATH, search: rest ? `?${rest}` : "", hash }} replace />;
-  }
+  const [params, setParams] = useSearchParams();
+  const tab = resolutionTabOf(params.get("tab"));
+  const section = SECTIONS.find((item) => item.value === tab) ?? SECTIONS[0];
+  const go = (next: ResolutionTab) => {
+    const rest = new URLSearchParams(params);
+    if (next === "concerns") rest.delete("tab");
+    else rest.set("tab", next);
+    setParams(rest, { replace: true });
+  };
   return (
-    <StudentLayout title="Resolution Center" subtitle="Report a concern to the OJT coordinator">
-      <ConcernsPanel />
+    <StudentLayout title="Resolution Center" subtitle={section.subtitle}>
+      <SubTabs label="Resolution Center sections" idPrefix="resolution" value={tab} onChange={go} options={SECTIONS} />
+      <div id="resolution-panel" role="tabpanel" aria-labelledby={`resolution-${tab}`}>
+        {tab === "concerns" && <ConcernsPanel />}
+        {tab === "feedback" && <EvaluationsPanel showFinal={false} />}
+        {tab === "evaluation" && <InternshipEvaluation />}
+      </div>
     </StudentLayout>
   );
 }
 
+/** The old Feedback page: its section of the Resolution Center, keeping what else the address carried. */
 export function StudentFeedback() {
-  return (
-    <StudentLayout title="Feedback" subtitle="Your evaluations, and your rating of the company">
-      <EvaluationsPanel />
-    </StudentLayout>
-  );
+  const { search, hash } = useLocation();
+  const params = new URLSearchParams(search);
+  params.set("tab", "feedback");
+  return <Navigate to={{ pathname: RESOLUTION_PATH, search: `?${params}`, hash }} replace />;
 }

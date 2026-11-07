@@ -30,9 +30,11 @@ const RATING_WORDS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
 
 /**
  * How the student was evaluated, and their own rating of the company.
- * The "Evaluations" tab of the Resolution Center.
+ * The Feedback section of the Resolution Center. The supervisor's final
+ * evaluation now has its own section (Internship evaluation), so it is left
+ * out here when `showFinal` is false.
  */
-export default function EvaluationsPanel() {
+export default function EvaluationsPanel({ showFinal = true }: { showFinal?: boolean } = {}) {
   const student = useAccount("student");
   const studentId = student?.student_id;
   const final = useFinalEvaluation("student", studentId);
@@ -125,7 +127,7 @@ export default function EvaluationsPanel() {
       <div className="space-y-5">
         {loadError && <ErrorNotice message={loadError} onRetry={() => void load()} />}
 
-        {final.evaluation && (
+        {showFinal && final.evaluation && (
           <Card>
             <CardHeader icon="star"
               title="Final evaluation"

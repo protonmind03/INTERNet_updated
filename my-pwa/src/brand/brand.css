@@ -256,6 +256,8 @@
   --role-accent: #facc15;
   --role-on-accent: #3a2a12;
   --role-surface: #fbf7ef;
+  /* The paper inside the trainee's folders (pages/student/StudentFolder.tsx). */
+  --folder-paper: #fffcf7;
   --role-ink: #3a2a12;
   --role-chrome: #8a3a07;
   --role-on-chrome: #ffffff;

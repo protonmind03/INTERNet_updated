@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useRoleTheme } from "../brand/useRoleTheme";
 import Onboarding from "../components/Onboarding";
 import MessageThreadHost from "../components/MessageThreadHost";
@@ -15,7 +15,10 @@ import { waitingSteps } from "../lib/offlineQueue";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useSpotlightParam } from "../lib/spotlight";
 import { useWaitingCount } from "../lib/useWaitingCount";
-import TimeInFab from "../pages/student/TimeInFab";
+import type { IconName } from "../components/Icon";
+import { hubAddresses, hubFor } from "../pages/student/hubs";
+import ScanButton from "../pages/student/ScanButton";
+import StudentFolder from "../pages/student/StudentFolder";
 import TimeInProvider from "../pages/student/TimeInProvider";
 import { PhotoRedoBanner } from "../pages/student/PhotoRedo";
 import WaitingToSend from "../pages/student/WaitingToSend";
@@ -25,55 +28,52 @@ import WaitingToSend from "../pages/student/WaitingToSend";
 | STUDENT (TRAINEE) PORTAL LAYOUT
 |--------------------------------------------------------------------------
 |
-| PSU redesign, Section 7 (components/RoleShell.tsx draws the frame). On a
-| phone: the flat amber header with the lane-dash strip and only the bell;
-| the cream dock with Today, Attendance, Schedule, Tasks and More. More is
-| grouped: My OJT (Documents, Weekly report, Completion, Time record),
-| Messages (Messages, Announcements, Resolution Center) and Support (Help,
-| Feedback), with the account (which opens Profile) and Sign out at the
-| bottom; in the side menu the account at the foot opens Profile.
-| Notifications live on the bell only. On a tablet or computer the same
-| destinations are a side menu in the trainee's amber.
+| PSU redesign, Section 7 (components/RoleShell.tsx draws the frame);
+| revised November 2026. The trainee's pages are grouped into folders
+| (pages/student/hubs.ts): Attendance (Days, Schedule, My progress, Time
+| record), Tasks (Tasks, Documents, Reports, Narrative, Completion) and
+| Support (Messages, Announcements, Resolution Center, which now also holds
+| Feedback and the internship evaluation). Every page is drawn inside a
+| folder (pages/student/StudentFolder.tsx), with the folder's parts as tabs.
 |
-| Every page also gets: "Help for this screen" (components/ScreenHelp.tsx),
-| the retake banner while a new time-in photo is due, the steps waiting to
-| send, and the floating next-step button on a phone.
+| Phone: the amber header with Scan, Help and the bell; the cream dock with
+| Today, Attendance, Tasks, Reports and More (Support, then the account and
+| Sign out). Tablet and computer: a side menu with Today, Attendance, Tasks
+| and the Support section. Help is no longer a menu entry: the header's
+| Help button holds all of it (components/ScreenHelp.tsx). Scan opens "Time
+| in from your phone" on a computer and the day's next step on a phone
+| (pages/student/ScanButton.tsx), in place of the floating button.
+|
+| Every page also gets the retake banner while a new time-in photo is due
+| and the steps waiting to send.
 |
 */
 
 const DOCK: DockItem[] = [
   { label: "Today", path: "/student/dashboard", icon: "home" },
-  { label: "Attendance", path: "/daily-log", icon: "clock" },
-  { label: "Schedule", path: "/schedule", icon: "calendar" },
-  { label: "Tasks", path: "/task", icon: "tasks" },
+  { label: "Attendance", path: "/daily-log", icon: "clock", also: hubAddresses("attendance") },
+  { label: "Tasks", path: "/task", icon: "tasks", also: hubAddresses("tasks") },
+  // The part of Tasks used every day; it lights instead of Tasks while open.
+  { label: "Reports", path: "/journal", icon: "note" },
 ];
 
-const MORE: DockGroup[] = [
-  {
-    label: "My OJT",
-    items: [
-      { label: "Documents", path: "/documents", icon: "document" },
-      { label: "Weekly report", path: "/journal", icon: "note" },
-      { label: "Completion", path: "/student/completion", icon: "check-circle" },
-      { label: "Time record", path: "/time-record", icon: "printer" },
-    ],
-  },
-  {
-    label: "Messages",
-    items: [
-      { label: "Messages", path: "/messages", icon: "chat" },
-      { label: "Announcements", path: "/announcements", icon: "megaphone" },
-      { label: "Resolution Center", path: "/student/resolution", icon: "flag" },
-    ],
-  },
-  {
-    label: "Support",
-    items: [
-      { label: "Help", path: "/student/help", icon: "help" },
-      { label: "Feedback", path: "/student/feedback", icon: "star" },
-    ],
-  },
+const SUPPORT: DockItem[] = [
+  { label: "Messages", path: "/messages", icon: "chat" },
+  { label: "Announcements", path: "/announcements", icon: "megaphone" },
+  { label: "Resolution Center", path: "/student/resolution", icon: "flag", also: ["/student/feedback"] },
 ];
+
+const MORE: DockGroup[] = [{ label: "Support", items: SUPPORT }];
+
+/** The label tab's icon on a page that is not in a folder (Today, Profile…). */
+const PLAIN_ICON: Record<string, IconName> = {
+  "/student/dashboard": "home",
+  "/profile": "user",
+  "/notifications": "bell",
+  "/student/help": "help",
+};
+
+export type FolderLabel = { icon: IconName; title: ReactNode; line?: ReactNode };
 
 type LayoutProps = {
   title: string;
@@ -83,6 +83,8 @@ type LayoutProps = {
   actions?: ReactNode;
   /** Today draws the retake row itself, among what needs the trainee. */
   showPhotoRedo?: boolean;
+  /** What the folder's label tab says, in place of the folder's name or the page title. */
+  folderLabel?: FolderLabel;
   children: ReactNode;
 };
 
@@ -104,8 +106,10 @@ export default function StudentLayout(props: LayoutProps) {
   );
 }
 
-function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, children }: LayoutProps) {
+function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderLabel, children }: LayoutProps) {
   const navigate = useNavigate();
+  const { pathname, search } = useLocation();
+  const inHub = hubFor(pathname, search);
   const student = useAccount("student");
   const counts = useNavCounts("student");
   // Steps recorded offline still on this phone: a badge on Attendance in the dock.
@@ -148,12 +152,23 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, childre
     badge: item.path === "/daily-log" ? waitingBadge : undefined,
   }));
   const more = MORE.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, count: counts[item.path] })) }));
+  // The side menu lists the folders themselves; Reports is reached inside Tasks there.
   const side: SideItem[] = [
-    ...dock.map((item) => ({ label: item.label, path: item.path, icon: item.icon, count: item.count })),
+    ...dock
+      .filter((item) => item.path !== "/journal")
+      .map((item) => ({ label: item.label, path: item.path, icon: item.icon, count: item.count, also: item.also })),
     ...more.flatMap((group) =>
-      group.items.map((item, index) => ({ label: item.label, path: item.path, icon: item.icon, count: item.count, section: index === 0 ? group.label : undefined }))
+      group.items.map((item, index) => ({
+        label: item.label,
+        path: item.path,
+        icon: item.icon,
+        count: item.count,
+        also: item.also,
+        section: index === 0 ? group.label : undefined,
+      }))
     ),
   ];
+  const plainLabel: FolderLabel = folderLabel ?? { icon: PLAIN_ICON[pathname] ?? "folder", title, line: subtitle ?? student.company ?? undefined };
   const programLine = [student.student_id, student.program].filter(Boolean).join(" · ");
 
   return (
@@ -164,6 +179,7 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, childre
         context={subtitle ?? student.company ?? undefined}
         headerRight={
           <>
+            <ScanButton />
             <ScreenHelp role="student" />
             <NotificationBell
               role="student"
@@ -188,11 +204,12 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, childre
           <SavedDataNotice />
           {showPhotoRedo && <PhotoRedoBanner />}
           <WaitingToSend />
-          {children}
+          <StudentFolder hub={inHub?.hub} tab={inHub?.tab} label={inHub ? folderLabel : plainLabel} counts={counts}>
+            {children}
+          </StudentFolder>
           <MessageThreadHost role="student" />
         </div>
       </RoleShell>
-      <TimeInFab />
 
       <ConfirmDialog
         open={confirmSignOut}

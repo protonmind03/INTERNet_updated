@@ -39,7 +39,7 @@ const LINES: Record<string, { title: string; to: string; go: string }> = {
   attendance: { title: "Attendance logs settled", to: "/daily-log", go: "Go to attendance" },
   documents: { title: "Required documents", to: "/documents", go: "Go to documents" },
   tasks: { title: "Tasks finished", to: "/task", go: "Go to tasks" },
-  evaluation: { title: "Supervisor's evaluation", to: resolutionPath("evaluations"), go: "See evaluations" },
+  evaluation: { title: "Supervisor's evaluation", to: resolutionPath("evaluation"), go: "See your evaluation" },
   feedback: { title: "Your rating of the company", to: resolutionPath("evaluations"), go: "Rate your company" },
 };
 

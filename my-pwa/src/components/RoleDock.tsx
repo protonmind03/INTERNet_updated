@@ -26,7 +26,16 @@ import { currentEntry } from "../lib/navMatch";
 |
 */
 
-export type DockItem = { label: string; path: string; icon: IconName; count?: number; testId?: string; badge?: ReactNode };
+export type DockItem = {
+  label: string;
+  path: string;
+  icon: IconName;
+  count?: number;
+  testId?: string;
+  badge?: ReactNode;
+  /** Other addresses that count as this entry (the trainee's folders: Documents is under Tasks). */
+  also?: string[];
+};
 export type DockGroup = { label: string; items: DockItem[] };
 
 const THRESHOLD = 12;
@@ -103,7 +112,10 @@ export default function RoleDock({
   const more = groups.flatMap((group) => group.items);
   // One entry is current, in the dock or in More, never both (lib/navMatch.ts).
   const active = currentEntry(
-    [...items.map((item) => ({ key: `dock:${item.path}`, path: item.path })), ...more.map((item) => ({ key: `more:${item.path}`, path: item.path }))],
+    [
+      ...items.map((item) => ({ key: `dock:${item.path}`, path: item.path, also: item.also })),
+      ...more.map((item) => ({ key: `more:${item.path}`, path: item.path, also: item.also })),
+    ],
     pathname,
     query
   );
