@@ -619,3 +619,27 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
   @page { margin: 12mm; }
   .psu-form { font-size: 10.5pt; }
 }
+
+/* Today's priority stack (pages/student/AttentionCard.tsx, change1108): the top card rises into place when it
+   changes; the stamp is the card's loudest mark. */
+.attention-stamp { font-size: 12px; padding: 2px 8px; transform: rotate(-3deg); background: color-mix(in srgb, currentColor 7%, white); }
+.attention-stamp--small { font-size: 10px; padding: 0 5px; border-width: 1.5px; transform: none; }
+@keyframes attention-rise { from { opacity: 0; transform: translateY(10px) scale(0.985); } to { opacity: 1; transform: none; } }
+.attention-top { animation: attention-rise 260ms var(--inb-ease-out, ease-out) both; }
+@media (prefers-reduced-motion: reduce) { .attention-top { animation: none; } }
+
+/* My progress (pages/student/ScheduleProgress.tsx, change1108): the OJT journey as a road. Paved (solid) where
+   hours are verified, dashed where they wait for the supervisor; milestones are stops; "You" is a pin. */
+.journey-road { position: relative; height: 20px; border-radius: 9999px; background: #6b5a48; box-shadow: inset 0 1px 2px rgb(0 0 0 / 0.12); }
+.journey-paved { position: absolute; inset-block: 0; left: 0; border-radius: 9999px; background: linear-gradient(180deg, var(--color-psu-600), var(--color-psu-800)); }
+.journey-waiting { position: absolute; inset-block: 3px; border-radius: 9999px; background: repeating-linear-gradient(90deg, var(--color-gold-400) 0 8px, transparent 8px 13px); }
+.journey-lane { position: absolute; left: 10px; right: 10px; top: 50%; height: 2px; transform: translateY(-50%); background: repeating-linear-gradient(90deg, rgb(255 255 255 / 0.75) 0 10px, transparent 10px 20px); pointer-events: none; }
+.journey-stop { position: absolute; top: 50%; width: 16px; height: 16px; border-radius: 9999px; background: #fff; border: 3px solid #a8957d; transform: translate(-50%, -50%); }
+.journey-stop[data-reached] { border-color: var(--color-psu-800); background: var(--color-gold-300); }
+.journey-stop:last-of-type { transform: translate(-100%, -50%); }
+.journey-you { position: absolute; bottom: calc(100% + 4px); transform: translateX(-50%); }
+.journey-you > span { display: block; padding: 2px 8px; border-radius: 8px; background: var(--color-psu-900); color: #fff; font-size: 11px; font-weight: 800; letter-spacing: 0.02em; white-space: nowrap; }
+.journey-you > span::after { content: ""; position: absolute; left: 50%; top: 100%; border: 5px solid transparent; border-top-color: var(--color-psu-900); transform: translateX(-50%); }
+.hours-waiting { background: repeating-linear-gradient(90deg, var(--color-gold-400) 0 6px, var(--color-gold-200) 6px 10px); }
+.rhythm-future { fill: transparent; stroke: color-mix(in srgb, var(--role-ink, black) 12%, transparent); stroke-dasharray: 3 3; }
+.rhythm-today { fill: none; stroke: var(--color-psu-700); stroke-width: 2; }

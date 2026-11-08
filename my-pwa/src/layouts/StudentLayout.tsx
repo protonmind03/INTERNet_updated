@@ -17,7 +17,7 @@ import { signOut as endSession, useAccount } from "../lib/session";
 import { useSpotlightParam } from "../lib/spotlight";
 import { useWaitingCount } from "../lib/useWaitingCount";
 import type { IconName } from "../components/Icon";
-import { hubAddresses, hubFor } from "../pages/student/hubs";
+import { HUBS, hubAddresses, hubFor, type HubId } from "../pages/student/hubs";
 import ScanButton from "../pages/student/ScanButton";
 import StudentFolder from "../pages/student/StudentFolder";
 import TimeInProvider from "../pages/student/TimeInProvider";
@@ -37,10 +37,15 @@ import WaitingToSend from "../pages/student/WaitingToSend";
 | Feedback and the internship evaluation). Every page is drawn inside a
 | folder (pages/student/StudentFolder.tsx), with the folder's parts as tabs.
 |
-| Phone: the amber header with Scan, Help and the bell; the cream dock with
-| Today, Attendance, Tasks, Reports and More (Support, then the account and
-| Sign out). Tablet and computer: a side menu with Today, Attendance, Tasks
-| and the Support section. Help is no longer a menu entry: the header's
+| change1108: the menus list only the folders, never their parts (the
+| parts are the folder's tabs): Today, Attendance, Tasks, Reports and
+| Support. Phone: the amber header with Scan, Help and the bell; the cream
+| dock with Today, Attendance, Tasks, Reports and More (Support, then the
+| account and Sign out). Tablet and computer: the side menu is a rail of
+| icons that opens over the page while the pointer rests on it (RoleShell
+| rail="hover"), so the page keeps the width; the profile stays a round
+| badge with a tooltip. With the menu out of the way, the page's side
+| margins and the folder's are half what they were. Help is no longer a menu entry: the header's
 | Help button holds all of it (components/ScreenHelp.tsx). Scan opens "Time
 | in from your phone" on a computer and the day's next step on a phone
 | (pages/student/ScanButton.tsx), in place of the floating button.
@@ -50,21 +55,23 @@ import WaitingToSend from "../pages/student/WaitingToSend";
 |
 */
 
-const DOCK: DockItem[] = [
-  { label: "Today", path: "/student/dashboard", icon: "home" },
-  { label: "Attendance", path: "/daily-log", icon: "clock", also: hubAddresses("attendance") },
-  { label: "Tasks", path: "/task", icon: "tasks", also: hubAddresses("tasks") },
-  // The part of Tasks used every day; it lights instead of Tasks while open.
-  { label: "Reports", path: "/journal", icon: "note" },
-];
+/** A folder as one menu entry: its first part, and every other part's address as its own. */
+function folderEntry(id: HubId): DockItem {
+  const hub = HUBS.find((item) => item.id === id)!;
+  return { label: hub.label, path: hub.tabs[0].path, icon: hub.icon, also: hubAddresses(id) };
+}
 
-const SUPPORT: DockItem[] = [
-  { label: "Messages", path: "/messages", icon: "chat" },
-  { label: "Announcements", path: "/announcements", icon: "megaphone" },
-  { label: "Resolution Center", path: "/student/resolution", icon: "flag", also: ["/student/feedback"] },
-];
+const DOCK: DockItem[] = [{ label: "Today", path: "/student/dashboard", icon: "home" }, folderEntry("attendance"), folderEntry("tasks"), folderEntry("reports")];
 
-const MORE: DockGroup[] = [{ label: "Support", items: SUPPORT }];
+const MORE: DockGroup[] = [{ label: "Folders", items: [folderEntry("support")] }];
+
+/** What waits in a folder: the sum of its parts' counts. */
+function folderCount(path: string, counts: Record<string, number | undefined>): number | undefined {
+  const hub = HUBS.find((item) => item.tabs[0].path === path);
+  if (!hub) return counts[path];
+  const sum = [...new Set(hub.tabs.map((tab) => tab.path.split("?")[0]))].reduce((total, key) => total + (counts[key] ?? 0), 0);
+  return sum > 0 ? sum : undefined;
+}
 
 /** The label tab's icon on a page that is not in a folder (Today, Profile…). */
 const PLAIN_ICON: Record<string, IconName> = {
@@ -80,7 +87,7 @@ type LayoutProps = {
   title: string;
   /** The line under the title; the trainee's company when not given. */
   subtitle?: string;
-  /** Buttons shown beside the page title on wide screens. */
+  /** The page's own buttons, at the right of the folder's label (every width). */
   actions?: ReactNode;
   /** Today draws the retake row itself, among what needs the trainee. */
   showPhotoRedo?: boolean;
@@ -155,26 +162,12 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
     ) : null;
   const dock = DOCK.map((item) => ({
     ...item,
-    count: item.path === "/daily-log" && waitingCount > 0 ? undefined : counts[item.path],
+    count: item.path === "/daily-log" && waitingCount > 0 ? undefined : folderCount(item.path, counts),
     badge: item.path === "/daily-log" ? waitingBadge : undefined,
   }));
-  const more = MORE.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, count: counts[item.path] })) }));
-  // The side menu lists the folders themselves; Reports is reached inside Tasks there.
-  const side: SideItem[] = [
-    ...dock
-      .filter((item) => item.path !== "/journal")
-      .map((item) => ({ label: item.label, path: item.path, icon: item.icon, count: item.count, also: item.also })),
-    ...more.flatMap((group) =>
-      group.items.map((item, index) => ({
-        label: item.label,
-        path: item.path,
-        icon: item.icon,
-        count: item.count,
-        also: item.also,
-        section: index === 0 ? group.label : undefined,
-      }))
-    ),
-  ];
+  const more = MORE.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, count: folderCount(item.path, counts) })) }));
+  // The side menu lists the folders, the same five as the dock and More.
+  const side: SideItem[] = [...dock, ...more.flatMap((group) => group.items)].map((item) => ({ label: item.label, path: item.path, icon: item.icon, count: item.count, also: item.also }));
   const plainLabel: FolderLabel = folderLabel ?? { icon: PLAIN_ICON[pathname] ?? "folder", title, line: subtitle ?? student.company ?? undefined };
   const programLine = [student.student_id, student.program].filter(Boolean).join(" · ");
 
@@ -196,6 +189,7 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
           </>
         }
         side={side}
+        rail="hover"
         dock={dock}
         more={more}
         account={{
@@ -206,12 +200,11 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
           onSignOut: () => setConfirmSignOut(true),
         }}
       >
-        <div className="mx-auto w-full max-w-6xl animate-page-in px-4 pb-32 pt-4 md:px-8 md:pb-12 md:pt-6 print:max-w-none print:p-0">
-          {actions && <div className="mb-4 hidden flex-wrap justify-end gap-2 md:flex">{actions}</div>}
+        <div className="mx-auto w-full max-w-7xl animate-page-in px-4 pb-32 pt-4 md:pb-12 md:pt-5 print:max-w-none print:p-0">
           <SavedDataNotice />
           {showPhotoRedo && <PhotoRedoBanner />}
           <WaitingToSend />
-          <StudentFolder hub={inHub?.hub} tab={inHub?.tab} label={inHub ? folderLabel : plainLabel} counts={counts}>
+          <StudentFolder hub={inHub?.hub} tab={inHub?.tab} label={inHub ? folderLabel : plainLabel} counts={counts} actions={actions}>
             {children}
           </StudentFolder>
           <MessageThreadHost role="student" />

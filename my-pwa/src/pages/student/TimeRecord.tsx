@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
 import DtrSheet, { type DtrAbsence } from "../../components/DtrSheet";
-import Icon from "../../components/Icon";
 import { ErrorNotice } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
@@ -54,15 +52,6 @@ function TimeRecordPage() {
     <StudentLayout
       title="Time record"
       subtitle="Your attendance for one month, ready to print and have signed."
-      actions={
-        <Link
-          to="/daily-log"
-          className="inline-flex h-10 items-center gap-1.5 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50 print:hidden"
-        >
-          <Icon name="chevron-right" size={15} className="rotate-180" />
-          Back to attendance
-        </Link>
-      }
     >
       {attendance.error && (
         <div className="mb-4">

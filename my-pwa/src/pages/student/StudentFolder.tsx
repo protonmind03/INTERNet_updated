@@ -28,8 +28,11 @@ export default function StudentFolder({
   tab,
   label,
   counts = {},
+  actions,
   children,
 }: {
+  /** The page's own buttons (Mark all as read), at the end of the folder's rim. */
+  actions?: ReactNode;
   /** The folder this page is in; none for a page drawn in a plain folder. */
   hub?: Hub;
   tab?: HubTab | null;
@@ -98,11 +101,12 @@ export default function StudentFolder({
             })}
           </nav>
         )}
+        {actions && <div className="flex flex-wrap items-center justify-end gap-2 bg-(--folder-paper) px-2.5 pb-2 md:ml-auto md:bg-transparent md:px-1 md:pb-2.5">{actions}</div>}
       </div>
 
       {/* The open part, on the folder's paper. */}
       <div
-        className="min-w-0 rounded-b-[20px] bg-(--folder-paper) p-2.5 sm:p-4 md:rounded-[0_22px_22px_22px] md:p-6 print:bg-white print:p-0"
+        className="min-w-0 rounded-b-[20px] bg-(--folder-paper) p-2.5 sm:p-4 md:rounded-[0_22px_22px_22px] md:px-3 md:py-5 lg:px-4 print:bg-white print:p-0"
       >
         {children}
       </div>

@@ -6,19 +6,25 @@ import { currentEntry } from "../../lib/navMatch";
 | THE TRAINEE'S FOLDERS (revisions, November 2026)
 |--------------------------------------------------------------------------
 |
-| The trainee's pages are grouped into three folders, each drawn like the
+| The trainee's pages are grouped into four folders, each drawn like the
 | coordinator's student record (pages/student/StudentFolder.tsx): the
 | folder's name on its label tab, its parts as tabs on the rim, the open
 | part inside.
 |
 |   Attendance   Days · Schedule · My progress · Time record
-|   Tasks        Tasks · Documents · Reports · Narrative · Completion
+|   Tasks        Tasks · Documents · Completion
+|   Reports      Daily · Weekly · Monthly · Narrative
 |   Support      Messages · Announcements · Resolution Center
 |
+| Revised again (change1108): Reports left Tasks to become a folder of its
+| own, so Daily, Weekly and Monthly are the folder's tabs instead of tabs
+| inside a tab. Tasks is the work given to the trainee; Reports is what the
+| trainee writes.
+|
 | Every part keeps its own address, so old links, notifications and Back
-| still work; the folder only groups them. The side menu lists the three
-| folders, and the phone's dock lists Today, Attendance, Tasks and Reports
-| (the part used every day) with Support under More.
+| still work; the folder only groups them. The side menu and the phone's
+| dock list only the folders (Today, Attendance, Tasks, Reports, Support):
+| a folder's parts are its tabs, never repeated in a menu.
 |
 */
 
@@ -33,7 +39,7 @@ export type HubTab = {
   blurb: string;
 };
 
-export type HubId = "attendance" | "tasks" | "support";
+export type HubId = "attendance" | "tasks" | "reports" | "support";
 
 export type Hub = {
   id: HubId;
@@ -63,9 +69,18 @@ export const HUBS: Hub[] = [
     tabs: [
       { label: "Tasks", path: "/task", icon: "tasks", blurb: "Work assigned by your supervisor" },
       { label: "Documents", path: "/documents", icon: "document", blurb: "Requirements to upload and their review" },
-      { label: "Reports", path: "/journal", icon: "note", blurb: "Daily, weekly and monthly progress reports" },
-      { label: "Narrative", path: "/student/narrative", icon: "book", blurb: "Your Narrative Report on Internship Training" },
       { label: "Completion", path: "/student/completion", icon: "check-circle", blurb: "What is left before your OJT is done" },
+    ],
+  },
+  {
+    id: "reports",
+    label: "Reports",
+    icon: "note",
+    tabs: [
+      { label: "Daily", path: "/journal", icon: "calendar", blurb: "A report for each day, with events and photos" },
+      { label: "Weekly", path: "/journal?view=weekly", icon: "note", blurb: "Your weekly report, reviewed by your supervisor" },
+      { label: "Monthly", path: "/journal?view=monthly", icon: "chart", blurb: "Your month, put together, in your own words" },
+      { label: "Narrative", path: "/student/narrative", icon: "book", blurb: "Your Narrative Report on Internship Training" },
     ],
   },
   {
