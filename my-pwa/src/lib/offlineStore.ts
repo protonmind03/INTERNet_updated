@@ -129,6 +129,20 @@ export const QUEUE_KEEP_HOURS = 72;
  * Erases what is kept for one account: saved records and drafts, and the
  * queued actions too unless `keepQueue` is set.
  */
+/*
+| Words typed and not yet sent (audit, November 2026). The forms that save
+| as you type (lib/useAutosave.ts: a day's report, an event, a narrative
+| part) keep what is waiting under "autosave:" until the server has it.
+| When a session ends by itself (it expired overnight while the phone was
+| offline), those words are kept for the same account, like the steps
+| waiting to be sent, for the same `QUEUE_KEEP_HOURS`; signing in again
+| brings them back and sends them. Signing out on purpose still erases
+| everything.
+*/
+function isUnsentWriting(key: IDBValidKey | undefined): boolean {
+  return typeof key === "string" && key.includes("|autosave:");
+}
+
 export async function purgeOfflineData(
   role: OfflineRole,
   accountId: string,
@@ -144,7 +158,11 @@ export async function purgeOfflineData(
     for (const name of stores) {
       const index = transaction.objectStore(name).index("owner");
       const keys = await done(index.getAllKeys(IDBKeyRange.only(owner)));
-      for (const key of keys) transaction.objectStore(name).delete(key);
+      for (const key of keys) {
+        // A session that ended by itself keeps the words typed and not yet sent, as it keeps the steps.
+        if (keepQueue && name === RECORDS && isUnsentWriting(key)) continue;
+        transaction.objectStore(name).delete(key);
+      }
     }
     await new Promise<void>((resolve, reject) => {
       transaction.oncomplete = () => resolve();
@@ -184,7 +202,9 @@ export async function purgeOrphanedOfflineData(): Promise<void> {
       for (const row of rows) {
         if (signedIn.has(row.owner)) continue;
         const savedAt = Date.parse(row.savedAt ?? "");
-        if (name === QUEUE && Number.isFinite(savedAt) && savedAt >= oldest) continue;
+        const recent = Number.isFinite(savedAt) && savedAt >= oldest;
+        if (name === QUEUE && recent) continue;
+        if (name === RECORDS && recent && isUnsentWriting(row.key) && (row as { data?: unknown }).data != null) continue;
         store.delete((row.key ?? row.id) as IDBValidKey);
       }
     }
