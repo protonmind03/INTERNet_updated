@@ -24,6 +24,7 @@ export const LOOP_LOCKS = {
   timeOutReminders: 7_031_102,
   digests: 7_031_103,
   autoCount: 7_031_104,
+  supervisorDigest: 7_031_105,
 } as const;
 
 /**

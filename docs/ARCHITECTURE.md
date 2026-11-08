@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-261 routes in 17 files; 50 services in use.
+261 routes in 17 files; 51 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -84,6 +84,7 @@ flowchart LR
     services_schedulePattern["schedulePattern.ts"]
     services_schedules["schedules.ts"]
     services_studentScope["studentScope.ts"]
+    services_supervisorDigest["supervisorDigest.ts"]
     services_taskRelease["taskRelease.ts"]
     services_termSetup["termSetup.ts"]
     services_timeOutReminders["timeOutReminders.ts"]
@@ -213,6 +214,7 @@ flowchart LR
   server --> services_projection
   server --> services_schedules
   server --> services_studentScope
+  server --> services_supervisorDigest
   server --> services_taskRelease
   server --> services_timeOutReminders
   server --> services_uploadQuota
@@ -266,6 +268,8 @@ flowchart LR
   services_projection --> services_insights
   services_projection --> services_phTime
   services_projection --> services_studentScope
+  services_supervisorDigest --> services_loopLock
+  services_supervisorDigest --> services_phTime
   services_timeOutReminders --> services_loopLock
   services_timeOutReminders --> services_phTime
   services_uploadQuota --> services_phTime
@@ -315,6 +319,7 @@ flowchart LR
   services_privateFileStore -.-> ext_bucket
   services_problems -.-> ext_postgres
   services_projection -.-> ext_postgres
+  services_supervisorDigest -.-> ext_postgres
   services_taskRelease -.-> ext_postgres
   services_termSetup -.-> ext_postgres
   services_timeOutReminders -.-> ext_postgres
@@ -382,7 +387,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `listQuery.ts` | `server.ts` |
 | `liveNotifications.ts` | `server.ts` |
 | `liveness.ts` | `routes/appeals.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
-| `loopLock.ts` | `services/autoCount.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/timeOutReminders.ts` |
+| `loopLock.ts` | `services/autoCount.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/supervisorDigest.ts`, `services/timeOutReminders.ts` |
 | `mailer.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
 | `notificationKinds.ts` | `routes/extensions.ts`, `routes/messages.ts`, `server.ts` |
 | `notificationLinks.ts` | `server.ts` |
@@ -391,7 +396,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
 | `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
-| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
+| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/supervisorDigest.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
 | `photoPurge.ts` | `routes/console.ts`, `server.ts` |
 | `photoRedo.ts` | `routes/appeals.ts`, `server.ts`, `services/deadlineReminders.ts` |
 | `privacy.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `server.ts`, `services/photoPurge.ts` |
@@ -403,6 +408,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `schedulePattern.ts` | `services/insights.ts`, `services/kpis.ts`, `services/performance.ts` |
 | `schedules.ts` | `routes/programme.ts`, `server.ts` |
 | `studentScope.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/insights.ts`, `services/kpis.ts`, `services/projection.ts` |
+| `supervisorDigest.ts` | `server.ts` |
 | `taskRelease.ts` | `routes/extensions.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |
 | `termSetup.ts` | `routes/programme.ts` |
 | `timeOutReminders.ts` | `server.ts` |

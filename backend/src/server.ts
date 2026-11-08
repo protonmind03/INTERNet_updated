@@ -34,6 +34,7 @@ import {
 } from "./services/liveNotifications";
 import { startDeadlineReminderScheduler } from "./services/deadlineReminders";
 import { startTimeOutReminderScheduler } from "./services/timeOutReminders";
+import { startSupervisorDigestScheduler } from "./services/supervisorDigest";
 import { autoCountOnSql, cleanLogSql, startAutoCountScheduler } from "./services/autoCount";
 import { consentRequired, hasCurrentConsent } from "./services/privacy";
 import { allowsChannel, categoryOf } from "./services/notificationPreferences";
@@ -10484,6 +10485,8 @@ const server = app.listen(
     startPostgresNotificationListener(pool);
     startDeadlineReminderScheduler(pool, createNotification);
     startTimeOutReminderScheduler(pool, createNotification);
+    // The supervisor's evening summary of daily reports (services/supervisorDigest.ts).
+    startSupervisorDigestScheduler(pool, createNotification);
     // Clean days count on their own two working days after the day (services/autoCount.ts).
     startAutoCountScheduler(
       pool,

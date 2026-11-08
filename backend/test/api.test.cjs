@@ -3143,6 +3143,61 @@ test("a clean day counts on its own two working days later; an unusual one waits
   }
 });
 
+test("the supervisor's evening summary of daily reports: once a day, after 18:00, only when someone wrote", async (t) => {
+  require("tsx/cjs");
+  const { sendSupervisorDigests, namesText, digestTime } = require("../src/services/supervisorDigest.ts");
+  assert.equal(digestTime(), "18:00");
+  assert.equal(namesText(["Ana"], 1), "Ana");
+  assert.equal(namesText(["Ana", "Ben"], 2), "Ana and Ben");
+  assert.equal(namesText(["Ana", "Ben", "Cora"], 3), "Ana, Ben and Cora");
+  assert.equal(namesText(["Ana", "Ben", "Cora"], 5), "Ana, Ben, Cora and 2 others");
+
+  if (process.env.ALLOW_TEST_WRITES !== "true") {
+    t.skip("set ALLOW_TEST_WRITES=true to run against a throwaway database");
+    return;
+  }
+  const pool = localTestPool();
+  // A day long past (a Wednesday), so no real report or summary is touched.
+  const day = "2001-01-03";
+  const id = student.student_id;
+  const sent = [];
+  const writer = async (notification) => {
+    sent.push(notification);
+  };
+  const at = (time) => new Date(`${day}T${time}+08:00`);
+  try {
+    const owner = await pool.query(`SELECT supervisor_id FROM students WHERE student_id = $1`, [id]);
+    const supervisorId = owner.rows[0]?.supervisor_id;
+    assert.ok(supervisorId, "the demo student has a supervisor");
+    await pool.query(`DELETE FROM supervisor_report_digests WHERE digest_date = $1`, [day]);
+    await pool.query(`DELETE FROM daily_reports WHERE report_date = $1`, [day]);
+
+    // No one wrote: nothing, even in the evening.
+    assert.deepEqual(await sendSupervisorDigests(pool, writer, at("19:00:00")), []);
+
+    await pool.query(`INSERT INTO daily_reports (student_id, report_date, summary) VALUES ($1, $2, 'Filed the letters.')`, [id, day]);
+    // Before 18:00: not yet.
+    assert.deepEqual(await sendSupervisorDigests(pool, writer, at("17:30:00")), []);
+    // After: the supervisor hears once, with the intern's name and the way to the reports.
+    const told = await sendSupervisorDigests(pool, writer, at("18:10:00"));
+    assert.deepEqual(told, [supervisorId]);
+    const note = sent.find((item) => item.supervisorId === supervisorId);
+    assert.equal(note.title, "Today's daily reports");
+    assert.match(note.message, /wrote today's report/);
+    assert.equal(note.link, "/supervisor/interns");
+    // And only once that day.
+    assert.deepEqual(await sendSupervisorDigests(pool, writer, at("21:00:00")), []);
+    // A report with only blank words does not count.
+    await pool.query(`DELETE FROM supervisor_report_digests WHERE digest_date = $1`, [day]);
+    await pool.query(`UPDATE daily_reports SET summary = '   ' WHERE student_id = $1 AND report_date = $2`, [id, day]);
+    assert.deepEqual(await sendSupervisorDigests(pool, writer, at("19:00:00")), []);
+  } finally {
+    await pool.query(`DELETE FROM supervisor_report_digests WHERE digest_date = $1`, [day]);
+    await pool.query(`DELETE FROM daily_reports WHERE report_date = $1`, [day]);
+    await pool.end();
+  }
+});
+
 test("a forgotten time-out is reminded once, an hour after the shift ended", async (t) => {
   require("tsx/cjs");
   const { sendTimeOutReminders, clockText, TIME_OUT_REMINDER_DELAY_MINUTES } = require("../src/services/timeOutReminders.ts");
