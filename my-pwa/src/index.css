@@ -753,12 +753,31 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
   .role-topbar, .role-side, .role-side-slot, .role-dock, .role-phone-only, .student-folder > div:first-child { display: none !important; }
 }
 /* The Application has the most on it: a little tighter, so it keeps to one A4 page (same type sizes). */
-.pf-page--application { padding-top: 10mm; padding-bottom: 9mm; }
-.pf-page--application .pf-head { padding-bottom: 2mm; margin-bottom: 2mm; }
-.pf-page--application .pf-section { margin: 2.4mm 0 1mm; }
-.pf-page--application .pf-table td { padding: 0.75mm 1.6mm; }
-.pf-page--application .pf-empty td { height: 5mm; }
-.pf-page--application .pf-para { margin-bottom: 1.4mm !important; }
-.pf-page--application .pf-sigs { gap: 0 12mm; margin-block: 0 1.5mm; }
-.pf-page--application .pf-sig-name { margin-top: 6mm !important; }
+.pf-page--compact { padding-top: 10mm; padding-bottom: 9mm; }
+.pf-page--compact .pf-head { padding-bottom: 2mm; margin-bottom: 2mm; }
+.pf-page--compact .pf-section { margin: 2.4mm 0 1mm; }
+.pf-page--compact .pf-table td { padding: 0.75mm 1.6mm; }
+.pf-page--compact .pf-empty td { height: 5mm; }
+.pf-page--compact .pf-para { margin-bottom: 1.4mm !important; }
+.pf-page--compact .pf-sigs { gap: 0 12mm; margin-block: 0 1.5mm; }
+.pf-page--compact .pf-sig-name { margin-top: 6mm !important; }
 .pf-sigs--left { margin-inline: 0 auto; }
+/* Record forms (Time Frame, Weekly Report, Feedback, Evaluation, Units): cells, boxes, ticks. */
+.pf-plain { text-transform: none !important; white-space: pre-wrap; }
+.pf-bold { font-weight: 700; }
+.pf-italic { font-style: italic; }
+.pf-table td.pf-top { vertical-align: top; }
+.pf-table thead td { break-inside: avoid; }
+.pf-table tr { break-inside: avoid; }
+.pf-check { font-size: 12pt; font-weight: 700; }
+.pf-circle { display: inline-grid; place-items: center; width: 5.4mm; height: 5.4mm; border: 0.9pt solid #000; border-radius: 999px; font-weight: 700; }
+.pf-box { margin: 0 0 2mm; padding: 1.4mm 1.8mm; border: 0.75pt solid #000; break-inside: avoid; }
+.pf-box-title { font-weight: 700; text-transform: uppercase; }
+.pf-box-text { margin-top: 1mm !important; white-space: pre-wrap; }
+.pf-checks { display: grid; gap: 0.6mm 8mm; margin: 0 0 2mm; padding: 0; list-style: none; font-size: 9.5pt; }
+.pf-checks--two { grid-template-columns: 1fr 1fr; }
+.pf-checks li { display: flex; align-items: baseline; gap: 1.5mm; }
+.pf-tick { display: inline-block; flex-shrink: 0; width: 9mm; border-bottom: 0.75pt solid #000; font-weight: 700; font-style: normal; line-height: 1.1; text-align: center; }
+.pf-page--compact .pf-box { padding: 1mm 1.6mm; }
+.pf-page--compact .pf-checks { gap: 0.2mm 8mm; }
+

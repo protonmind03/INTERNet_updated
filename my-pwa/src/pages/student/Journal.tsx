@@ -142,9 +142,7 @@ export default function WeeklyJournal() {
       <div className="space-y-5 print:hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-inset ring-(--role-hairline)">
           <p className="text-[13.5px] text-slate-600">Once a week, write what you did, what you learned and the problems you met. Your supervisor reviews it.</p>
-          <Button variant="secondary" size="sm" icon="printer" disabled={journals.length === 0} onClick={() => window.print()}>
-            Print FM-AA-INT-19
-          </Button>
+          <PracticumWeeklyReport journals={journals} />
         </div>
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
@@ -220,7 +218,6 @@ export default function WeeklyJournal() {
           }}
         />
       )}
-      <PracticumWeeklyReport journals={journals} />
     </>
   );
 }

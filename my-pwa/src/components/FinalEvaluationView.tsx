@@ -1,8 +1,9 @@
-import { formatDate, formatLongDate } from "../lib/format";
-import { TERMINATION_REASONS, isWeighted, letterOf, ojtGrade } from "../lib/ojtGrade";
-import { PSU_FORMS } from "../lib/psuForms";
+import { formatLongDate } from "../lib/format";
+import { isWeighted, letterOf, ojtGrade } from "../lib/ojtGrade";
 import type { FinalEvaluation } from "../lib/useFinalEvaluation";
-import PsuFormSheet, { FormField } from "./PsuFormSheet";
+import FormButtons from "../pages/student/forms/FormButtons";
+import { fileNameFor } from "../pages/student/forms/formModel";
+import { EVALUATION, evaluationBlocks } from "../pages/student/forms/recordForms";
 
 /**
  * A submitted final evaluation: each criterion with its rating, and the
@@ -12,7 +13,8 @@ import PsuFormSheet, { FormField } from "./PsuFormSheet";
  * On a weighted form (PSU's FM-AA-INT-13, November 2026) each competency
  * also shows its weight, the sentence chosen and its points, and the OJT
  * grade leads; the boxes at the foot of the form follow the remarks. With
- * `printable`, printing the page gives the university's form, filled in.
+ * `printable`, Print and Save (PDF or Word) give the university's form,
+ * FM-AA-INT-13, filled in (pages/student/forms/recordForms.ts).
  */
 export default function FinalEvaluationView({
   evaluation,
@@ -20,7 +22,7 @@ export default function FinalEvaluationView({
 }: {
   evaluation: FinalEvaluation;
   /** The trainee and placement, for the printed form's head. */
-  printable?: { name: string; company: string; started?: string; ended?: string; campus?: string };
+  printable?: { name: string; company?: string; companyAddress?: string; started?: string; ended?: string; hours?: string; campus?: string };
 }) {
   const { criteria, scale_max: scale } = evaluation.form_snapshot;
   const weighted = isWeighted(criteria);
@@ -30,11 +32,22 @@ export default function FinalEvaluationView({
 
   return (
     <>
-      <div className="space-y-4 print:hidden">
+      <div className="space-y-4">
         <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
           <p className="text-sm text-slate-600">
             By {evaluation.supervisor_name} · {formatLongDate(evaluation.submitted_at)}
           </p>
+          {printable && (
+            <div className="w-full sm:order-last sm:w-auto">
+              <FormButtons
+                size="sm"
+                meta={EVALUATION}
+                campus={printable.campus || undefined}
+                fileName={fileNameFor(EVALUATION, printable.name)}
+                blocks={evaluationBlocks({ name: printable.name, company: printable.company ?? "", companyAddress: printable.companyAddress ?? "", started: printable.started, ended: printable.ended, hours: printable.hours, evaluation })}
+              />
+            </div>
+          )}
           {weighted && graded !== null ? (
             <p className="tabular text-sm text-slate-700">
               OJT grade <span className="font-display ml-1 text-[22px] font-extrabold text-slate-900">{Number(graded).toFixed(2)}</span>
@@ -108,88 +121,6 @@ export default function FinalEvaluationView({
         )}
       </div>
 
-      {printable && (
-        <PsuFormSheet title="Internship Evaluation Form" form={PSU_FORMS.evaluation} campus={printable.campus}>
-          <table>
-            <tbody>
-              <tr>
-                <td colSpan={2} style={{ textAlign: "center", fontSize: "9.5pt" }}>
-                  This form is to be completed by the host company or a designated supervisor, and submitted to the Campus Internship Coordinator and
-                  Internship / Practicum Subject Instructor upon completion of the training hours.
-                </td>
-              </tr>
-              <FormField label="Name of student-intern">{printable.name}</FormField>
-              <FormField label="Name of company / firm / agency">{printable.company}</FormField>
-              <FormField label="Date started · date ended">
-                {printable.started ? formatDate(printable.started) : ""} · {printable.ended ? formatDate(printable.ended) : ""}
-              </FormField>
-            </tbody>
-          </table>
-          <table>
-            <thead>
-              <tr>
-                <th style={{ width: "22%", textAlign: "center" }}>COMPETENCY</th>
-                <th style={{ textAlign: "center" }}>CRITERIA</th>
-                <th style={{ width: "8%", textAlign: "center" }}>RATING</th>
-                <th style={{ width: "10%", textAlign: "center" }}>REMARKS</th>
-              </tr>
-            </thead>
-            <tbody>
-              {criteria.map((criterion, index) =>
-                Array.from({ length: scale }, (_, step) => scale - step).map((value, row) => {
-                  const chosen = evaluation.ratings[criterion.key] === value;
-                  return (
-                    <tr key={`${criterion.key}-${value}`} style={{ breakInside: "avoid" }}>
-                      {row === 0 && (
-                        <td rowSpan={scale} style={{ verticalAlign: "middle", fontWeight: 700 }}>
-                          {letterOf(index)}. {criterion.label.toUpperCase()}
-                          {criterion.weight !== undefined ? ` (${criterion.weight}%)` : ""}
-                        </td>
-                      )}
-                      <td style={{ fontSize: "9pt" }}>{criterion.levels?.[value - 1] ?? ""}</td>
-                      <td style={{ textAlign: "center", fontWeight: chosen ? 800 : 400 }}>{chosen ? `(${value})` : value}</td>
-                      {row === 0 && (
-                        <td rowSpan={scale} style={{ verticalAlign: "middle", textAlign: "center" }}>
-                          {evaluation.ratings[criterion.key] && criterion.weight !== undefined
-                            ? ((evaluation.ratings[criterion.key] * criterion.weight) / 100).toFixed(1)
-                            : ""}
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })
-              )}
-              <tr>
-                <td colSpan={3} style={{ textAlign: "center", fontWeight: 700 }}>
-                  OJT GRADE
-                  <br />
-                  <span style={{ fontWeight: 400 }}>= Total Points (A + B + … x 10) / 50 x 50 + 50</span>
-                </td>
-                <td style={{ textAlign: "center", fontSize: "14pt", fontWeight: 800 }}>{graded !== null ? Number(graded).toFixed(2) : ""}</td>
-              </tr>
-            </tbody>
-          </table>
-          <section className="psu-form-box" style={{ minHeight: "auto" }}>
-            <h3>The Internship Practicum was terminated:</h3>
-            <p style={{ columns: 2, fontSize: "9.5pt" }}>
-              {TERMINATION_REASONS.map((reason) => (
-                <span key={reason} style={{ display: "block" }}>
-                  {outcome.terminated?.includes(reason) ? "☒" : "☐"} {reason}
-                </span>
-              ))}
-            </p>
-            <p>{outcome.employ ? "☒" : "☐"} We would be pleased to employ this Student-Trainee in the future</p>
-            <p>{outcome.improve ? "☒" : "☐"} He/She needs to improve his/her performance.</p>
-          </section>
-          <section className="psu-form-sign">
-            <span className="psu-form-line">{evaluation.supervisor_name}</span>
-            <br />
-            <i>Printed Name and Signature of Person Completing</i>
-            <br />
-            Date: <span className="psu-form-line">{formatDate(evaluation.submitted_at)}</span>
-          </section>
-        </PsuFormSheet>
-      )}
     </>
   );
 }

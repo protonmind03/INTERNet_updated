@@ -64,6 +64,7 @@ test("the four pre-OJT forms are filled in from the record, in the university's 
   await expect(page.getByRole("heading", { level: 1, name: "Fill and print" })).toBeVisible();
   const forms: [RegExp, string, string | null][] = [
     [/^Application for Internship/, "Application for Internship", "FM-AA-INT-01"],
+    [/^Certification of Units Earned/, "Certification of Units Earned for Practicum/Internship", "FM-AA-INT-02"],
     [/^Consent Form/, "Consent Form", "FM-AA-INT-03"],
     [/^Internship Release Form/, "Internship Release Form", null],
     [/^Training Agreement and Liability Waiver Form/, "Training Agreement and Liability Waiver Form", "FM-AA-INT-18"],
@@ -102,6 +103,66 @@ test("the four pre-OJT forms are filled in from the record, in the university's 
     const file = await download;
     expect(file.suggestedFilename()).toMatch(new RegExp(`^Consent Form - .+\\${extension}$`));
   }
+});
+
+test("the forms from the record: the Time Frame and the Weekly Report in Fill and print, and the weekly report on its own page", async ({ page }) => {
+  const student = await apiSession("student");
+  // Whatever weekly reports the trainee has (another test writes this week's): the oldest is Week 1.
+  const journals = await api<{ journals: { week_start: string; activities: string }[] }>(student.token, "GET", `/api/journals/student/${encodeURIComponent(student.id)}`);
+  const oldest = [...journals.body.journals].sort((a, b) => a.week_start.localeCompare(b.week_start))[0];
+  const words = oldest?.activities.split("\n")[0].trim().slice(0, 40);
+
+  await signIn(page, "student");
+  await page.goto("/documents/forms?form=timeframe");
+  const timeframe = page.getByRole("article", { name: "Internship Time Frame" });
+  await expect(timeframe.locator(".pf-code")).toContainText("FM-AA-INT-17");
+  await expect(timeframe).toContainText(/Total number of hours/i);
+  await expect(timeframe).toContainText(/Prepared by/i);
+
+  await page.getByRole("tab", { name: /^Internship\/Practicum Weekly Report/ }).click();
+  const weekly = page.getByRole("article", { name: "Internship/Practicum Weekly Report" });
+  await expect(weekly.locator(".pf-code")).toContainText("FM-AA-INT-19");
+  if (words) await expect(weekly).toContainText(words);
+  await expect(weekly).toContainText(/Tasks accomplished/i);
+  // The instructor typed here fills the form's line.
+  await page.getByLabel("Internship instructor").fill("Prof. Example");
+  await expect(weekly).toContainText(/Prof. Example/i);
+  await page.getByRole("button", { name: /^Save/ }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: /PDF/ }).click();
+  expect((await download).suggestedFilename()).toMatch(/^Internship-Practicum Weekly Report - .+\.pdf$/);
+
+  // The two forms filled in under Support are a link away.
+  await expect(page.getByRole("link", { name: /Student-Intern's Feedback Form/ })).toHaveAttribute("href", /tab=evaluation/);
+  await expect(page.getByRole("link", { name: /Internship Evaluation Form/ })).toHaveAttribute("href", /side=supervisor/);
+
+  // The weekly report prints from the Weekly reports page too, with nothing of it on the page until then.
+  await page.goto("/journal?view=weekly");
+  await expect(page.getByRole("button", { name: "Print FM-AA-INT-19" })).toBeVisible();
+  await expect(page.locator(".pf-page")).toHaveCount(0);
+});
+
+test("the Student-Intern's Feedback Form: the form beside the questions, Print and Save", async ({ page }) => {
+  await signIn(page, "student");
+  await page.goto("/student/resolution?tab=evaluation");
+  const sheet = page.getByRole("article", { name: "Student-Intern's Feedback Form" });
+  await expect(sheet.locator(".pf-code")).toContainText("FM-AA-INT-20");
+  // A rating chosen is ticked on the form at once.
+  const first = page.getByRole("radiogroup", { name: /aligned with my field/ });
+  await first.getByRole("radio", { name: "Agree", exact: true }).click();
+  await expect(first.getByRole("radio", { name: "Agree", exact: true })).toHaveAttribute("aria-checked", "true");
+  await expect(sheet.locator(".pf-check")).not.toHaveCount(0);
+  const concern = `The printer ran out of ink (${Date.now()}).`;
+  await page.getByLabel("Problems met").fill(concern);
+  await expect(sheet).toContainText(concern);
+  await expect(page.getByRole("button", { name: "Print", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Save/ }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("menuitem", { name: /Word/ }).click();
+  expect((await download).suggestedFilename()).toMatch(/^Student-Intern's Feedback Form - .+\.docx$/);
+  // The supervisor's side opens from the address.
+  await page.goto("/student/resolution?tab=evaluation&side=supervisor");
+  await expect(page.getByRole("tab", { name: /Supervisor's/ })).toHaveAttribute("aria-selected", "true");
 });
 
 test("a day's report reaches the supervisor and the coordinator; the coordinator reads FM-AA-INT-20", async ({ browser }) => {

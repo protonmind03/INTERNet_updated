@@ -1,6 +1,6 @@
 import { forwardRef, type ReactNode } from "react";
 import { PsuSeal } from "../../../brand";
-import type { Block, FormMeta, Run, Signature } from "./formModel";
+import { campusOf, type Block, type Cell, type DocMeta, type Run, type Signature } from "./formModel";
 
 /*
 |--------------------------------------------------------------------------
@@ -19,7 +19,17 @@ import type { Block, FormMeta, Run, Signature } from "./formModel";
 
 function runs(list: Run[]): ReactNode {
   return list.map((run, index) => {
-    if (typeof run === "string") return run === "\n" ? <br key={index} /> : <span key={index}>{run}</span>;
+    if (typeof run === "string")
+      return (
+        <span key={index}>
+          {run.split("\n").map((piece, line) => (
+            <span key={line}>
+              {line > 0 && <br />}
+              {piece}
+            </span>
+          ))}
+        </span>
+      );
     if ("b" in run) return <b key={index}>{run.b}</b>;
     if ("i" in run) return <i key={index}>{run.i}</i>;
     return (
@@ -34,7 +44,7 @@ function SignatureBox({ item }: { item: Signature }) {
   return (
     <div className="pf-sig">
       {/* A blank lead keeps its line's height, so a signature sits level with a "Noted:" beside it. */}
-      {item.lead && <p className="pf-sig-lead">{item.lead.trim() ? item.lead : String.fromCharCode(160)}</p>}
+      {item.lead && <p className={`pf-sig-lead ${item.leadBold ? "pf-bold" : ""}`}>{item.lead.trim() ? item.lead : String.fromCharCode(160)}</p>}
       <p className="pf-sig-name">{item.name?.trim() || " "}</p>
       <p className="pf-sig-title">{item.title}</p>
       {item.after && (
@@ -48,6 +58,31 @@ function SignatureBox({ item }: { item: Signature }) {
   );
 }
 
+const CHECK = String.fromCharCode(0x2713);
+
+function TableCell({ cell, rowMm }: { cell: Cell; rowMm?: number }) {
+  const content = cell.label ? cell.text : cell.v;
+  const className = [
+    cell.label ? `pf-label ${cell.head ? "pf-label--head" : ""}` : "pf-value",
+    cell.plain ? "pf-plain" : "",
+    cell.bold ? "pf-bold" : "",
+    cell.italic ? "pf-italic" : "",
+    cell.top ? "pf-top" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return (
+    <td
+      colSpan={cell.span}
+      rowSpan={cell.rows}
+      className={className}
+      style={{ textAlign: cell.align, fontSize: cell.size ? `${cell.size}pt` : undefined, height: rowMm ? `${rowMm}mm` : undefined }}
+    >
+      {cell.mark === "check" ? <span className="pf-check">{CHECK}</span> : cell.mark === "circle" ? <span className="pf-circle">{content}</span> : content}
+    </td>
+  );
+}
+
 function BlockView({ block }: { block: Block }) {
   switch (block.kind) {
     case "section":
@@ -55,7 +90,7 @@ function BlockView({ block }: { block: Block }) {
     case "gap":
       return <div style={{ height: `${block.mm}mm` }} />;
     case "para":
-      return <p className={`pf-para ${block.italic ? "pf-para--italic" : ""} ${block.align === "left" ? "pf-para--left" : block.align === "center" ? "pf-para--center" : ""}`}>{runs(block.runs)}</p>;
+      return <p style={block.size ? { fontSize: `${block.size}pt` } : undefined} className={`pf-para ${block.italic ? "pf-para--italic" : ""} ${block.align === "left" ? "pf-para--left" : block.align === "center" ? "pf-para--center" : ""}`}>{runs(block.runs)}</p>;
     case "list":
       return (
         <ol className={`pf-list ${block.style === "alpha" ? "pf-list--alpha" : ""}`}>
@@ -72,7 +107,33 @@ function BlockView({ block }: { block: Block }) {
           ))}
         </div>
       );
-    case "table":
+    case "box":
+      return (
+        <div className="pf-box" style={{ minHeight: `${block.mm}mm` }}>
+          <p className="pf-box-title">{block.title}</p>
+          <p className="pf-box-text">{block.text}</p>
+        </div>
+      );
+    case "checks":
+      return (
+        <ul className={`pf-checks ${block.columns === 2 ? "pf-checks--two" : ""} ${block.italic ? "pf-para--italic" : ""}`}>
+          {block.items.map((item) => (
+            <li key={item.text}>
+              <span className="pf-tick">{item.on ? CHECK : ""}</span>
+              {item.text}
+            </li>
+          ))}
+        </ul>
+      );
+    case "table": {
+      const headCount = block.head ?? 0;
+      const row = (cells: Cell[], rowIndex: number) => (
+        <tr key={rowIndex}>
+          {cells.map((cell, index) => (
+            <TableCell key={index} cell={cell} rowMm={rowIndex >= headCount ? block.rowMm : undefined} />
+          ))}
+        </tr>
+      );
       return (
         <table className="pf-table">
           <colgroup>
@@ -80,32 +141,26 @@ function BlockView({ block }: { block: Block }) {
               <col key={index} style={{ width: `${width}%` }} />
             ))}
           </colgroup>
+          {headCount > 0 && <thead>{block.rows.slice(0, headCount).map(row)}</thead>}
           <tbody>
-            {block.rows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {row.map((cell, index) => (
-                  <td key={index} colSpan={cell.span} className={cell.label ? `pf-label ${cell.head ? "pf-label--head" : ""}` : "pf-value"}>
-                    {cell.label ? cell.text : cell.v}
-                  </td>
-                ))}
-              </tr>
-            ))}
+            {block.rows.slice(headCount).map((cells, index) => row(cells, index + headCount))}
             {Array.from({ length: block.empty ?? 0 }, (_, rowIndex) => (
               <tr key={`empty-${rowIndex}`} className="pf-empty">
                 {block.cols.map((_, index) => (
-                  <td key={index} />
+                  <td key={index} style={block.rowMm ? { height: `${block.rowMm}mm` } : undefined} />
                 ))}
               </tr>
             ))}
           </tbody>
         </table>
       );
+    }
   }
 }
 
-const FormSheet = forwardRef<HTMLElement, { meta: FormMeta; blocks: Block[]; campus?: string }>(function FormSheet({ meta, blocks, campus = "Lingayen" }, ref) {
+const FormSheet = forwardRef<HTMLElement, { meta: DocMeta; blocks: Block[]; campus?: string }>(function FormSheet({ meta, blocks, campus = "Lingayen" }, ref) {
   return (
-    <article ref={ref} className={`pf-page pf-page--${meta.key}`} aria-label={meta.title}>
+    <article ref={ref} className={`pf-page pf-page--${meta.key} ${meta.compact ? "pf-page--compact" : ""}`} aria-label={meta.title}>
       {meta.code && (
         <p className="pf-code">
           {meta.code.code}
@@ -123,7 +178,7 @@ const FormSheet = forwardRef<HTMLElement, { meta: FormMeta; blocks: Block[]; cam
           <span className="pf-title">{meta.title}</span>
           <span className="pf-university">PANGASINAN STATE UNIVERSITY</span>
           <span className="pf-campus">
-            <u>{campus}</u> Campus
+            <u>{campusOf(campus)}</u> Campus
           </span>
         </span>
         <span className="pf-seal pf-seal--balance" aria-hidden="true" />

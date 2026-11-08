@@ -8,6 +8,7 @@ import EntryPictures from "../../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../../components/WeeklyReport";
 import { Card, EmptyState, Stars, StatusBadge } from "../../../components/ui";
 import { formatFileSize } from "../../../lib/files";
+import { phDateKey } from "../../../lib/phTime";
 import { dueLabel, formatDate, formatDayDate, formatHours, formatTime } from "../../../lib/format";
 import { errorText, toast } from "../../../lib/toast";
 import type { DtrCertification } from "../../../lib/useDtrCertifications";
@@ -420,7 +421,16 @@ export function EvaluationsSection({ data, perf, final }: { data: Overview; perf
             <h3 className="text-sm font-semibold text-slate-900">Final evaluation</h3>
           </div>
           <div className="mt-3 border-t border-slate-100 px-4 py-4 sm:px-5">
-            <FinalEvaluationView evaluation={final} />
+            <FinalEvaluationView
+              evaluation={final}
+              printable={{
+                name: data.student.name,
+                company: data.student.company ?? "",
+                hours: data.student.required_hours ? String(data.student.required_hours) : undefined,
+                started: workedDays(data.attendance)[0],
+                ended: workedDays(data.attendance).at(-1),
+              }}
+            />
           </div>
         </Card>
       )}
@@ -613,4 +623,12 @@ export function NotesSection({ data }: { data: Overview }) {
       </Card>
     </>
   );
+}
+
+/** The days a student timed in, oldest first ("YYYY-MM-DD", Philippine time). */
+function workedDays(logs: Overview["attendance"]): string[] {
+  return logs
+    .filter((log) => log.time_in)
+    .map((log) => phDateKey(log.time_in))
+    .sort();
 }

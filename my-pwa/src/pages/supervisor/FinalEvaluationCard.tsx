@@ -52,7 +52,7 @@ export default function FinalEvaluationCard({
           {!loaded || !formLoaded ? (
             <SkeletonRows rows={3} />
           ) : evaluation && !editing ? (
-            <FinalEvaluationView evaluation={evaluation} />
+            <FinalEvaluationView evaluation={evaluation} printable={{ name: intern.name }} />
           ) : !form ? (
             <p className="text-sm text-slate-600">
               The OJT coordinator has not set up the evaluation form yet.

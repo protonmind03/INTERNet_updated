@@ -1,10 +1,14 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import FinalEvaluationView from "../../components/FinalEvaluationView";
 import Icon from "../../components/Icon";
-import PsuFormSheet, { FormField } from "../../components/PsuFormSheet";
-import { PSU_FORMS } from "../../lib/psuForms";
 import { Button, Card, CardHeader, EmptyState, ErrorNotice, SkeletonRows, StatusBadge } from "../../components/ui";
+import FormButtons, { FormPreview } from "./forms/FormButtons";
+import { fileNameFor } from "./forms/formModel";
+import { FEEDBACK, feedbackBlocks } from "./forms/recordForms";
+import { usePrintFields } from "./forms/useFormData";
 import { formatDate, formatLongDate } from "../../lib/format";
+import { phDateKey, phToday } from "../../lib/phTime";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { useAccount } from "../../lib/session";
 import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
@@ -27,9 +31,10 @@ import { logDateKey } from "./useAttendance";
 |                   seven statements rated Strongly Agree to Strongly
 |                   Disagree, the problems met and other concerns. It saves
 |                   as the trainee goes; Submit marks it done once every
-|                   statement is rated. Print gives the form as the
-|                   university prints it, signed with the trainee's
-|                   e-signature line, for the narrative report.
+|                   statement is rated. Beside the questions, the form
+|                   as the university prints it, filling in as they
+|                   answer; Print and Save (PDF or Word) give that form,
+|                   for the narrative report (forms/recordForms.ts).
 |
 |   Supervisor's    the Internship Evaluation Form (FM-AA-INT-13) the
 |   evaluation      supervisor fills in at the end, read-only, with the OJT
@@ -40,7 +45,14 @@ import { logDateKey } from "./useAttendance";
 type Side = "feedback" | "supervisor";
 
 export default function InternshipEvaluation() {
-  const [side, setSide] = useState<Side>("feedback");
+  const [params, setParams] = useSearchParams();
+  const side: Side = params.get("side") === "supervisor" ? "supervisor" : "feedback";
+  const setSide = (next: Side) => {
+    const rest = new URLSearchParams(params);
+    if (next === "supervisor") rest.set("side", "supervisor");
+    else rest.delete("side");
+    setParams(rest, { replace: true });
+  };
   return (
     <div>
       <SubTabs
@@ -71,6 +83,7 @@ function FeedbackFormPanel() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [department, setDepartment] = useState("");
+  const sheet = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     if (!studentId) return;
@@ -146,27 +159,43 @@ function FeedbackFormPanel() {
   const company = header?.trainee.company ?? student?.company ?? "";
   const course = header?.trainee.program ?? student?.program ?? "";
 
-  return (
-    <>
-      <div className="space-y-4 print:hidden">
-        {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+  const name = header?.trainee.name ?? student?.name ?? "";
+  const blocks = feedbackBlocks({
+    name,
+    course,
+    department,
+    company,
+    ratings: draft.ratings,
+    problems: draft.problems_met,
+    concerns: draft.other_concerns,
+    date: submittedAt ? phDateKey(submittedAt) : phToday(),
+  });
+  const campus = header?.institution.campus_name || undefined;
 
-        <Card>
-          <CardHeader
-            icon="clipboard"
-            title="Student-Intern's Feedback Form"
-            description="PSU form FM-AA-INT-20. How your training went, in your own words. Your coordinator reads it."
-            action={
-              submittedAt ? (
-                <StatusBadge status={`Submitted ${formatDate(submittedAt)}`} tone="good" />
-              ) : (
-                <StatusBadge status={`${rated} of ${FEEDBACK_CRITERIA.length} rated`} tone={complete ? "info" : "neutral"} />
-              )
-            }
-          />
-          <dl className="mt-3 grid gap-x-6 gap-y-2 border-t border-(--role-hairline) px-4 py-3 text-[14px] sm:grid-cols-2 sm:px-5">
+  return (
+    <div className="space-y-4">
+      {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+
+      <Card>
+        <CardHeader
+          icon="clipboard"
+          title="Student-Intern's Feedback Form"
+          description="PSU form FM-AA-INT-20. How your training went, in your own words. Your coordinator reads it."
+        />
+        <div className="border-t border-(--role-hairline) px-4 py-3 sm:px-5">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            {submittedAt ? (
+              <StatusBadge status={`Submitted ${formatDate(submittedAt)}`} tone="good" />
+            ) : (
+              <StatusBadge status={`${rated} of ${FEEDBACK_CRITERIA.length} rated`} tone={complete ? "info" : "neutral"} />
+            )}
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100" aria-hidden="true">
+            <div className="h-full rounded-full bg-psu-600 transition-[width] duration-300" style={{ width: `${(rated / FEEDBACK_CRITERIA.length) * 100}%` }} />
+          </div>
+          <dl className="mt-3 grid gap-x-6 gap-y-2 text-[14px] sm:grid-cols-2 xl:grid-cols-4">
             {[
-              ["Name of student-intern", student?.name ?? ""],
+              ["Name of student-intern", name],
               ["Course", course],
               ["Department", department || "—"],
               ["Company name", company || "—"],
@@ -177,146 +206,105 @@ function FeedbackFormPanel() {
               </div>
             ))}
           </dl>
-        </Card>
+        </div>
+      </Card>
 
-        <Card>
-          {/* Column names, on a wide screen, over the five choices. */}
-          <div className="hidden grid-cols-[minmax(0,1fr)_repeat(5,84px)] items-end gap-1 border-b border-(--role-hairline) px-5 pb-2 pt-4 text-center text-[11.5px] font-bold leading-tight text-slate-600 lg:grid">
-            <span className="text-left uppercase tracking-wide">Criteria</span>
-            {FEEDBACK_CHOICES.map((choice) => (
-              <span key={choice.value}>{choice.label}</span>
+      <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] 2xl:items-start">
+        <div className="space-y-4">
+          <Card>
+            <ol className="divide-y divide-(--role-hairline)">
+              {FEEDBACK_CRITERIA.map((criterion, index) => {
+                const chosen = draft.ratings[criterion.key];
+                return (
+                  <li key={criterion.key} className="px-4 py-4 sm:px-5">
+                    <p id={`criterion-${criterion.key}`} className="flex gap-2.5 text-[15px] font-semibold leading-snug text-slate-900">
+                      <span
+                        aria-hidden="true"
+                        className={`tabular grid h-6 w-6 shrink-0 place-items-center rounded-full text-[12px] font-bold ${chosen ? "bg-psu-700 text-white" : "bg-slate-100 text-slate-500"}`}
+                      >
+                        {chosen ? <Icon name="check" size={13} /> : index + 1}
+                      </span>
+                      {criterion.text}
+                    </p>
+                    <div role="radiogroup" aria-labelledby={`criterion-${criterion.key}`} className="mt-3 grid grid-cols-5 overflow-hidden rounded-xl ring-1 ring-inset ring-(--role-hairline)">
+                      {FEEDBACK_CHOICES.map((choice, position) => {
+                        const on = chosen === choice.value;
+                        return (
+                          <button
+                            key={choice.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={on}
+                            aria-label={choice.label}
+                            onClick={() => rate(criterion.key, choice.value)}
+                            className={`flex min-h-12 flex-col items-center justify-center gap-0.5 px-1 py-1.5 text-center text-[11px] font-semibold leading-tight transition-colors sm:text-[12px] ${
+                              position > 0 ? "border-l border-(--role-hairline)" : ""
+                            } ${on ? "bg-psu-700 text-white" : "bg-white text-slate-600 hover:bg-psu-50"}`}
+                          >
+                            <span className={`tabular text-[13px] font-extrabold ${on ? "text-gold-200" : "text-slate-400"}`}>{choice.value}</span>
+                            <span className="sm:hidden">{choice.short}</span>
+                            <span className="hidden sm:inline">{choice.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          </Card>
+
+          <div className="grid gap-4 lg:grid-cols-2 2xl:grid-cols-1">
+            {(
+              [
+                ["problems_met", "Problems met", "What made your training harder, if anything."],
+                ["other_concerns", "Other concerns", "Anything else your coordinator should know."],
+              ] as const
+            ).map(([field, title, hint]) => (
+              <Card key={field} className="p-4 sm:p-5">
+                <label htmlFor={`feedback-${field}`} className="block text-[15px] font-bold text-slate-900">
+                  {title}
+                </label>
+                <p className="mt-0.5 text-[13px] text-slate-600">{hint} Optional.</p>
+                <textarea
+                  id={`feedback-${field}`}
+                  rows={5}
+                  maxLength={3000}
+                  value={draft[field]}
+                  onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
+                  className="field mt-2.5 resize-y"
+                />
+              </Card>
             ))}
           </div>
-          <ol className="divide-y divide-(--role-hairline)">
-            {FEEDBACK_CRITERIA.map((criterion, index) => {
-              const chosen = draft.ratings[criterion.key];
-              return (
-                <li key={criterion.key} className="px-4 py-3.5 sm:px-5 lg:grid lg:grid-cols-[minmax(0,1fr)_repeat(5,84px)] lg:items-center lg:gap-1 lg:py-2.5">
-                  <p id={`criterion-${criterion.key}`} className="flex gap-2 text-[15px] font-semibold leading-snug text-slate-900 lg:font-medium">
-                    <span className="tabular shrink-0 text-slate-500">{index + 1}.</span>
-                    {criterion.text}
-                  </p>
-                  <div role="radiogroup" aria-labelledby={`criterion-${criterion.key}`} className="mt-2.5 grid grid-cols-5 gap-1 lg:contents">
-                    {FEEDBACK_CHOICES.map((choice) => {
-                      const on = chosen === choice.value;
-                      return (
-                        <button
-                          key={choice.value}
-                          type="button"
-                          role="radio"
-                          aria-checked={on}
-                          aria-label={choice.label}
-                          onClick={() => rate(criterion.key, choice.value)}
-                          className={`flex min-h-12 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[10.5px] font-semibold leading-tight ring-1 ring-inset transition-colors lg:mx-auto lg:min-h-11 lg:w-11 lg:rounded-full ${
-                            on ? "bg-psu-700 text-white ring-psu-700" : "bg-white text-slate-600 ring-(--role-hairline) hover:bg-psu-50"
-                          }`}
-                        >
-                          <Icon name={on ? "check" : "plus"} size={on ? 18 : 14} className={on ? "" : "text-slate-300 lg:text-slate-300"} />
-                          <span className="lg:sr-only">{choice.short}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </Card>
 
-        <div className="grid gap-4 lg:grid-cols-2">
-          {(
-            [
-              ["problems_met", "Problems met", "What made your training harder, if anything."],
-              ["other_concerns", "Other concerns", "Anything else your coordinator should know."],
-            ] as const
-          ).map(([field, title, hint]) => (
-            <Card key={field} className="p-4 sm:p-5">
-              <label htmlFor={`feedback-${field}`} className="block text-[15px] font-bold text-slate-900">
-                {title}
-              </label>
-              <p className="mt-0.5 text-[13px] text-slate-600">{hint} Optional.</p>
-              <textarea
-                id={`feedback-${field}`}
-                rows={5}
-                maxLength={3000}
-                value={draft[field]}
-                onChange={(event) => setDraft((current) => ({ ...current, [field]: event.target.value }))}
-                className="field mt-2.5 resize-y"
-              />
-            </Card>
-          ))}
-        </div>
-
-        <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline) sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-[13.5px] text-slate-600" aria-live="polite">
-            {saveStateText(autosave.state, autosave.message) ||
-              (submittedAt ? `Submitted ${formatLongDate(submittedAt)}. You can still change it; changes save by themselves.` : "Your answers save by themselves as you go.")}
-          </p>
-          <div className="flex shrink-0 flex-wrap gap-2">
-            <Button variant="secondary" icon="printer" onClick={() => window.print()}>
-              Print form
-            </Button>
+          <div className="flex flex-col gap-3 rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline) sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-[13.5px] text-slate-600" aria-live="polite">
+              {saveStateText(autosave.state, autosave.message) ||
+                (submittedAt ? `Submitted ${formatLongDate(submittedAt)}. You can still change it; changes save by themselves.` : "Your answers save by themselves as you go.")}
+            </p>
             {!submittedAt && (
-              <Button icon="check" busy={submitting} disabled={!complete} onClick={() => void submit()}>
+              <Button icon="check" busy={submitting} disabled={!complete} onClick={() => void submit()} className="shrink-0">
                 {complete ? "Submit form" : `Rate all ${FEEDBACK_CRITERIA.length} to submit`}
               </Button>
             )}
           </div>
         </div>
-      </div>
 
-      {/* The form as the university prints it. */}
-      <PsuFormSheet title="Student-Intern's Feedback Form" form={PSU_FORMS.feedback} campus={header?.institution.campus_name}>
-        <table>
-          <tbody>
-            <FormField label="Name of student-intern">{student?.name}</FormField>
-            <FormField label="Course">{course}</FormField>
-            <FormField label="Department">{department}</FormField>
-            <FormField label="Company name">{company}</FormField>
-          </tbody>
-        </table>
-        <table>
-          <thead>
-            <tr>
-              <th className="text-center">CRITERIA</th>
-              {FEEDBACK_CHOICES.map((choice) => (
-                <th key={choice.value} className="w-[12%] text-center" style={{ textAlign: "center", fontSize: "9pt" }}>
-                  {choice.label}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {FEEDBACK_CRITERIA.map((criterion) => (
-              <tr key={criterion.key}>
-                <td>{criterion.text}</td>
-                {FEEDBACK_CHOICES.map((choice) => (
-                  <td key={choice.value} className="psu-form-check">
-                    {draft.ratings[criterion.key] === choice.value ? "✓" : ""}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <section className="psu-form-box">
-          <h3>Problems met:</h3>
-          <p style={{ whiteSpace: "pre-wrap" }}>{draft.problems_met}</p>
+        <section aria-labelledby="feedback-paper" className="space-y-3 2xl:sticky 2xl:top-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 id="feedback-paper" className="text-[15px] font-extrabold text-slate-900">
+                The form, as printed
+              </h3>
+              <p className="text-[12.5px] text-slate-600">Fills in as you answer. Sign it once printed.</p>
+            </div>
+            <FormButtons meta={FEEDBACK} blocks={blocks} sheet={sheet} campus={campus} fileName={fileNameFor(FEEDBACK, name)} />
+          </div>
+          <FormPreview meta={FEEDBACK} blocks={blocks} sheet={sheet} campus={campus} label="Preview of the feedback form" />
         </section>
-        <section className="psu-form-box">
-          <h3>Other concerns:</h3>
-          <p style={{ whiteSpace: "pre-wrap" }}>{draft.other_concerns}</p>
-        </section>
-        <section className="psu-form-sign">
-          <span className="psu-form-line">{student?.name}</span>
-          <br />
-          <i>Signature of Student-Intern</i>
-          <br />
-          <br />
-          Date: <span className="psu-form-line">{submittedAt ? formatLongDate(submittedAt) : ""}</span>
-        </section>
-      </PsuFormSheet>
-    </>
+      </div>
+    </div>
   );
 }
 
@@ -325,6 +313,7 @@ function SupervisorEvaluationPanel() {
   const final = useFinalEvaluation("student", student?.student_id);
   const header = useTimeRecordHeader("student", student?.student_id, null);
   const { attendance } = useTimeIn();
+  const { fields } = usePrintFields();
   const evaluation = final.evaluation;
   const worked = attendance.logs.filter((log) => log.time_in).map(logDateKey).sort();
   if (!final.loaded) return <SkeletonRows rows={4} />;
@@ -345,11 +334,6 @@ function SupervisorEvaluationPanel() {
         icon="star"
         title="Internship Evaluation Form"
         description="PSU form FM-AA-INT-13, filled in by your supervisor"
-        action={
-          <Button variant="secondary" size="sm" icon="printer" onClick={() => window.print()}>
-            Print
-          </Button>
-        }
       />
       <div className="border-t border-(--role-hairline) px-4 py-4 sm:px-5">
         <FinalEvaluationView
@@ -357,6 +341,8 @@ function SupervisorEvaluationPanel() {
           printable={{
             name: header?.trainee.name ?? student?.name ?? "",
             company: header?.trainee.company ?? student?.company ?? "",
+            companyAddress: fields?.companyAddress ?? "",
+            hours: header?.trainee.required_hours ? String(header.trainee.required_hours) : undefined,
             started: worked[0],
             ended: worked[worked.length - 1],
             campus: header?.institution.campus_name,

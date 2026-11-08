@@ -18,7 +18,7 @@ import { PSU_FORMS, type FormCode } from "../../../lib/psuForms";
 |
 */
 
-export type FormKey = "application" | "consent" | "release" | "waiver";
+export type FormKey = "application" | "units" | "consent" | "release" | "waiver";
 
 export type Fields = {
   lastName: string;
@@ -50,6 +50,8 @@ export type Fields = {
   guardianCertNo: string;
   guardianCertDate: string;
   guardianCertPlace: string;
+  instructor: string;
+  jobDescription: string;
 };
 
 export const EMPTY: Fields = {
@@ -82,6 +84,8 @@ export const EMPTY: Fields = {
   guardianCertNo: "",
   guardianCertDate: "",
   guardianCertPlace: "",
+  instructor: "",
+  jobDescription: "",
 };
 
 export const LABELS: Record<keyof Fields, string> = {
@@ -114,10 +118,12 @@ export const LABELS: Record<keyof Fields, string> = {
   guardianCertNo: "Residence certificate no.",
   guardianCertDate: "Issued on",
   guardianCertPlace: "Issued at",
+  instructor: "Internship instructor",
+  jobDescription: "Job description",
 };
 
 /** Fields that take a whole row in the panel. */
-export const WIDE: (keyof Fields)[] = ["company", "companyAddress", "currentAddress", "homeAddress", "companyHead"];
+export const WIDE: (keyof Fields)[] = ["company", "companyAddress", "currentAddress", "homeAddress", "companyHead", "instructor", "jobDescription"];
 
 export type Group = { title: string; keys: (keyof Fields)[] };
 
@@ -127,6 +133,10 @@ export const ASKS: Record<FormKey, Group[]> = {
     { title: "You", keys: ["lastName", "firstName", "middleName", "age", "sex", "civilStatus", "contact", "guardian", "currentAddress", "homeAddress"] },
     { title: "Your program", keys: ["course", "yearSection", "major"] },
     { title: "The company", keys: ["company", "companyAddress", "companyHead", "companyContact", "hours"] },
+  ],
+  units: [
+    { title: "You", keys: ["lastName", "firstName", "middleName"] },
+    { title: "Your program", keys: ["course", "major"] },
   ],
   consent: [
     { title: "You", keys: ["firstName", "middleName", "lastName", "homeAddress", "course", "hours"] },
@@ -148,10 +158,17 @@ export const ASKS: Record<FormKey, Group[]> = {
   ],
 };
 
-export type FormMeta = { key: FormKey; title: string; code?: FormCode; icon: "clipboard" | "edit" | "document" | "shield"; line: string };
+/** "Lingayen" from "Lingayen" or "Lingayen Campus", for the form's "___ Campus" line. */
+export const campusOf = (campus?: string | null) => (campus || "Lingayen").replace(/\s+campus\s*$/i, "").trim() || "Lingayen";
+
+/** Any university form drawn by this engine: its title and code, and whether it is set tighter to fit one page. */
+export type DocMeta = { key: string; title: string; code?: FormCode; compact?: boolean };
+
+export type FormMeta = DocMeta & { key: FormKey; icon: "clipboard" | "edit" | "document" | "shield"; line: string };
 
 export const FORMS: FormMeta[] = [
-  { key: "application", title: "Application for Internship", code: PSU_FORMS.application, icon: "clipboard", line: "Your profile, academic credentials and the company, for approval" },
+  { key: "application", title: "Application for Internship", code: PSU_FORMS.application, icon: "clipboard", line: "Your profile, academic credentials and the company, for approval", compact: true },
+  { key: "units", title: "Certification of Units Earned for Practicum/Internship", code: PSU_FORMS.unitsEarned, icon: "clipboard", line: "Your name and program filled in; the registrar lists your courses and certifies it", compact: true },
   { key: "consent", title: "Consent Form", code: PSU_FORMS.consent, icon: "edit", line: "Your sworn consent to the internship's terms; to be notarized" },
   { key: "release", title: "Internship Release Form", icon: "document", line: "Releases you to your company once your documents are complete" },
   { key: "waiver", title: "Training Agreement and Liability Waiver Form", code: PSU_FORMS.waiver, icon: "shield", line: "For overtime training, with your parent's consent (optional)" },
@@ -162,15 +179,40 @@ export const FORMS: FormMeta[] = [
 /** A line to fill: the value on it, or blank; s, m or l long. */
 export type Line = { v: string; w: "s" | "m" | "l"; upper?: boolean };
 export type Run = string | Line | { b: string } | { i: string };
-export type Cell = { text?: string; v?: string; label?: boolean; span?: number; head?: boolean };
-export type Signature = { lead?: string; name?: string; title: string; after?: Run[][] };
+/**
+ * A table cell. `label` cells print the form's own words (`text`, small
+ * capitals); the others print what was filled in (`v`, upper case unless
+ * `plain`). `span` joins columns, `rows` joins rows. `mark` draws a check
+ * mark in the cell, or a circle round its value (the rating chosen).
+ */
+export type Cell = {
+  text?: string;
+  v?: string;
+  label?: boolean;
+  span?: number;
+  rows?: number;
+  head?: boolean;
+  align?: "left" | "center" | "right";
+  bold?: boolean;
+  italic?: boolean;
+  plain?: boolean;
+  top?: boolean;
+  size?: number;
+  mark?: "check" | "circle";
+};
+export type Signature = { lead?: string; leadBold?: boolean; name?: string; title: string; after?: Run[][] };
 
 export type Block =
   | { kind: "section"; title: string }
-  | { kind: "table"; cols: number[]; rows: Cell[][]; empty?: number }
-  | { kind: "para"; runs: Run[]; italic?: boolean; align?: "justify" | "left" | "center" }
+  /** `head` rows are the column names, repeated at the top of every page the table runs onto; `rowMm` is the least height of a row. */
+  | { kind: "table"; cols: number[]; rows: Cell[][]; empty?: number; head?: number; rowMm?: number }
+  | { kind: "para"; runs: Run[]; italic?: boolean; align?: "justify" | "left" | "center"; size?: number }
   | { kind: "list"; style: "decimal" | "alpha"; items: Run[][] }
   | { kind: "signatures"; items: Signature[]; columns?: 1 | 2; align?: "left" }
+  /** A ruled box with a heading and room to write ("Problems met:"). */
+  | { kind: "box"; title: string; text: string; mm: number }
+  /** Lines to tick ("___ due only for lack of work"), in one or two columns. */
+  | { kind: "checks"; items: { text: string; on: boolean }[]; columns?: 1 | 2; italic?: boolean }
   | { kind: "gap"; mm: number };
 
 const line = (v: string, w: Line["w"] = "m", upper = false): Line => ({ v, w, upper });
@@ -242,6 +284,8 @@ export function blocksFor(form: FormKey, f: Fields): Block[] {
       { kind: "signatures", columns: 1, items: [{ title: "Campus Executive Director" }] },
     ];
 
+  if (form === "units") return unitsBlocks(f);
+
   if (form === "consent")
     return [
       { kind: "para", runs: ["I, ", line(name, "l"), ", Filipino, of legal age, and residing at ", line(f.homeAddress, "l"), " after being duly sworn by law, do hereby depose and say that:"] },
@@ -310,8 +354,55 @@ export function blocksFor(form: FormKey, f: Fields): Block[] {
   ];
 }
 
+/*
+| FM-AA-INT-02: the trainee's name, course and major. The courses earned by
+| year level and term, the courses still to take, and the certification are
+| left for the registrar, as the course list differs by curriculum.
+*/
+function unitsBlocks(f: Fields): Block[] {
+  const blank = (): Cell => ({ v: "" });
+  const years = ["First year", "Second year", "Third year", "Fourth year"];
+  const ROWS = 8;
+  const earned: Cell[][] = [];
+  for (const year of years) {
+    for (let row = 0; row < ROWS; row += 1) {
+      const cells: Cell[] = Array.from({ length: 6 }, blank);
+      earned.push(row === 0 ? [{ text: year, label: true, bold: true, rows: ROWS }, ...cells, { v: "", rows: ROWS, align: "center" }] : cells);
+    }
+  }
+  const caption = (text: string): Cell => ({ text, label: true, align: "center", italic: true, size: 6.5 });
+  return [
+    {
+      kind: "table",
+      cols: [14, 29, 29, 28],
+      rows: [
+        [{ text: "Name", label: true, rows: 2 }, { v: f.lastName, align: "center" }, { v: f.firstName, align: "center" }, { v: f.middleName, align: "center" }],
+        [caption("Last name"), caption("First name"), caption("Middle name")],
+        [{ text: "Course", label: true }, { v: f.course, span: 3 }],
+        [{ text: "Major", label: true }, { v: f.major, span: 3 }],
+      ],
+    },
+    { kind: "section", title: "Courses earned" },
+    {
+      kind: "table",
+      cols: [11, 20, 7.5, 20, 7.5, 17, 7.5, 9.5],
+      head: 1,
+      rowMm: 4.4,
+      rows: [
+        ["Year level", "1st semester", "Units", "2nd semester", "Units", "Summer", "Units", "Total"].map((text): Cell => ({ text, label: true, head: true })),
+        ...earned,
+        [{ text: "Total", label: true, bold: true, span: 7 }, { v: "", align: "center" }],
+      ],
+    },
+    { kind: "section", title: "Courses failed to take as of the present" },
+    { kind: "table", cols: [24, 61, 15], head: 1, rowMm: 4.4, rows: [["Course code", "Course title", "Units"].map((text): Cell => ({ text, label: true, head: true }))], empty: 3 },
+    { kind: "signatures", columns: 1, items: [{ lead: "CERTIFIED TRUE AND CORRECT:", leadBold: true, title: "Campus Registrar" }] },
+  ];
+}
+
 /** The file name a saved form gets: "Consent Form - Demo Student". */
-export function fileNameFor(meta: FormMeta, f: Fields): string {
-  const who = fullName(f) || "INTERNet";
-  return `${meta.title} - ${who}`.replace(/[\\/:*?"<>|]+/g, "").trim();
+export function fileNameFor(meta: DocMeta, f: Fields | string): string {
+  const who = (typeof f === "string" ? f.trim() : fullName(f)) || "INTERNet";
+  // "Internship/Practicum" keeps its meaning in a file name: "Internship-Practicum".
+  return `${meta.title.replace(/\//g, "-")} - ${who}`.replace(/[\\/:*?"<>|]+/g, "").trim();
 }

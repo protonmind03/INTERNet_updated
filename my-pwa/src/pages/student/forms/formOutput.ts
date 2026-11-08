@@ -1,4 +1,4 @@
-import type { Block, FormMeta, Run } from "./formModel";
+import { campusOf, type Block, type Cell, type DocMeta, type Run, type Signature } from "./formModel";
 
 /*
 |--------------------------------------------------------------------------
@@ -103,11 +103,13 @@ async function sealPng(sheet: HTMLElement): Promise<ArrayBuffer | null> {
 }
 
 const SPACE = String.fromCharCode(160);
+const CHECK = String.fromCharCode(0x2713);
 
 const BLANK: Record<"s" | "m" | "l", number> = { s: 10, m: 20, l: 34 };
 
 /** Saves the form as an editable Word file on A4, built from the same blocks as the sheet. */
-export async function saveFormDocx(meta: FormMeta, blocks: Block[], sheet: HTMLElement, fileName: string, campus = "Lingayen"): Promise<void> {
+export async function saveFormDocx(meta: DocMeta, blocks: Block[], sheet: HTMLElement, fileName: string, campusName?: string): Promise<void> {
+  const campus = campusOf(campusName);
   const docx = await import("docx");
   const { Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, AlignmentType, BorderStyle, ImageRun, VerticalAlign, TableLayoutType } = docx;
   const WIDTH = 11906 - 2 * 907; // A4 less 16 mm side margins, in twips
@@ -117,20 +119,20 @@ export async function saveFormDocx(meta: FormMeta, blocks: Block[], sheet: HTMLE
   const ruled = { top: thin, bottom: thin, left: thin, right: thin, insideHorizontal: thin, insideVertical: thin };
 
   const textRuns = (list: Run[], options: { italic?: boolean; size?: number } = {}) =>
-    list.map((run) => {
-      if (typeof run === "string") return run === "\n" ? new TextRun({ break: 1 }) : new TextRun({ text: run, italics: options.italic, size: options.size });
+    list.flatMap((run) => {
+      if (typeof run === "string") return run.split("\n").map((piece, index) => new TextRun({ text: piece, italics: options.italic, size: options.size, break: index > 0 ? 1 : undefined }));
       if ("b" in run) return new TextRun({ text: run.b, bold: true, size: options.size });
       if ("i" in run) return new TextRun({ text: run.i, italics: true, size: options.size });
       const value = run.upper ? run.v.toUpperCase() : run.v;
       return new TextRun({ text: value ? `${SPACE}${value}${SPACE}` : SPACE.repeat(BLANK[run.w]), bold: Boolean(value), underline: {}, italics: options.italic, size: options.size });
     });
 
-  const signatureCell = (item: { lead?: string; name?: string; title: string; after?: Run[][] }, width: number) =>
+  const signatureCell = (item: Signature, width: number) =>
     new TableCell({
       width: { size: width, type: WidthType.DXA },
       borders: noBorders,
       children: [
-        ...(item.lead ? [new Paragraph({ children: [new TextRun({ text: item.lead })], spacing: { after: 120 } })] : []),
+        ...(item.lead ? [new Paragraph({ children: [new TextRun({ text: item.lead, bold: item.leadBold })], spacing: { after: 120 } })] : []),
         new Paragraph({
           alignment: AlignmentType.CENTER,
           spacing: { before: 360 },
@@ -194,7 +196,7 @@ export async function saveFormDocx(meta: FormMeta, blocks: Block[], sheet: HTMLE
         new Paragraph({
           alignment: block.align === "left" ? AlignmentType.LEFT : block.align === "center" ? AlignmentType.CENTER : AlignmentType.JUSTIFIED,
           spacing: { after: 120, line: 300 },
-          children: textRuns(block.runs, { italic: block.italic }),
+          children: textRuns(block.runs, { italic: block.italic, size: block.size ? Math.round(block.size * 2) : undefined }),
         })
       );
     } else if (block.kind === "list") {
@@ -223,33 +225,100 @@ export async function saveFormDocx(meta: FormMeta, blocks: Block[], sheet: HTMLE
       );
     } else if (block.kind === "table") {
       const widths = block.cols.map((share) => Math.round((WIDTH * share) / 100));
-      const cell = (content: { text?: string; v?: string; label?: boolean; span?: number; head?: boolean }, index: number) =>
-        new TableCell({
+      const headCount = block.head ?? 0;
+      const alignOf = (content: Cell) => {
+        const align = content.align ?? (content.head ? "center" : "left");
+        return align === "center" ? AlignmentType.CENTER : align === "right" ? AlignmentType.RIGHT : AlignmentType.LEFT;
+      };
+      const cell = (content: Cell, index: number) => {
+        const raw = (content.label ? content.text : content.v) ?? "";
+        const text = content.plain ? raw : raw.toUpperCase();
+        const size = Math.round((content.size ?? (content.label ? 8.3 : 9.5)) * 2);
+        const bold = Boolean(content.head || content.bold);
+        const shown = content.mark === "check" ? CHECK : content.mark === "circle" ? `( ${text} )` : text;
+        return new TableCell({
           width: { size: widths.slice(index, index + (content.span ?? 1)).reduce((a, b) => a + b, 0), type: WidthType.DXA },
           columnSpan: content.span,
-          verticalAlign: VerticalAlign.CENTER,
+          rowSpan: content.rows,
+          verticalAlign: content.top ? VerticalAlign.TOP : VerticalAlign.CENTER,
           margins: { top: 50, bottom: 50, left: 90, right: 90 },
-          children: [
-            new Paragraph({
-              alignment: content.head ? AlignmentType.CENTER : AlignmentType.LEFT,
-              children: [new TextRun({ text: (content.label ? content.text ?? "" : content.v ?? "").toUpperCase(), size: content.label ? 17 : 19, bold: Boolean(content.head) })],
-            }),
-          ],
+          children: shown.split("\n").map(
+            (piece) =>
+              new Paragraph({
+                alignment: content.mark ? AlignmentType.CENTER : alignOf(content),
+                children: [new TextRun({ text: piece, size: content.mark === "check" ? 24 : size, bold: bold || Boolean(content.mark), italics: content.italic })],
+              })
+          ),
         });
-      const rows = block.rows.map((row) => {
+      };
+      // Cells joined across rows hold their columns in the rows below (Word adds the joined parts itself).
+      const held = block.cols.map(() => 0);
+      const rows = block.rows.map((row, rowIndex) => {
         let column = 0;
+        const cells = row.map((content) => {
+          while (column < held.length && held[column] > 0) column += 1;
+          const made = cell(content, column);
+          for (let index = column; index < column + (content.span ?? 1); index += 1) held[index] = content.rows ?? 1;
+          column += content.span ?? 1;
+          return made;
+        });
+        for (let index = 0; index < held.length; index += 1) if (held[index] > 0) held[index] -= 1;
         return new TableRow({
-          children: row.map((content) => {
-            const made = cell(content, column);
-            column += content.span ?? 1;
-            return made;
-          }),
+          tableHeader: rowIndex < headCount || undefined,
+          cantSplit: rowIndex < headCount || undefined,
+          height: rowIndex >= headCount && block.rowMm ? { value: Math.round(block.rowMm * 56.7), rule: "atLeast" } : undefined,
+          children: cells,
         });
       });
       for (let index = 0; index < (block.empty ?? 0); index += 1) {
-        rows.push(new TableRow({ height: { value: 360, rule: "atLeast" }, children: widths.map((width) => new TableCell({ width: { size: width, type: WidthType.DXA }, children: [new Paragraph({ children: [] })] })) }));
+        rows.push(new TableRow({ height: { value: block.rowMm ? Math.round(block.rowMm * 56.7) : 360, rule: "atLeast" }, children: widths.map((width) => new TableCell({ width: { size: width, type: WidthType.DXA }, children: [new Paragraph({ children: [] })] })) }));
       }
       children.push(new Table({ width: { size: WIDTH, type: WidthType.DXA }, layout: TableLayoutType.FIXED, borders: ruled, columnWidths: widths, rows }), new Paragraph({ spacing: { after: 60 }, children: [] }));
+    } else if (block.kind === "box") {
+      children.push(
+        new Table({
+          width: { size: WIDTH, type: WidthType.DXA },
+          layout: TableLayoutType.FIXED,
+          borders: ruled,
+          columnWidths: [WIDTH],
+          rows: [
+            new TableRow({
+              height: { value: Math.round(block.mm * 56.7), rule: "atLeast" },
+              children: [
+                new TableCell({
+                  width: { size: WIDTH, type: WidthType.DXA },
+                  margins: { top: 80, bottom: 80, left: 100, right: 100 },
+                  children: [
+                    new Paragraph({ children: [new TextRun({ text: block.title.toUpperCase(), bold: true })] }),
+                    ...block.text.split("\n").map((piece) => new Paragraph({ children: [new TextRun({ text: piece, size: 19 })] })),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        }),
+        new Paragraph({ spacing: { after: 60 }, children: [] })
+      );
+    } else if (block.kind === "checks") {
+      const columns = block.columns === 2 ? 2 : 1;
+      const cellWidth = Math.round(WIDTH / columns);
+      const tick = (item: { text: string; on: boolean }) =>
+        new TableCell({
+          width: { size: cellWidth, type: WidthType.DXA },
+          borders: noBorders,
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: item.on ? `${SPACE}${SPACE}${CHECK}${SPACE}${SPACE}` : SPACE.repeat(8), underline: {}, bold: true }), new TextRun({ text: ` ${item.text}`, size: 19, italics: block.italic })],
+            }),
+          ],
+        });
+      const rows = [];
+      for (let index = 0; index < block.items.length; index += columns) {
+        const row = block.items.slice(index, index + columns).map(tick);
+        while (row.length < columns) row.push(new TableCell({ width: { size: cellWidth, type: WidthType.DXA }, borders: noBorders, children: [new Paragraph({ children: [] })] }));
+        rows.push(new TableRow({ children: row }));
+      }
+      children.push(new Table({ width: { size: WIDTH, type: WidthType.DXA }, layout: TableLayoutType.FIXED, borders: noBorders, columnWidths: Array.from({ length: columns }, () => cellWidth), rows }), new Paragraph({ spacing: { after: 60 }, children: [] }));
     }
   }
 

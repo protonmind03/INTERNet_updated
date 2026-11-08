@@ -45,19 +45,19 @@ E2E specs are in `e2e/tests/`. Backend tests are in `backend/test/api.test.cjs`,
 |---|---|---|---|---|
 | 1–2 | Table of Contents (letterhead) | Narrative outline and printed letterhead (`narrative/model.ts`, `NarrativePrint.tsx`) | `narrative.spec.ts` | Done |
 | 3–5 | Memorandum of Agreement | Listed in the binder; uploaded in Documents | `narrative.spec.ts` (requirements list) | Done |
-| 6, 31 | FM-AA-INT-01 Application for Internship | Fill and print (`PrintForms.tsx`) | `change1108.spec.ts` (four forms) | Done |
-| 7, 32–34 | FM-AA-INT-02 Certification of Units Earned | Uploaded (issued by the registrar) | `narrative.spec.ts` (requirements) | Done |
+| 6, 31 | FM-AA-INT-01 Application for Internship | Fill and print (`PrintForms.tsx`) | `change1108.spec.ts` (pre-OJT forms) | Done |
+| 7, 32–34 | FM-AA-INT-02 Certification of Units Earned | Fill and print: name, course and major filled in, the courses-earned table (by year and term), courses still to take and the certification left for the registrar; the certified copy is uploaded in Documents | `change1108.spec.ts`; `narrative.spec.ts` (requirements) | Done |
 | 9 | FM-AA-INT-03 Consent Form | Fill and print | `change1108.spec.ts` | Done |
 | 10 | FM-AA-INT-06 Endorsement Letter | Uploaded (issued by the university) | requirements list | Done |
 | 11–14 | CS Form 212 Personal Data Sheet (resume) | Uploaded | requirements list | Done |
 | 15 | Internship Release Form | Fill and print | `change1108.spec.ts` | Done |
 | 16–17 | Medical and psychological certificates | Uploaded; never in the album or exports | backend: album test (excludes health documents) | Done |
 | 18 | CS Form 48 Daily Time Record | Time record (`TimeRecord.tsx`, `DtrSheet`) | `journeys.spec.ts` (time record columns) | Done |
-| 19–20 | FM-AA-INT-17 Internship Timeframe | Printed from attendance (`TimeframeSheet.tsx`) | `narrative.spec.ts` | Done |
+| 19–20 | FM-AA-INT-17 Internship Timeframe | From the verified days (`forms/recordForms.ts`): Fill and print → From your record, and the Narrative report's requirement list; Print, Save as PDF or Word | `change1108.spec.ts`; `narrative.spec.ts` | Done |
 | 21 | FM-AA-INT-18 Training Agreement and Liability Waiver | Fill and print | `change1108.spec.ts` | Done |
-| 22–25 | FM-AA-INT-19 Practicum Weekly Report | Weekly report, Print FM-AA-INT-19 | `reports.spec.ts` | Done |
-| 26 | FM-AA-INT-20 Student Intern's Feedback Form | Resolution Center → Internship evaluation; the coordinator reads it and is notified | `change1108.spec.ts`; backend: feedback form test | Done |
-| 27–28 | FM-AA-INT-13 Internship Evaluation (weighted, grade) | Supervisor's final evaluation; trainee's evaluation tab | backend: "a weighted form (FM-AA-INT-13)" (grade 91) | Done |
+| 22–25 | FM-AA-INT-19 Practicum Weekly Report | From the weekly reports (one table for the whole OJT): Fill and print → From your record, and the Weekly reports page; Print, Save as PDF or Word; long weeks carry onto the next page with the column names repeated | `change1108.spec.ts`; `reports.spec.ts` | Done |
+| 26 | FM-AA-INT-20 Student Intern's Feedback Form | Resolution Center → Internship evaluation, with the printed form beside the questions (Print, Save as PDF or Word); linked from Fill and print; the coordinator reads it and is notified | `change1108.spec.ts`; backend: feedback form test | Done |
+| 27–28 | FM-AA-INT-13 Internship Evaluation (weighted, grade) | Supervisor's final evaluation; trainee's evaluation tab (`?side=supervisor`, linked from Fill and print); the university's two-page form with the rating circled, Print and Save as PDF or Word for the trainee, supervisor and coordinator | backend: "a weighted form (FM-AA-INT-13)" (grade 91) | Done |
 | 29–30 | Certificate of Completion | Uploaded (issued by the company) | requirements list | Done |
 | none | Internship Agreement; Training Supervisor's Feedback Form | Listed as "To follow" | none | Waiting (no photo) |
 

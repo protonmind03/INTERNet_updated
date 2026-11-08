@@ -11,7 +11,10 @@ import { MOA, PARTS, REQUIREMENTS, draftFor, type PartSource, type Requirement }
 import { AgencyForm, GuidedEditor, OrgForm, ServicesForm, TitleForm } from "./narrative/Builders";
 import NarrativePrint from "./narrative/NarrativePrint";
 import { PROMPTS, agencyDefaults, agencyText, fieldsOf, orgDefaults, orgText, servicesText, titleDefaults, titleText } from "./narrative/structured";
-import TimeframeSheet from "./narrative/TimeframeSheet";
+import FormButtons from "./forms/FormButtons";
+import { fileNameFor } from "./forms/formModel";
+import { TIMEFRAME, timeframeBlocks } from "./forms/recordForms";
+import { timeframeFrom, usePrintFields } from "./forms/useFormData";
 import TimeInProvider from "./TimeInProvider";
 import { useNarrativeData, type UploadedDocument } from "./narrative/useNarrativeData";
 
@@ -67,7 +70,10 @@ function NarrativePage() {
   const data = useNarrativeData();
   const [params, setParams] = useSearchParams();
   const open = params.get("part") ?? "dedication";
-  const [printing, setPrinting] = useState<"binder" | "timeframe" | null>(null);
+  const [printing, setPrinting] = useState<"binder" | null>(null);
+  const { fields } = usePrintFields();
+  // FM-AA-INT-17, from the verified days, as Fill and print has it.
+  const timeframe = timeframeFrom(data.logs, data.header, fields);
   const [exporting, setExporting] = useState(false);
   const college = data.header?.trainee.college ?? "";
 
@@ -241,9 +247,7 @@ function NarrativePage() {
                   </span>
                   {item.source === "auto" ? (
                     item.to === "#timeframe" ? (
-                      <Button variant="secondary" size="sm" icon="printer" onClick={() => setPrinting("timeframe")}>
-                        Print
-                      </Button>
+                      <FormButtons size="sm" meta={TIMEFRAME} blocks={timeframeBlocks(timeframe)} campus={data.header?.institution.campus_name || undefined} fileName={fileNameFor(TIMEFRAME, timeframe.name)} disabled={data.loading || !fields} />
                     ) : (
                       <Link to={item.to ?? "/"} className="inline-flex min-h-11 items-center gap-1 text-[13.5px] font-bold text-psu-700 hover:underline">
                         Open
@@ -271,7 +275,6 @@ function NarrativePage() {
       </div>
 
       {printing === "binder" && <NarrativePrint records={data.records} parts={data.parts} college={college} photos={data.photos} documents={data.documents} />}
-      {printing === "timeframe" && <TimeframeSheet logs={data.logs} header={data.header} />}
     </StudentLayout>
   );
 }

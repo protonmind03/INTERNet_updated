@@ -1,4 +1,4 @@
-import type { Block, Cell, FormMeta, Line, Run, Signature } from "./formModel";
+import { campusOf, type Block, type Cell, type DocMeta, type Line, type Run, type Signature } from "./formModel";
 
 /*
 |--------------------------------------------------------------------------
@@ -25,10 +25,11 @@ type Token =
   | { kind: "line"; text: string; width: number }
   | { kind: "break" };
 
-export async function saveFormPdf(meta: FormMeta, blocks: Block[], sheet: HTMLElement | null, fileName: string, campus = "Lingayen"): Promise<void> {
+export async function saveFormPdf(meta: DocMeta, blocks: Block[], sheet: HTMLElement | null, fileName: string, campusName?: string): Promise<void> {
+  const campus = campusOf(campusName);
   const { jsPDF } = await import("jspdf");
   const pdf = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const compact = meta.key === "application";
+  const compact = Boolean(meta.compact);
   const M = { left: 16, right: 16, top: compact ? 10 : 13, bottom: compact ? 10 : 12 };
   const W = PAGE.w - M.left - M.right;
   const BODY = 10;
@@ -56,8 +57,13 @@ export async function saveFormPdf(meta: FormMeta, blocks: Block[], sheet: HTMLEl
     const plain: Font = italic ? "italic" : "normal";
     for (const run of runs) {
       if (typeof run === "string") {
-        if (run === "\n") {
-          list.push({ kind: "break" });
+        // A new line inside the words starts a new line on the page.
+        const pieces = run.split("\n");
+        if (pieces.length > 1) {
+          pieces.forEach((piece, index) => {
+            if (index > 0) list.push({ kind: "break" });
+            if (piece) list.push(...tokens([piece], italic, size));
+          });
           continue;
         }
         for (const part of run.split(/(\s+)/)) {
@@ -179,6 +185,152 @@ export async function saveFormPdf(meta: FormMeta, blocks: Block[], sheet: HTMLEl
   pdf.line(M.left, y, PAGE.w - M.right, y);
   y += compact ? 2.5 : 3.5;
 
+  /* ----- Ticks and tables ----- */
+
+  function drawCheck(cx: number, cy: number, s: number) {
+    pdf.setLineWidth(0.45);
+    pdf.line(cx - s * 0.45, cy, cx - s * 0.1, cy + s * 0.4);
+    pdf.line(cx - s * 0.1, cy + s * 0.4, cx + s * 0.55, cy - s * 0.5);
+  }
+
+  type Placed = { cell: Cell; x: number; width: number; size: number; style: Font; lines: string[]; row: number; rows: number; need: number };
+
+  /**
+   * A ruled table: cells joined across columns (`span`) and rows (`rows`),
+   * the column names (`head` rows) again at the top of every page the
+   * table runs onto, and a row taller than what is left of the page (a long
+   * week in the weekly report) carried on to the next.
+   */
+  function table(block: Extract<Block, { kind: "table" }>) {
+    const widths = block.cols.map((share) => (W * share) / 100);
+    const xs = widths.map((_, index) => M.left + widths.slice(0, index).reduce((a, b) => a + b, 0));
+    const pad = { x: 1.6, y: compact ? 0.75 : 1.1 };
+    const rows: Cell[][] = [...block.rows, ...Array.from({ length: block.empty ?? 0 }, () => block.cols.map((): Cell => ({ v: "" })))];
+    const headCount = block.head ?? 0;
+    const lhOf = (size: number) => size * PT * 1.25;
+
+    // Each cell on the grid, past the columns a cell from a row above still holds.
+    const held = block.cols.map(() => 0);
+    const grid: Placed[][] = rows.map((row, rowIndex) => {
+      const placed: Placed[] = [];
+      let column = 0;
+      for (const cell of row) {
+        while (column < held.length && held[column] > 0) column += 1;
+        const span = cell.span ?? 1;
+        const width = widths.slice(column, column + span).reduce((a, b) => a + b, 0);
+        const size = cell.size ?? (cell.label ? 8.3 : 9.5);
+        const style: Font = cell.bold || cell.head ? (cell.italic ? "bolditalic" : "bold") : cell.italic ? "italic" : "normal";
+        font(style, size);
+        const raw = (cell.label ? cell.text : cell.v) ?? "";
+        const text = cell.plain ? raw : raw.toUpperCase();
+        const lines = cell.mark === "check" || !text ? [] : (pdf.splitTextToSize(text, width - 2 * pad.x) as string[]);
+        // An empty cell asks for no room of its own when the table sets a row height.
+        const need = !lines.length && block.rowMm ? 0 : Math.max(1, lines.length) * lhOf(size) + 2 * pad.y + (cell.mark === "circle" ? 1.2 : 0);
+        placed.push({ cell, x: xs[column] ?? M.left, width, size, style, lines, row: rowIndex, rows: cell.rows ?? 1, need });
+        for (let index = column; index < column + span; index += 1) held[index] = cell.rows ?? 1;
+        column += span;
+      }
+      for (let index = 0; index < held.length; index += 1) if (held[index] > 0) held[index] -= 1;
+      return placed;
+    });
+
+    const least = (rowIndex: number) => (rowIndex >= block.rows.length ? block.rowMm ?? (compact ? 5 : 6) : rowIndex >= headCount && block.rowMm ? block.rowMm : 0);
+    const heights = rows.map((_, rowIndex) => Math.max(least(rowIndex), ...grid[rowIndex].filter((item) => item.rows === 1).map((item) => item.need)));
+    // A cell joined across rows: the last of its rows grows when the cell needs more room.
+    for (const item of grid.flat()) {
+      if (item.rows < 2) continue;
+      const sum = heights.slice(item.row, item.row + item.rows).reduce((a, b) => a + b, 0);
+      if (item.need > sum) heights[item.row + item.rows - 1] += item.need - sum;
+    }
+    const span = (from: number, count: number) => heights.slice(from, from + count).reduce((a, b) => a + b, 0);
+
+    const drawCell = (item: Placed, top: number, height: number, lines = item.lines) => {
+      pdf.setLineWidth(0.26);
+      pdf.rect(item.x, top, item.width, height);
+      if (item.cell.mark === "check") {
+        drawCheck(item.x + item.width / 2, top + height / 2, 3.4);
+        return;
+      }
+      font(item.style, item.size);
+      const lh = lhOf(item.size);
+      let baseline = (item.cell.top ? top + pad.y : top + (height - lines.length * lh) / 2) + item.size * PT * 0.95;
+      const align = item.cell.align ?? (item.cell.head ? "center" : "left");
+      const tx = align === "center" ? item.x + item.width / 2 : align === "right" ? item.x + item.width - pad.x : item.x + pad.x;
+      if (item.cell.mark === "circle" && lines.length) {
+        pdf.setLineWidth(0.32);
+        pdf.circle(tx, baseline - item.size * PT * 0.36, Math.max(pdf.getTextWidth(lines[0]) / 2 + 1, 2.5));
+        font(item.style === "normal" ? "bold" : item.style, item.size);
+      }
+      for (const text of lines) {
+        pdf.text(text, tx, baseline, { align });
+        baseline += lh;
+      }
+    };
+
+    const drawRows = (from: number, to: number) => {
+      let top = y;
+      for (let rowIndex = from; rowIndex <= to; rowIndex += 1) {
+        for (const item of grid[rowIndex]) drawCell(item, top, span(item.row, item.rows));
+        top += heights[rowIndex];
+      }
+      y = top;
+    };
+    const bottom = PAGE.h - M.bottom;
+    const headHeight = span(0, headCount);
+    const nextPage = () => {
+      pdf.addPage();
+      y = M.top;
+      if (headCount) drawRows(0, headCount - 1);
+    };
+
+    // Rows joined by a cell are kept together.
+    const bands: [number, number][] = [];
+    for (let start = 0; start < rows.length; ) {
+      let end = start;
+      for (let rowIndex = start; rowIndex <= end; rowIndex += 1) for (const item of grid[rowIndex]) end = Math.max(end, rowIndex + item.rows - 1);
+      bands.push([start, Math.min(end, rows.length - 1)]);
+      start = end + 1;
+    }
+
+    for (const [from, to] of bands) {
+      const height = span(from, to - from + 1);
+      if (from < headCount) {
+        // The column names never sit alone at the foot of a page.
+        room(height + (heights[headCount] ? Math.min(heights[headCount], 20) : 0));
+        drawRows(from, to);
+        continue;
+      }
+      if (y + height <= bottom) {
+        drawRows(from, to);
+        continue;
+      }
+      if (from !== to || height <= (bottom - M.top - headHeight) * 0.4) {
+        nextPage();
+        drawRows(from, to);
+        continue;
+      }
+      // One tall row: as many of its lines as fit, the rest on the next page.
+      let remaining = grid[from].map((item) => item.lines);
+      for (;;) {
+        const room = bottom - y;
+        const fits = grid[from].map((item) => Math.max(0, Math.floor((room - 2 * pad.y) / lhOf(item.size))));
+        if (remaining.every((lines, index) => lines.length <= fits[index])) {
+          const last = Math.max(least(from), ...remaining.map((lines, index) => Math.max(1, lines.length) * lhOf(grid[from][index].size) + 2 * pad.y));
+          grid[from].forEach((item, index) => drawCell(item, y, last, remaining[index]));
+          y += last;
+          break;
+        }
+        if (Math.min(...fits) < 3) {
+          nextPage();
+          continue;
+        }
+        grid[from].forEach((item, index) => drawCell(item, y, room, remaining[index].slice(0, fits[index])));
+        remaining = remaining.map((lines, index) => lines.slice(fits[index]));
+        nextPage();
+      }
+    }
+  }
+
   /* ----- The blocks ----- */
 
   const signature = (item: Signature, x: number, width: number, draw: boolean): number => {
@@ -186,7 +338,7 @@ export async function saveFormPdf(meta: FormMeta, blocks: Block[], sheet: HTMLEl
     let h = 0;
     if (item.lead !== undefined) h += lineHeight();
     if (draw && item.lead?.trim()) {
-      font("normal");
+      font(item.leadBold ? "bold" : "normal");
       pdf.text(item.lead, x, top + lineHeight() * 0.72);
     }
     h += item.lead ? (compact ? 4.5 : 5) : compact ? 5.5 : 7;
@@ -225,7 +377,7 @@ export async function saveFormPdf(meta: FormMeta, blocks: Block[], sheet: HTMLEl
     } else if (block.kind === "gap") {
       y += block.mm;
     } else if (block.kind === "para") {
-      paragraph(block.runs, M.left, W, { italic: block.italic, align: block.align });
+      paragraph(block.runs, M.left, W, { italic: block.italic, align: block.align, size: block.size });
       y += compact ? 1.2 : 1.8;
     } else if (block.kind === "list") {
       block.items.forEach((item, index) => {
@@ -252,40 +404,51 @@ export async function saveFormPdf(meta: FormMeta, blocks: Block[], sheet: HTMLEl
       }
       y += compact ? 0.8 : 1.5;
     } else if (block.kind === "table") {
-      const widths = block.cols.map((share) => (W * share) / 100);
-      const pad = { x: 1.6, y: compact ? 0.75 : 1.1 };
-      const rows: Cell[][] = [...block.rows, ...Array.from({ length: block.empty ?? 0 }, () => block.cols.map((): Cell => ({ v: "" })))];
-      for (const row of rows) {
-        // Each cell's lines, at its own size; the row is as tall as its tallest cell.
-        let column = 0;
-        const cells = row.map((cell) => {
-          const span = cell.span ?? 1;
-          const cellWidth = widths.slice(column, column + span).reduce((a, b) => a + b, 0);
-          const x = M.left + widths.slice(0, column).reduce((a, b) => a + b, 0);
-          column += span;
-          const size = cell.label ? 8.3 : 9.5;
-          font(cell.head ? "bold" : "normal", size);
-          const text = ((cell.label ? cell.text : cell.v) ?? "").toUpperCase();
-          const lines = text ? (pdf.splitTextToSize(text, cellWidth - 2 * pad.x) as string[]) : [];
-          return { x, width: cellWidth, size, lines, head: Boolean(cell.head) };
-        });
-        const empty = rows.indexOf(row) >= block.rows.length;
-        const height = Math.max(empty ? (compact ? 5 : 6) : 0, ...cells.map((cell) => Math.max(1, cell.lines.length) * cell.size * PT * 1.25 + 2 * pad.y));
+      table(block);
+      y += compact ? 1.6 : 2;
+    } else if (block.kind === "box") {
+      const size = 9.5;
+      const lh = size * PT * 1.3;
+      font("normal", size);
+      const lines = block.text.trim() ? (pdf.splitTextToSize(block.text.trim(), W - 3.6) as string[]) : [];
+      const height = Math.max(block.mm, lineHeight() + 1 + lines.length * lh + 2.8);
+      room(height);
+      pdf.setLineWidth(0.26);
+      pdf.rect(M.left, y, W, height);
+      font("bold");
+      pdf.text(block.title.toUpperCase(), M.left + 1.8, y + 1.4 + lineHeight() * 0.72);
+      font("normal", size);
+      let ly = y + 1.4 + lineHeight() + 1 + size * PT * 0.95;
+      for (const text of lines) {
+        pdf.text(text, M.left + 1.8, ly);
+        ly += lh;
+      }
+      y += height + (compact ? 1.4 : 2);
+    } else if (block.kind === "checks") {
+      const columns = block.columns === 2 ? 2 : 1;
+      const gap = 8;
+      const columnWidth = columns === 2 ? (W - gap) / 2 : W;
+      const size = 9.5;
+      const lh = size * PT * 1.42;
+      const style: Font = block.italic ? "italic" : "normal";
+      for (let index = 0; index < block.items.length; index += columns) {
+        const row = block.items.slice(index, index + columns);
+        font(style, size);
+        const wrapped = row.map((item) => pdf.splitTextToSize(item.text, columnWidth - 11) as string[]);
+        const height = Math.max(...wrapped.map((lines) => lines.length)) * lh;
         room(height);
-        pdf.setLineWidth(0.26);
-        for (const cell of cells) {
-          pdf.rect(cell.x, y, cell.width, height);
-          font(cell.head ? "bold" : "normal", cell.size);
-          const block = cell.lines.length * cell.size * PT * 1.25;
-          let ly = y + (height - block) / 2 + cell.size * PT * 0.95;
-          for (const text of cell.lines) {
-            pdf.text(text, cell.head ? cell.x + cell.width / 2 : cell.x + pad.x, ly, { align: cell.head ? "center" : "left" });
-            ly += cell.size * PT * 1.25;
-          }
-        }
+        row.forEach((item, column) => {
+          const x = M.left + column * (columnWidth + gap);
+          const baseline = y + lh * 0.72;
+          pdf.setLineWidth(0.26);
+          pdf.line(x, baseline + 0.8, x + 9, baseline + 0.8);
+          if (item.on) drawCheck(x + 4.5, baseline - 1.2, 2.8);
+          font(style, size);
+          wrapped[column].forEach((text, line) => pdf.text(text, x + 10.5, baseline + line * lh));
+        });
         y += height;
       }
-      y += compact ? 1.6 : 2;
+      y += compact ? 1 : 1.6;
     }
   }
 
