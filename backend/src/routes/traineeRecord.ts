@@ -65,8 +65,6 @@ const REPORT_COLUMNS = `r.id::int AS id, TO_CHAR(r.report_date, 'YYYY-MM-DD') AS
 
 export function registerTraineeRecordRoutes(app: express.Express, deps: Dependencies): void {
   const { pool, requireRole } = deps;
-  const anyone = requireRole(["student", "supervisor", "coordinator"]);
-  const trainee = requireRole("student");
 
   /** Whether this signed-in person may read this student's record. */
   async function mayRead(req: express.Request, studentId: string): Promise<boolean> {
@@ -99,7 +97,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
 
   /* ---------- The Student-Intern's Feedback Form ---------- */
 
-  app.get("/api/students/:studentId/feedback-form", anyone, async (req, res) => {
+  app.get("/api/students/:studentId/feedback-form", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
     try {
       if (!(await mayRead(req, String(req.params.studentId)))) return res.status(403).json({ message: "You can't read this student's feedback form." });
       const found = await pool.query(
@@ -113,7 +111,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     }
   });
 
-  app.put("/api/students/:studentId/feedback-form", trainee, async (req, res) => {
+  app.put("/api/students/:studentId/feedback-form", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;
@@ -140,7 +138,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
 
   /* ---------- Daily reports and their events ---------- */
 
-  app.get("/api/students/:studentId/daily-reports", anyone, async (req, res) => {
+  app.get("/api/students/:studentId/daily-reports", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
     try {
       if (!(await mayRead(req, String(req.params.studentId)))) return res.status(403).json({ message: "You can't read this student's reports." });
       const today = phToday();
@@ -193,7 +191,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     return made.rows[0];
   }
 
-  app.put("/api/students/:studentId/daily-reports/:date", trainee, async (req, res) => {
+  app.put("/api/students/:studentId/daily-reports/:date", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;
@@ -216,7 +214,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     }
   });
 
-  app.post("/api/students/:studentId/daily-reports/:date/entries", trainee, async (req, res) => {
+  app.post("/api/students/:studentId/daily-reports/:date/entries", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;
@@ -254,7 +252,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     return found.rows[0] ?? null;
   }
 
-  app.put("/api/students/:studentId/report-entries/:entryId", trainee, async (req, res) => {
+  app.put("/api/students/:studentId/report-entries/:entryId", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;
@@ -279,7 +277,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     }
   });
 
-  app.delete("/api/students/:studentId/report-entries/:entryId", trainee, async (req, res) => {
+  app.delete("/api/students/:studentId/report-entries/:entryId", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;
@@ -298,7 +296,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
 
   /* ---------- Monthly reports ---------- */
 
-  app.get("/api/students/:studentId/monthly-reports", anyone, async (req, res) => {
+  app.get("/api/students/:studentId/monthly-reports", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
     try {
       if (!(await mayRead(req, String(req.params.studentId)))) return res.status(403).json({ message: "You can't read this student's reports." });
       const found = await pool.query(
@@ -313,7 +311,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     }
   });
 
-  app.put("/api/students/:studentId/monthly-reports/:month", trainee, async (req, res) => {
+  app.put("/api/students/:studentId/monthly-reports/:month", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;
@@ -390,7 +388,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
 
   /* ---------- The narrative report's written parts ---------- */
 
-  app.get("/api/students/:studentId/narrative", anyone, async (req, res) => {
+  app.get("/api/students/:studentId/narrative", requireRole(["student", "supervisor", "coordinator"]), async (req, res) => {
     try {
       if (!(await mayRead(req, String(req.params.studentId)))) return res.status(403).json({ message: "You can't read this student's narrative report." });
       const found = await pool.query(`SELECT parts, updated_at FROM narrative_reports WHERE student_id = $1`, [req.params.studentId]);
@@ -401,7 +399,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
     }
   });
 
-  app.put("/api/students/:studentId/narrative/:part", trainee, async (req, res) => {
+  app.put("/api/students/:studentId/narrative/:part", requireRole("student"), async (req, res) => {
     try {
       const studentId = ownRecord(req, res);
       if (!studentId) return;

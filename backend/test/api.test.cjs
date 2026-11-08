@@ -1722,7 +1722,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -12075,7 +12075,8 @@ test("the trainee's routing table: each notification opens its page with the thi
   assert.equal(open("New task assigned", "task", 3), "/task?focus=task-3&spot=task-3");
   assert.equal(open("Task past its deadline", "task", 3), "/task?focus=task-3&spot=submit-3");
   assert.equal(open("Requirement due"), "/documents?spot=requirements");
-  assert.equal(open("Weekly report returned", "journal", 2), "/journal?spot=supervisor-note");
+  // The Weekly part of Progress reports (November 2026).
+  assert.equal(open("Weekly report returned", "journal", 2), "/journal?view=weekly&spot=supervisor-note");
   assert.equal(open("Appeal decided", "attendance", 9), "/daily-log?focus=attendance-9");
   // Anything else keeps the earlier rules.
   assert.equal(resolveNotificationTarget("student", { title: "Something else", link: "/task" }).path, "/task");
