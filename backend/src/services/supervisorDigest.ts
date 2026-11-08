@@ -5,7 +5,9 @@
 |
 | A supervisor is not told of each daily report their interns write (with
 | several interns that would be a stream of pings). Instead, once each
-| evening, from SUPERVISOR_DIGEST_TIME (18:00 Philippine time unless set),
+| evening, from SUPERVISOR_REPORTS_SUMMARY_TIME (18:00 Philippine time
+| unless set; not SUPERVISOR_DIGEST_TIME, which times the morning email of
+| what is waiting, services/digests.ts),
 | a supervisor whose interns wrote that day's report gets one notification:
 | "2 of your 3 interns wrote today's report: Ana, Ben." It opens their
 | Interns page, where each intern's Reports tab has the day.
@@ -31,7 +33,7 @@ type NotificationWriter = (notification: {
 
 /** When the summary goes out, Philippine time, "HH:MM". */
 export function digestTime(): string {
-  const set = (process.env.SUPERVISOR_DIGEST_TIME || "").trim();
+  const set = (process.env.SUPERVISOR_REPORTS_SUMMARY_TIME || "").trim();
   return /^([01]\d|2[0-3]):[0-5]\d$/.test(set) ? set : "18:00";
 }
 

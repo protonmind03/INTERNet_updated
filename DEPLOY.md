@@ -92,6 +92,10 @@ Optional, each can be added later:
   the three above that is not set. Leave it unset to get the defaults.
 - `SUPERVISOR_DIGEST_TIME` (default `07:30`, Philippine time): when the
   supervisors' daily summary email goes out. Needs the email settings.
+- `SUPERVISOR_REPORTS_SUMMARY_TIME` (default `18:00`, Philippine time):
+  from when the supervisors' evening notification of the day's daily
+  reports goes out (one a day, only when an intern wrote). In the app, so
+  it needs no email settings.
 - `COORDINATOR_DIGEST_DAY` (default `MON`) and `COORDINATOR_DIGEST_TIME`
   (default `07:30`): when the coordinators' weekly summary of alerts goes
   out. Needs the email settings.
