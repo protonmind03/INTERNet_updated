@@ -121,6 +121,9 @@ test("on a computer: the menu is a rail that opens over the page on hover, and t
   await signIn(page, "student");
   const menu = page.locator("aside.role-side");
   const main = page.locator("main");
+  // Measured once the page has drawn (right after sign-in it may still be on its way).
+  await expect(page.locator(".student-folder")).toBeVisible();
+  await expect.poll(async () => (await main.boundingBox()) !== null).toBe(true);
   const before = (await main.boundingBox())!;
   // Closed: a rail of icons, no words.
   await expect(menu).toHaveAttribute("data-collapsed", "true");
