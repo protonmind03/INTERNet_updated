@@ -25,7 +25,7 @@ type Where = { menu: string | "account" | null; tab?: string };
 
 const ROUTES: [string, string, Where][] = [
   ["/student/dashboard", "Today", { menu: "Today" }],
-  ["/daily-log", "Attendance", { menu: "Attendance", tab: "Days" }],
+  ["/daily-log", "Days", { menu: "Attendance", tab: "Days" }],
   ["/schedule", "Schedule", { menu: "Attendance", tab: "Schedule" }],
   ["/schedule?view=progress", "My progress", { menu: "Attendance", tab: "My progress" }],
   ["/time-record", "Time record", { menu: "Attendance", tab: "Time record" }],

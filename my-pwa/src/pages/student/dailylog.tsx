@@ -139,7 +139,7 @@ function DailyLogPage() {
   };
 
   return (
-    <StudentLayout title="Attendance">
+    <StudentLayout title="Days">
       <div className="space-y-4">
         {attendance.error && <ErrorNotice message={attendance.error} onRetry={() => void attendance.reload()} />}
 

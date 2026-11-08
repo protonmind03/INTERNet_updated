@@ -1193,9 +1193,12 @@ a:hover .ic-accent, button:hover .ic-accent { --ic-accent-o: 0.45; }
 
 /* The trainee portal's scale (change1108): the folder is the page's anchor, so the top bar is a slim strip;
    folder names in the display face; the canvas is a logbook page, a faint dot grid over the grain. */
+/* All three portals (change1108 sizing pass): the page content is the anchor, so the top bar is a slim strip. */
+.role-topbar { min-height: 62px; padding: 8px 24px; }
+.role-topbar-title { font-size: 22px; }
+.role-topbar-context { font-size: 12.5px; }
 [data-role="student"] .role-topbar { min-height: 60px; padding: 8px 20px; }
 [data-role="student"] .role-topbar-title { font-size: 21px; }
-[data-role="student"] .role-topbar-context { font-size: 12.5px; }
 [data-role="student"] .app-canvas { background-image: radial-gradient(color-mix(in srgb, var(--role-ink) 9%, transparent) 1px, transparent 1.3px), var(--inb-grain); background-size: 22px 22px, auto; }
 .student-folder .font-folder { font-family: var(--font-display); letter-spacing: -0.015em; }
 @media print { [data-role="student"] .app-canvas { background: none; } }

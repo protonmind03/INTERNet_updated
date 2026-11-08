@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
+import { pictureUrl } from "../lib/attachments";
 import { formatDate } from "../lib/format";
 import { phToday } from "../lib/phTime";
 import { addDays, mondayOf } from "../lib/studentCalendar";
-import { FEEDBACK_CHOICES, FEEDBACK_CRITERIA, traineeRecord, type DailyReport, type FeedbackForm, type MonthlyReport } from "../lib/traineeRecord";
+import { FEEDBACK_CHOICES, FEEDBACK_CRITERIA, traineeRecord, type DailyReport, type FeedbackForm, type MonthlyReport, type NarrativeParts } from "../lib/traineeRecord";
+import { API_URL, withRoleAuth } from "../lib/api";
+import { PARTS } from "../pages/student/narrative/model";
 import EntryPictures from "./EntryPictures";
 import Icon from "./Icon";
 import { Card, CardHeader, EmptyState, SkeletonRows } from "./ui";
@@ -21,6 +24,9 @@ import { Card, CardHeader, EmptyState, SkeletonRows } from "./ui";
 |   Feedback form      the trainee's FM-AA-INT-20 (coordinator only: the
 |                      trainee rates the company and the supervisor there,
 |                      so the supervisor does not read it)
+|   Narrative report   (coordinator) which parts of the binder are written
+|   Album              (coordinator) the trainee's report photos, newest
+|                      first; health papers are never in it
 |
 | WeekDailyReports is the week's daily reports alone, shown beside a weekly
 | report while the supervisor reviews it.
@@ -143,6 +149,101 @@ function FeedbackFormView({ studentId }: { studentId: string }) {
   );
 }
 
+/** Which parts of the Narrative report the trainee has written (coordinator). */
+function NarrativeProgress({ studentId }: { studentId: string }) {
+  const [parts, setParts] = useState<NarrativeParts | null>(null);
+  useEffect(() => {
+    let active = true;
+    traineeRecord
+      .narrative("coordinator", studentId)
+      .then((data) => active && setParts(data.parts))
+      .catch(() => active && setParts({}));
+    return () => {
+      active = false;
+    };
+  }, [studentId]);
+  if (parts === null) return <SkeletonRows rows={3} />;
+  const writable = PARTS.filter((part) => part.source === "write" && !["company", "narrative", "learning"].includes(part.key));
+  const written = writable.filter((part) => (parts[part.key]?.text ?? "").trim().length > 0);
+  return (
+    <div className="px-4 pb-4 sm:px-5">
+      <p className="text-[13.5px] text-slate-700">
+        <b className="text-slate-900">
+          {written.length} of {writable.length}
+        </b>{" "}
+        parts written.
+      </p>
+      <div aria-hidden="true" className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+        <span className="block h-full rounded-full bg-psu-600" style={{ width: `${writable.length ? Math.round((written.length / writable.length) * 100) : 0}%` }} />
+      </div>
+      <ul className="mt-3 grid gap-x-4 gap-y-1 text-[13px] sm:grid-cols-2">
+        {writable.map((part) => {
+          const done = written.includes(part);
+          return (
+            <li key={part.key} className={`flex items-center gap-1.5 ${done ? "text-slate-900" : "text-slate-500"}`}>
+              <Icon name={done ? "check" : "close"} size={13} className={done ? "text-emerald-700" : "text-slate-400"} />
+              {part.title}
+              <span className="sr-only">{done ? ", written" : ", not yet"}</span>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+type AlbumPicture = { id: number; source: string; title: string; caption: string | null; day: string | null };
+
+function AlbumThumb({ picture }: { picture: AlbumPicture }) {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let made: string | null = null;
+    void pictureUrl("coordinator", picture.id, true)
+      .catch(() => pictureUrl("coordinator", picture.id))
+      .then((value) => {
+        made = value;
+        setUrl(value);
+      })
+      .catch(() => undefined);
+    return () => {
+      if (made) URL.revokeObjectURL(made);
+    };
+  }, [picture.id]);
+  return (
+    <figure className="min-w-0">
+      <div className="aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 ring-1 ring-inset ring-slate-200">{url && <img src={url} alt={picture.caption || picture.title} className="h-full w-full object-cover" />}</div>
+      <figcaption className="mt-1 truncate text-[12px] text-slate-600">
+        {picture.caption || picture.title}
+        {picture.day ? ` · ${formatDate(picture.day)}` : ""}
+      </figcaption>
+    </figure>
+  );
+}
+
+/** The trainee's report photos, newest first (coordinator). */
+function AlbumGlance({ studentId }: { studentId: string }) {
+  const [pictures, setPictures] = useState<AlbumPicture[] | null>(null);
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_URL}/api/students/${encodeURIComponent(studentId)}/album`, withRoleAuth("coordinator"))
+      .then((response) => (response.ok ? response.json() : { pictures: [] }))
+      .then((data) => active && setPictures(((data.pictures ?? []) as AlbumPicture[]).filter((picture) => picture.source === "report_entry")))
+      .catch(() => active && setPictures([]));
+    return () => {
+      active = false;
+    };
+  }, [studentId]);
+  if (pictures === null) return <SkeletonRows rows={2} />;
+  if (pictures.length === 0) return <EmptyState icon="album" title="No report photos yet" description="Photos the trainee adds to their daily reports appear here." />;
+  return (
+    <div className="grid grid-cols-2 gap-3 px-4 pb-4 sm:grid-cols-4 sm:px-5">
+      {pictures.slice(0, 12).map((picture) => (
+        <AlbumThumb key={picture.id} picture={picture} />
+      ))}
+    </div>
+  );
+}
+
 export default function TraineeReportsView({ role, studentId }: { role: Role; studentId: string }) {
   const [week, setWeek] = useState(() => mondayOf(phToday()));
   const [months, setMonths] = useState<MonthlyReport[] | null>(null);
@@ -203,10 +304,20 @@ export default function TraineeReportsView({ role, studentId }: { role: Role; st
       </Card>
 
       {role === "coordinator" && (
-        <Card>
-          <CardHeader icon="clipboard" title="Student intern's feedback form (FM-AA-INT-20)" description="How the trainee rates their training and the company." />
-          <FeedbackFormView studentId={studentId} />
-        </Card>
+        <>
+          <Card>
+            <CardHeader icon="clipboard" title="Student intern's feedback form (FM-AA-INT-20)" description="How the trainee rates their training and the company." />
+            <FeedbackFormView studentId={studentId} />
+          </Card>
+          <Card>
+            <CardHeader icon="book" title="Narrative report" description="The parts of the binder the trainee has written so far." />
+            <NarrativeProgress studentId={studentId} />
+          </Card>
+          <Card>
+            <CardHeader icon="album" title="Report photos" description="From the trainee's daily reports, newest first. Health papers are never shown here." />
+            <AlbumGlance studentId={studentId} />
+          </Card>
+        </>
       )}
     </div>
   );

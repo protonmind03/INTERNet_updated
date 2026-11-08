@@ -191,7 +191,7 @@ export const GROUPS: readonly { id: GroupId; label: string; icon: IconName; tabs
     icon: "tasks",
     tabs: [
       { tab: "tasks", label: "Tasks", icon: "tasks" },
-      { tab: "journals", label: "Weekly reports", icon: "note" },
+      { tab: "journals", label: "Reports", icon: "note" },
       { tab: "evaluations", label: "Evaluations", icon: "star" },
     ],
   },

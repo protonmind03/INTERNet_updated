@@ -106,5 +106,9 @@ test("a day's report reaches the supervisor and the coordinator; the coordinator
   await expect(coordinator.getByText(words)).toBeVisible({ timeout: 20_000 });
   await expect(coordinator.getByRole("heading", { name: /FM-AA-INT-20/ })).toBeVisible();
   await expect(coordinator.getByText(/^Sent /).first()).toBeVisible();
+  // And how far the narrative report is, and the report photos.
+  await expect(coordinator.getByRole("heading", { name: "Narrative report", exact: true })).toBeVisible();
+  await expect(coordinator.getByText(/^\d+ of \d+$/).first()).toBeVisible();
+  await expect(coordinator.getByRole("heading", { name: "Report photos", exact: true })).toBeVisible();
   await coordinator.context().close();
 });

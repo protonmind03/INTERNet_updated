@@ -19,6 +19,10 @@ import type { Hub, HubTab } from "./hubs";
 |
 | The tabs are links: each part keeps its own address (pages/student/hubs.ts).
 |
+| change1108: on a phone the header above already names the page, so inside
+| a folder the label tab is left out there and the folder opens on its row
+| of tabs; the label stays on pages that are not in a folder (Today).
+|
 */
 
 type Label = { icon: IconName; title: ReactNode; line?: ReactNode };
@@ -49,7 +53,7 @@ export default function StudentFolder({
     <section className="student-folder rounded-[26px] bg-psu-100 p-1.5 shadow-raised ring-1 ring-inset ring-psu-600/10 md:rounded-[30px] md:p-2.5 print:bg-transparent print:p-0 print:shadow-none print:ring-0">
       <div className="md:flex md:items-end print:hidden">
         {/* The label tab: the folder's name, and what the open part is for. */}
-        <div className="relative z-[1] flex min-w-0 items-center gap-3 rounded-t-[20px] bg-(--folder-paper) px-3 py-2.5 md:max-w-[44%] md:flex-[0_1_auto] md:rounded-tl-[22px] md:rounded-tr-none md:pr-1.5">
+        <div className={`relative z-[1] min-w-0 items-center gap-3 rounded-t-[20px] bg-(--folder-paper) px-3 py-2.5 md:flex md:max-w-[44%] md:flex-[0_1_auto] md:rounded-tl-[22px] md:rounded-tr-none md:pr-1.5 ${tabs.length > 1 ? "hidden" : "flex"}`}>
           <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-300 text-psu-950 shadow-[inset_0_-2px_0_rgb(0_0_0/0.08)]">
             <Icon name={shown.icon} size={20} />
           </span>
@@ -66,7 +70,7 @@ export default function StudentFolder({
         {tabs.length > 1 && (
           <nav
             aria-label={`${hub?.label ?? ""} parts`}
-            className="flex gap-1 overflow-x-auto bg-(--folder-paper) px-1.5 pb-1.5 pt-0.5 md:min-w-0 md:flex-1 md:items-center md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
+            className="flex gap-1 overflow-x-auto rounded-t-[20px] bg-(--folder-paper) px-1.5 pb-1.5 pt-1.5 md:min-w-0 md:flex-1 md:items-center md:rounded-none md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
           >
             {tabs.map((item) => {
               const on = item === tab;
