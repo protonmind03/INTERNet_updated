@@ -152,6 +152,7 @@ const SupervisorTasks = page("supervisor", () => import("./pages/supervisor/task
 const StudentProfilePage = page("student", () => import("./pages/student/Profile"));
 const StudentAlbum = page("student", () => import("./pages/student/Album"));
 const StudentNarrative = page("student", () => import("./pages/student/Narrative"));
+const StudentPrintForms = page("student", () => import("./pages/student/PrintForms"));
 const SupervisorInterns = page("supervisor", () => import("./pages/supervisor/interns"));
 const SupervisorInternPage = page("supervisor", () => import("./pages/supervisor/InternPage"));
 const SupervisorEvaluation = page("supervisor", () => import("./pages/supervisor/evaluation"));
@@ -390,6 +391,8 @@ function App() {
 <Route path="/profile/album" element={<StudentAlbum />} />
 {/* Revisions, November 2026: the Narrative Report on Internship Training. */}
 <Route path="/student/narrative" element={<StudentNarrative />} />
+{/* change1108: the pre-OJT forms, filled in and printed (a part of Documents). */}
+<Route path="/documents/forms" element={<StudentPrintForms />} />
 
 <Route
   path="/supervisor/interns"

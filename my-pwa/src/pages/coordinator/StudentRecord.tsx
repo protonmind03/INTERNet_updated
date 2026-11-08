@@ -31,6 +31,7 @@ import {
 } from "./studentRecord/model";
 import RecordOverview from "./studentRecord/RecordOverview";
 import UploadUsage from "./UploadUsage";
+import TraineeReportsView from "../../components/TraineeReportsView";
 import {
   AttendanceSection,
   DocumentsSection,
@@ -396,6 +397,7 @@ export default function StudentRecord() {
             {tab === "record" && <TimeRecordSection data={data} holidays={holidays} certifications={certifications} />}
             {tab === "tasks" && <TasksSection data={data} ctx={ctx} perf={perf} filter={taskFilter} onFilter={setTaskFilter} />}
             {tab === "journals" && (
+              <div className="space-y-4">
               <JournalsSection
                 data={data}
                 weeks={weeks}
@@ -409,6 +411,9 @@ export default function StudentRecord() {
                 }
                 onOpenChange={setOpenReports}
               />
+              {/* change1108: the daily and monthly reports and the trainee's FM-AA-INT-20. */}
+              <TraineeReportsView role="coordinator" studentId={data.student.student_id} />
+              </div>
             )}
             {tab === "evaluations" && <EvaluationsSection data={data} perf={perf} final={final.evaluation} />}
             {tab === "documents" && (

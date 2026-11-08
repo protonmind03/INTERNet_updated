@@ -667,3 +667,32 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
 .org-box span { color: #57534e; }
 .org-tree--print .org-box { outline-color: #000; box-shadow: none; font-family: "Times New Roman", Times, serif; font-size: 10.5pt; }
 .org-tree--print li::before, .org-tree--print li::after, .org-tree--print ul ul::before { border-color: #000; }
+
+/* Fill and print (pages/student/PrintForms.tsx, change1108): the letter-style forms' text, blanks and signatures. */
+.psu-form-section { background: #fff; font-size: 10pt; font-weight: 800; text-transform: uppercase; }
+.psu-form-text { border: 1.5px solid #000; border-top: 0; padding: 10px 14px; font-size: 10.5pt; }
+.psu-form-text h3 { margin: 8px 0 4px; font-size: 10pt; font-weight: 800; text-transform: uppercase; }
+.psu-form-text p { margin: 0 0 8px; }
+.psu-form-text--letter { border-top: 1.5px solid #000; padding: 16px 22px; font-size: 11pt; line-height: 1.6; text-align: justify; }
+.psu-blank { display: inline-block; min-width: 0.9in; border-bottom: 1px solid #000; padding: 0 4px; line-height: 1.25; text-align: center; text-decoration: none; font-weight: 600; }
+.psu-blank--wide { min-width: 2.2in; }
+.psu-sig { display: inline-flex; flex-direction: column; align-items: center; min-width: 2.6in; margin-top: 22px; }
+.psu-sig-line { display: block; width: 100%; border-bottom: 1px solid #000; text-align: center; font-weight: 800; text-transform: uppercase; min-height: 1.3em; }
+.psu-sig-title { font-size: 9pt; font-style: italic; text-align: center; }
+.psu-sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 28px; margin: 8px 0 14px; text-align: left; }
+.psu-sig-grid > * { min-width: 0; }
+.psu-sig-grid .psu-sig { min-width: 0; width: 100%; }
+.psu-numbered { margin: 0 0 10px; padding-left: 26px; list-style: decimal; }
+.psu-lettered { margin: 0 0 10px; padding-left: 26px; list-style: lower-alpha; }
+.psu-numbered li, .psu-lettered li { margin-bottom: 6px; }
+.psu-rescert { margin: 8px 0 0 !important; font-size: 10pt; line-height: 1.7; text-align: left; }
+.psu-notary { margin-top: 14px; font-size: 10.5pt; }
+.psu-notary-book { font-size: 10pt; line-height: 1.8; }
+@media print { .psu-preview > div { width: auto !important; } }
+/* The form preview fits its column; printing is at full size. */
+.psu-preview > div { zoom: 0.43; }
+@media (min-width: 480px) { .psu-preview > div { zoom: 0.62; } }
+@media (min-width: 768px) { .psu-preview > div { zoom: 0.84; } }
+@media (min-width: 1024px) { .psu-preview > div { zoom: 0.76; } }
+@media (min-width: 1280px) { .psu-preview > div { zoom: 0.84; } }
+@media print { .psu-preview > div { zoom: 1; } }

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import Icon from "../../components/Icon";
 import {
   Card,
@@ -227,6 +228,21 @@ export default function Documents() {
             </p>
           </div>
         )}
+
+        {/* change1108: the forms to fill in before the OJT, printed from INTERNet (PrintForms.tsx). */}
+        <Link
+          to="/documents/forms"
+          className="group flex items-center gap-3.5 rounded-2xl bg-white p-3.5 ring-1 ring-inset ring-(--role-hairline) transition-colors hover:bg-psu-50 sm:p-4"
+        >
+          <span aria-hidden="true" className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gold-300 text-psu-950 ic-lit">
+            <Icon name="printer" size={21} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-[15px] font-extrabold text-slate-900">Fill and print the pre-OJT forms</span>
+            <span className="block text-[13px] text-slate-600">Application, Consent, Release and Waiver, filled in from your record in the university's formats. Sign, then upload them here.</span>
+          </span>
+          <Icon name="chevron-right" size={18} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5" />
+        </Link>
 
         <Card data-focus="requirements">
           <CardHeader icon="document"

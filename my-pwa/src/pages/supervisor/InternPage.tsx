@@ -57,6 +57,7 @@ import {
   type SupervisorWork,
 } from "./useSupervisorWork";
 import { sameId } from "../../lib/ids";
+import TraineeReportsView from "../../components/TraineeReportsView";
 
 /*
 |--------------------------------------------------------------------------
@@ -773,6 +774,7 @@ function Reports({ intern, work, onReview }: Reviewable) {
     Returned: { label: "Returned to the intern", tone: "bad" },
   } as const;
   return (
+    <div className="space-y-4">
     <Card>
       <CardHeader icon="note" title={`Weekly reports (${reports.length})`} description="One a week, written by the intern." />
       {work.loading ? (
@@ -817,6 +819,9 @@ function Reports({ intern, work, onReview }: Reviewable) {
         </ul>
       )}
     </Card>
+    {/* change1108: what the intern writes each day and each month reaches the supervisor too. */}
+    <TraineeReportsView role="supervisor" studentId={intern.student_id} />
+    </div>
   );
 }
 

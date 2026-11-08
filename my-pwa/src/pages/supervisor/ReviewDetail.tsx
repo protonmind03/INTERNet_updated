@@ -32,6 +32,7 @@ import {
 import { sameId } from "../../lib/ids";
 import AttestedNote from "../../components/AttestedNote";
 import { phToday } from "../../lib/phTime";
+import { WeekDailyReports } from "../../components/TraineeReportsView";
 
 /*
 |--------------------------------------------------------------------------
@@ -777,6 +778,8 @@ function JournalDetail({ entry, work, onDecided, shortcuts }: DetailProps<Journa
         weekStart={entry.week_start}
         logs={work.attendance.filter((log) => sameId(log.student_id, entry.student_id))}
       />
+      {/* change1108: the week's daily reports and their photos, to read the weekly report against. */}
+      <WeekDailyReports role="supervisor" studentId={entry.student_id} weekStart={String(entry.week_start).slice(0, 10)} />
 
       <Decision
         key={entry.id}
