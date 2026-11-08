@@ -99,7 +99,7 @@ test.describe("the Scan button", () => {
     for (const path of ["/task", "/daily-log", "/student/dashboard"]) {
       await page.goto(path);
       await expect(scan).toBeVisible();
-      await expect(scan).toHaveAccessibleName(/^Time in/);
+      await expect(scan).toHaveAccessibleName(/^Scan: Time in/);
     }
     // In the header, beside the bell.
     const box = (await scan.boundingBox())!;
@@ -233,16 +233,18 @@ test.describe("completion", () => {
 test.describe("the student's menu", () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test("on a phone: the dock of four and More, the header with Help and the bell, and the Resolution Center and Feedback in More", async ({ page }) => {
+  test("on a phone: the dock of four and More, the header with Scan, Help and the bell, and Support in More", async ({ page }) => {
     await signIn(page, "student");
-    // Iteration 21 and the PSU redesign: the dock (components/RoleDock.tsx): Today, Attendance, Schedule, Tasks, More.
+    // Revisions, November 2026: the dock is Today, Attendance, Tasks and Reports, then More (Support).
     const tabs = page.locator(".role-dock");
     await expect(tabs.getByRole("link")).toHaveCount(4);
     await expect(tabs.getByRole("link", { name: /^Today/ })).toHaveAttribute("aria-current", "page");
     await expect(tabs.getByRole("button", { name: /^More/ })).toBeVisible();
-    await tabs.getByRole("link", { name: "Schedule" }).click();
-    await expect(page).toHaveURL(/\/schedule$/);
-    await expect(tabs.getByRole("link", { name: "Schedule" })).toHaveAttribute("aria-current", "page");
+    // Schedule is a tab of the Attendance folder: Attendance is lit there.
+    await page.goto("/schedule");
+    await expect(tabs.getByRole("link", { name: /^Attendance/ })).toHaveAttribute("aria-current", "page");
+    await tabs.getByRole("link", { name: /^Reports/ }).click();
+    await expect(page).toHaveURL(/\/journal$/);
 
     await tabs.getByRole("button", { name: /^More/ }).click();
     const sheet = page.getByRole("dialog", { name: "More" });
@@ -250,9 +252,9 @@ test.describe("the student's menu", () => {
     await sheet.getByRole("button", { name: /^Resolution Center/ }).click();
     await expect(page).toHaveURL(/\/student\/resolution$/);
     await expect(page.getByRole("heading", { name: "Report a concern" })).toBeVisible();
-    await tabs.getByRole("button", { name: /^More/ }).click();
-    await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: /^Feedback/ }).click();
-    await expect(page).toHaveURL(/\/student\/feedback$/);
+    // Feedback is a section of the Resolution Center now.
+    await page.getByRole("tab", { name: "Feedback" }).click();
+    await expect(page).toHaveURL(/\/student\/resolution\?tab=feedback$/);
     await expect(page.getByRole("heading", { name: "Rate your company" })).toBeVisible();
   });
 
@@ -261,9 +263,11 @@ test.describe("the student's menu", () => {
     await page.goto("/report");
     await expect(page).toHaveURL(/\/student\/resolution$/);
     await expect(page.getByRole("heading", { name: "Report a concern" })).toBeVisible();
-    await page.goto("/student/resolution?tab=evaluations");
-    await expect(page).toHaveURL(/\/student\/feedback$/);
-    await expect(page.getByRole("heading", { name: "Rate your company" })).toBeVisible();
+    for (const old of ["/student/resolution?tab=evaluations", "/student/feedback"]) {
+      await page.goto(old);
+      await expect(page).toHaveURL(/\/student\/resolution\?tab=(feedback|evaluations)$/);
+      await expect(page.getByRole("heading", { name: "Rate your company" })).toBeVisible();
+    }
     // Out of the menu, still pages.
     for (const [path, heading] of [
       ["/notifications", "Notifications"],

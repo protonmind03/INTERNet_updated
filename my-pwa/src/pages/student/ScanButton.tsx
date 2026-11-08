@@ -33,7 +33,8 @@ export default function ScanButton() {
   const step = phone && !loading ? nextStep(stage) : null;
   const waiting = todayLog?.waiting?.length ?? 0;
 
-  const label = step ? step.name : phone ? "Today's attendance" : "Time in from your phone";
+  // Named "Scan: …" so it is never mistaken for the time card's own step button of the same name.
+  const label = step ? `Scan: ${step.name}` : phone ? "Today's attendance" : "Time in from your phone";
   const onClick = () => {
     if (step) step.run(timeIn);
     else setOpen(true);

@@ -95,7 +95,7 @@ export default function AttentionCard({
             {shown.length}
           </span>
         </h2>
-        {noAsk && shown.length > 1 && (
+        {noAsk && shown.length > 0 && (
           <button type="button" onClick={() => hide("all")} className="inline-flex min-h-11 items-center gap-1 rounded-lg px-2 text-[13.5px] font-bold text-(--status-late-ink) hover:bg-white/70">
             <Icon name="close" size={15} />
             Clear all

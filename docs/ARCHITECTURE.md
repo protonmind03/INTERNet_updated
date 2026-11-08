@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-249 routes in 16 files; 48 services in use.
+261 routes in 17 files; 50 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -37,6 +37,7 @@ flowchart LR
     routes_projections["routes/projections.ts<br/>1 routes: /api/students"]
     routes_supervisorDesk["routes/supervisorDesk.ts<br/>13 routes: /api/supervisor, /api/tasks, /api/student-notes"]
     routes_timeRecord["routes/timeRecord.ts<br/>5 routes: /api/student, /api/students, /api/time-record"]
+    routes_traineeRecord["routes/traineeRecord.ts<br/>12 routes: /api/students"]
   end
   subgraph services["backend/src/services"]
     services_academics["academics.ts"]
@@ -53,6 +54,7 @@ flowchart LR
     services_digests["digests.ts"]
     services_documentZip["documentZip.ts"]
     services_emailBudget["emailBudget.ts"]
+    services_evaluationGrade["evaluationGrade.ts"]
     services_ids["ids.ts"]
     services_imageMetadata["imageMetadata.ts"]
     services_insights["insights.ts"]
@@ -85,6 +87,7 @@ flowchart LR
     services_taskRelease["taskRelease.ts"]
     services_termSetup["termSetup.ts"]
     services_timeOutReminders["timeOutReminders.ts"]
+    services_traineeRecord["traineeRecord.ts"]
     services_uploadQuota["uploadQuota.ts"]
     services_versions["versions.ts"]
   end
@@ -128,6 +131,7 @@ flowchart LR
   routes_deliverables --> services_ids
   routes_extensions --> services_academics
   routes_extensions --> services_deliverables
+  routes_extensions --> services_evaluationGrade
   routes_extensions --> services_ids
   routes_extensions --> services_insights
   routes_extensions --> services_notificationKinds
@@ -173,6 +177,9 @@ flowchart LR
   routes_supervisorDesk --> services_taskRelease
   routes_timeRecord --> services_ids
   routes_timeRecord --> services_uploadQuota
+  routes_traineeRecord --> services_ids
+  routes_traineeRecord --> services_phTime
+  routes_traineeRecord --> services_traineeRecord
   scripts_backup_cron --> services_backups
   server --> services_academics
   server --> services_analyticsRange
@@ -277,6 +284,7 @@ flowchart LR
   routes_projections -.-> ext_postgres
   routes_supervisorDesk -.-> ext_postgres
   routes_timeRecord -.-> ext_postgres
+  routes_traineeRecord -.-> ext_postgres
   scripts_backup_cron -.-> ext_postgres
   server -.-> ext_postgres
   server -.-> ext_push
@@ -334,6 +342,7 @@ flowchart LR
 | `routes/projections.ts` | 1 | `/api/students` |
 | `routes/supervisorDesk.ts` | 13 | `/api/supervisor`, `/api/tasks`, `/api/student-notes`, `/api/coordinator` |
 | `routes/timeRecord.ts` | 5 | `/api/student`, `/api/students`, `/api/time-record` |
+| `routes/traineeRecord.ts` | 12 | `/api/students` |
 
 ## The app's pages and installable apps
 
@@ -364,7 +373,8 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `digests.ts` | `server.ts`, `services/insights.ts` |
 | `documentZip.ts` | `routes/programme.ts` |
 | `emailBudget.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/mailer.ts` |
-| `ids.ts` | `routes/attachments.ts`, `routes/deliverables.ts`, `routes/extensions.ts`, `routes/messages.ts`, `routes/programme.ts`, `routes/projections.ts`, `routes/supervisorDesk.ts`, `routes/timeRecord.ts`, `server.ts`, `services/coordinatorActions.ts` |
+| `evaluationGrade.ts` | `routes/extensions.ts` |
+| `ids.ts` | `routes/attachments.ts`, `routes/deliverables.ts`, `routes/extensions.ts`, `routes/messages.ts`, `routes/programme.ts`, `routes/projections.ts`, `routes/supervisorDesk.ts`, `routes/timeRecord.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/coordinatorActions.ts` |
 | `imageMetadata.ts` | `routes/attachments.ts`, `server.ts` |
 | `insights.ts` | `routes/extensions.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/kpis.ts`, `services/performance.ts`, `services/projection.ts` |
 | `kpiDefinitions.ts` | `routes/accountDetails.ts`, `services/kpis.ts` |
@@ -381,7 +391,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
 | `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
-| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
+| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
 | `photoPurge.ts` | `routes/console.ts`, `server.ts` |
 | `photoRedo.ts` | `routes/appeals.ts`, `server.ts`, `services/deadlineReminders.ts` |
 | `privacy.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `server.ts`, `services/photoPurge.ts` |
@@ -396,5 +406,6 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `taskRelease.ts` | `routes/extensions.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |
 | `termSetup.ts` | `routes/programme.ts` |
 | `timeOutReminders.ts` | `server.ts` |
+| `traineeRecord.ts` | `routes/traineeRecord.ts` |
 | `uploadQuota.ts` | `routes/attachments.ts`, `routes/console.ts`, `routes/extensions.ts`, `routes/timeRecord.ts`, `server.ts` |
 | `versions.ts` | `routes/appeals.ts`, `routes/extensions.ts`, `server.ts` |
