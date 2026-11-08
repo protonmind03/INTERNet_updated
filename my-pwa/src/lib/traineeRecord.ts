@@ -61,7 +61,9 @@ export type DailyReport = {
 
 export type MonthlyReport = { id: number; month: string; summary: string | null; highlights: string | null; updated_at: string };
 
-export type NarrativeParts = Record<string, { text: string; updated_at: string } | undefined>;
+/** A part: its text, and the guided form's fields for the parts built with one (change1108). */
+export type NarrativePart = { text: string; data?: Record<string, unknown>; updated_at: string };
+export type NarrativeParts = Record<string, NarrativePart | undefined>;
 
 async function call<T>(role: OfflineRole, path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, withRoleAuth(role, init));
@@ -109,6 +111,6 @@ export const traineeRecord = {
 
   narrative: (role: OfflineRole, studentId: string) =>
     call<{ parts: NarrativeParts; updated_at: string | null }>(role, `/api/students/${sid(studentId)}/narrative`),
-  saveNarrativePart: (studentId: string, part: string, text: string) =>
-    call<{ part: { text: string; updated_at: string } }>("student", `/api/students/${sid(studentId)}/narrative/${part}`, json("PUT", { text })),
+  saveNarrativePart: (studentId: string, part: string, text: string, data?: Record<string, unknown>) =>
+    call<{ part: NarrativePart }>("student", `/api/students/${sid(studentId)}/narrative/${part}`, json("PUT", data ? { text, data } : { text })),
 };

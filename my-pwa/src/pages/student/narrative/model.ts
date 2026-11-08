@@ -30,14 +30,14 @@ export type WritePart = {
 };
 
 export const PARTS: WritePart[] = [
-  { key: "title_page", number: "I.", title: "Title Page", hint: "The report's title, your name, program, company and the date. The layout follows the university's sample once it is in.", source: "waiting", level: 0 },
+  { key: "title_page", number: "I.", title: "Title Page", hint: "Pick a layout; every line is filled from your record and yours to change.", source: "write", level: 0 },
   { key: "toc", number: "II.", title: "Table of Contents", hint: "Made from the parts below, in the university's order.", source: "auto", level: 0 },
   { key: "dedication", number: "III.", title: "Dedication", hint: "To whom you dedicate this report, and why.", source: "write", level: 0 },
   { key: "acknowledgement", number: "IV.", title: "Acknowledgement", hint: "Thank the people and offices who helped you through your OJT.", source: "write", level: 0 },
   { key: "company", number: "V.", title: "Company Profile", hint: "", source: "write", level: 0 },
-  { key: "agency_profile", number: "•", title: "Agency Profile", hint: "What the agency or company is: its history, mandate or mission, vision, and where it is.", source: "write", level: 1 },
-  { key: "organizational_chart", number: "•", title: "Organizational Chart", hint: "Describe the offices and who heads them; where your department sits. A picture of the chart can go in the printed binder.", source: "write", level: 1 },
-  { key: "functions_services", number: "•", title: "Function and Services", hint: "What the agency does and the services it gives the public or its clients.", source: "write", level: 1 },
+  { key: "agency_profile", number: "•", title: "Agency Profile", hint: "The agency's facts, history, mission and vision; INTERNet writes them up as its profile.", source: "write", level: 1 },
+  { key: "organizational_chart", number: "•", title: "Organizational Chart", hint: "Build the chart from boxes (position, name, who they report to), or use a photo of the agency's own chart from your album.", source: "write", level: 1 },
+  { key: "functions_services", number: "•", title: "Function and Services", hint: "Each function or service of the agency, with a line about who it serves.", source: "write", level: 1 },
   { key: "narrative", number: "VI.", title: "Narrative Report", hint: "", source: "write", level: 0 },
   { key: "introduction", number: "A.", title: "Introduction", hint: "Where and when you trained, how many hours, and what the OJT was for.", source: "write", level: 1 },
   { key: "learning", number: "B.", title: "Learning", hint: "", source: "write", level: 1 },
@@ -154,6 +154,21 @@ export function draftFor(key: string, r: Records): string {
         .slice()
         .sort((a, b) => a.week_start.localeCompare(b.week_start))
         .map((week, index) => `Week ${index + 1} (${longDate(week.week_start)}): ${week.activities.trim()}`)
+        .join("\n\n");
+    case "dedication":
+      return [
+        "This narrative report is humbly dedicated to my family, whose love, patience and support carried me through every day of my training.",
+        `To my mentors at ${r.company || "my host company"}, who trusted me with real work and taught me by example.`,
+        "And above all, to God, the source of strength and wisdom, without whom none of this would have been possible.",
+      ].join("\n\n");
+    case "acknowledgement":
+      return [
+        `I would like to express my sincere gratitude to the people who made my On-the-Job Training at ${place || "my host company"} a meaningful experience.`,
+        r.supervisor ? `To ${r.supervisor}, my training supervisor, for the guidance, patience and trust given to me throughout my ${Math.round(r.hours) || r.requiredHours} hours of training.` : "",
+        `To the faculty of the ${r.program || "program"} of Pangasinan State University${r.campus ? `, ${r.campus} Campus` : ""}, and especially our OJT coordinator, for preparing and following us all the way.`,
+        "To my family and friends, for their unending support, and to my fellow interns, for the help and the laughter along the way.",
+      ]
+        .filter(Boolean)
         .join("\n\n");
     case "agency_profile":
       return r.company ? `${r.company}${r.department ? `, through its ${r.department},` : ""} …` : "";

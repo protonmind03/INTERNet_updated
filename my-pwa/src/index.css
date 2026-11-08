@@ -643,3 +643,27 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
 .hours-waiting { background: repeating-linear-gradient(90deg, var(--color-gold-400) 0 6px, var(--color-gold-200) 6px 10px); }
 .rhythm-future { fill: transparent; stroke: color-mix(in srgb, var(--role-ink, black) 12%, transparent); stroke-dasharray: 3 3; }
 .rhythm-today { fill: none; stroke: var(--color-psu-700); stroke-width: 2; }
+
+/* The narrative report's guided parts (pages/student/narrative/Builders.tsx, change1108). */
+.title-preview { width: 343px; height: 444px; background: #fff; }
+.title-preview-inner { width: 8.5in; transform: scale(0.42); transform-origin: top left; pointer-events: none; }
+@media (max-width: 380px) { .title-preview { width: 294px; height: 380px; } .title-preview-inner { transform: scale(0.36); } }
+/* The organizational chart: boxes joined by lines, each level under the one it reports to. */
+.org-tree { display: flex; justify-content: center; min-width: max-content; }
+.org-tree ul { position: relative; display: flex; justify-content: center; margin: 0; padding: 18px 0 0; list-style: none; }
+.org-tree > ul { padding-top: 0; }
+.org-tree li { position: relative; display: flex; flex-direction: column; align-items: center; padding: 18px 6px 0; }
+.org-tree > ul > li { padding-top: 0; }
+.org-tree li::before, .org-tree li::after { content: ""; position: absolute; top: 0; width: 50%; height: 18px; border-top: 2px solid var(--color-psu-400, #c58b3a); }
+.org-tree li::before { right: 50%; }
+.org-tree li::after { left: 50%; border-left: 2px solid var(--color-psu-400, #c58b3a); }
+.org-tree li:first-child::before, .org-tree li:last-child::after { border-top: 0; }
+.org-tree li:only-child::before { display: none; }
+.org-tree li:only-child::after { border-top: 0; }
+.org-tree > ul > li::before, .org-tree > ul > li::after { display: none; }
+.org-tree ul ul::before { content: ""; position: absolute; top: 0; left: 50%; height: 18px; border-left: 2px solid var(--color-psu-400, #c58b3a); }
+.org-box { display: grid; min-width: 112px; max-width: 170px; gap: 1px; padding: 8px 10px; border-radius: 10px; background: #fff; text-align: center; font-size: 12.5px; line-height: 1.25; box-shadow: 0 1px 0 rgb(0 0 0 / 0.04); outline: 1.5px solid var(--color-psu-300, #e6c08a); }
+.org-box b { font-weight: 800; color: #1e1b16; }
+.org-box span { color: #57534e; }
+.org-tree--print .org-box { outline-color: #000; box-shadow: none; font-family: "Times New Roman", Times, serif; font-size: 10.5pt; }
+.org-tree--print li::before, .org-tree--print li::after, .org-tree--print ul ul::before { border-color: #000; }

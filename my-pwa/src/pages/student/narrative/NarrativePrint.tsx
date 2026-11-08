@@ -3,7 +3,9 @@ import { useEffect, useState, type ReactNode } from "react";
 import { PsuSeal } from "../../../brand";
 import { pictureUrl } from "../../../lib/attachments";
 import type { NarrativeParts } from "../../../lib/traineeRecord";
+import { OrgChartDrawing, TitlePageSheet } from "./Builders";
 import { MOA, PARTS, REQUIREMENTS, type Records } from "./model";
+import { fieldsOf, orgDefaults, titleDefaults, type OrgData } from "./structured";
 import type { ReportPhoto, UploadedDocument } from "./useNarrativeData";
 
 /*
@@ -17,10 +19,10 @@ import type { ReportPhoto, UploadedDocument } from "./useNarrativeData";
 | program, and the host company in bold. The body is Times-like, as the
 | sample's table of contents is.
 |
-| The Title Page waits for the university's sample (the user is sending a
-| photo); until then it prints a plain page with the facts it needs, marked
-| as a draft layout. The signed and issued papers (the agreement and the
-| requirements) are listed where they go; they are put in by hand.
+| The Title Page prints in the layout the trainee picked (change1108,
+| Builders.tsx), and the Organizational Chart as its boxes or its photo. The
+| signed and issued papers (the agreement and the requirements) are listed
+| where they go; they are put in by hand.
 |
 */
 
@@ -54,7 +56,7 @@ function Text({ value }: { value?: string }) {
   return <div style={{ whiteSpace: "pre-wrap", textAlign: "justify", lineHeight: 1.6 }}>{value?.trim() || ""}</div>;
 }
 
-function Photo({ photo }: { photo: ReportPhoto }) {
+function Photo({ photo, tall = false }: { photo: ReportPhoto; tall?: boolean }) {
   const [url, setUrl] = useState<string | null>(null);
   useEffect(() => {
     let made: string | null = null;
@@ -68,7 +70,7 @@ function Photo({ photo }: { photo: ReportPhoto }) {
   }, [photo.id]);
   return (
     <figure style={{ breakInside: "avoid", margin: 0 }}>
-      {url && <img src={url} alt={photo.caption || photo.title} style={{ width: "100%", height: "2.6in", objectFit: "cover", border: "1px solid #000" }} />}
+      {url && <img src={url} alt={photo.caption || photo.title} style={{ width: "100%", height: tall ? "5in" : "2.6in", objectFit: tall ? "contain" : "cover", border: "1px solid #000" }} />}
       <figcaption style={{ fontSize: "10pt", textAlign: "center", marginTop: 4 }}>
         {photo.caption || photo.title}
         {photo.day ? ` (${photo.day})` : ""}
@@ -93,23 +95,13 @@ export default function NarrativePrint({
   const text = (key: string) => parts[key]?.text ?? "";
   const heading = (title: string) => <h2 style={{ fontSize: "13pt", fontWeight: 700, margin: "0 0 10px" }}>{title}</h2>;
   const uploaded = (match?: RegExp) => (match ? documents.find((doc) => match.test(doc.doc_type)) : undefined);
+  const org: OrgData = fieldsOf(parts, "organizational_chart", orgDefaults(records));
+  const orgPhoto = org.photoId ? photos.find((photo) => photo.id === org.photoId) : undefined;
 
   return (
     <div className="hidden print:block">
-      {/* I. Title Page: a draft layout until the university's sample is in. */}
-      <section style={{ fontFamily: "'Times New Roman', Times, serif", color: "#000", textAlign: "center", paddingTop: "1.2in" }}>
-        <PsuSeal size={110} clearSpace={false} decorative />
-        <p style={{ fontFamily: BLACKLETTER, fontSize: "26pt", marginTop: 16 }}>Pangasinan State University</p>
-        <p>{records.campus} Campus</p>
-        {college && <p style={{ fontStyle: "italic" }}>{college}</p>}
-        <p style={{ fontSize: "20pt", fontWeight: 700, marginTop: "1in", whiteSpace: "pre-wrap" }}>{text("title_page") || "NARRATIVE REPORT ON INTERNSHIP TRAINING"}</p>
-        <p style={{ marginTop: 12 }}>at</p>
-        <p style={{ fontWeight: 700 }}>{records.company}</p>
-        <p style={{ marginTop: "1in" }}>Presented by</p>
-        <p style={{ fontWeight: 700, fontSize: "14pt" }}>{records.name}</p>
-        <p>{records.program}</p>
-        <p style={{ marginTop: "0.8in", fontSize: "9pt", fontStyle: "italic" }}>Draft layout: the title page follows the university's sample once it is in.</p>
-      </section>
+      {/* I. Title Page, in the layout the trainee picked. */}
+      <TitlePageSheet data={fieldsOf(parts, "title_page", titleDefaults(records, text("title_page")))} records={records} college={college} />
 
       {/* II. Table of Contents, in the university's order. */}
       <Page records={records} college={college}>
@@ -148,9 +140,21 @@ export default function NarrativePrint({
       <Page records={records} college={college}>
         {heading("Company Profile")}
         {(["agency_profile", "organizational_chart", "functions_services"] as const).map((key) => (
-          <div key={key} style={{ marginBottom: 18 }}>
+          <div key={key} style={{ marginBottom: 18, breakInside: "avoid" }}>
             <h3 style={{ fontWeight: 700, margin: "0 0 6px" }}>{PARTS.find((part) => part.key === key)?.title}</h3>
-            <Text value={text(key)} />
+            {key === "organizational_chart" && org.mode === "chart" && org.people.length > 0 ? (
+              <>
+                <OrgChartDrawing people={org.people} print />
+                {org.note && <Text value={org.note} />}
+              </>
+            ) : key === "organizational_chart" && org.mode === "photo" && orgPhoto ? (
+              <>
+                <Photo photo={orgPhoto} tall />
+                {org.note && <Text value={org.note} />}
+              </>
+            ) : (
+              <Text value={text(key)} />
+            )}
           </div>
         ))}
       </Page>

@@ -8,7 +8,9 @@ import { toast } from "../../lib/toast";
 import { traineeRecord } from "../../lib/traineeRecord";
 import { restoreAutosave, saveStateText, useAutosave } from "../../lib/useAutosave";
 import { MOA, PARTS, REQUIREMENTS, draftFor, type PartSource, type Requirement } from "./narrative/model";
+import { AgencyForm, GuidedEditor, OrgForm, ServicesForm, TitleForm } from "./narrative/Builders";
 import NarrativePrint from "./narrative/NarrativePrint";
+import { PROMPTS, agencyDefaults, agencyText, fieldsOf, orgDefaults, orgText, servicesText, titleDefaults, titleText } from "./narrative/structured";
 import TimeframeSheet from "./narrative/TimeframeSheet";
 import TimeInProvider from "./TimeInProvider";
 import { useNarrativeData, type UploadedDocument } from "./narrative/useNarrativeData";
@@ -34,8 +36,12 @@ import { useNarrativeData, type UploadedDocument } from "./narrative/useNarrativ
 |   Print / save as PDF gives the whole binder under the letterhead of the
 |   university's sample; Word gives the same as a .docx to keep editing
 |
-| The title page and the Training Supervisor's Feedback Form wait for the
-| photos of the university's samples.
+| change1108: the parts that differ from school to school and agency to
+| agency are built with guided forms (narrative/structured.ts, Builders.tsx):
+| the Title Page from three layouts, the Agency Profile from its facts, the
+| Organizational Chart from boxes or a photo from the album, Function and
+| Services as a list; Dedication and Acknowledgement get guiding questions.
+| The Training Supervisor's Feedback Form still waits for a photo.
 |
 */
 
@@ -179,7 +185,18 @@ function NarrativePage() {
             </nav>
 
             <div id="narrative-editor" className="scroll-mt-4 space-y-4">
-              {data.studentId && (
+              {data.studentId && GUIDED.has(current.key) && (
+                <GuidedPart
+                  key={current.key}
+                  partKey={current.key}
+                  studentId={data.studentId}
+                  title={`${current.number} ${current.title}`}
+                  hint={current.hint}
+                  data={data}
+                  college={college}
+                />
+              )}
+              {data.studentId && !GUIDED.has(current.key) && (
                 <PartEditor
                   key={current.key}
                   studentId={data.studentId}
@@ -189,6 +206,7 @@ function NarrativePage() {
                   waiting={current.source === "waiting"}
                   saved={data.parts[current.key]?.text ?? ""}
                   draft={draftFor(current.key, data.records)}
+                  prompts={PROMPTS[current.key]}
                   onSaved={(text) => data.setParts((parts) => ({ ...parts, [current.key]: { text, updated_at: new Date().toISOString() } }))}
                 />
               )}
@@ -273,6 +291,38 @@ function Ring({ value, total }: { value: number; total: number }) {
   );
 }
 
+const GUIDED = new Set(["title_page", "agency_profile", "organizational_chart", "functions_services"]);
+
+/** A part built with a guided form: its form, its fields saved with their text. */
+function GuidedPart({ partKey, studentId, title, hint, data, college }: { partKey: string; studentId: string; title: string; hint: string; data: ReturnType<typeof useNarrativeData>; college: string }) {
+  const saved = data.parts[partKey];
+  const onSaved = (text: string, fields: Record<string, unknown>) => data.setParts((parts) => ({ ...parts, [partKey]: { text, data: fields, updated_at: new Date().toISOString() } }));
+  const common = { studentId, partKey, title, hint, onSaved };
+  if (partKey === "title_page")
+    return (
+      <GuidedEditor {...common} initial={fieldsOf(data.parts, partKey, titleDefaults(data.records, saved?.text))} compose={titleText}>
+        {(fields, update) => <TitleForm data={fields} update={update} records={data.records} college={college} />}
+      </GuidedEditor>
+    );
+  if (partKey === "agency_profile")
+    return (
+      <GuidedEditor {...common} initial={fieldsOf(data.parts, partKey, { ...agencyDefaults(data.records), ...(saved?.text && !saved.data ? { history: saved.text } : {}) })} compose={agencyText}>
+        {(fields, update) => <AgencyForm data={fields} update={update} />}
+      </GuidedEditor>
+    );
+  if (partKey === "functions_services")
+    return (
+      <GuidedEditor {...common} initial={fieldsOf(data.parts, partKey, { items: saved?.text && !saved.data ? saved.text.split(/\n+/).filter(Boolean).map((line) => ({ name: line.replace(/^•\s*/, ""), detail: "" })) : [] })} compose={servicesText}>
+        {(fields, update) => <ServicesForm data={fields} update={update} />}
+      </GuidedEditor>
+    );
+  return (
+    <GuidedEditor {...common} initial={fieldsOf(data.parts, partKey, { ...orgDefaults(data.records), ...(saved?.text && !saved.data ? { note: saved.text } : {}) })} compose={orgText}>
+      {(fields, update) => <OrgForm data={fields} update={update} photos={data.photos} />}
+    </GuidedEditor>
+  );
+}
+
 function PartEditor({
   studentId,
   partKey,
@@ -281,8 +331,10 @@ function PartEditor({
   waiting,
   saved,
   draft,
+  prompts,
   onSaved,
 }: {
+  prompts?: { ask: string; start: string }[];
   studentId: string;
   partKey: string;
   title: string;
@@ -353,6 +405,26 @@ function PartEditor({
             placeholder={waiting ? "NARRATIVE REPORT ON INTERNSHIP TRAINING" : "Write here…"}
             className="field resize-y leading-relaxed"
           />
+        )}
+        {prompts && text !== null && (
+          <div>
+            <p className="mb-1.5 text-[12.5px] font-bold text-slate-600">Not sure where to start? Tap a question to begin a sentence:</p>
+            <div className="flex flex-wrap gap-1.5">
+              {prompts.map((prompt) => (
+                <button
+                  key={prompt.ask}
+                  type="button"
+                  onClick={() => setText((current) => `${current?.trim() ? `${current.trim()}
+
+` : ""}${prompt.start}`)}
+                  className="inline-flex min-h-9 items-center gap-1 rounded-full bg-white px-3 text-[13px] font-semibold text-psu-900 ring-1 ring-inset ring-psu-300 hover:bg-psu-50"
+                >
+                  <Icon name="plus" size={13} />
+                  {prompt.ask}
+                </button>
+              ))}
+            </div>
+          </div>
         )}
         {draft && (
           <details className="rounded-xl bg-psu-50 px-3.5 py-2.5 ring-1 ring-inset ring-psu-200/70">

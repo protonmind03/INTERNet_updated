@@ -2,6 +2,7 @@ import { pictureUrl } from "../../../lib/attachments";
 import type { NarrativeParts } from "../../../lib/traineeRecord";
 import { logDateKey, type AttendanceLog } from "../useAttendance";
 import { MOA, PARTS, REQUIREMENTS, type Records } from "./model";
+import { fieldsOf, titleDefaults } from "./structured";
 import type { Journal, ReportPhoto, UploadedDocument } from "./useNarrativeData";
 
 /*
@@ -62,14 +63,17 @@ export async function downloadNarrativeDocx({
 
   const children: InstanceType<typeof Paragraph | typeof Table>[] = [];
 
-  // I. Title page (draft layout until the university's sample is in).
+  // I. Title page: the lines of the guided form (change1108), centred; Word keeps them editable.
+  const cover = fieldsOf(parts, "title_page", titleDefaults(records, text("title_page")));
+  const centred = (value: string, options: Parameters<typeof run>[1] = {}, before = 0) =>
+    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before }, children: [run(value, options)] });
   children.push(
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 2400 }, children: [run(text("title_page") || "NARRATIVE REPORT ON INTERNSHIP TRAINING", { bold: true, size: 36 })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [run("at")] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [run(records.company, { bold: true })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 1200 }, children: [run("Presented by")] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [run(records.name, { bold: true, size: 28 })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [run(records.program)] }),
+    centred(cover.title, { bold: true, size: 36 }, 2400),
+    ...(cover.agency ? [centred("at"), centred(cover.agency, { bold: true })] : []),
+    centred(cover.purpose, { italics: true }, 360),
+    ...(cover.submittedBy ? [centred("Submitted by:", {}, 1200), centred(cover.submittedBy, { bold: true, size: 28 }), centred(records.program)] : []),
+    ...(cover.submittedTo ? [centred("Submitted to:", {}, 280), centred(cover.submittedTo, { bold: true })] : []),
+    centred(cover.date, {}, 400),
     pageBreak()
   );
 

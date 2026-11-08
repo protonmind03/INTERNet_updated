@@ -129,12 +129,22 @@ export function readMonth(body: unknown): { summary: string | null; highlights: 
   return { summary, highlights };
 }
 
-/** One part of the narrative report, as text. */
-export function readNarrativeText(body: unknown): { text: string } | Problem {
-  const text = (body as Record<string, unknown> | null)?.text;
+/**
+ * One part of the narrative report: its text, and for the parts built with
+ * a guided form (the title page's layout, the organizational chart's boxes,
+ * the agency's facts, the list of services; change1108) the form's fields
+ * as a small object. The text is always the readable version, so a part
+ * reads the same in the Word file and wherever the fields are not drawn.
+ */
+export function readNarrativeText(body: unknown): { text: string; data: Record<string, unknown> | null } | Problem {
+  const input = (body ?? {}) as Record<string, unknown>;
+  const text = input.text;
   if (typeof text !== "string") return { problem: "Send the part's text." };
   if (text.length > NARRATIVE_TEXT_MAX) return { problem: `A part can be at most ${NARRATIVE_TEXT_MAX} characters.` };
-  return { text };
+  if (input.data === undefined || input.data === null) return { text, data: null };
+  if (typeof input.data !== "object" || Array.isArray(input.data)) return { problem: "The part's fields must be an object." };
+  if (JSON.stringify(input.data).length > NARRATIVE_TEXT_MAX) return { problem: "That part has too much in it to save." };
+  return { text, data: input.data as Record<string, unknown> };
 }
 
 /** A calendar day as YYYY-MM-DD that really exists, or null. */

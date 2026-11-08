@@ -406,7 +406,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
       if (!isNarrativePart(req.params.part)) return res.status(404).json({ message: "That part is not in the narrative report." });
       const input = readNarrativeText(req.body);
       if ("problem" in input) return res.status(400).json({ message: input.problem });
-      const value = JSON.stringify({ text: input.text, updated_at: new Date().toISOString() });
+      const value = JSON.stringify({ text: input.text, ...(input.data ? { data: input.data } : {}), updated_at: new Date().toISOString() });
       const saved = await pool.query(
         `INSERT INTO narrative_reports AS n (student_id, parts) VALUES ($1, jsonb_build_object($2::text, $3::jsonb))
          ON CONFLICT (student_id) DO UPDATE SET parts = n.parts || jsonb_build_object($2::text, $3::jsonb), updated_at = NOW()
