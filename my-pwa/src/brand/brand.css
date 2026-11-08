@@ -1199,3 +1199,13 @@ a:hover .ic-accent, button:hover .ic-accent { --ic-accent-o: 0.45; }
 [data-role="student"] .app-canvas { background-image: radial-gradient(color-mix(in srgb, var(--role-ink) 9%, transparent) 1px, transparent 1.3px), var(--inb-grain); background-size: 22px 22px, auto; }
 .student-folder .font-folder { font-family: var(--font-display); letter-spacing: -0.015em; }
 @media print { [data-role="student"] .app-canvas { background: none; } }
+
+/* Buttons (change1108): solid ones look pressed into the page, with a firm lower edge and a soft top light that
+   sinks when pressed, like a punch on a time card; lined ones carry a one-pixel lower edge. Icons inside a solid
+   button light their accent. Flat in print and with reduced motion's press removed. */
+.btn-solid { box-shadow: inset 0 -2px 0 rgb(0 0 0 / 0.18), inset 0 1px 0 rgb(255 255 255 / 0.22); }
+.btn-solid:active:not(:disabled) { box-shadow: inset 0 2px 3px rgb(0 0 0 / 0.22); }
+.btn-solid .ic-accent { --ic-accent: currentColor; --ic-accent-o: 0.32; }
+.btn-line { box-shadow: inset 0 -1px 0 rgb(15 23 42 / 0.08); }
+.btn-line:active:not(:disabled) { box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.12); }
+@media print { .btn-solid, .btn-line { box-shadow: none; } }

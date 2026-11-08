@@ -30,18 +30,19 @@ import { BrandLoader, CheckGlyph, type LoadProcess } from "../brand";
 const BUTTON_VARIANTS = {
   // Flat fills (PSU redesign 13.1): the role's accent (the psu-* scale follows the role,
   // brand.css), and gold for the one thing to do now.
-  primary: "bg-psu-600 text-white hover:bg-psu-700 active:bg-psu-800",
-  gold: "bg-gold-400 text-psu-950 hover:bg-gold-300 active:bg-gold-500",
+  // change1108: solid buttons are pressed into the page (btn-solid), lined ones sit on it (btn-line); brand.css.
+  primary: "btn-solid bg-psu-600 text-white hover:bg-psu-700 active:bg-psu-800",
+  gold: "btn-solid bg-gold-400 text-psu-950 hover:bg-gold-300 active:bg-gold-500",
   secondary:
-    "border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
+    "btn-line border border-slate-300 bg-white text-slate-700 hover:border-slate-400 hover:bg-slate-50 active:bg-slate-100",
   // The outlined choice beside a solid main action (Reject beside Verify, Appeal beside Retake).
-  outline: "border-[1.5px] border-psu-600 bg-white text-psu-700 hover:bg-psu-50 active:bg-psu-100",
+  outline: "btn-line border-[1.5px] border-psu-600 bg-white text-psu-700 hover:bg-psu-50 active:bg-psu-100",
   ghost: "text-slate-600 hover:bg-slate-100 active:bg-slate-200",
   danger: "bg-red-600 text-white hover:bg-red-700 active:bg-red-800",
 } as const;
 
 const BUTTON_SIZES = {
-  sm: "h-9 gap-1.5 px-3 text-xs",
+  sm: "h-9 gap-1.5 px-3 text-[13px]",
   md: "h-11 gap-2 px-4 text-sm",
   lg: "h-12 gap-2 px-5 text-base",
 } as const;

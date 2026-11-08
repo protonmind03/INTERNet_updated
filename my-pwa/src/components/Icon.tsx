@@ -17,35 +17,48 @@ import type { ReactNode, SVGProps } from "react";
 | portal's accent (amber; mint for the supervisor) at full strength, so the
 | place you are lights up (brand/brand.css, "ic-accent").
 |
+| The glyphs seen most (the menus and the folder tabs) are drawn from the
+| system's own objects rather than a stock set: Attendance is a stopwatch,
+| Tasks a ticket with punched notches, Reports a page with a reviewer's
+| seal, Support two speech bubbles, the Narrative an open book, Today a
+| house with an arched door, done a certificate's completion seal.
+|
 */
 
 /** A glyph: its lines, and the one shape filled behind them (the duotone accent), when it has one. */
 type Glyph = ReactNode | { a: ReactNode; l: ReactNode };
 
 const PATHS = {
-  home: { a: <path d="M9 21v-6h6v6Z" />, l: <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1Z" /> },
-  clock: { a: <path d="M12 12V3a9 9 0 0 1 7.8 13.5Z" />, l: (
+  home: { a: <path d="M10 20.5V15.5a2 2 0 0 1 4 0v5Z" />, l: (
     <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="M12 7v5l3 2" />
+      <path d="M3.5 10.4 12 3.6l8.5 6.8V19a1.5 1.5 0 0 1-1.5 1.5H5A1.5 1.5 0 0 1 3.5 19Z" />
+      <path d="M10 20.5v-5a2 2 0 0 1 4 0v5" />
     </>
   ) },
-  tasks: { a: <rect x="4" y="3" width="16" height="18" rx="2" />, l: (
+  clock: { a: <path d="M12 13.5V5.5a8 8 0 0 1 6.9 12Z" />, l: (
     <>
-      <path d="m9 11 3 3 8-8" />
-      <path d="M20 12v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h9" />
+      <circle cx="12" cy="13.5" r="8" />
+      <path d="M10 2.5h4M12 2.5v3M18.6 6.4l1.4-1.4" />
+      <path d="M12 9.5v4l2.6 1.6" />
     </>
   ) },
-  calendar: { a: <path d="M3 6.5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2V10H3Z" />, l: (
+  tasks: { a: <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v2.6a2.9 2.9 0 0 0 0 5.8v2.6a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-2.6a2.9 2.9 0 0 0 0-5.8Z" />, l: (
     <>
-      <rect x="3" y="4.5" width="18" height="16.5" rx="2" />
-      <path d="M8 2.5v4M16 2.5v4M3 10h18" />
+      <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v2.6a2.9 2.9 0 0 0 0 5.8v2.6a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 17.5v-2.6a2.9 2.9 0 0 0 0-5.8Z" />
+      <path d="m8.8 12.2 2.2 2.2 4.3-4.6" />
     </>
   ) },
-  document: { a: <path d="M14 2.5v6h6Z" />, l: (
+  calendar: { a: <rect x="13.5" y="13" width="4" height="4" rx="1" />, l: (
     <>
-      <path d="M14 2.5H6a2 2 0 0 0-2 2v15a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-11Z" />
-      <path d="M14 2.5v6h6M8 13h8M8 17h5" />
+      <rect x="3" y="4.5" width="18" height="16.5" rx="2.5" />
+      <path d="M3 9.5h18M8 2.5v4M16 2.5v4" />
+      <rect x="13.5" y="13" width="4" height="4" rx="1" />
+    </>
+  ) },
+  document: { a: <path d="M14 3v5h5Z" />, l: (
+    <>
+      <path d="M14 3H6.5A1.5 1.5 0 0 0 5 4.5v6.3a1.7 1.7 0 0 1 0 3.4v5.3A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V8Z" />
+      <path d="M14 3v5h5M9 13h6M9 16.5h4" />
     </>
   ) },
   star: { a: <path d="m12 2.5 2.9 6 6.6.9-4.8 4.6 1.2 6.5L12 17.4l-5.9 3.1 1.2-6.5L2.5 9.4l6.6-.9Z" />, l: (
@@ -92,10 +105,10 @@ const PATHS = {
   ),
   close: <path d="M18 6 6 18M6 6l12 12" />,
   check: <path d="m5 12.5 4.5 4.5L19 7.5" />,
-  "check-circle": { a: <circle cx="12" cy="12" r="9" />, l: (
+  "check-circle": { a: <path d="m12 2.8 2.1 1.6 2.6-.3 1 2.4 2.4 1-.3 2.6 1.6 2.1-1.6 2.1.3 2.6-2.4 1-1 2.4-2.6-.3L12 21.2l-2.1-1.6-2.6.3-1-2.4-2.4-1 .3-2.6L2.6 12l1.6-2.1-.3-2.6 2.4-1 1-2.4 2.6.3Z" />, l: (
     <>
-      <circle cx="12" cy="12" r="9" />
-      <path d="m8 12.5 2.8 2.8L16 9.5" />
+      <path d="m12 2.8 2.1 1.6 2.6-.3 1 2.4 2.4 1-.3 2.6 1.6 2.1-1.6 2.1.3 2.6-2.4 1-1 2.4-2.6-.3L12 21.2l-2.1-1.6-2.6.3-1-2.4-2.4-1 .3-2.6L2.6 12l1.6-2.1-.3-2.6 2.4-1 1-2.4 2.6.3Z" />
+      <path d="m8.6 12.2 2.3 2.3 4.6-4.8" />
     </>
   ) },
   alert: { a: <path d="M10.3 3.9 2.7 17a1.8 1.8 0 0 0 1.5 2.7h15.6a1.8 1.8 0 0 0 1.5-2.7L13.7 3.9a2 2 0 0 0-3.4 0Z" />, l: (
@@ -159,10 +172,11 @@ const PATHS = {
       <path d="m21 15-5-5L5 20" />
     </>
   ) },
-  note: { a: <path d="M5 4h14v11l-5 5H5Z" />, l: (
+  note: { a: <circle cx="15.8" cy="16.8" r="2.6" />, l: (
     <>
-      <path d="M5 4h14v11l-5 5H5Z" />
-      <path d="M14 20v-5h5M8.5 9h7M8.5 12.5h4" />
+      <path d="M14.5 3H6.5A1.5 1.5 0 0 0 5 4.5v15A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5v-12Z" />
+      <path d="M14.5 3v4.5H19M8.5 10h6M8.5 13.3h4" />
+      <circle cx="15.8" cy="16.8" r="2.6" />
     </>
   ) },
   filter: { a: <path d="M4 5h16l-6 7.5V19l-4 1.5v-8Z" />, l: <path d="M4 5h16l-6 7.5V19l-4 1.5v-8Z" /> },
@@ -181,7 +195,14 @@ const PATHS = {
       <path d="M18.5 9.5a3.5 3.5 0 0 1 0 5M8 15.5V19a1 1 0 0 0 1 1h1.5" />
     </>
   ) },
-  chart: { a: <rect x="8.5" y="4" width="3" height="16" rx="1" />, l: <path d="M4 20V11M10 20V4M16 20v-7M21.5 20h-19" /> },
+  chart: { a: <rect x="10.5" y="6.5" width="3" height="13.5" rx="1" />, l: (
+    <>
+      <path d="M3.5 20.5h17" />
+      <rect x="5" y="12" width="3" height="8" rx="1" />
+      <rect x="10.5" y="6.5" width="3" height="13.5" rx="1" />
+      <rect x="16" y="10" width="3" height="10" rx="1" />
+    </>
+  ) },
   // System pass: glyphs for figures and summaries.
   hourglass: { a: <path d="M8 20.5h8L12 15.5Z" />, l: <path d="M6 3h12M6 21h12M7 3c0 5 10 5 10 9s-10 4-10 9M17 3c0 5-10 5-10 9s10 4 10 9" /> },
   inbox: { a: <path d="M3 13h5l1.5 3h5l1.5-3h5v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1Z" />, l: (
@@ -298,7 +319,12 @@ const PATHS = {
       <path d="M9.2 9.2a2.9 2.9 0 0 1 5.6 1c0 2-2.8 2.4-2.8 4.3M12 17.5h.01" />
     </>
   ) },
-  chat: { a: <path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.4A7.5 7.5 0 1 1 20 11.5Z" />, l: <path d="M20 11.5a7.5 7.5 0 0 1-11 6.6L4 19.5l1.4-4.4A7.5 7.5 0 1 1 20 11.5Z" /> },
+  chat: { a: <path d="M10.5 11.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2v4.3a2 2 0 0 1-2 2h-.8v2.7l-3.2-2.7h-2.5a2 2 0 0 1-2-2Z" />, l: (
+    <>
+      <path d="M14.5 9.5V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v5a2 2 0 0 0 2 2h1v3l3.4-3h1.1" />
+      <path d="M10.5 11.5a2 2 0 0 1 2-2h6.5a2 2 0 0 1 2 2v4.3a2 2 0 0 1-2 2h-.8v2.7l-3.2-2.7h-2.5a2 2 0 0 1-2-2Z" />
+    </>
+  ) },
   "chevrons-left": <path d="m11 17-5-5 5-5M18 17l-5-5 5-5" />,
   "chevrons-right": <path d="m13 17 5-5-5-5M6 17l5-5-5-5" />,
   // Revisions 2026-11: the header's Scan button, the folders, the album and the narrative report.
@@ -316,10 +342,10 @@ const PATHS = {
       <path d="m6.5 14 3.6-3.6a1.2 1.2 0 0 1 1.7 0l4.2 4.2M14.5 8.6h.01" />
     </>
   ) },
-  book: { a: <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />, l: (
+  book: { a: <path d="M12 6.6c2-1.6 5-2.1 8.5-1.6v13c-3.5-.5-6.5 0-8.5 1.6Z" />, l: (
     <>
-      <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5Z" />
-      <path d="M4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8.5 7.5h7M8.5 11h5" />
+      <path d="M12 6.6C10 5 7 4.5 3.5 5v13c3.5-.5 6.5 0 8.5 1.6 2-1.6 5-2.1 8.5-1.6V5c-3.5-.5-6.5 0-8.5 1.6Z" />
+      <path d="M12 6.6v13" />
     </>
   ) },
 } satisfies Record<string, Glyph>;
