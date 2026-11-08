@@ -54,7 +54,7 @@ export default function StudentFolder({
             <Icon name={shown.icon} size={20} />
           </span>
           <div className="min-w-0">
-            <p className="truncate text-[17px] font-extrabold leading-tight tracking-tight text-slate-900 md:text-[19px]">{shown.title}</p>
+            <p className="font-folder truncate text-[17px] font-extrabold leading-tight text-slate-900 md:text-[20px]">{shown.title}</p>
             {shown.line && <p className="truncate text-[12.5px] text-slate-600">{shown.line}</p>}
           </div>
           {/* The tab's curve down to the rim. */}
