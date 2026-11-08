@@ -10460,7 +10460,7 @@ if (!isAzureBlobStorageConfigured()) {
   );
 }
 
-app.listen(
+const server = app.listen(
   PORT,
   // Express also calls this when the server could not start, with the error.
   (error?: Error) => {
@@ -10501,3 +10501,33 @@ app.listen(
     startDigestScheduler(pool, [sendCoordinatorDigests, runPhotoPurgeIfDue, runUploadsPackIfDue]);
   }
 );
+
+/*
+| Stopping cleanly (audit, November 2026). The host stops the server with
+| SIGTERM on every deploy and restart. Before, that cut off whatever was in
+| flight (a time-in being saved, an upload). Now the server stops taking new
+| requests, lets the ones it has finish for up to 8 seconds (the live
+| notification streams never finish on their own, so they are closed at the
+| end), then closes the database pool and exits.
+*/
+let stopping = false;
+function stopCleanly(signal: string): void {
+  if (stopping) return;
+  stopping = true;
+  console.log(`${signal} received: finishing the requests in progress, then stopping.`);
+  const finish = () => {
+    void pool.end().catch(() => undefined).finally(() => process.exit(0));
+  };
+  const deadline = setTimeout(() => {
+    server.closeAllConnections?.();
+    finish();
+  }, 8000);
+  deadline.unref();
+  server.close(() => {
+    clearTimeout(deadline);
+    finish();
+  });
+  server.closeIdleConnections?.();
+}
+process.once("SIGTERM", () => stopCleanly("SIGTERM"));
+process.once("SIGINT", () => stopCleanly("SIGINT"));

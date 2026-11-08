@@ -138,9 +138,7 @@ export default function RoleDock({
             <span className="relative inline-flex">
               <Icon name={item.icon} size={22} />
               {item.count ? (
-                <span aria-hidden="true" className="role-dock-badge tabular">
-                  {item.count > 9 ? "9+" : item.count}
-                </span>
+                <span aria-hidden="true" className="role-dock-badge role-dock-badge--css tabular" data-count={item.count > 9 ? "9+" : String(item.count)} />
               ) : null}
               {item.badge}
             </span>

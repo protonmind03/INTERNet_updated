@@ -226,10 +226,10 @@ function CohortCard({ home, loading, onOpen }: { home: Home | null; loading: boo
         </div>
         <div className="grid grid-cols-3 border-t border-(--role-hairline) bg-white">
           {["behind", "on their way", "almost done"].map((label, index) => (
-            <p key={label} className={`px-4 py-3 ${index > 0 ? "border-l border-(--role-hairline)" : ""}`}>
+            <div key={label} className={`px-4 py-3 ${index > 0 ? "border-l border-(--role-hairline)" : ""}`}>
               <Skeleton className="h-[24px] w-8" />
               <span className="text-[13px] text-slate-600">{label}</span>
-            </p>
+            </div>
           ))}
         </div>
       </section>

@@ -39,14 +39,28 @@ function decodeKey(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/*
+| The server's answer is kept for the visit: the key does not change while
+| the app is open, and every page that shows the push setting asked again
+| (a request per page, an error each time where push is not set up). A
+| network failure is not kept, so it is asked again once back online.
+*/
+let knownKey: Promise<string | null> | null = null;
+
 /** The server's public key, or null when push is not set up on the server (or it cannot be reached). */
 export async function serverPushKey(): Promise<string | null> {
-  try {
+  if (knownKey) return knownKey;
+  const asked = (async () => {
     const response = await fetch(`${API_URL}/api/push/vapid-public-key`);
     if (!response.ok) return null;
     const data = (await response.json()) as { publicKey?: unknown };
     return typeof data.publicKey === "string" && data.publicKey ? data.publicKey : null;
+  })();
+  knownKey = asked;
+  try {
+    return await asked;
   } catch {
+    knownKey = null;
     return null;
   }
 }

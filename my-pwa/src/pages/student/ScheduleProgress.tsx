@@ -295,23 +295,23 @@ export default function ScheduleProgress({
             <span className="hours-waiting" style={{ width: `${pendingShare}%` }} />
             <span className="bg-(--status-late-ink)" style={{ width: `${Math.min(100 - verifiedShare - pendingShare, share(toFix))}%` }} />
           </div>
-          <dl className="mt-3 divide-y divide-(--role-hairline) text-[14px]">
+          <ul className="mt-3 divide-y divide-(--role-hairline) text-[14px]">
             {[
               { key: "Verified", value: verifiedNow, swatch: "bg-psu-700", line: "Counted toward your hours." },
               { key: "Waiting", value: pendingNow, swatch: "hours-waiting", line: "Counted once your supervisor verifies them, or on their own two working days after a clean day." },
               { key: "Needs a fix", value: toFix, swatch: "bg-(--status-late-ink)", line: toFixDays > 0 ? `${toFixDays} ${toFixDays === 1 ? "day was" : "days were"} rejected or flagged.` : "Nothing rejected or flagged." },
               { key: "Still to go", value: left, swatch: "bg-psu-100 ring-1 ring-inset ring-psu-300", line: "What is left of your required hours." },
             ].map((row) => (
-              <div key={row.key} className="flex items-start gap-3 py-2">
+              <li key={row.key} className="flex items-start gap-3 py-2">
                 <span aria-hidden="true" className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${row.swatch}`} />
                 <div className="min-w-0 flex-1">
-                  <dt className="font-bold text-slate-900">{row.key}</dt>
+                  <p className="font-bold text-slate-900">{row.key}</p>
                   <p className="text-[12.5px] text-slate-600">{row.line}</p>
                 </div>
-                <dd className="tabular shrink-0 text-[15px] font-extrabold text-slate-900">{round1(row.value)} h</dd>
-              </div>
+                <p className="tabular shrink-0 text-[15px] font-extrabold text-slate-900">{round1(row.value)} h</p>
+              </li>
             ))}
-          </dl>
+          </ul>
           {toFixDays > 0 && (
             <Link to="/daily-log" className="mt-2 inline-flex min-h-11 items-center gap-1 rounded-lg text-[13.5px] font-bold text-psu-700 hover:underline">
               See what to fix in Days

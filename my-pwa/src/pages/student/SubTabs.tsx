@@ -47,7 +47,7 @@ export default function SubTabs<T extends string>({
             aria-selected={on}
             aria-controls={`${idPrefix}-panel`}
             tabIndex={on ? 0 : -1}
-            aria-label={option.short ? option.label : undefined}
+            aria-label={option.short ? (option.label.toLowerCase().includes(option.short.toLowerCase()) ? option.label : `${option.short}: ${option.label}`) : undefined}
             onClick={() => onChange(option.value)}
             className={`relative inline-flex h-[40px] flex-1 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-[9px] px-3 text-[13.5px] font-semibold md:flex-none md:px-3.5 pointer-coarse:h-11 ${
               on ? "bg-psu-700 text-white shadow-sm" : "text-slate-600 hover:bg-psu-50 hover:text-slate-900"

@@ -193,7 +193,7 @@ function FeedbackFormPanel() {
               return (
                 <li key={criterion.key} className="px-4 py-3.5 sm:px-5 lg:grid lg:grid-cols-[minmax(0,1fr)_repeat(5,84px)] lg:items-center lg:gap-1 lg:py-2.5">
                   <p id={`criterion-${criterion.key}`} className="flex gap-2 text-[15px] font-semibold leading-snug text-slate-900 lg:font-medium">
-                    <span className="tabular shrink-0 text-slate-400">{index + 1}.</span>
+                    <span className="tabular shrink-0 text-slate-500">{index + 1}.</span>
                     {criterion.text}
                   </p>
                   <div role="radiogroup" aria-labelledby={`criterion-${criterion.key}`} className="mt-2.5 grid grid-cols-5 gap-1 lg:contents">

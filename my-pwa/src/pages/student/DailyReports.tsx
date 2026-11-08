@@ -146,7 +146,7 @@ export default function DailyReports() {
                     on ? "bg-psu-700 text-white shadow-raised" : "text-slate-700 hover:bg-psu-50"
                   }`}
                 >
-                  <span className={`text-[11px] font-bold uppercase ${on ? "text-white/80" : "text-slate-500"}`}>{formatPhDay(date, { weekday: "short" }).slice(0, 2)}</span>
+                  <span aria-hidden="true" data-short={formatPhDay(date, { weekday: "short" }).slice(0, 2)} className={`css-label text-[11px] font-bold uppercase ${on ? "text-white/80" : "text-slate-500"}`} />
                   <span className="font-display tabular text-[19px] font-extrabold leading-none">{formatPhDay(date, { day: "numeric" })}</span>
                   <span aria-hidden="true" className="flex h-2 items-center gap-0.5">
                     {log && <span className={`h-1.5 w-1.5 rounded-full ${on ? "bg-gold-300" : "bg-gold-500"}`} />}

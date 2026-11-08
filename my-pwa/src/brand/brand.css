@@ -1033,7 +1033,7 @@
 .inb-stamp { display: inline-flex; align-items: center; border: 2px solid currentColor; border-radius: 6px; padding: 1px 7px; font-family: var(--font-mono); font-size: 11px; font-weight: 800; letter-spacing: 0.08em; text-transform: uppercase; line-height: 1.35; transform: rotate(-5deg); white-space: nowrap; }
 .inb-stamp--tilt { transform: rotate(-6deg); }
 .inb-stamp--good { color: #15803d; }
-.inb-stamp--grey { color: #64748b; }
+.inb-stamp--grey { color: #475569; }
 .inb-stamp--bad { color: var(--status-late-ink); }
 .inb-stamp--info { color: var(--status-info-ink); }
 
@@ -1212,3 +1212,9 @@ a:hover .ic-accent, button:hover .ic-accent { --ic-accent-o: 0.45; }
 .btn-line { box-shadow: inset 0 -1px 0 rgb(15 23 42 / 0.08); }
 .btn-line:active:not(:disabled) { box-shadow: inset 0 1px 2px rgb(15 23 42 / 0.12); }
 @media print { .btn-solid, .btn-line { box-shadow: none; } }
+
+/* Accessibility audit (November 2026): a short visible label (a weekday's two letters, a badge's count, a person's
+   initials) next to a full spoken name is drawn by CSS, so what is seen is never at odds with what is said
+   (WCAG 2.5.3, label in name). */
+.css-label::before { content: attr(data-short); }
+.role-dock-badge--css::before { content: attr(data-count); }

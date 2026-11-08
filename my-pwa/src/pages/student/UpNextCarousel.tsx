@@ -40,7 +40,7 @@ const KIND: Record<UpNextKind, { label: string; icon: IconName; tone: string; le
   document: { label: "Document due", icon: "document", tone: "text-sky-900 bg-sky-100", leaf: "bg-sky-700" },
   report: { label: "Report", icon: "note", tone: "text-emerald-900 bg-emerald-100", leaf: "bg-emerald-700" },
   holiday: { label: "No OJT", icon: "calendar", tone: "text-rose-900 bg-rose-100", leaf: "bg-rose-700" },
-  finish: { label: "Hours done", icon: "flag", tone: "text-amber-900 bg-gold-200", leaf: "bg-gold-600" },
+  finish: { label: "Hours done", icon: "flag", tone: "text-amber-900 bg-gold-200", leaf: "bg-amber-700" },
 };
 
 function countdown(date: string): string {

@@ -507,7 +507,7 @@ export default function PrintForms() {
 
 function PreviewFrame({ children }: { children: ReactNode }) {
   return (
-    <div className="psu-preview overflow-x-auto rounded-2xl bg-slate-200/70 p-3 ring-1 ring-inset ring-(--role-hairline) sm:p-5 print:bg-transparent print:p-0 print:ring-0">
+    <div tabIndex={0} role="region" aria-label="Preview of the form" className="psu-preview overflow-x-auto rounded-2xl bg-slate-200/70 p-3 ring-1 ring-inset ring-(--role-hairline) sm:p-5 print:bg-transparent print:p-0 print:ring-0">
       <div className="mx-auto w-[8.5in] max-w-none bg-white p-[0.5in] shadow-raised print:w-auto print:p-0 print:shadow-none">{children}</div>
     </div>
   );
