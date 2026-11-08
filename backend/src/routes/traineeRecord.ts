@@ -55,6 +55,8 @@ type Authed = express.Request & { auth?: { role: Role; id: string } };
 type Dependencies = {
   pool: Pool;
   requireRole: (roles: Role | Role[]) => express.RequestHandler;
+  /** Tells every active coordinator (server.ts); never throws. */
+  notifyCoordinators?: (notification: { title: string; message: string; type?: string; link?: string; entity?: { type: string; id: string | number | null | undefined } }) => Promise<void>;
 };
 
 const ENTRY_COLUMNS = `e.id::int AS id, e.report_id::int AS report_id, TO_CHAR(e.happened_at, 'HH24:MI') AS happened_at,
@@ -64,7 +66,7 @@ const ENTRY_COLUMNS = `e.id::int AS id, e.report_id::int AS report_id, TO_CHAR(e
 const REPORT_COLUMNS = `r.id::int AS id, TO_CHAR(r.report_date, 'YYYY-MM-DD') AS report_date, r.summary, r.created_at, r.updated_at`;
 
 export function registerTraineeRecordRoutes(app: express.Express, deps: Dependencies): void {
-  const { pool, requireRole } = deps;
+  const { pool, requireRole, notifyCoordinators } = deps;
 
   /** Whether this signed-in person may read this student's record. */
   async function mayRead(req: express.Request, studentId: string): Promise<boolean> {
@@ -117,6 +119,7 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
       if (!studentId) return;
       const form = readFeedbackForm(req.body);
       if ("problem" in form) return res.status(400).json({ message: form.problem });
+      const before = await pool.query<{ submitted_at: string | null }>(`SELECT submitted_at FROM student_feedback_forms WHERE student_id = $1`, [studentId]);
       const saved = await pool.query(
         `INSERT INTO student_feedback_forms AS f (student_id, ratings, problems_met, other_concerns, submitted_at)
          VALUES ($1, $2::jsonb, $3, $4, CASE WHEN $5 THEN NOW() END)
@@ -129,6 +132,17 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
          RETURNING ratings, problems_met, other_concerns, submitted_at, updated_at`,
         [studentId, JSON.stringify(form.ratings), form.problems_met, form.other_concerns, form.submit]
       );
+      // change1108: the first time it is sent, the coordinators hear of it, with the way to the student's reports.
+      if (form.submit && !before.rows[0]?.submitted_at && saved.rows[0]?.submitted_at && notifyCoordinators) {
+        const who = await pool.query<{ name: string }>(`SELECT name FROM students WHERE student_id = $1`, [studentId]);
+        await notifyCoordinators({
+          title: "Student feedback form sent",
+          message: `${who.rows[0]?.name ?? studentId} sent their Student Intern's Feedback Form (FM-AA-INT-20).`,
+          type: "info",
+          link: `/coordinator/students/${encodeURIComponent(studentId)}?tab=journals`,
+          entity: { type: "feedback_form", id: studentId },
+        });
+      }
       return res.json({ message: form.submit ? "Feedback form submitted." : "Draft saved.", form: saved.rows[0] });
     } catch (error) {
       console.error("SAVE FEEDBACK FORM ERROR:", error);

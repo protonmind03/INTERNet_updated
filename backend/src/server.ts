@@ -10376,7 +10376,7 @@ registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, creat
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 // Revisions, November 2026: the trainee's feedback form, progress reports and narrative drafts.
-registerTraineeRecordRoutes(app, { pool, requireRole });
+registerTraineeRecordRoutes(app, { pool, requireRole, notifyCoordinators });
 
 registerExtensionRoutes(app, {
   pool,

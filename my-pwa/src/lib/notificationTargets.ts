@@ -65,6 +65,8 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
     complaint: () => "/student/resolution?tab=concerns",
     student: () => HOME.student,
     message: (id) => `${HOME.student}?thread=${encodeURIComponent(id)}`,
+    // change1108: the trainee's own FM-AA-INT-20.
+    feedback_form: () => "/student/resolution?tab=evaluation",
   },
   supervisor: {
     // Every log, decided or not; the page opens the log's detail.
@@ -77,6 +79,8 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
     complaint: () => "/supervisor/complaints",
     student: (id) => `/supervisor/interns/${encodeURIComponent(id)}`,
     message: (id) => `${HOME.supervisor}?thread=${encodeURIComponent(id)}`,
+    // The supervisor does not read the trainee's feedback form; the intern's page is the nearest.
+    feedback_form: (id) => `/supervisor/interns/${encodeURIComponent(id)}`,
   },
   coordinator: {
     attendance: () => "/coordinator/monitoring",
@@ -87,6 +91,8 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
     complaint: (id) => `/coordinator/resolution?focus=complaint-${encodeURIComponent(id)}`,
     student: (id) => `/coordinator/students/${encodeURIComponent(id)}`,
     message: (id) => `${HOME.coordinator}?thread=${encodeURIComponent(id)}`,
+    // The student record's Reports tab holds the FM-AA-INT-20.
+    feedback_form: (id) => `/coordinator/students/${encodeURIComponent(id)}?tab=journals`,
   },
 };
 
@@ -99,6 +105,7 @@ const ENTITY_ICON: Record<string, IconName> = {
   complaint: "flag",
   student: "user",
   message: "mail",
+  feedback_form: "clipboard",
 };
 
 /** For notifications written before links and records were stored: what the title says. */
