@@ -1180,3 +1180,13 @@
 .needs-row > div { flex: 1 1 12rem; }
 a.needs-row:hover { background: var(--status-late-bg); }
 .role-dock-badge--waiting { background: var(--status-info-ink); }
+
+/* The duotone icons (components/Icon.tsx, change1108): one filled shape behind each outline, a soft tint of the
+   icon's colour; on the current page it takes the portal's accent at full strength, so where you are lights up. */
+.ic-accent { fill: var(--ic-accent, currentColor); opacity: var(--ic-accent-o, 0.3); transition: opacity 160ms var(--inb-ease-out, ease-out), fill 160ms; }
+[aria-current="page"] .ic-accent, .ic-lit .ic-accent { --ic-accent: var(--role-accent, #facc15); --ic-accent-o: 1; }
+a:hover .ic-accent, button:hover .ic-accent { --ic-accent-o: 0.45; }
+[aria-current="page"]:hover .ic-accent { --ic-accent-o: 1; }
+/* On a pill already in the accent colour (the dock's current item), the shape is a tint again. */
+.role-dock-item--on .ic-accent { --ic-accent: currentColor; --ic-accent-o: 0.22; }
+@media print { .ic-accent { opacity: 0.15; } }
