@@ -1,412 +1,50 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import Icon, { type IconName } from "../../components/Icon";
-import PsuFormSheet, { FormField } from "../../components/PsuFormSheet";
+import Icon from "../../components/Icon";
 import { Button } from "../../components/ui";
 import StudentLayout from "../../layouts/StudentLayout";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { readRecord, saveRecord } from "../../lib/offlineStore";
-import { PSU_FORMS, type FormCode } from "../../lib/psuForms";
 import { useAccount } from "../../lib/session";
+import { toast } from "../../lib/toast";
+import FormSheet from "./forms/FormSheet";
+import { ASKS, EMPTY, FORMS, LABELS, WIDE, blocksFor, fileNameFor, type Fields, type FormKey } from "./forms/formModel";
 
 /*
 |--------------------------------------------------------------------------
-| FILL AND PRINT: THE UNIVERSITY'S PRE-OJT FORMS (Tasks · Documents, change1108)
+| FILL AND PRINT: THE UNIVERSITY'S PRE-OJT FORMS (Tasks · Documents)
 |--------------------------------------------------------------------------
 |
 | Four of the internship requirements are papers the trainee fills in and
-| has signed (and two notarized) before the OJT; INTERNet now fills them
-| in from the record and prints them in the university's own formats (read
-| from the photos of the real forms):
+| has signed (two of them notarized) before the OJT; INTERNet fills them in
+| from the record, in the university's own formats (read from the photos
+| of the real forms; the forms are defined once in forms/formModel.ts):
 |
 |   Application for Internship                     FM-AA-INT-01
 |   Consent Form                                   FM-AA-INT-03
 |   Internship Release Form                        (no code on the form)
 |   Training Agreement and Liability Waiver Form   FM-AA-INT-18
 |
-| Each line the record knows is filled in (name, program, required hours,
-| company); every line can be changed, and what is typed is kept on this
-| device only (it never leaves it), ready for the next print. Signatures,
-| the registrar's certification, the officials' names and the notary's
-| details are left blank for the people who sign: the forms are printed,
-| signed by hand, and the signed copy uploaded in Documents as before.
+| Every line the trainee can answer has a field on the left, grouped (you,
+| your program, the company, your residence certificate, your parent or
+| guardian, signing); each line the record knows starts filled in. What is
+| typed is kept on this device only. The lines for the registrar, the
+| officials and the notary stay blank: those people fill them in.
+|
+| Print sends only the form to the printer, on A4 (forms/formOutput.ts);
+| Save makes a PDF, or a Word file to keep editing.
 |
 */
-
-type FormKey = "application" | "consent" | "release" | "waiver";
-
-const FORMS: { key: FormKey; title: string; code?: FormCode; icon: IconName; line: string }[] = [
-  { key: "application", title: "Application for Internship", code: PSU_FORMS.application, icon: "clipboard", line: "Your profile, academic credentials and the company, for approval" },
-  { key: "consent", title: "Consent Form", code: PSU_FORMS.consent, icon: "edit", line: "Your sworn consent to the internship's terms; to be notarized" },
-  { key: "release", title: "Internship Release Form", icon: "document", line: "Releases you to your company once your documents are complete" },
-  { key: "waiver", title: "Training Agreement and Liability Waiver Form", code: PSU_FORMS.waiver, icon: "shield", line: "For overtime training, with your parent's consent (optional)" },
-];
-
-type Fields = {
-  lastName: string;
-  firstName: string;
-  middleName: string;
-  age: string;
-  sex: string;
-  civilStatus: string;
-  contact: string;
-  course: string;
-  major: string;
-  yearSection: string;
-  guardian: string;
-  currentAddress: string;
-  homeAddress: string;
-  town: string;
-  hours: string;
-  company: string;
-  companyAddress: string;
-  companyHead: string;
-  companyContact: string;
-  companyRep: string;
-  from: string;
-  to: string;
-};
-
-const EMPTY: Fields = {
-  lastName: "",
-  firstName: "",
-  middleName: "",
-  age: "",
-  sex: "",
-  civilStatus: "",
-  contact: "",
-  course: "",
-  major: "",
-  yearSection: "",
-  guardian: "",
-  currentAddress: "",
-  homeAddress: "",
-  town: "",
-  hours: "",
-  company: "",
-  companyAddress: "",
-  companyHead: "",
-  companyContact: "",
-  companyRep: "",
-  from: "",
-  to: "",
-};
-
-/** What each form asks for, in the order it asks. */
-const ASKS: Record<FormKey, (keyof Fields)[]> = {
-  application: ["lastName", "firstName", "middleName", "age", "sex", "civilStatus", "contact", "course", "yearSection", "major", "guardian", "currentAddress", "homeAddress", "company", "companyAddress", "companyHead", "companyContact", "hours"],
-  consent: ["firstName", "middleName", "lastName", "homeAddress", "course", "hours", "company"],
-  release: ["firstName", "middleName", "lastName", "homeAddress", "course", "major", "hours", "company", "companyAddress", "from", "to"],
-  waiver: ["firstName", "middleName", "lastName", "company", "guardian", "companyRep"],
-};
-
-const LABELS: Record<keyof Fields, string> = {
-  lastName: "Last name",
-  firstName: "First name",
-  middleName: "Middle name",
-  age: "Age",
-  sex: "Sex",
-  civilStatus: "Civil status",
-  contact: "Contact number",
-  course: "Course",
-  major: "Major",
-  yearSection: "Year and section",
-  guardian: "Parent or guardian",
-  currentAddress: "Current address",
-  homeAddress: "Home address",
-  town: "Town",
-  hours: "Required hours",
-  company: "Company or agency",
-  companyAddress: "Company address",
-  companyHead: "Head of the company or agency",
-  companyContact: "Company contact number",
-  companyRep: "Company representative",
-  from: "From (start date)",
-  to: "To (end date)",
-};
-
-/** A blank to fill by hand, or the value on its line. */
-function Blank({ value, wide = false }: { value?: string; wide?: boolean }) {
-  return <span className={`psu-blank ${wide ? "psu-blank--wide" : ""}`}>{value?.trim() || " "}</span>;
-}
-
-function Signature({ name, title }: { name?: string; title: string }) {
-  return (
-    <span className="psu-sig">
-      <span className="psu-sig-line">{name?.trim() || " "}</span>
-      <span className="psu-sig-title">{title}</span>
-    </span>
-  );
-}
-
-function Notary() {
-  return (
-    <div className="psu-notary">
-      <p>
-        SUBSCRIBED AND SWORN TO BEFORE ME this <Blank /> day of <Blank />, <Blank /> at <Blank />, Philippines.
-      </p>
-      <p className="psu-notary-book">
-        Doc. No. <Blank />
-        <br />
-        Page No. <Blank />
-        <br />
-        Book No. <Blank />
-        <br />
-        Series of <Blank />
-      </p>
-    </div>
-  );
-}
-
-function ResCert() {
-  return (
-    <p className="psu-rescert">
-      Res. Cert No.: <Blank />
-      <br />
-      Issued on: <Blank />
-      <br />
-      Issued at: <Blank />
-    </p>
-  );
-}
-
-function Sheet({ form, f }: { form: FormKey; f: Fields }) {
-  const full = [f.firstName, f.middleName ? `${f.middleName.trim()[0]}.` : "", f.lastName].filter(Boolean).join(" ");
-  const meta = FORMS.find((item) => item.key === form)!;
-  if (form === "application")
-    return (
-      <PsuFormSheet title="Application for Internship" form={meta.code} onScreen>
-        <table>
-          <tbody>
-            <tr>
-              <th colSpan={4} className="psu-form-section">A. Personal profile</th>
-            </tr>
-            <tr>
-              <th className="psu-form-label">Name</th>
-              <td className="psu-form-value">{f.lastName}</td>
-              <td className="psu-form-value">{f.firstName}</td>
-              <td className="psu-form-value">{f.middleName}</td>
-            </tr>
-            {(
-              [
-                ["Age", f.age, "Civil status", f.civilStatus],
-                ["Sex", f.sex, "Contact number", f.contact],
-                ["Course", f.course, "Year & section", f.yearSection],
-                ["Major", f.major, "Parent/guardian", f.guardian],
-              ] as const
-            ).map(([a, av, b, bv]) => (
-              <tr key={a}>
-                <th className="psu-form-label">{a}</th>
-                <td className="psu-form-value">{av}</td>
-                <th className="psu-form-label">{b}</th>
-                <td className="psu-form-value">{bv}</td>
-              </tr>
-            ))}
-            <FormField label="Current address">{f.currentAddress}</FormField>
-            <FormField label="Home address">{f.homeAddress}</FormField>
-          </tbody>
-        </table>
-        <div className="psu-form-text">
-          <h3>B. Academic credentials/qualifications</h3>
-          <p>
-            <i>
-              This is to certify that as per records kept in this office, the above name had already taken and pass <Blank /> units except the following subject/s to wit:
-            </i>
-          </p>
-          <table>
-            <thead>
-              <tr>
-                {["Sem", "SY", "Subject", "Passing", "Failing", "Grade", "Signature", "Date"].map((head) => (
-                  <th key={head} className="psu-form-label text-center">
-                    {head}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {Array.from({ length: 5 }, (_, row) => (
-                <tr key={row}>
-                  {Array.from({ length: 8 }, (_, cell) => (
-                    <td key={cell} style={{ height: "0.26in" }} />
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p style={{ marginTop: 8 }}>
-            <i>
-              This is to certify that he/she is <Blank /> to undergo internship.
-            </i>
-          </p>
-          <p>Certified and verified true and correct:</p>
-          <p className="text-center">
-            <Signature title="Campus Registrar" />
-          </p>
-        </div>
-        <table>
-          <tbody>
-            <tr>
-              <th colSpan={2} className="psu-form-section">C. Firm/agency/company for internship</th>
-            </tr>
-            <FormField label="Name of the firm/agency/company">{f.company}</FormField>
-            <FormField label="Address">{f.companyAddress}</FormField>
-            <FormField label="Head">{f.companyHead}</FormField>
-            <FormField label="Contact number">{f.companyContact}</FormField>
-            <FormField label="Number of hours">{f.hours}</FormField>
-          </tbody>
-        </table>
-        <div className="psu-form-text">
-          <p>
-            <i>Note: Please attach Medical Certificate and Psychological Test from any government physician, certifying that the student applicant is physically, emotionally, and mentally fit for the internship training activity.</i>
-          </p>
-          <h3>Recommending approval</h3>
-          <div className="psu-sig-grid">
-            <Signature title="Internship/Practicum Subject Instructor" />
-            <Signature title="Campus Internship Coordinator" />
-            <Signature title="Department Chair" />
-            <Signature title="College Dean" />
-          </div>
-          <h3>Approved by</h3>
-          <p className="text-center">
-            <Signature title="Campus Executive Director" />
-          </p>
-        </div>
-      </PsuFormSheet>
-    );
-
-  if (form === "consent")
-    return (
-      <PsuFormSheet title="Consent Form" form={meta.code} onScreen>
-        <div className="psu-form-text psu-form-text--letter">
-          <p>
-            I, <Blank value={full} wide />, Filipino, of legal age, and residing at <Blank value={f.homeAddress} wide /> after being duly sworn by law, do hereby depose and say that:
-          </p>
-          <ol className="psu-numbered">
-            <li>
-              I am a student of Pangasinan State University, Lingayen Campus and that as a course requirement for <Blank value={f.course} wide />, I am required to undergo Internship / Practicum in any company in line with my major field of specialization for <Blank value={f.hours} /> hours;
-            </li>
-            <li>
-              That the Pangasinan State University, Lingayen Campus, thru the Campus Internship Coordinator and the Internship/Practicum Subject Instructor has requested <Blank value={f.company} wide /> allow me to undergo thereat and said company had accepted said request;
-            </li>
-            <li>
-              I promise to render the necessary work to the best of my ability in order that my practicum shall be brought to a successful conclusion and that <Blank value={f.company} wide /> and the Pangasinan State University, Lingayen Campus shall not adversely affect;
-            </li>
-            <li>That while performing the practicum and the duration thereof, I shall abide by the rules and policies of said Company and Pangasinan State University, Lingayen Campus relative to the work covered by said practicum and such order and instruction issued or to be issued thereby;</li>
-            <li>I shall be punctual in my attendance and shall abide by the evaluation given me by said company based on such internship;</li>
-            <li>
-              I declare unconditional that there exists no employer-employee relationship between <Blank value={f.company} wide /> and me, and hereby hold its officers, directors and personnel free and harmless from any case or causes of action, claims or otherwise arising from or about my internship which I have, including money claims, it understood that the internship is just a part of the academic preparation and thus non-compensable;
-            </li>
-          </ol>
-          <p>
-            Signed at <Blank />, Pangasinan. This <Blank /> day of <Blank />, 20<Blank />.
-          </p>
-          <div className="psu-sig-grid">
-            <div>
-              <p>Witnesses:</p>
-              <Signature title="Campus Internship Coordinator" />
-            </div>
-            <div>
-              <p>Conforme:</p>
-              <Signature name={full} title="Signature over Printed Name of Student" />
-            </div>
-            <div>
-              <p>Noted:</p>
-              <Signature title="Campus Executive Director" />
-            </div>
-            <div>
-              <ResCert />
-              <Signature name={f.guardian} title="Signature over Printed Name of Parent/Guardian" />
-            </div>
-          </div>
-          <Notary />
-        </div>
-      </PsuFormSheet>
-    );
-
-  if (form === "release")
-    return (
-      <PsuFormSheet title="Internship Release Form" onScreen>
-        <div className="psu-form-text psu-form-text--letter">
-          <p>
-            <Signature title="Date" />
-          </p>
-          <p>
-            <Blank value={full} wide />
-            <br />
-            <Blank value={f.homeAddress} wide />
-          </p>
-          <p>
-            <b>Course: </b>
-            <Blank value={f.course} wide />
-            <br />
-            <b>Major: </b>
-            <Blank value={f.major} wide />
-          </p>
-          <p>
-            Upon completion and submission of all your required documents for your Internship / Practicum activity, you are hereby released to undergo <Blank value={f.hours} /> hours Internship / Practicum at
-          </p>
-          <p>
-            <b>Cooperating Company/Agency/Firm: </b>
-            <Blank value={f.company} wide />
-            <br />
-            <b>Company/Agency/Firm Address: </b>
-            <Blank value={f.companyAddress} wide />
-          </p>
-          <p>
-            From <Blank value={f.from} /> to <Blank value={f.to} />.
-          </p>
-          <p>Please be guided with the school and company Internship / Practicum policies and guidelines throughout the duration of your Internship / Practicum Activity.</p>
-          <div className="psu-sig-grid">
-            <Signature title="Internship / Practicum Subject Instructor" />
-            <Signature title="Campus Internship Coordinator" />
-          </div>
-          <p>Noted:</p>
-          <p className="text-center">
-            <Signature title="Campus Executive Director" />
-          </p>
-        </div>
-      </PsuFormSheet>
-    );
-
-  return (
-    <PsuFormSheet title="Training Agreement and Liability Waiver Form" form={meta.code} onScreen>
-      <div className="psu-form-text psu-form-text--letter">
-        <p>
-          I, <Blank value={full.toUpperCase()} wide />, a student of Pangasinan State University, hereby voluntarily agree to undergo overtime training in my Internship Training at <Blank value={f.company} wide /> under the following terms and conditions:
-        </p>
-        <ol className="psu-lettered">
-          <li>That I have consent from my parents/guardians for the said overtime.</li>
-          <li>That the company/establishment where I am undergoing my training has knowledge of the overtime.</li>
-          <li>
-            That I fully understand that the Pangasinan State University and <Blank value={f.company} wide /> is no longer responsible/liable for any injury or incident that may occur during the said overtime.
-          </li>
-        </ol>
-        <div className="psu-sig-grid">
-          <div>
-            <Signature name={full.toUpperCase()} title="Student-Intern" />
-            <ResCert />
-          </div>
-          <div>
-            <p>With our consent and approval:</p>
-            <Signature name={f.guardian} title="Parent/Guardian" />
-            <ResCert />
-          </div>
-          <div>
-            <Signature name={f.companyRep} title="Company Representative" />
-            <ResCert />
-          </div>
-        </div>
-        <Notary />
-      </div>
-    </PsuFormSheet>
-  );
-}
 
 export default function PrintForms() {
   const student = useAccount("student");
   const [params, setParams] = useSearchParams();
   const form = (FORMS.find((item) => item.key === params.get("form"))?.key ?? "application") as FormKey;
   const [fields, setFields] = useState<Fields | null>(null);
+  const [saving, setSaving] = useState<"pdf" | "docx" | null>(null);
+  const [menu, setMenu] = useState(false);
+  const sheet = useRef<HTMLElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   // What the record knows, under what was typed here before.
   useEffect(() => {
@@ -438,6 +76,20 @@ export default function PrintForms() {
     };
   }, [student?.student_id, student?.name, student?.program, student?.required_hours, student?.company]);
 
+  // The Save menu closes on a click elsewhere or Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !menuRef.current?.contains(event.target as Node)) setMenu(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [menu]);
+
   const change = (key: keyof Fields, value: string) =>
     setFields((current) => {
       if (!current) return current;
@@ -447,11 +99,34 @@ export default function PrintForms() {
     });
 
   const meta = FORMS.find((item) => item.key === form)!;
+  const blocks = fields ? blocksFor(form, fields) : [];
+
+  const print = async () => {
+    if (!sheet.current || !fields) return;
+    const { printSheet } = await import("./forms/formOutput");
+    await printSheet(sheet.current, fileNameFor(meta, fields));
+  };
+  const save = async (kind: "pdf" | "docx") => {
+    setMenu(false);
+    if (!sheet.current || !fields) return;
+    setSaving(kind);
+    try {
+      const output = await import("./forms/formOutput");
+      const name = fileNameFor(meta, fields);
+      if (kind === "pdf") await (await import("./forms/formPdf")).saveFormPdf(meta, blocks, sheet.current, name);
+      else await output.saveFormDocx(meta, blocks, sheet.current, name);
+      toast.success(kind === "pdf" ? "Saved as a PDF in your downloads." : "Saved as a Word file in your downloads.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "The file could not be made.");
+    } finally {
+      setSaving(null);
+    }
+  };
 
   return (
     <StudentLayout title="Fill and print" subtitle="The university's pre-OJT forms, filled in from your record">
       <div className="space-y-4">
-        <div className="grid gap-2 print:hidden sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Forms">
+        <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Forms">
           {FORMS.map((item) => {
             const on = item.key === form;
             return (
@@ -476,39 +151,61 @@ export default function PrintForms() {
         </div>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,4fr)_minmax(0,7fr)] lg:items-start">
-          <section aria-labelledby="form-fields" className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline) print:hidden lg:sticky lg:top-4">
+          <section aria-labelledby="form-fields" className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline) lg:sticky lg:top-4">
             <h2 id="form-fields" className="text-[16px] font-extrabold text-slate-900">
               {meta.title}
             </h2>
             <p className="mt-0.5 text-[13px] text-slate-600">{meta.line}. What you type stays on this device.</p>
-            {fields && (
-              <div className="mt-3 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
-                {ASKS[form].map((key) => (
-                  <label key={key} className={key.toLowerCase().includes("address") || key === "company" ? "sm:col-span-2 lg:col-span-1 xl:col-span-2" : ""}>
-                    <span className="mb-1 block text-[12.5px] font-bold text-slate-700">{LABELS[key]}</span>
-                    <input value={fields[key]} onChange={(event) => change(key, event.target.value)} className="field" />
-                  </label>
-                ))}
-              </div>
-            )}
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button icon="printer" onClick={() => window.print()}>
-                Print or save PDF
+            {fields &&
+              ASKS[form].map((group) => (
+                <fieldset key={group.title} className="mt-4">
+                  <legend className="eyebrow mb-2 text-psu-800">{group.title}</legend>
+                  <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                    {group.keys.map((key) => (
+                      <label key={key} className={WIDE.includes(key) ? "sm:col-span-2 lg:col-span-1 xl:col-span-2" : ""}>
+                        <span className="mb-1 block text-[12.5px] font-bold text-slate-700">{LABELS[key]}</span>
+                        <input value={fields[key]} onChange={(event) => change(key, event.target.value)} className="field" />
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ))}
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Button icon="printer" onClick={() => void print()} disabled={!fields}>
+                Print
               </Button>
+              <div ref={menuRef} className="relative">
+                <Button variant="secondary" icon="download" busy={saving !== null} busyLabel="Saving" onClick={() => setMenu((open) => !open)} disabled={!fields} aria-haspopup="menu" aria-expanded={menu}>
+                  Save
+                  <Icon name="chevron-down" size={15} />
+                </Button>
+                {menu && (
+                  <div role="menu" aria-label="Save as" className="absolute left-0 z-20 mt-1.5 w-60 overflow-hidden rounded-xl bg-white py-1 shadow-raised ring-1 ring-(--role-hairline)">
+                    <button type="button" role="menuitem" onClick={() => void save("pdf")} className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-psu-50">
+                      <Icon name="document" size={18} className="mt-0.5 text-psu-700" />
+                      <span>
+                        <span className="block text-[14px] font-bold text-slate-900">PDF (.pdf)</span>
+                        <span className="block text-[12px] text-slate-600">Ready to print or send, as it looks here</span>
+                      </span>
+                    </button>
+                    <button type="button" role="menuitem" onClick={() => void save("docx")} className="flex w-full items-start gap-2.5 px-3 py-2.5 text-left hover:bg-psu-50">
+                      <Icon name="edit" size={18} className="mt-0.5 text-psu-700" />
+                      <span>
+                        <span className="block text-[14px] font-bold text-slate-900">Word (.docx)</span>
+                        <span className="block text-[12px] text-slate-600">To edit any part before printing</span>
+                      </span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
-            <p className="mt-3 text-[12.5px] text-slate-500">Signatures, the registrar's part and the notary's are left blank for the people who sign. Upload the signed copy in Documents.</p>
+            <p className="mt-3 text-[12.5px] text-slate-500">The lines for the registrar, the officials and the notary are left blank for them to fill in. Upload the signed copy in Documents.</p>
           </section>
-          <PreviewFrame>{fields && <Sheet form={form} f={fields} />}</PreviewFrame>
+          <div tabIndex={0} role="region" aria-label="Preview of the form" className="psu-preview overflow-x-auto rounded-2xl bg-slate-200/70 p-3 ring-1 ring-inset ring-(--role-hairline) sm:p-5">
+            <div className="mx-auto w-[210mm] max-w-none shadow-raised">{fields && <FormSheet ref={sheet} meta={meta} blocks={blocks} />}</div>
+          </div>
         </div>
       </div>
     </StudentLayout>
-  );
-}
-
-function PreviewFrame({ children }: { children: ReactNode }) {
-  return (
-    <div tabIndex={0} role="region" aria-label="Preview of the form" className="psu-preview overflow-x-auto rounded-2xl bg-slate-200/70 p-3 ring-1 ring-inset ring-(--role-hairline) sm:p-5 print:bg-transparent print:p-0 print:ring-0">
-      <div className="mx-auto w-[8.5in] max-w-none bg-white p-[0.5in] shadow-raised print:w-auto print:p-0 print:shadow-none">{children}</div>
-    </div>
   );
 }

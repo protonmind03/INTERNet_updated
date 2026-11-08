@@ -32,11 +32,13 @@ test("the narrative's guided parts: a title page from a layout, an org chart fro
   await expect(page.getByRole("radio")).toHaveCount(3);
   await page.getByRole("radio", { name: /Seal band/ }).check();
   await expect(page.getByRole("img", { name: "Preview of the title page" })).toContainText("NARRATIVE REPORT ON INTERNSHIP TRAINING");
-  await page.getByLabel("Submitted to (optional)").fill("The OJT coordinator");
+  // A new value each run, so there is always something to save.
+  const coordinator = `The OJT coordinator ${Date.now()}`;
+  await page.getByLabel("Submitted to (optional)").fill(coordinator);
   await expect(page.getByText("All changes saved")).toBeVisible({ timeout: 10_000 });
   const saved = await api<{ parts: Record<string, { text: string; data?: Record<string, unknown> }> }>(student.token, "GET", `/api/students/${encodeURIComponent(student.id)}/narrative`);
   expect(saved.body.parts.title_page?.data?.layout).toBe("seal");
-  expect(saved.body.parts.title_page?.text).toContain("Submitted to: The OJT coordinator");
+  expect(saved.body.parts.title_page?.text).toContain(`Submitted to: ${coordinator}`);
 
   // The organizational chart: boxes joined into a chart.
   await page.getByRole("navigation", { name: "Parts of the narrative report" }).getByRole("button", { name: /Organizational Chart/ }).click();
@@ -70,15 +72,36 @@ test("the four pre-OJT forms are filled in from the record, in the university's 
     await page.getByRole("tab", { name: tab }).click();
     const sheet = page.getByRole("article", { name: title });
     await expect(sheet).toBeVisible();
-    if (code) await expect(sheet.locator(".psu-form-code")).toContainText(code);
+    if (code) await expect(sheet.locator(".pf-code")).toContainText(code);
     // Filled from the record: the trainee's name is on it.
     await expect(sheet).toContainText(/Demo/i);
+    // An A4 sheet that holds the whole form on one page (297 mm at 96 dpi is 1123 px).
+    const height = await sheet.evaluate((element) => element.scrollHeight);
+    expect(height).toBeLessThanOrEqual(1124);
+    // Tables only where the form has them: no border drawn round the whole sheet.
+    expect(await sheet.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe("0px");
   }
-  // A line typed in is on the sheet at once.
+  // A line typed in is on the sheet at once; the trainee's own blanks have fields (residence certificate, where signed).
   await page.getByRole("tab", { name: /^Consent Form/ }).click();
   await page.getByLabel("Home address").fill("12 Rizal St., Lingayen");
-  await expect(page.getByRole("article", { name: "Consent Form" })).toContainText("12 Rizal St., Lingayen");
-  await expect(page.getByRole("button", { name: "Print or save PDF" })).toBeVisible();
+  await page.getByLabel("Residence certificate no.").fill("CTC-2026-0042");
+  await page.getByLabel("Signed at (town or city)").fill("Lingayen");
+  const consent = page.getByRole("article", { name: "Consent Form" });
+  await expect(consent).toContainText("12 Rizal St., Lingayen");
+  await expect(consent).toContainText("CTC-2026-0042");
+
+  // Print and Save are two buttons; Save gives a PDF or a Word file.
+  await expect(page.getByRole("button", { name: "Print", exact: true })).toBeVisible();
+  for (const [option, extension] of [
+    [/PDF/, ".pdf"],
+    [/Word/, ".docx"],
+  ] as const) {
+    await page.getByRole("button", { name: /^Save/ }).click();
+    const download = page.waitForEvent("download");
+    await page.getByRole("menuitem", { name: option }).click();
+    const file = await download;
+    expect(file.suggestedFilename()).toMatch(new RegExp(`^Consent Form - .+\\${extension}$`));
+  }
 });
 
 test("a day's report reaches the supervisor and the coordinator; the coordinator reads FM-AA-INT-20", async ({ browser }) => {

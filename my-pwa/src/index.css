@@ -696,3 +696,69 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
 @media (min-width: 1024px) { .psu-preview > div { zoom: 0.76; } }
 @media (min-width: 1280px) { .psu-preview > div { zoom: 0.84; } }
 @media print { .psu-preview > div { zoom: 1; } }
+
+/* The pre-OJT forms on A4 (pages/student/forms/FormSheet.tsx, November 2026): the university's head, then tables only
+   where the form has them, one per section; no border around the page. Arial 10 pt; the sheet carries its own
+   margins, so it prints the same anywhere (forms/formOutput.ts prints it alone, on A4 with no page margin). */
+.pf-page { position: relative; box-sizing: border-box; width: 210mm; min-height: 297mm; padding: 13mm 16mm 12mm; background: #fff; color: #000; font-family: Arial, "Helvetica Neue", Helvetica, sans-serif; font-size: 10pt; line-height: 1.38; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.pf-page * { box-sizing: border-box; }
+.pf-page p { margin: 0; }
+.pf-code { position: absolute; top: 9mm; right: 16mm; text-align: right; font-size: 7.5pt; font-style: italic; font-weight: 700; line-height: 1.25; }
+.pf-head { display: flex; align-items: center; gap: 4mm; padding-bottom: 3mm; margin-bottom: 3mm; border-bottom: 1.5pt solid #000; }
+.pf-seal { display: grid; width: 21mm; flex-shrink: 0; place-items: center; }
+.pf-seal svg { width: 20mm; height: 20mm; }
+.pf-titles { display: flex; flex: 1; flex-direction: column; align-items: center; text-align: center; line-height: 1.2; }
+.pf-title { font-size: 16pt; font-weight: 800; letter-spacing: 0.01em; text-transform: uppercase; }
+.pf-university { margin-top: 1mm; font-size: 9pt; letter-spacing: 0.02em; }
+.pf-campus { font-size: 9pt; }
+.pf-section { margin: 3.2mm 0 1.4mm; font-size: 10pt; font-weight: 700; text-transform: uppercase; letter-spacing: 0.01em; }
+.pf-body > .pf-section:first-child { margin-top: 0; }
+.pf-para { margin: 0 0 2mm !important; text-align: justify; }
+.pf-para--left { text-align: left; }
+.pf-para--center { text-align: center; }
+.pf-para--italic { font-style: italic; }
+.pf-line { display: inline-block; min-width: 18mm; padding: 0 1.2mm; border-bottom: 0.75pt solid #000; font-weight: 700; font-style: normal; line-height: 1.2; text-align: center; text-indent: 0; }
+.pf-line--s { min-width: 16mm; }
+.pf-line--m { min-width: 32mm; }
+.pf-line--l { min-width: 58mm; }
+.pf-list { margin: 0 0 2mm; padding-left: 6mm; list-style: decimal; text-align: justify; }
+.pf-list--alpha { list-style: lower-alpha; }
+.pf-list li { margin-bottom: 1.3mm; padding-left: 1mm; }
+.pf-table { width: 100%; margin: 0 0 2mm; border-collapse: collapse; table-layout: fixed; }
+.pf-table td { padding: 1.1mm 1.6mm; border: 0.75pt solid #000; vertical-align: middle; overflow-wrap: anywhere; }
+.pf-label { font-size: 8.3pt; text-transform: uppercase; letter-spacing: 0.01em; }
+.pf-label--head { font-weight: 700; text-align: center; }
+.pf-value { font-size: 9.5pt; text-transform: uppercase; }
+.pf-empty td { height: 6mm; }
+.pf-sigs { display: grid; grid-template-columns: 1fr 1fr; gap: 1mm 12mm; margin: 1mm 0 2.5mm; }
+.pf-sigs--one { grid-template-columns: 1fr; width: 50%; margin-inline: auto; }
+.pf-sig-lead { margin-bottom: 0 !important; }
+.pf-sig-name { min-height: 5.2mm; margin-top: 7mm !important; border-bottom: 0.75pt solid #000; font-weight: 700; text-align: center; text-transform: uppercase; }
+.pf-sig-lead + .pf-sig-name { margin-top: 5mm !important; }
+.pf-sig-title { font-size: 8.3pt; font-style: italic; text-align: center; }
+.pf-sig-after { margin-top: 2mm; font-size: 9.5pt; line-height: 1.55; }
+.pf-sig-after .pf-line { min-width: 30mm; }
+
+/* Ctrl+P on the Fill and print page: only the form, at its true size (the Print button is the better way). */
+@media print {
+  body:has(.psu-preview .pf-page) * { visibility: hidden !important; }
+  body:has(.psu-preview .pf-page) .pf-page, body:has(.psu-preview .pf-page) .pf-page * { visibility: visible !important; }
+  body:has(.psu-preview .pf-page) .pf-page { position: absolute; left: 0; top: 0; zoom: 1 !important; }
+  body:has(.psu-preview .pf-page) .psu-preview > div { zoom: 1 !important; }
+}
+
+/* Printing any page: the app's own frame never prints. These are defined outside Tailwind's layers, so its print:hidden
+   could not hide them (audit, November 2026). */
+@media print {
+  .role-topbar, .role-side, .role-side-slot, .role-dock, .role-phone-only, .student-folder > div:first-child { display: none !important; }
+}
+/* The Application has the most on it: a little tighter, so it keeps to one A4 page (same type sizes). */
+.pf-page--application { padding-top: 10mm; padding-bottom: 9mm; }
+.pf-page--application .pf-head { padding-bottom: 2mm; margin-bottom: 2mm; }
+.pf-page--application .pf-section { margin: 2.4mm 0 1mm; }
+.pf-page--application .pf-table td { padding: 0.75mm 1.6mm; }
+.pf-page--application .pf-empty td { height: 5mm; }
+.pf-page--application .pf-para { margin-bottom: 1.4mm !important; }
+.pf-page--application .pf-sigs { gap: 0 12mm; margin-block: 0 1.5mm; }
+.pf-page--application .pf-sig-name { margin-top: 6mm !important; }
+.pf-sigs--left { margin-inline: 0 auto; }
