@@ -346,9 +346,11 @@ paste them into a chat.
 
 1. New > GitHub Repo > this repository. Rename the new service `backup`.
 2. Service > Settings:
-   - Source > **Root Directory**: `backend`
-   - Config-as-code > **Railway config file**: `/backend/railway.backup.json`
-     This sets everything else: it builds `backend/backup.Dockerfile` (Node
+   - Source > **Root Directory**: `/` (the repository root, not `backend`).
+     Railway then reads `railway.json` at the root on its own; no config
+     file path is needed (the dashboard does not keep one for this service).
+     The API service keeps `/backend` and its own `backend/railway.json`.
+     The root `railway.json` sets everything else: it builds `backup.Dockerfile` (Node
      and PostgreSQL 18's `pg_dump`), runs `npm run backup:database`, on the
      cron schedule `30 17 * * *` (17:30 UTC is 01:30 in the Philippines),
      and never restarts a run that ended.

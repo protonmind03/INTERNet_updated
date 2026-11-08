@@ -14,7 +14,8 @@ import {
 import { findPgDump } from "./pg-tools";
 
 // THE NIGHTLY DATABASE BACKUP. Run by a Railway cron service of its own
-// (backend/railway.backup.json: 01:30 Philippine time), never by the API.
+// (railway.json and backup.Dockerfile at the repository root: 01:30
+// Philippine time), never by the API.
 // DEPLOY.md, "Scheduled backups", has the setup.
 //
 //   npm run backup:database

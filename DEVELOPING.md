@@ -340,7 +340,7 @@ Notes:
   your shell (PowerShell: `$env:BACKUP_AGE_RECIPIENT="age1…"`), run
   `docker compose up -d api`, then
   `docker compose exec api npm run backup:uploads-now`. The nightly
-  database backup needs `pg_dump`, which is in `backend/backup.Dockerfile`,
+  database backup needs `pg_dump`, which is in `backup.Dockerfile` (repository root),
   not in the API container.
 - `backend/.env` on your computer is visible inside the API container (the
   folder is shared), but the compose file's own settings win for every name
@@ -352,7 +352,8 @@ Notes:
 DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
 
 - The nightly database backup is a separate Railway service
-  (`backend/railway.backup.json`, `backend/backup.Dockerfile`): `pg_dump -Fc`
+  (`railway.json` and `backup.Dockerfile` at the repository root; the API
+  keeps `backend/railway.json`): `pg_dump -Fc`
   streamed through age encryption (the `age-encryption` package, to a
   public key) into a multipart upload, never held whole in memory or on
   disk. A dump that fails is abandoned before the upload is made final.

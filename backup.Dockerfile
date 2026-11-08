@@ -1,4 +1,11 @@
-# The nightly database backup service (railway.backup.json), not the API.
+# The nightly database backup service, not the API.
+#
+# Railway's "backup" service has the repository root as its Root Directory,
+# so it reads railway.json beside this file on its own (no config-file path
+# to set, which Railway's dashboard would not keep), while the API service
+# keeps /backend and its own backend/railway.json. This builds from the
+# repository root, so the backend's files are copied from backend/.
+#
 # Node to run backend/src/scripts/backup-cron.ts, and PostgreSQL's own client
 # tools for pg_dump: version 18 from the PostgreSQL project's repository,
 # since pg_dump must be as new as the database or newer.
@@ -16,9 +23,9 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY package.json package-lock.json ./
+COPY backend/package.json backend/package-lock.json ./
 RUN npm ci --omit=dev
-COPY src ./src
+COPY backend/src ./src
 
 # Runs once and exits: Railway starts it again at the next cron time.
 CMD ["npm", "run", "backup:database"]
