@@ -249,7 +249,9 @@ test.describe("the student's menu", () => {
     await tabs.getByRole("button", { name: /^More/ }).click();
     const sheet = page.getByRole("dialog", { name: "More" });
     await expect(sheet.getByRole("button", { name: "Sign out", exact: true })).toBeVisible();
-    await sheet.getByRole("button", { name: /^Resolution Center/ }).click();
+    // change1108: More holds the Support folder as one entry; the Resolution Center is one of its tabs.
+    await sheet.getByRole("button", { name: /^Support/ }).click();
+    await page.locator("main nav").getByRole("link", { name: /^Resolution/ }).click();
     await expect(page).toHaveURL(/\/student\/resolution$/);
     await expect(page.getByRole("heading", { name: "Report a concern" })).toBeVisible();
     // Feedback is a section of the Resolution Center now.

@@ -68,7 +68,8 @@ test("a rejected time-in photo: the supervisor's choice, the student's banner, a
     const studentContext = await browser.newContext();
     const page = await studentContext.newPage();
     await signIn(page, "student", { ...ACCOUNTS.student, email, password: "RejectCheck456!" });
-    const item = page.locator("section.attention-card").getByRole("listitem").filter({ hasText: "Retake your time-in photo" });
+    // change1108: the priority stack; the retake is urgent, so it is the card on top.
+    const item = page.locator("section.attention-card article.attention-top").filter({ hasText: "Retake your time-in photo" });
     await expect(item).toContainText("Due before End break");
     await expect(item).toContainText("The photo is too dark to see your face.");
     await expect(item.getByRole("button", { name: "Retake now" })).toBeVisible();
