@@ -551,15 +551,17 @@ test.describe("what a student reads about their days", () => {
     await page.getByRole("button", { name: "This month" }).click();
     await expect(todayCell).toHaveCount(1);
 
-    // My progress (Iteration 21; its own tab of the Attendance folder since November 2026): at a glance,
-    // the burn-up chart, milestones, the change since last week, the rhythm.
+    // My progress (rebuilt for change1108): the journey with its milestones, where the hours are, the pace
+    // (with the change since last week), the burn-up chart, the rhythm.
     await page.locator("main nav").getByRole("link", { name: /^My progress/ }).click();
     await expect(page).toHaveURL(/view=progress$/);
-    for (const name of ["At a glance", "Hours over time", "Milestones", "Change since last week", "Rhythm"]) {
+    for (const name of ["Your OJT journey", "Where your hours are", "Your pace", "Hours over time", "Rhythm"]) {
       await expect(page.getByRole("heading", { name })).toBeVisible();
     }
+    await expect(page.getByRole("list", { name: "Milestones" }).getByRole("listitem")).toHaveCount(4);
+    await expect(page.getByText(/^Since last week:/)).toBeVisible();
     await expect(page.getByRole("img", { name: /^Burn-up chart/ })).toBeVisible();
-    await expect(page.getByText("If you keep to your schedule.")).toBeVisible();
+    await expect(page.getByText(/^If you keep to your schedule\./)).toBeVisible();
 
     // The time record: the Civil Service columns.
     await page.goto("/time-record");
@@ -581,7 +583,7 @@ test.describe("what a student reads about their days", () => {
     // Revisions, November 2026: Reports is in the phone's dock; the weekly report is its Weekly part.
     await page.getByRole("navigation", { name: "Main" }).getByRole("link", { name: /^Reports/ }).click();
     await expect(page).toHaveURL(/\/journal$/);
-    await page.getByRole("tab", { name: "Weekly" }).click();
+    await page.locator("main nav").getByRole("link", { name: /^Weekly/ }).click();
     await expect(page).toHaveURL(/\/journal\?view=weekly$/);
     await page.getByRole("button", { name: existing ? /^Edit/ : "Write", exact: !existing }).first().click();
     const form = page.getByRole("dialog");
@@ -1061,6 +1063,8 @@ test.describe("attendance steps recorded offline and not sent yet", () => {
       // Sign out is at the side menu's foot on a computer, at the bottom of More on a phone.
       const side = page.locator("aside.role-side");
       if (await side.isVisible()) {
+        // The trainee's menu is a rail that opens on hover (change1108).
+        await side.hover();
         await side.getByRole("button", { name: "Sign out" }).click();
       } else {
         await page.locator(".role-dock").getByRole("button", { name: /^More/ }).click();

@@ -36,8 +36,9 @@ test("a day's report saves as it is typed, and an event takes photos, kept on th
 
   await signIn(page, "student");
   await page.goto("/journal");
-  await expect(page.getByRole("heading", { level: 1, name: "Progress reports" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Daily" })).toHaveAttribute("aria-selected", "true");
+  // change1108: Daily, Weekly and Monthly are the Reports folder's own tabs.
+  await expect(page.getByRole("heading", { level: 1, name: "Daily reports" })).toBeVisible();
+  await expect(page.locator("main nav").getByRole("link", { name: /^Daily/ })).toHaveAttribute("aria-current", "page");
 
   // The day's report saves by itself.
   const summary = page.getByLabel("Your report for the day");
@@ -75,10 +76,10 @@ test("a day's report saves as it is typed, and an event takes photos, kept on th
   await expect(event.getByText(/saved on this phone, waiting to be sent/)).toHaveCount(0);
 
   // The other two parts of the page.
-  await page.getByRole("tab", { name: "Weekly" }).click();
+  await page.locator("main nav").getByRole("link", { name: /^Weekly/ }).click();
   await expect(page).toHaveURL(/view=weekly/);
   await expect(page.getByRole("button", { name: "Print FM-AA-INT-19" })).toBeVisible();
-  await page.getByRole("tab", { name: "Monthly" }).click();
+  await page.locator("main nav").getByRole("link", { name: /^Monthly/ }).click();
   await expect(page).toHaveURL(/view=monthly/);
   await expect(page.getByRole("heading", { name: "In your own words" })).toBeVisible();
   await expect(page.getByText(eventTitle).first()).toBeVisible();

@@ -12820,13 +12820,31 @@ test("the trainee's feedback form (FM-AA-INT-20) is their own, rated 1 to 5, and
   assert.equal(draft.response.status, 200);
   assert.equal(draft.body.form.problems_met, "Slow internet in the office.");
   const all = Object.fromEntries(read.body.criteria.map((criterion) => [criterion.key, 4]));
-  const sent = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: all, submit: true }));
-  assert.equal(sent.response.status, 200);
-  assert.ok(sent.body.form.submitted_at, "submitted once complete");
-  // Still editable after; the submission date stays.
-  const again = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: { ...all, safety: 5 } }));
-  assert.equal(again.body.form.submitted_at, sent.body.form.submitted_at);
-  assert.equal(again.body.form.ratings.safety, 5);
+  const pool = localTestPool();
+  const told = async () =>
+    (
+      await pool.query(`SELECT link FROM notifications WHERE coordinator_id IS NOT NULL AND entity_type = 'feedback_form' AND entity_id = $1`, [student.student_id])
+    ).rows;
+  try {
+    const before = (await told()).length;
+    const firstTime = !(await jsonRequest(path, { headers: authHeaders(studentToken) })).body.form?.submitted_at;
+    const sent = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: all, submit: true }));
+    assert.equal(sent.response.status, 200);
+    assert.ok(sent.body.form.submitted_at, "submitted once complete");
+    // change1108: the first sending tells the coordinators, with the way to the student's Reports.
+    const after = await told();
+    if (firstTime) {
+      assert.ok(after.length > before, "the coordinators are told");
+      assert.ok(after.every((row) => row.link.endsWith("?tab=journals")), "it opens the student's Reports");
+    }
+    // Still editable after; the submission date stays, and no one is told again.
+    const again = await jsonRequest(path, jsonBody(studentToken, "PUT", { ratings: { ...all, safety: 5 }, submit: true }));
+    assert.equal(again.body.form.submitted_at, sent.body.form.submitted_at);
+    assert.equal(again.body.form.ratings.safety, 5);
+    assert.equal((await told()).length, after.length, "told once");
+  } finally {
+    await pool.end();
+  }
 });
 
 test("daily and monthly progress reports and the narrative's parts: the trainee's own, checked, and readable by the coordinator", async (t) => {
@@ -12884,6 +12902,17 @@ test("daily and monthly progress reports and the narrative's parts: the trainee'
   assert.equal(part.body.part.text, "To my family.");
   const read = await jsonRequest(`/api/students/${id}/narrative`, { headers: authHeaders(coordinatorToken) });
   assert.equal(read.body.parts.dedication.text, "To my family.");
+  // change1108: a guided part keeps its form's fields beside the text; anything but an object is refused.
+  const chart = { mode: "chart", people: [{ id: "p1", name: "Ana", position: "Director", parent: null }], photoId: null, note: "" };
+  const guided = await jsonRequest(`/api/students/${id}/narrative/organizational_chart`, jsonBody(studentToken, "PUT", { text: "• Director — Ana", data: chart }));
+  assert.equal(guided.response.status, 200);
+  assert.deepEqual(guided.body.part.data, chart);
+  const back = await jsonRequest(`/api/students/${id}/narrative`, { headers: authHeaders(studentToken) });
+  assert.equal(back.body.parts.organizational_chart.data.people[0].position, "Director");
+  assert.equal(back.body.parts.dedication.text, "To my family.", "the other parts are kept");
+  for (const bad of [[1, 2], "fields", { big: "x".repeat(20001) }]) {
+    assert.equal((await jsonRequest(`/api/students/${id}/narrative/title_page`, jsonBody(studentToken, "PUT", { text: "x", data: bad }))).response.status, 400, JSON.stringify(bad).slice(0, 30));
+  }
 });
 
 test("a weighted form (FM-AA-INT-13) is checked when saved, and a final evaluation on it gets the OJT grade", async (t) => {

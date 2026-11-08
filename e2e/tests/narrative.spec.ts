@@ -16,7 +16,7 @@ test.use({ viewport: { width: 1280, height: 900 } });
 
 test("a part of the narrative report saves as it is written, a starting draft can be used, and it downloads as Word", async ({ page }) => {
   await signIn(page, "student");
-  await page.goto("/task");
+  await page.goto("/journal");
   await page.locator("main nav").getByRole("link", { name: /^Narrative/ }).click();
   await expect(page.getByRole("heading", { level: 1, name: "Narrative report" })).toBeVisible();
 
