@@ -1,9 +1,10 @@
 import StepMarks from "../../components/StepMarks";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import { UnderlineTabs } from "../../brand/motifs";
 import DateRangeFilter from "../../components/DateRangeFilter";
-import Icon, { type IconName } from "../../components/Icon";
+import Icon from "../../components/Icon";
 import Pagination from "../../components/Pagination";
 import { Avatar, Button, Card, EmptyState, ErrorNotice, Modal, RowMenu, SkeletonRows, StatusBadge } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
@@ -250,6 +251,7 @@ export default function SupervisorAttendanceApproval() {
   const [customTo, setCustomTo] = useState("");
   const [dateFrom, dateTo] = preset === "custom" ? [customFrom, customTo] : presetRange(preset, today);
   const [moreOpen, setMoreOpen] = useState(false);
+  const tabletWide = useMediaQuery("(min-width: 768px)");
   const [openId, setOpenId] = useState<number | null>(null);
   const [openAbsenceId, setOpenAbsenceId] = useState<number | null>(null);
   // The log whose times are being corrected straight from its row.
@@ -381,19 +383,48 @@ export default function SupervisorAttendanceApproval() {
     setPreset("all");
   };
 
-  // The overview strip.
-  const waitingCount = attendance.filter((entry) => awaitsReview(entry) && inGroup(entry.student_id)).length;
-  const inToday = new Set(attendance.filter((entry) => String(entry.date).slice(0, 10) === today && entry.time_in).map((entry) => String(entry.student_id))).size;
-  const thisMonday = mondayOf(today);
-  const weekHours = attendance
-    .filter((entry) => entry.status === "Verified" && String(entry.date).slice(0, 10) >= thisMonday && inGroup(entry.student_id))
-    .reduce((sum, entry) => sum + (Number(entry.hours) || 0), 0);
+  // Calm pass (2026-11-12): Group by and Sort sit in the tools row on a computer and inside
+  // Filters on a phone, where four controls in a row wrapped to three lines.
+  const phone = !tabletWide;
+  const viewTools =
+    pageView === "logs" ? (
+                <>
+                  <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-600">
+                    Group by
+                    <select
+                      value={view.group}
+                      onChange={(event) => setView((current) => ({ ...current, group: event.target.value as AttendanceView["group"] }))}
+                      className="field w-auto"
+                    >
+                      {GROUP_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-600">
+                    Sort
+                    <select
+                      value={view.sort}
+                      onChange={(event) => setView((current) => ({ ...current, sort: event.target.value as AttendanceView["sort"] }))}
+                      className="field w-auto"
+                    >
+                      {SORT_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </>
+    ) : null;
+  // Calm pass: the four overview tiles are gone; each repeated a tab's count or a chip.
   const shownInterns = interns.filter((intern) => inGroup(intern.student_id));
 
   return (
     <SupervisorLayout
       title="Attendance"
-      subtitle="Every time-in of your interns: by status, by week, and their absences."
       actions={
         <Button variant="secondary" icon="camera" onClick={() => setRecording(true)}>
           Record time-in
@@ -402,69 +433,6 @@ export default function SupervisorAttendanceApproval() {
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
-
-        {/* The overview: each tile takes you to what it counts. */}
-        <ul className="grid grid-cols-2 gap-2.5 sm:gap-3 xl:grid-cols-4" aria-label="Attendance at a glance">
-          {[
-            {
-              key: "review",
-              icon: "clock" as IconName,
-              tone: waitingCount > 0 ? "att-tile--warn" : "",
-              value: loading ? "…" : String(waitingCount),
-              label: waitingCount === 1 ? "log needs your review" : "logs need your review",
-              onClick: () => {
-                setPageView("logs");
-                setView((current) => ({ ...current, chips: ["review"] }));
-              },
-            },
-            {
-              key: "today",
-              icon: "users" as IconName,
-              tone: "",
-              value: loading ? "…" : `${inToday} of ${shownInterns.length}`,
-              label: "interns in today",
-              onClick: () => {
-                setPageView("logs");
-                setPreset("today");
-              },
-            },
-            {
-              key: "week",
-              icon: "calendar" as IconName,
-              tone: "",
-              value: loading ? "…" : formatHours(weekHours),
-              label: "verified this week",
-              onClick: () => {
-                setWeekStart(thisMonday);
-                setPageView("week");
-              },
-            },
-            {
-              key: "absences",
-              icon: "flag" as IconName,
-              tone: absencesWaiting > 0 ? "att-tile--warn" : "",
-              value: loading ? "…" : String(absencesWaiting),
-              label: absencesWaiting === 1 ? "absence to review" : "absences to review",
-              onClick: () => {
-                setAbsenceShown(absencesWaiting > 0 ? "Pending" : "all");
-                setPageView("absences");
-              },
-            },
-          ].map((tile) => (
-            <li key={tile.key}>
-              <button type="button" onClick={tile.onClick} className={`att-tile ${tile.tone}`}>
-                <span className="att-tile-icon">
-                  <Icon name={tile.icon} size={18} />
-                </span>
-                <span className="min-w-0">
-                  <span className="tabular block font-display text-[22px] font-extrabold leading-tight text-slate-900">{tile.value}</span>
-                  <span className="block truncate text-[13px] text-slate-600">{tile.label}</span>
-                </span>
-                <Icon name="chevron-right" size={16} className="ml-auto hidden text-slate-400 sm:block" />
-              </button>
-            </li>
-          ))}
-        </ul>
 
         <UnderlineTabs
           label="Attendance views"
@@ -496,38 +464,7 @@ export default function SupervisorAttendanceApproval() {
               </select>
             </label>
           )}
-          {pageView === "logs" && (
-            <>
-              <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-600">
-                Group by
-                <select
-                  value={view.group}
-                  onChange={(event) => setView((current) => ({ ...current, group: event.target.value as AttendanceView["group"] }))}
-                  className="field w-auto"
-                >
-                  {GROUP_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="inline-flex items-center gap-2 text-[13px] font-semibold text-slate-600">
-                Sort
-                <select
-                  value={view.sort}
-                  onChange={(event) => setView((current) => ({ ...current, sort: event.target.value as AttendanceView["sort"] }))}
-                  className="field w-auto"
-                >
-                  {SORT_OPTIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
-          )}
+          {!phone && viewTools}
           <button
             type="button"
             onClick={() => setMoreOpen((value) => !value)}
@@ -545,6 +482,7 @@ export default function SupervisorAttendanceApproval() {
 
         {moreOpen && (
           <div id="attendance-more" className="att-more grid gap-4 rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline) sm:grid-cols-2 lg:grid-cols-4">
+            {phone && viewTools && <div className="flex flex-wrap items-center gap-3 sm:col-span-2 lg:col-span-4">{viewTools}</div>}
             <div className="space-y-1.5">
               <p className="text-[12px] font-bold uppercase tracking-wide text-slate-500">Program or block</p>
               <InternGroupSelect state={grouping} onChange={() => setInternId("")} />

@@ -1,3 +1,4 @@
+import PhoneFilters from "../../components/PhoneFilters";
 import { SummaryTiles } from "../../components/display";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Icon from "../../components/Icon";
@@ -138,15 +139,14 @@ export default function SupervisorJournals() {
   return (
     <SupervisorLayout
       title="Weekly reports"
-      subtitle="What your interns wrote each week, including the ones you have reviewed."
     >
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 basis-full">
             <div className="w-full">
-              <SummaryTiles
+              <SummaryTiles chips
                 label="Which weekly reports"
                 value={scope}
                 onChange={setScope}
@@ -159,24 +159,26 @@ export default function SupervisorJournals() {
               />
             </div>
           </div>
-          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
-          {interns.length > 1 && (
-            <label className="block w-full sm:w-56">
-              <span className="sr-only">Intern</span>
-              <select
-                value={internId}
-                onChange={(event) => setInternId(event.target.value)}
-                className="field"
-              >
-                <option value="">All interns</option>
-                {interns.filter(([id]) => inGroup(id)).map(([id, name]) => (
-                  <option key={id} value={id}>
-                    {name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <PhoneFilters active={(grouping.group ? 1 : 0) + (internId ? 1 : 0)}>
+            <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
+            {interns.length > 1 && (
+              <label className="block w-full sm:w-56">
+                <span className="sr-only">Intern</span>
+                <select
+                  value={internId}
+                  onChange={(event) => setInternId(event.target.value)}
+                  className="field"
+                >
+                  <option value="">All interns</option>
+                  {interns.filter(([id]) => inGroup(id)).map(([id, name]) => (
+                    <option key={id} value={id}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </PhoneFilters>
         </div>
 
         {!loading && journals.length > 0 && (

@@ -1,10 +1,11 @@
+import PhoneFilters from "../../components/PhoneFilters";
 import { useCallback, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { SummaryTiles } from "../../components/display";
-import Icon, { type IconName } from "../../components/Icon";
-import { Avatar, Button, Card, EmptyState, ErrorNotice, Modal, ProgressBar, ProgressRing, Skeleton } from "../../components/ui";
+import Icon from "../../components/Icon";
+import { Avatar, Button, Card, EmptyState, ErrorNotice, Modal, ProgressBar, Skeleton } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { formatHours, formatTime, getInitials } from "../../lib/format";
+import { formatHours, formatTime } from "../../lib/format";
 import { formatPhDay, phAddDays, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
 import { useProjections, type Projection } from "../../lib/useProjections";
@@ -13,7 +14,7 @@ import { internPath } from "./internPath";
 import InternGroupSelect from "./InternGroups";
 import { todaysLogs } from "./reviewData";
 import { useInternGroups } from "./useInternGroups";
-import { useSupervisorWork, type AbsenceEntry, type AttendanceEntry, type Intern, type QueueItem, type SupervisorWork } from "./useSupervisorWork";
+import { useSupervisorWork, type AbsenceEntry, type AttendanceEntry, type Intern, type SupervisorWork } from "./useSupervisorWork";
 import { useTeams } from "./useTeams";
 import { sameId } from "../../lib/ids";
 
@@ -44,14 +45,6 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: "progress", label: "Most hours first" },
   { value: "finish", label: "Finishing soonest" },
 ];
-
-const WAIT_KIND: Record<QueueItem["kind"], { one: string; many: string; icon: IconName }> = {
-  attendance: { one: "time-in", many: "time-ins", icon: "camera" },
-  task: { one: "task", many: "tasks", icon: "tasks" },
-  document: { one: "document", many: "documents", icon: "document" },
-  absence: { one: "absence", many: "absences", icon: "calendar" },
-  journal: { one: "weekly report", many: "weekly reports", icon: "note" },
-};
 
 type Today = { tone: "in" | "out" | "absent" | "none"; text: string };
 
@@ -145,10 +138,6 @@ export default function SupervisorInterns() {
     [work.absences, today]
   );
   const waitingOf = useCallback((studentId: string) => work.queue.filter((item) => sameId(item.entry.student_id, studentId)), [work.queue]);
-  const teamsOf = useCallback(
-    (studentId: string) => teams.list.filter((team) => team.members.some((member) => sameId(member.student_id, studentId))),
-    [teams.list]
-  );
   const logOf = useCallback(
     (studentId: string) => {
       for (const [id, entry] of logs) if (sameId(id, studentId)) return entry;
@@ -199,57 +188,22 @@ export default function SupervisorInterns() {
   return (
     <SupervisorLayout
       title="Interns"
-      subtitle={
-        loading
-          ? "The students assigned to you."
-          : `${interns.length} ${interns.length === 1 ? "student is" : "students are"} assigned to you.`
-      }
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
         {!loading && interns.length > 0 && (
-          // The group as a whole: who is in, how far along together.
-          <section aria-label="Your interns today" className="interns-hero relative overflow-hidden rounded-2xl p-5 text-white sm:p-6">
-            <div className="relative flex flex-wrap items-center gap-x-8 gap-y-4">
-              <ProgressRing value={average} size={86} stroke={8} label={`On average ${average} percent of their hours`}>
-                <span className="font-display text-[22px] font-extrabold text-white">{average}%</span>
-              </ProgressRing>
-              <div className="min-w-0">
-                <p className="text-[12.5px] font-bold uppercase tracking-[0.12em] text-white/75">Your interns, together</p>
-                <p className="font-display text-[22px] font-extrabold leading-tight">
-                  {inToday} of {interns.length} in today
-                </p>
-                <p className="text-[14px] text-white/80">
-                  {formatHours(interns.reduce((sum, intern) => sum + (Number(intern.hours_rendered) || 0), 0))} verified ·{" "}
-                  {countOf("waiting")} with work waiting for you
-                </p>
-              </div>
-              <ul className="ml-auto flex -space-x-2" aria-label="Who is in today">
-                {interns.slice(0, 8).map((intern) => {
-                  const present = Boolean(logOf(intern.student_id));
-                  return (
-                    <li
-                      key={intern.student_id}
-                      title={`${intern.name}: ${present ? "in today" : "not in yet"}`}
-                      className={`grid h-10 w-10 place-items-center rounded-full border-2 text-[12px] font-extrabold ${
-                        present ? "border-emerald-300 bg-white text-psu-800" : "border-white/30 bg-white/15 text-white/70"
-                      }`}
-                    >
-                      <span aria-hidden="true">{getInitials(intern.name)}</span>
-                      <span className="sr-only">
-                        {intern.name}, {present ? "in today" : "not in yet"}
-                      </span>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </section>
+          // The group as a whole, in one line (it was a banner as tall as two cards).
+          <p className="text-[14px] text-slate-600">
+            <span className="font-semibold text-slate-900">
+              {inToday} of {interns.length} in today
+            </span>{" "}
+            · {average}% of their hours done on average
+          </p>
         )}
 
         {!loading && interns.length > 0 && (
-          <SummaryTiles
+          <SummaryTiles chips
             label="Show interns"
             value={shown}
             onChange={setShown}
@@ -270,30 +224,32 @@ export default function SupervisorInterns() {
               <Icon name="search" size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
               <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search by name, ID or program" className="field pl-9" />
             </label>
-            <InternGroupSelect state={grouping} />
-            {teams.list.length > 0 && (
+            <PhoneFilters active={(grouping.group ? 1 : 0) + (teamId ? 1 : 0)}>
+              <InternGroupSelect state={grouping} />
+              {teams.list.length > 0 && (
+                <label className="block">
+                  <span className="sr-only">Team</span>
+                  <select value={teamId} onChange={(event) => setTeamId(event.target.value)} className="field w-auto">
+                    <option value="">Every team</option>
+                    {teams.list.map((team) => (
+                      <option key={team.id} value={team.id}>
+                        {team.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <label className="block">
-                <span className="sr-only">Team</span>
-                <select value={teamId} onChange={(event) => setTeamId(event.target.value)} className="field w-auto">
-                  <option value="">Every team</option>
-                  {teams.list.map((team) => (
-                    <option key={team.id} value={team.id}>
-                      {team.name}
+                <span className="sr-only">Sort</span>
+                <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="field w-auto" aria-label="Sort interns">
+                  {SORTS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
               </label>
-            )}
-            <label className="block">
-              <span className="sr-only">Sort</span>
-              <select value={sort} onChange={(event) => setSort(event.target.value as Sort)} className="field w-auto" aria-label="Sort interns">
-                {SORTS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            </PhoneFilters>
             <div role="group" aria-label="Layout" className="ml-auto inline-flex rounded-xl bg-slate-100 p-1">
               {(["cards", "table"] as Layout[]).map((value) => (
                 <button
@@ -337,10 +293,6 @@ export default function SupervisorInterns() {
               const waiting = waitingOf(intern.student_id);
               const now = todayOf(logOf(intern.student_id), absenceToday(intern.student_id));
               const finish = finishText(projections.get(String(intern.student_id)));
-              const left = Math.max(0, (Number(intern.required_hours) || 0) - (Number(intern.hours_rendered) || 0));
-              const kinds = (Object.keys(WAIT_KIND) as QueueItem["kind"][])
-                .map((kind) => ({ kind, count: waiting.filter((item) => item.kind === kind).length }))
-                .filter((each) => each.count > 0);
               return (
                 <li key={intern.student_id} className="intern-card" style={{ ["--i" as string]: index }}>
                   <button
@@ -350,67 +302,40 @@ export default function SupervisorInterns() {
                       waiting.length > 0 ? "ring-amber-300" : "ring-(--role-hairline)"
                     }`}
                   >
-                    <span aria-hidden="true" className={`h-1.5 w-full ${finish.risk ? "bg-red-500" : intern.completion >= ALMOST_DONE ? "bg-emerald-500" : "bg-psu-600"}`} />
-                    <div className="flex items-start gap-4 p-5 pb-3">
-                      <ProgressRing value={intern.completion} size={64} stroke={6} label={`${intern.completion} percent of required hours`}>
-                        <span className="text-[13px] font-extrabold text-psu-800">{Math.round(intern.completion)}%</span>
-                      </ProgressRing>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[15.5px] font-bold text-slate-900">{intern.name}</span>
-                        <span className="block truncate text-[13px] text-slate-600">
-                          {[intern.block_name || intern.program_code || intern.program, intern.student_id].filter(Boolean).join(" · ")}
+                    <span aria-hidden="true" className={`h-1 w-full ${finish.risk ? "bg-red-500" : intern.completion >= ALMOST_DONE ? "bg-emerald-500" : "bg-psu-600"}`} />
+                    {/* Calm pass (2026-11-12): name, today, progress, finish and what waits. The hours, the week
+                        and the kinds of waiting work are on the intern's own page and in the Table view. */}
+                    <div className="flex flex-1 flex-col gap-3 p-4">
+                      <span className="flex items-start justify-between gap-3">
+                        <span className="min-w-0">
+                          <span className="block truncate text-[15.5px] font-bold text-slate-900">{intern.name}</span>
+                          <span className="block truncate text-[13px] text-slate-600">
+                            {[intern.block_name || intern.program_code || intern.program, intern.student_id].filter(Boolean).join(" · ")}
+                          </span>
                         </span>
-                        <span className={`mt-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-bold ring-1 ring-inset ${TODAY_TONE[now.tone]}`}>
+                        <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-bold ring-1 ring-inset ${TODAY_TONE[now.tone]}`}>
                           {now.tone === "in" && <span className="in-dot" aria-hidden="true" />}
                           {now.text}
                         </span>
                       </span>
-                      {waiting.length > 0 && (
-                        <span className="grid h-8 min-w-8 place-items-center rounded-full bg-amber-400 px-2 text-[13px] font-extrabold text-psu-900" title={`${waiting.length} waiting for you`}>
-                          {waiting.length}
-                          <span className="sr-only"> waiting for you</span>
-                        </span>
-                      )}
-                    </div>
-                    <dl className="mx-5 grid grid-cols-3 divide-x divide-(--role-hairline) rounded-xl bg-slate-50 py-2 text-center">
-                      <div>
-                        <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Verified</dt>
-                        <dd className="tabular text-[14.5px] font-bold text-slate-900">{formatHours(intern.hours_rendered)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">To go</dt>
-                        <dd className="tabular text-[14.5px] font-bold text-slate-900">{formatHours(left)}</dd>
-                      </div>
-                      <div>
-                        <dt className="text-[11px] font-bold uppercase tracking-wide text-slate-500">Finish</dt>
-                        <dd className={`tabular text-[14.5px] font-bold ${finish.risk ? "text-red-700" : "text-slate-900"}`}>
-                          {finish.text}
+                      <span className="flex items-center gap-3">
+                        <ProgressBar value={intern.completion} className="flex-1" label={`${Math.round(intern.completion)} percent of required hours`} />
+                        <span className="tabular text-[13.5px] font-bold text-slate-900">{Math.round(intern.completion)}%</span>
+                      </span>
+                      <span className="mt-auto flex items-center justify-between gap-3 text-[13px]">
+                        <span className={finish.risk ? "font-semibold text-red-700" : "text-slate-600"}>
+                          Finish {finish.text}
                           {finish.risk && <span className="sr-only"> (at risk)</span>}
-                        </dd>
-                      </div>
-                    </dl>
-                    <div className="flex items-center justify-between gap-3 px-5 pt-3">
-                      <span className="text-[12px] font-bold uppercase tracking-wide text-slate-500">This week</span>
-                      <WeekStrip days={weekOf(intern.student_id, work.attendance, work.absences, today)} />
-                    </div>
-                    <div className="mt-auto flex flex-wrap items-center gap-1.5 px-5 pb-4 pt-3">
-                      {kinds.map(({ kind, count }) => (
-                        <span key={kind} className="st-badge st-badge--waiting">
-                          <Icon name={WAIT_KIND[kind].icon} size={12} />
-                          {count} {count === 1 ? WAIT_KIND[kind].one : WAIT_KIND[kind].many}
                         </span>
-                      ))}
-                      {teamsOf(intern.student_id).map((team) => (
-                        <span key={team.id} className="st-badge bg-psu-50 text-psu-800">
-                          <Icon name="users" size={12} />
-                          {team.name}
-                        </span>
-                      ))}
-                      {kinds.length === 0 && teamsOf(intern.student_id).length === 0 && (
-                        <span className="text-[13px] text-slate-500">
-                          {intern.active_tasks} open {intern.active_tasks === 1 ? "task" : "tasks"} · nothing waiting for you
-                        </span>
-                      )}
+                        {waiting.length > 0 ? (
+                          <span className="inline-flex items-center gap-1 font-bold text-amber-800">
+                            {waiting.length} waiting
+                            <Icon name="chevron-right" size={14} />
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">Nothing waiting</span>
+                        )}
+                      </span>
                     </div>
                   </button>
                 </li>

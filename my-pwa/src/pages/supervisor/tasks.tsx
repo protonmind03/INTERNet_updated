@@ -1,3 +1,4 @@
+import PhoneFilters from "../../components/PhoneFilters";
 import { SummaryTiles } from "../../components/display";
 import { useMemo, useRef, useState } from "react";
 import { Link, useSearchParams } from "react-router-dom";
@@ -174,7 +175,6 @@ export default function SupervisorTasks() {
   return (
     <SupervisorLayout
       title="Tasks"
-      subtitle="Assign work to your interns and follow it through to review."
       actions={
         <Button icon="plus" onClick={() => setForm({ mode: "new" })} disabled={interns.length === 0}>
           Assign a task
@@ -205,9 +205,9 @@ export default function SupervisorTasks() {
         {view === "tasks" && (
         <>
         <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 basis-full">
             <div className="w-full">
-              <SummaryTiles
+              <SummaryTiles chips
                 label="Filter tasks"
                 value={filter}
                 onChange={setFilter}
@@ -220,24 +220,26 @@ export default function SupervisorTasks() {
               />
             </div>
           </div>
-          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
-          {interns.length > 1 && (
-            <label className="block w-full sm:w-56">
-              <span className="sr-only">Intern</span>
-              <select
-                value={internId}
-                onChange={(event) => setInternId(event.target.value)}
-                className="field"
-              >
-                <option value="">All interns</option>
-                {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
-                  <option key={intern.student_id} value={intern.student_id}>
-                    {intern.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <PhoneFilters active={(grouping.group ? 1 : 0) + (internId ? 1 : 0)}>
+            <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
+            {interns.length > 1 && (
+              <label className="block w-full sm:w-56">
+                <span className="sr-only">Intern</span>
+                <select
+                  value={internId}
+                  onChange={(event) => setInternId(event.target.value)}
+                  className="field"
+                >
+                  <option value="">All interns</option>
+                  {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
+                    <option key={intern.student_id} value={intern.student_id}>
+                      {intern.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </PhoneFilters>
           <div role="group" aria-label="Layout" className="inline-flex rounded-xl bg-slate-100 p-1">
             {[false, true].map((on) => (
               <button

@@ -10,7 +10,6 @@ export default function SupervisorNotifications() {
   return (
     <SupervisorLayout
       title="Notifications"
-      subtitle="Activity from your interns and the OJT coordinator."
       actions={
         unreadCount > 0 ? (
           <Button variant="secondary" icon="check" onClick={() => void markAllRead()}>

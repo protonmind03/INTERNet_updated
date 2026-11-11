@@ -26,7 +26,6 @@ export default function SupervisorTimeRecord() {
   return (
     <SupervisorLayout
       title="Time record"
-      subtitle="An intern's attendance for one month, ready to print and sign."
       actions={
         <Link
           to="/supervisor/interns"

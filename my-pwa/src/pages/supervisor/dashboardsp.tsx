@@ -596,11 +596,8 @@ export default function SupervisorDashboard() {
   return (
     <SupervisorLayout
       title={computer ? `${greetingFor(new Date())}${firstName ? `, ${firstName}` : ""}` : "Review"}
-      subtitle={
-        computer
-          ? `${formatPhDay(today, { weekday: "long", month: "short", day: "numeric" })} · ${[supervisor?.department, supervisor?.company].filter(Boolean).join(", ")}`
-          : `${supervisor?.company ?? ""}${interns.length ? ` · ${interns.length} ${interns.length === 1 ? "intern" : "interns"}` : ""}`
-      }
+      // The company is in the side menu (and the phone header's line); the greeting carries the day.
+      subtitle={computer ? formatPhDay(today, { weekday: "long", month: "short", day: "numeric" }) : undefined}
       actions={
         computer && tab !== "final" && (loading || interns.length > 0) ? (
           <Button variant="secondary" icon="camera" disabled={loading} onClick={() => setRecording(true)}>

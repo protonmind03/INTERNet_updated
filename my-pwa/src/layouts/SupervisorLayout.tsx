@@ -11,6 +11,7 @@ import ScreenHelp from "../components/ScreenHelp";
 import { ConfirmDialog } from "../components/ui";
 import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { signOut as endSession, useAccount } from "../lib/session";
 
 /*
@@ -94,6 +95,7 @@ export default function SupervisorLayout({
   const supervisor = useAccount("supervisor");
   const counts = useNavCounts("supervisor");
   const [confirmSignOut, setConfirmSignOut] = useState(false);
+  const tablet = useMediaQuery("(min-width: 768px)");
 
   useEffect(() => {
     document.title = `${title} · INTERNet`;
@@ -109,13 +111,12 @@ export default function SupervisorLayout({
   const waiting = counts[REVIEW] ?? 0;
   const side: SideItem[] = [
     // One module (sv10-26): its kinds are chosen inside the page, each in its own colour.
-    { label: "Review", path: REVIEW, icon: "tasks", count: waiting, detail: "Everything waiting for you" },
-    { label: "Interns", path: "/supervisor/interns", icon: "users", detail: "Progress, today, this week" },
-    { label: "Attendance", path: "/supervisor/attendance", icon: "clock", detail: "Logs, week, absences" },
+    { label: "Review", path: REVIEW, icon: "tasks", count: waiting},
+    { label: "Interns", path: "/supervisor/interns", icon: "users"},
+    { label: "Attendance", path: "/supervisor/attendance", icon: "clock"},
     {
       label: "Work",
       icon: "clipboard",
-      detail: "Tasks, teams, weekly reports, documents",
       children: [
         { label: "Tasks", path: "/supervisor/tasks" },
         { label: "Weekly reports", path: "/supervisor/journals" },
@@ -125,7 +126,6 @@ export default function SupervisorLayout({
     {
       label: "Evaluate",
       icon: "star",
-      detail: "Final evaluations, time records",
       children: [
         { label: "Final evaluations", path: `${REVIEW}?tab=final` },
         { label: "Time records", path: "/supervisor/time-record" },
@@ -134,7 +134,6 @@ export default function SupervisorLayout({
     {
       label: "Talk",
       icon: "chat",
-      detail: "Messages, announcements, concerns",
       children: [
         { label: "Messages", path: "/supervisor/messages" },
         { label: "Announcements", path: "/supervisor/announcements" },
@@ -151,9 +150,13 @@ export default function SupervisorLayout({
       <RoleShell
         role="supervisor"
         title={title}
-        context={subtitle ?? [supervisor.company, supervisor.department].filter(Boolean).join(" · ")}
+        // Calm pass (2026-11-12): the company is named once, in the side menu on a computer and
+        // in the header's line on a phone; pages no longer describe themselves under their title.
+        context={subtitle ?? (tablet ? undefined : supervisor.company || undefined)}
         headerRight={
           <>
+            {/* The page's main button sits in the header on a computer, not on a row of its own. */}
+            {tablet && actions && <div className="flex items-center gap-2">{actions}</div>}
             <ScreenHelp role="supervisor" />
             <NotificationBell
               role="supervisor"
@@ -185,7 +188,7 @@ export default function SupervisorLayout({
         }}
       >
         <div className="mx-auto w-full max-w-7xl animate-page-in px-4 pb-32 pt-4 md:px-8 md:pb-12 md:pt-6 print:max-w-none print:p-0">
-          {actions && <div className="mb-4 flex flex-wrap justify-end gap-2">{actions}</div>}
+          {!tablet && actions && <div className="mb-4 flex flex-wrap justify-end gap-2">{actions}</div>}
           <SavedDataNotice />
           {children}
           <MessageThreadHost role="supervisor" />

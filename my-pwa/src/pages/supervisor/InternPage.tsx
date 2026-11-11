@@ -120,7 +120,7 @@ export default function SupervisorInternPage() {
 
   if (!intern) {
     return (
-      <SupervisorLayout title="Intern" subtitle="One intern's record." actions={back}>
+      <SupervisorLayout title="Intern" actions={back}>
         {work.error ? (
           <ErrorNotice message={work.error} onRetry={() => void work.reload()} />
         ) : work.loading ? (

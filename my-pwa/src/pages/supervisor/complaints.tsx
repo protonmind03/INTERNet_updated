@@ -94,7 +94,6 @@ export default function SupervisorComplaints() {
   return (
     <SupervisorLayout
       title="Concerns"
-      subtitle="Report a concern about an intern to the OJT coordinator, and follow what happens to it."
       actions={
         <Button icon="plus" onClick={() => setFiling(true)}>
           Report a concern

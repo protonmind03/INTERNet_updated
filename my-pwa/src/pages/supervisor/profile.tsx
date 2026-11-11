@@ -113,7 +113,7 @@ export default function SupervisorProfilePage() {
   };
 
   return (
-    <SupervisorLayout title="Profile" subtitle="Your account details and password.">
+    <SupervisorLayout title="Profile">
       {error && (
         <div className="mb-5">
           <ErrorNotice message={error} onRetry={() => void load()} />

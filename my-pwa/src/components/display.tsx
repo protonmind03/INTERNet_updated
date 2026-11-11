@@ -129,6 +129,7 @@ export function SummaryTiles<T extends string>({
   value,
   onChange,
   phoneChips = false,
+  chips = false,
 }: {
   label: string;
   tiles: SummaryTile<T>[];
@@ -136,11 +137,17 @@ export function SummaryTiles<T extends string>({
   onChange: (value: T) => void;
   /** Under 768 px, one row of chips ("To do 3") instead of a grid of tiles (the trainee's phone pass). */
   phoneChips?: boolean;
+  /** One row of chips at every width, never the tiles (the supervisor's calm pass). */
+  chips?: boolean;
 }) {
   return (
     <>
-    {phoneChips && (
-      <div role="group" aria-label={label} className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-0.5 md:hidden [scrollbar-width:none]">
+    {(phoneChips || chips) && (
+      <div
+        role="group"
+        aria-label={label}
+        className={`-mx-4 flex gap-2 overflow-x-auto px-4 pb-0.5 [scrollbar-width:none] ${chips ? "md:mx-0 md:flex-wrap md:overflow-visible md:px-0" : "md:hidden"}`}
+      >
         {tiles.map((tile) => {
           const on = tile.value === value;
           return (
@@ -162,7 +169,7 @@ export function SummaryTiles<T extends string>({
         })}
       </div>
     )}
-    <div role="group" aria-label={label} className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] ${phoneChips ? "max-md:hidden" : ""}`}>
+    {!chips && <div role="group" aria-label={label} className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] ${phoneChips ? "max-md:hidden" : ""}`}>
       {tiles.map((tile) => {
         const on = tile.value === value;
         return (
@@ -183,7 +190,7 @@ export function SummaryTiles<T extends string>({
           </button>
         );
       })}
-    </div>
+    </div>}
     </>
   );
 }

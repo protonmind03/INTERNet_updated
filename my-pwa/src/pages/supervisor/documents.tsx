@@ -1,3 +1,4 @@
+import PhoneFilters from "../../components/PhoneFilters";
 import { SummaryTiles } from "../../components/display";
 import { useMemo, useState, type ReactNode } from "react";
 import Icon from "../../components/Icon";
@@ -86,15 +87,14 @@ export default function SupervisorDocuments() {
   return (
     <SupervisorLayout
       title="Documents"
-      subtitle="OJT requirement files uploaded by your interns."
     >
       <div className="space-y-5">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 basis-full">
             <div className="w-full">
-              <SummaryTiles
+              <SummaryTiles chips
                 label="Filter documents"
                 value={filter}
                 onChange={setFilter}
@@ -107,24 +107,26 @@ export default function SupervisorDocuments() {
               />
             </div>
           </div>
-          <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
-          {interns.length > 1 && (
-            <label className="block w-full sm:w-56">
-              <span className="sr-only">Intern</span>
-              <select
-                value={internId}
-                onChange={(event) => setInternId(event.target.value)}
-                className="field"
-              >
-                <option value="">All interns</option>
-                {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
-                  <option key={intern.student_id} value={intern.student_id}>
-                    {intern.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
+          <PhoneFilters active={(grouping.group ? 1 : 0) + (internId ? 1 : 0)}>
+            <InternGroupSelect state={grouping} onChange={() => setInternId("")} />
+            {interns.length > 1 && (
+              <label className="block w-full sm:w-56">
+                <span className="sr-only">Intern</span>
+                <select
+                  value={internId}
+                  onChange={(event) => setInternId(event.target.value)}
+                  className="field"
+                >
+                  <option value="">All interns</option>
+                  {interns.filter((intern) => inGroup(intern.student_id)).map((intern) => (
+                    <option key={intern.student_id} value={intern.student_id}>
+                      {intern.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+          </PhoneFilters>
         </div>
 
         {!loading && (
