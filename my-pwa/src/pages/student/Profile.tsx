@@ -304,7 +304,7 @@ export default function StudentProfilePage() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[15px] font-bold text-slate-900">Album</span>
-          <span className="block truncate text-[13px] text-slate-600">Every photo from your reports and every file you uploaded, by month</span>
+          <span className="block truncate text-[13px] text-slate-600">Photos and files, by month</span>
         </span>
         <Icon name="chevron-right" size={18} className="shrink-0 text-slate-400" />
       </Link>

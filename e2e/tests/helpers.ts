@@ -106,7 +106,12 @@ export function shiftAroundNow(): { start_time: string; end_time: string } {
 
 /** Iteration 21: on a phone, Profile's groups open in a sheet; on a wider screen they are all on the page. */
 export async function openProfileGroup(page: Page, title: string): Promise<void> {
-  if ((page.viewportSize()?.width ?? 1280) >= 768) return;
+  if ((page.viewportSize()?.width ?? 1280) >= 768) {
+    // A computer shows one group at a time, chosen in the index beside it.
+    await page.getByRole("navigation", { name: "Profile sections" }).getByRole("link", { name: new RegExp(`^${title}`) }).click();
+    await page.getByRole("heading", { level: 2, name: title, exact: true }).waitFor();
+    return;
+  }
   const row = page.getByRole("list", { name: "Profile" }).getByRole("button", { name: new RegExp(`^${title}`) });
   await row.waitFor();
   await row.click();

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useState, type ReactNode } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import Icon from "../../components/Icon";
 import { Card, Modal } from "../../components/ui";
 import { useMediaQuery } from "../../lib/useMediaQuery";
@@ -11,9 +11,10 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 |
 | Iteration 21. On a phone, a settings-style list: one row per group with a
 | short hint (and "Missing" when something is not filled in); a tap opens
-| the group in a sheet. On a wider screen, two columns: a sticky index of
-| the groups, and the groups themselves. ?group=<id> opens or scrolls to
-| one (a notification's "View supervisor contact" uses ?group=placement).
+| the group in a sheet. On a wider screen, two columns: the index of the
+| groups, and the one group chosen (2026-11-12: all of them stacked made the
+| page six screens long). ?group=<id> opens one (a notification's "View
+| supervisor contact" uses ?group=placement); Account when none is asked.
 | The forms inside are the ones the page always had.
 |
 */
@@ -25,13 +26,6 @@ export default function ProfileGroups({ groups, onSignOut }: { groups: ProfileGr
   const [params, setParams] = useSearchParams();
   const asked = params.get("group");
   const [open, setOpen] = useState<string | null>(phone && asked ? asked : null);
-
-  // Desktop: bring the asked-for group into view.
-  useEffect(() => {
-    if (phone || !asked) return;
-    const frame = requestAnimationFrame(() => document.getElementById(`group-${asked}`)?.scrollIntoView({ block: "start" }));
-    return () => cancelAnimationFrame(frame);
-  }, [phone, asked]);
 
   const close = () => {
     setOpen(null);
@@ -71,16 +65,25 @@ export default function ProfileGroups({ groups, onSignOut }: { groups: ProfileGr
     );
   }
 
+  const current = groups.find((group) => group.id === asked) ?? groups[0];
   return (
     <div className="grid gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
       <nav aria-label="Profile sections" className="self-start md:sticky md:top-4">
         <ul className="space-y-0.5">
           {groups.map((group) => (
             <li key={group.id}>
-              <a href={`#group-${group.id}`} className="flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 text-sm font-medium text-slate-700 hover:bg-white hover:text-slate-900">
+              <Link
+                to={`?group=${group.id}`}
+                replace
+                preventScrollReset
+                aria-current={group === current ? "page" : undefined}
+                className={`flex min-h-11 items-center justify-between gap-2 rounded-lg px-3 text-sm ${
+                  group === current ? "bg-white font-semibold text-psu-900 shadow-card ring-1 ring-inset ring-(--role-hairline)" : "font-medium text-slate-700 hover:bg-white hover:text-slate-900"
+                }`}
+              >
                 {group.title}
                 {group.missing && <span className="status-chip status-chip--late min-h-5 px-2 text-[11px]">Missing</span>}
-              </a>
+              </Link>
             </li>
           ))}
         </ul>
@@ -89,16 +92,14 @@ export default function ProfileGroups({ groups, onSignOut }: { groups: ProfileGr
           Sign out
         </button>
       </nav>
-      <div className="min-w-0 space-y-8">
-        {groups.map((group) => (
-          <section key={group.id} id={`group-${group.id}`} aria-labelledby={`group-${group.id}-title`} className="scroll-mt-4 space-y-4">
-            <h2 id={`group-${group.id}-title`} className="text-base font-semibold text-slate-900">
-              {group.title}
-            </h2>
-            {group.content}
-          </section>
-        ))}
-      </div>
+      {current && (
+        <section key={current.id} id={`group-${current.id}`} aria-labelledby={`group-${current.id}-title`} className="min-w-0 space-y-4">
+          <h2 id={`group-${current.id}-title`} className="text-lg font-bold text-slate-900">
+            {current.title}
+          </h2>
+          {current.content}
+        </section>
+      )}
     </div>
   );
 }
