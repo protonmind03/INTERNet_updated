@@ -544,6 +544,19 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
 .rk--document { --rk: #7c3aed; --rk-soft: #f5f3ff; --rk-line: #ddd6fe; }
 .rk--report { --rk: #be123c; --rk-soft: #fff1f2; --rk-line: #fecdd3; }
 .rk--final { --rk: #a16207; --rk-soft: #fefce8; --rk-line: #fde047; }
+/* Calm pass (2026-11-12): the kinds as one row of chips, each in its colour when chosen. */
+.rk-chips { display: flex; gap: 8px; overflow-x: auto; margin-inline: -16px; padding: 2px 16px; scrollbar-width: none; }
+@media (min-width: 768px) { .rk-chips { flex-wrap: wrap; overflow: visible; margin-inline: 0; padding-inline: 0; } }
+.rk-chip { display: inline-flex; flex-shrink: 0; align-items: center; gap: 7px; min-height: 40px; padding: 0 14px; border-radius: 9999px; background: #fff; color: #334155; font-size: 14px; font-weight: 600; box-shadow: inset 0 0 0 1px var(--role-hairline, #e2e8f0); transition: background-color 150ms, box-shadow 150ms; }
+.rk-chip:hover { box-shadow: inset 0 0 0 1.5px var(--rk-line); }
+.rk-chip-icon { color: var(--rk); }
+.rk-chip-count { display: inline-grid; min-width: 22px; height: 22px; place-items: center; padding: 0 6px; border-radius: 9999px; background: var(--rk-soft); color: var(--rk); font-size: 12.5px; font-weight: 800; }
+.rk-chip--on { background: var(--rk); color: #fff; box-shadow: none; }
+.rk-chip--on .rk-chip-icon { color: #fff; }
+.rk-chip--on .rk-chip-count { background: rgb(255 255 255 / 0.22); color: #fff; }
+.rk-chip--empty:not(.rk-chip--on) { color: #64748b; }
+.rk-chip--empty:not(.rk-chip--on) .rk-chip-count { background: #f1f5f9; color: #64748b; }
+.rk-chip-new { border-radius: 9999px; background: #fef3c7; padding: 1px 7px; color: #92400e; font-size: 11.5px; font-weight: 800; }
 
 /* The strip of kinds. */
 .rk-strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px; }

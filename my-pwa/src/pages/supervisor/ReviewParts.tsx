@@ -93,6 +93,49 @@ export function RegisterSkeleton() {
   );
 }
 
+/* ---------- Today in one line (calm pass, 2026-11-12) ---------- */
+
+/** Who is in, as a line of initials (each opens the intern); "See the day" opens the board or register. */
+export function TodayLine({ interns, logs, onOpen }: { interns: Intern[]; logs: Map<string, AttendanceEntry>; onOpen: () => void }) {
+  const inCount = interns.filter((intern) => findLog(logs, intern.student_id)).length;
+  const shown = interns.slice(0, 10);
+  return (
+    <section aria-label="Today" className="card-hairline flex flex-wrap items-center gap-x-4 gap-y-2 rounded-2xl px-4 py-2.5">
+      <p className="text-[14px] text-slate-700">
+        <b className="tabular text-slate-900">
+          {inCount} of {interns.length}
+        </b>{" "}
+        in today
+      </p>
+      <ul aria-label="Your interns today" className="flex flex-wrap gap-1.5">
+        {shown.map((intern) => {
+          const status = statusOf(findLog(logs, intern.student_id));
+          const present = status.text !== "Not in yet";
+          return (
+            <li key={intern.student_id}>
+              <Link
+                to={`/supervisor/interns/${encodeURIComponent(intern.student_id)}`}
+                aria-label={`${intern.name}: ${status.text}`}
+                title={`${intern.name}: ${status.text}`}
+                className={`grid h-9 w-9 place-items-center rounded-full text-[11.5px] font-extrabold ring-2 ring-inset ${
+                  present ? "bg-psu-600 text-white ring-psu-600" : "bg-white text-slate-500 ring-slate-200"
+                }`}
+              >
+                <span aria-hidden="true">{getInitials(intern.name, "IN")}</span>
+              </Link>
+            </li>
+          );
+        })}
+        {interns.length > shown.length && <li className="grid h-9 place-items-center px-1 text-[12.5px] font-bold text-slate-500">+{interns.length - shown.length}</li>}
+      </ul>
+      <button type="button" onClick={onOpen} className="ml-auto inline-flex min-h-10 items-center gap-1 rounded-lg px-2.5 text-[13.5px] font-bold text-psu-700 hover:bg-psu-50">
+        See the day
+        <Icon name="chevron-right" size={15} />
+      </button>
+    </section>
+  );
+}
+
 /* ---------- The day board (computers): one row per intern on an 8 AM to 5 PM line ---------- */
 
 const START = 8 * 60;
@@ -244,34 +287,23 @@ function lateText(entry: AttendanceEntry): string {
 export function DecisionCard({
   item,
   layout,
-  busy,
-  onVerify,
   onOpen,
-  onRejectChoice,
   grouped = false,
 }: {
   item: QueueItem;
   layout: "card" | "row";
   /** Listed under its kind's heading (sv10-26): the row leads with the intern, not the kind again. */
   grouped?: boolean;
-  busy: boolean;
-  /** The solid main action for an ordinary time-in, or "Confirm on its own" for an offline one. */
-  onVerify: () => void;
-  /** Opens the full decision (the outlined choice, Review, Return). */
+  busy?: boolean;
+  /** Opens the full decision, where Verify, Reject (the photo or the day), Return and the rest live. */
   onOpen: () => void;
-  /** "Reject: photo or day" from one menu; both open the decision with its reason box. */
-  onRejectChoice: (which: "photo" | "day") => void;
 }) {
-  const [menu, setMenu] = useState(false);
   const attendance = item.kind === "attendance" ? item.entry : null;
   const open = attendance ? !attendance.time_out : false;
   const offline = Boolean(attendance?.offline_time_in);
-  const photoRejectable = Boolean(attendance && open && attendance.image_url && String(attendance.date).slice(0, 10) === phToday() && attendance.photo_redo_status !== "required");
 
-  let eyebrow = KIND_LABEL[item.kind];
   let line = "";
   if (attendance) {
-    eyebrow = `Time-in${offline ? " · recorded offline" : ""}`;
     line = `${formatTime(attendance.time_in)}${lateText(attendance)}${open ? " · still on the clock" : attendance.hours ? ` · ${formatHours(attendance.hours)}` : ""}`;
   } else if (item.kind === "task") {
     line = item.entry.title;
@@ -283,67 +315,24 @@ export function DecisionCard({
     line = `Week of ${formatDayDate(item.entry.week_start)}`;
   }
   const chips = attendance ? attendanceChips(attendance) : [];
-  // Each button says which item it acts on, so a screen reader hears more than "Review" again and again.
+  // The button says which item it opens, so a screen reader hears more than "Review" again and again.
   const what = `${KIND_LABEL[item.kind]}${line ? ` · ${line}` : ""}, ${item.entry.student_name}`;
 
-  const actions = attendance ? (
-    <>
-      <span className="relative">
-        <Button variant="outline" onClick={() => setMenu((value) => !value)} aria-haspopup="menu" aria-expanded={menu} disabled={busy}>
-          Reject
-          <Icon name="chevron-down" size={15} />
-        </Button>
-        {menu && (
-          <span role="menu" className="absolute right-0 top-full z-10 mt-1 w-52 overflow-hidden rounded-xl border border-(--role-hairline) bg-white py-1 shadow-raised">
-            {photoRejectable && (
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setMenu(false);
-                  onRejectChoice("photo");
-                }}
-                className="flex min-h-11 w-full items-center px-3.5 text-left text-sm font-medium text-slate-800 hover:bg-slate-50"
-              >
-                Reject the photo
-              </button>
-            )}
-            <button
-              type="button"
-              role="menuitem"
-              onClick={() => {
-                setMenu(false);
-                onRejectChoice("day");
-              }}
-              className="flex min-h-11 w-full items-center px-3.5 text-left text-sm font-medium text-red-700 hover:bg-red-50"
-            >
-              Reject the day
-            </button>
-          </span>
-        )}
-      </span>
-      {open ? (
-        <Button variant="secondary" onClick={onOpen} disabled={busy} aria-label={`Review ${what}`}>
-          Review
-        </Button>
-      ) : (
-        <Button onClick={onVerify} busy={busy} busyProcess="verify" aria-label={`${offline ? "Confirm on its own" : "Verify"} ${what}`}>
-          {offline ? "Confirm on its own" : "Verify"}
-        </Button>
-      )}
-    </>
-  ) : (
-    <>
-      {item.kind !== "absence" && (
-        <Button variant="outline" onClick={onOpen} aria-label={`Return ${what}`}>
-          Return
-        </Button>
-      )}
-      <Button onClick={onOpen} aria-label={`Review ${what}`}>
-        Review
-      </Button>
-    </>
+  /*
+  | Calm pass (2026-11-12): one button a row. Reject, Return and Verify were a
+  | second button on every row (about forty on the page); they are in the
+  | decision this button opens. "Verify all" stays on the Time-ins heading.
+  */
+  const action = (
+    <Button variant={layout === "row" ? "secondary" : "primary"} size={layout === "row" ? undefined : "sm"} onClick={onOpen} aria-label={`Review ${what}`}>
+      Review
+    </Button>
   );
+  const badges = chips.map((chip) => (
+    <span key={chip.text} className={`st-badge st-badge--${chip.tone === "bad" ? "bad" : chip.tone === "info" ? "info" : "neutral"}`}>
+      {chip.text}
+    </span>
+  ));
 
   if (layout === "row") {
     return (
@@ -368,39 +357,30 @@ export function DecisionCard({
           </span>
         </span>
         <span className="flex flex-wrap items-center justify-end gap-2">
-          {chips.map((chip) => (
-            <span key={chip.text} className={`st-badge st-badge--${chip.tone === "bad" ? "bad" : chip.tone === "info" ? "info" : "neutral"}`}>
-              {chip.text}
-            </span>
-          ))}
-          {actions}
+          {badges}
+          {action}
         </span>
       </div>
     );
   }
 
+  // A phone: one compact row, the intern, one line, the button; the kind is said by the heading above.
   return (
-    <article className="card-hairline rounded-2xl p-3.5" aria-label={`${KIND_LABEL[item.kind]}: ${item.entry.student_name}`}>
-      <div className="flex gap-3">
-        <span aria-hidden="true" className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500">
-          <Icon name={offline ? "clock" : KIND_ICON[item.kind]} size={22} />
-        </span>
-        <div className="min-w-0 flex-1">
-          <p className="eyebrow text-slate-600">{eyebrow}</p>
-          <p className="truncate text-[16px] font-bold text-slate-900">{item.entry.student_name}</p>
-          {line && <p className="tabular truncate text-[13.5px] text-slate-600">{line}</p>}
-          {chips.length > 0 && (
-            <p className="mt-1.5 flex flex-wrap gap-1.5">
-              {chips.map((chip) => (
-                <span key={chip.text} className={`st-badge st-badge--${chip.tone === "bad" ? "bad" : chip.tone === "info" ? "info" : "neutral"}`}>
-                  {chip.text}
-                </span>
-              ))}
-            </p>
-          )}
-        </div>
+    <article className="card-hairline flex items-center gap-3 rounded-2xl px-3.5 py-3" aria-label={`${KIND_LABEL[item.kind]}: ${item.entry.student_name}`}>
+      <span aria-hidden="true" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-psu-50 text-[12px] font-extrabold text-psu-800 ring-1 ring-inset ring-psu-100">
+        {getInitials(item.entry.student_name)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-[15px] font-bold text-slate-900">{item.entry.student_name}</p>
+        {(line || offline) && (
+          <p className="tabular truncate text-[13px] text-slate-600">
+            {line}
+            {offline ? " · offline" : ""}
+          </p>
+        )}
+        {badges.length > 0 && <p className="mt-1 flex flex-wrap gap-1.5">{badges}</p>}
       </div>
-      <div className="mt-3 grid grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)] gap-2.5 [&>*]:w-full [&_button]:w-full">{actions}</div>
+      {action}
     </article>
   );
 }

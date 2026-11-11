@@ -20,7 +20,7 @@ import ReviewDetail from "./ReviewDetail";
 import { awaitsReview, bulkSkipReason, countsOnItsOwn } from "./attendanceView";
 import InternGroupSelect from "./InternGroups";
 import { useInternGroups } from "./useInternGroups";
-import { DayBoard, DecidedRow, DecisionCard, RegisterCard, RegisterSkeleton, ThisWeek, type ReviewItem } from "./ReviewParts";
+import { DayBoard, DecidedRow, DecisionCard, RegisterCard, ThisWeek, TodayLine, type ReviewItem } from "./ReviewParts";
 import { todaysLogs } from "./reviewData";
 import { useSupervisorWork, type AttendanceEntry, type QueueItem } from "./useSupervisorWork";
 
@@ -131,17 +131,6 @@ const SORTS: { value: Sort; label: string }[] = [
   { value: "intern", label: "Intern A–Z" },
 ];
 
-/** How long an item has been waiting, in plain words. */
-function waitingText(since: string | undefined): string {
-  const then = since ? new Date(since).getTime() : NaN;
-  if (Number.isNaN(then)) return "";
-  const hours = Math.round((Date.now() - then) / 3_600_000);
-  if (hours < 1) return "Just now";
-  if (hours < 24) return `${hours} h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "From yesterday" : `${days} days old`;
-}
-
 /** When an item started waiting ("" for a final evaluation, which waits on hours, not a date). */
 const sinceOf = (item: ReviewItem) => (item.kind === "final" ? "" : item.waitingSince || "");
 
@@ -223,6 +212,7 @@ export default function SupervisorDashboard() {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
+  const [dayOpen, setDayOpen] = useState(false);
 
   // The queue narrowed by the tools (everything but the kind): what the strip counts.
   const scoped = useMemo(() => {
@@ -349,7 +339,6 @@ export default function SupervisorDashboard() {
   const shownInterns = interns.filter((intern) => inGroup(intern.student_id));
   const firstName = firstNameOf(supervisor?.name);
   const company = supervisor?.company || "your company";
-  const oldestOf = (items: ReviewItem[]) => items.map(sinceOf).filter(Boolean).sort()[0];
 
   /** One waiting item, on its kind's colour: a decision card, or a final evaluation to start. */
   const renderItem = (item: ReviewItem) => {
@@ -380,10 +369,7 @@ export default function SupervisorDashboard() {
             item={item}
             layout={computer ? "row" : "card"}
             grouped={computer}
-            busy={busyKey === item.key}
-            onVerify={() => item.kind === "attendance" && void verifyOne(item)}
             onOpen={() => setSelectedKey(item.key)}
-            onRejectChoice={() => setSelectedKey(item.key)}
           />
         )}
       </div>
@@ -403,15 +389,14 @@ export default function SupervisorDashboard() {
       </span>
     ) : null;
 
-  // The kind strip: Everything first, then each kind in its colour.
+  // The kinds as one row of chips (calm pass, 2026-11-12: they were seven cards, each with an "Oldest …" line).
   const strip = (
-    <div role="tablist" aria-label="What to review" className={computer ? "rk-strip" : "rk-strip rk-strip--scroll"}>
+    <div role="tablist" aria-label="What to review" className="rk-chips">
       {[null, ...KINDS].map((def) => {
         const key: Tab = def ? def.tab : "all";
         const items = def ? ofKind(def) : scoped;
         const on = tab === key;
         const fresh = items.filter((item) => isNew(item.key)).length;
-        const oldest = oldestOf(items);
         return (
           <button
             key={key}
@@ -419,22 +404,12 @@ export default function SupervisorDashboard() {
             role="tab"
             aria-selected={on}
             onClick={() => pickTab(key)}
-            className={`rk-card ${def ? `rk--${def.tone}` : "rk--all"} ${on ? "rk-card--on" : ""} ${items.length === 0 ? "rk-card--empty" : ""}`}
+            className={`rk-chip ${def ? `rk--${def.tone}` : "rk--all"} ${on ? "rk-chip--on" : ""} ${items.length === 0 ? "rk-chip--empty" : ""}`}
           >
-            <span className="rk-card-top">
-              <span className="rk-icon" aria-hidden="true">
-                <Icon name={def ? def.icon : "inbox"} size={17} />
-              </span>
-              <span className="rk-count tabular">{loading ? "…" : items.length}</span>
-            </span>
-            <span className="rk-label">{def ? def.label : "Everything"}</span>
-            <span className="rk-line">
-              {fresh > 0 ? (
-                <b className="rk-fresh">{fresh} new</b>
-              ) : def?.kind === "attendance" && items.length === 0 && counting.length > 0 ? (
-                `${counting.length} count on their own`
-              ) : def?.kind === "final" ? (items.length ? "Ready to start" : "None due") : oldest ? `Oldest ${waitingText(oldest).toLowerCase()}` : "Nothing waiting"}
-            </span>
+            <Icon name={def ? def.icon : "inbox"} size={15} className="rk-chip-icon" />
+            {def ? def.label : "All"}
+            <span className="rk-chip-count tabular">{loading ? "…" : items.length}</span>
+            {fresh > 0 && <span className="rk-chip-new">{fresh} new</span>}
           </button>
         );
       })}
@@ -526,7 +501,6 @@ export default function SupervisorDashboard() {
               </span>
               <h3 className="text-[14.5px] font-bold text-slate-900">{def.label}</h3>
               <span className="rk-pill tabular">{items.length}</span>
-              <span className="hidden text-[12.5px] text-slate-600 sm:inline">{def.job}</span>
               <span className="ml-auto flex items-center gap-1">
                 {def.bulk && def.bulk !== "attendance" && bulkButton(def.bulk, true)}
                 <button type="button" onClick={() => pickTab(def.tab)} className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2.5 text-[13px] font-bold text-slate-700 hover:bg-white">
@@ -609,14 +583,8 @@ export default function SupervisorDashboard() {
       <div className="space-y-4">
         {work.error && <ErrorNotice message={work.error} onRetry={() => void work.reload()} />}
 
-        {computer ? (
-          // The day as a whole on Everything; a chosen kind opens straight on its list.
-          tab === "all" && !loading && shownInterns.length > 0 && <DayBoard company={company} interns={shownInterns} logs={logs} now={now} />
-        ) : loading ? (
-          <RegisterSkeleton />
-        ) : (
-          shownInterns.length > 0 && <RegisterCard interns={shownInterns} logs={logs} />
-        )}
+        {/* Today in one line on Everything (it was a board as tall as the queue's first screen); "See the day" opens it. */}
+        {tab === "all" && !loading && shownInterns.length > 0 && <TodayLine interns={shownInterns} logs={logs} onOpen={() => setDayOpen(true)} />}
 
         <section aria-labelledby="review-title" className="space-y-3">
           <h2 id="review-title" className="sr-only">
@@ -651,10 +619,6 @@ export default function SupervisorDashboard() {
                     <h2 id="to-verify-title" className="font-display text-[21px] font-extrabold leading-tight text-slate-900">
                       {title} <span className="tabular text-slate-500">· {visible.length}</span>
                     </h2>
-                    <span className="block text-[13px] text-slate-600">
-                      {chosen ? chosen.job : "Every kind, oldest first within each"}
-                      {oldestOf(visible) ? ` · oldest ${waitingText(oldestOf(visible)).toLowerCase()}` : ""}
-                    </span>
                   </span>
                   <span className="ml-auto">{headBulk}</span>
                 </div>
@@ -692,7 +656,6 @@ export default function SupervisorDashboard() {
           <div className="card-hairline flex items-center gap-3 rounded-2xl px-4 py-3 shadow-raised">
             <span className="min-w-0 flex-1">
               <span className="block text-[15px] font-bold text-slate-900">Verify the {verifiable.length} ordinary time-ins</span>
-              <span className="block text-[13px] text-slate-600">Offline ones stay for you to check</span>
             </span>
             <Button onClick={() => setConfirmBulk("attendance")}>Verify {verifiable.length}</Button>
           </div>
@@ -711,6 +674,10 @@ export default function SupervisorDashboard() {
             onDecided={() => setCountingOpenId(null)}
           />
         )}
+      </Modal>
+
+      <Modal open={dayOpen} onClose={() => setDayOpen(false)} title="Today" size="lg">
+        {computer ? <DayBoard company={company} interns={shownInterns} logs={logs} now={now} /> : <RegisterCard interns={shownInterns} logs={logs} />}
       </Modal>
 
       <RecordTimeIn open={recording} onClose={() => setRecording(false)} work={work} />
