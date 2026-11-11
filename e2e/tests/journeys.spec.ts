@@ -563,7 +563,7 @@ test.describe("what a student reads about their days", () => {
     await expect(page.getByRole("list", { name: "Milestones" }).getByRole("listitem")).toHaveCount(4);
     await expect(page.getByText(/^Since last week:/)).toBeVisible();
     await expect(page.getByRole("img", { name: /^Burn-up chart/ })).toBeVisible();
-    await expect(page.getByText(/^If you keep to your schedule\./)).toBeVisible();
+    await expect(page.getByText(/^Grey: your plan\./)).toBeVisible();
 
     // The time record: the Civil Service columns.
     await page.goto("/time-record");
