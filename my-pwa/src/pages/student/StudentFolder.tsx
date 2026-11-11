@@ -58,7 +58,7 @@ export default function StudentFolder({
   counts?: Record<string, number | undefined>;
   children: ReactNode;
 }) {
-  const shown: Label = label ?? { icon: hub?.icon ?? "folder", title: hub?.label ?? "", line: tab?.blurb };
+  const shown: Label = label ?? { icon: hub?.icon ?? "folder", title: hub?.label ?? "" };
   const tabs = hub?.tabs ?? [];
   const labelRepeatsTitle = typeof shown.title === "string" && shown.title === pageTitle;
   const tabsAway = useAwayWhileScrollingDown();

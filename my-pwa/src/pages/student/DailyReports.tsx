@@ -280,7 +280,6 @@ function DayReport({
             <label htmlFor={`day-summary-${day}`} className="text-[14.5px] font-bold text-slate-900">
               Your report for the day
             </label>
-            <p className="text-[12.5px] text-slate-600 max-md:hidden">What you did, what you learned, anything worth remembering for your narrative report.</p>
             {summary === null ? (
               <SkeletonRows rows={2} />
             ) : (
@@ -312,7 +311,7 @@ function DayReport({
         </div>
         {entries.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-psu-200 bg-white/60 px-4 py-5 text-center text-[14px] text-slate-600">
-            Something worth reporting happened? Add it as an event, with photos, while you remember it.
+            No events yet.
           </p>
         ) : (
           <ol className="relative space-y-3 before:absolute before:bottom-2 before:left-[17px] before:top-2 before:w-0.5 before:bg-psu-100">

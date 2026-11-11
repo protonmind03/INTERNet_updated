@@ -248,9 +248,6 @@ export default function ConcernsPanel() {
           <form onSubmit={submit} className="space-y-5 p-4 sm:p-5" noValidate>
             <div>
               <h2 className="text-[16px] font-bold text-slate-900">Report a concern</h2>
-              <p className="mt-0.5 text-sm text-slate-500 max-md:hidden">
-                Tell your OJT coordinator about a problem at your placement.
-              </p>
             </div>
             <fieldset>
               <legend className="mb-2 text-sm font-medium text-slate-700">

@@ -234,9 +234,6 @@ export default function DtrSheet({
         <Button icon="printer" onClick={() => window.print()} disabled={loading}>
           Print
         </Button>
-        <p className="text-sm text-slate-500 max-md:hidden">
-          In the print dialog you can also choose "Save as PDF".
-        </p>
       </div>
 
       {onCertify && !loading && (

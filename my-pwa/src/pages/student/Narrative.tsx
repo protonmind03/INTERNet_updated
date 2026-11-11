@@ -126,7 +126,6 @@ function NarrativePage() {
               <p className="text-[15.5px] font-extrabold text-slate-900">
                 {written} of {WRITABLE.length} parts written · {ready} of {requirements.length} requirements ready
               </p>
-              <p className="text-[13px] text-slate-600 max-md:hidden">Everything saves as you type. Print or download whenever you like; nothing is sent anywhere.</p>
             </div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -156,7 +155,7 @@ function NarrativePage() {
                       <span className={`min-w-0 flex-1 truncate ${heading ? "font-extrabold text-slate-900" : "font-semibold"}`}>{part.title}</span>
                       {/* "You write" on nearly every row was noise on a phone: only the exceptions and finished parts show there. */}
                       {!heading && (
-                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${part.source === "write" && !done ? "max-md:hidden " : ""}${on ? "bg-white/20" : done && part.source === "write" ? "bg-emerald-100 text-emerald-900" : SOURCE_CHIP[part.source].className}`}>
+                        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-bold ${part.source === "write" && !done ? "hidden " : ""}${on ? "bg-white/20" : done && part.source === "write" ? "bg-emerald-100 text-emerald-900" : SOURCE_CHIP[part.source].className}`}>
                           {done && part.source === "write" ? "Written" : SOURCE_CHIP[part.source].label}
                         </span>
                       )}
@@ -412,7 +411,7 @@ function PartEditor({
         )}
         {prompts && text !== null && (
           <div>
-            <p className="mb-1.5 text-[12.5px] font-bold text-slate-600">Not sure where to start? Tap a question to begin a sentence:</p>
+            <p className="mb-1.5 text-[12.5px] font-bold text-slate-600">Start with:</p>
             <div className="flex flex-wrap gap-1.5">
               {prompts.map((prompt) => (
                 <button

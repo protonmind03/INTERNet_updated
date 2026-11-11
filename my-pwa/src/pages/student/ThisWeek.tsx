@@ -94,7 +94,7 @@ export default function ThisWeek({ logs, now, loading }: { logs: AttendanceLog[]
               <>
                 <span className="text-[11.5px] font-bold uppercase text-slate-500">{formatPhDay(day.key, { weekday: "short" })}</span>
                 <span className="font-display tabular text-[18px] font-extrabold leading-none text-slate-900">{formatPhDay(day.key, { day: "numeric" })}</span>
-                <span title={day.stamp.word} className={`mt-1 inline-flex max-w-full items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-tight sm:text-[11px] ${day.stamp.className}`}>
+                <span title={day.stamp.word} className={`mt-1 inline-flex ${day.stamp.word === "None" ? "invisible" : ""} max-w-full items-center gap-0.5 rounded-full px-1.5 py-0.5 text-[10px] font-bold leading-tight sm:text-[11px] ${day.stamp.className}`}>
                   <Icon name={day.stamp.icon} size={11} className="shrink-0" />
                   <span className="truncate max-sm:sr-only">{day.stamp.word}</span>
                 </span>
@@ -124,7 +124,6 @@ export default function ThisWeek({ logs, now, loading }: { logs: AttendanceLog[]
           })}
         </ol>
       )}
-      <p className="mt-2 text-[12.5px] text-slate-600 max-md:hidden">Each bar is the day's hours against an 8-hour day. Tap a day to open it.</p>
     </section>
   );
 }

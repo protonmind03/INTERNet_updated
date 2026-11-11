@@ -196,14 +196,13 @@ export default function ScheduleProgress({
           ? { word: "On pace", tone: "good", line: `You are keeping up with your schedule${pace > planned * 1.05 ? `, ${round1(pace - planned)} hours a week ahead` : ""}.` }
           : startedRecently
             ? { word: "Getting started", tone: "info", line: "You started less than four weeks ago, so this average is still filling in." }
-            : { word: "Behind", tone: "bad", line: `About ${round1(planned - pace)} hours a week short of your schedule. Days not worked push your finish later.` };
+            : { word: "Behind", tone: "bad", line: `${round1(planned - pace)} h a week short of your schedule.` };
   const paceTop = Math.max(planned, pace, 1);
 
   const shown = hover !== null ? series.points[hover] : null;
   const summary = `${formatHours(verifiedNow)} verified of ${formatHours(required)} required. ${
     series.finish ? `Projected finish ${formatDayDate(series.finish)}.` : "No projected finish yet."
   }`;
-  const finishWords = series.finish ? formatPh(new Date(`${series.finish}T12:00:00+08:00`), { month: "long", day: "numeric", year: "numeric" }) : null;
   const short = (date: string) => formatPh(new Date(`${date}T12:00:00+08:00`), { month: "short", day: "numeric" });
 
   const share = (hours: number) => (required > 0 ? Math.min(100, (hours / required) * 100) : 0);
@@ -239,13 +238,6 @@ export default function ScheduleProgress({
             </div>
           </dl>
         </div>
-        <p className="px-4 pt-2 text-[14px] leading-relaxed text-slate-700 max-md:hidden sm:px-5">
-          {required === 0
-            ? "Your required hours have not been set yet."
-            : left === 0
-              ? `You have completed your ${required} required hours.`
-              : `${verifiedNow === 0 ? "No hours are verified yet" : `${percent}% of the way there`}${pendingNow > 0 ? `; ${round1(pendingNow)} more ${pendingNow === 1 ? "hour is" : "hours are"} waiting for your supervisor` : ""}. Keeping to your schedule, you finish${finishWords ? ` on ${finishWords}` : " once your schedule is set"}.`}
-        </p>
 
         {/* The road: paved where verified, dashed where waiting; milestones are its stops. */}
         <div className="journey px-4 pb-5 pt-9 sm:px-6">
@@ -327,7 +319,6 @@ export default function ScheduleProgress({
               <h2 id="pace" className="text-[16px] font-extrabold text-slate-900">
                 Your pace
               </h2>
-              <p className="mt-0.5 text-[13px] text-slate-600 max-md:hidden">Hours a week: your schedule, and what you did lately.</p>
             </div>
             <span className={`inb-stamp attention-stamp inb-stamp--${paceVerdict.tone}`}>{paceVerdict.word}</span>
           </div>

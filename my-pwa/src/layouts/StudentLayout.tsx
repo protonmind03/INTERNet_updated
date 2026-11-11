@@ -16,7 +16,6 @@ import { pendingPhotos, usePendingPhotoSender } from "../lib/pendingPhotos";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useSpotlightParam } from "../lib/spotlight";
 import { useWaitingCount } from "../lib/useWaitingCount";
-import { useMediaQuery } from "../lib/useMediaQuery";
 import type { IconName } from "../components/Icon";
 import { HUBS, hubAddresses, hubFor, type HubId } from "../pages/student/hubs";
 import ScanButton from "../pages/student/ScanButton";
@@ -86,7 +85,7 @@ export type FolderLabel = { icon: IconName; title: ReactNode; line?: ReactNode }
 
 type LayoutProps = {
   title: string;
-  /** The line under the title; the trainee's company when not given. */
+  /** Not shown since the 2026-11-12 trim: the header's line is always the company, and the page's tabs say the rest. */
   subtitle?: string;
   /** The page's own buttons, at the right of the folder's label (every width). */
   actions?: ReactNode;
@@ -115,7 +114,7 @@ export default function StudentLayout(props: LayoutProps) {
   );
 }
 
-function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderLabel, children }: LayoutProps) {
+function StudentChrome({ title, actions, showPhotoRedo = true, folderLabel, children }: LayoutProps) {
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const inHub = hubFor(pathname, search);
@@ -129,9 +128,6 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
   // Report photos kept on this phone are sent whenever it comes back online, from any page.
   usePendingPhotoSender();
   const [unsentPhotos, setUnsentPhotos] = useState(0);
-  // Phone pass (2026-11-12): on a phone the header's one line is the company, short and always
-  // whole; the page's longer subtitle was cut off there, and the folder's tabs already say where you are.
-  const tablet = useMediaQuery("(min-width: 768px)");
   useEffect(() => {
     if (!confirmSignOut) return;
     let current = true;
@@ -172,7 +168,7 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
   const more = MORE.map((group) => ({ ...group, items: group.items.map((item) => ({ ...item, count: folderCount(item.path, counts) })) }));
   // The side menu lists the folders, the same five as the dock and More.
   const side: SideItem[] = [...dock, ...more.flatMap((group) => group.items)].map((item) => ({ label: item.label, path: item.path, icon: item.icon, count: item.count, also: item.also }));
-  const plainLabel: FolderLabel = folderLabel ?? { icon: PLAIN_ICON[pathname] ?? "folder", title, line: subtitle ?? student.company ?? undefined };
+  const plainLabel: FolderLabel = folderLabel ?? { icon: PLAIN_ICON[pathname] ?? "folder", title };
   const programLine = [student.student_id, student.program].filter(Boolean).join(" · ");
 
   return (
@@ -180,7 +176,7 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
       <RoleShell
         role="student"
         title={title}
-        context={tablet ? (subtitle ?? student.company ?? undefined) : (student.company ?? undefined)}
+        context={student.company ?? undefined}
         headerRight={
           <>
             <ScanButton />

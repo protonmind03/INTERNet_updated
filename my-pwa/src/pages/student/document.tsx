@@ -124,10 +124,6 @@ export default function Documents() {
   const approved = requirements.filter(
     (item) => stateOf(latestByType.get(item.name)) === "approved"
   ).length;
-  const needsAction = requirements.filter((item) => {
-    const state = stateOf(latestByType.get(item.name));
-    return state === "missing" || state === "rejected";
-  }).length;
   const inState = (wanted: RequirementState) => requirements.filter((item) => stateOf(latestByType.get(item.name)) === wanted).length;
 
   const startUpload = (docType: string, item: WeeklyItem | null = null) => {
@@ -241,9 +237,6 @@ export default function Documents() {
                 { label: "Returned to you", count: inState("rejected"), icon: "refresh", tone: inState("rejected") > 0 ? "danger" : "neutral" },
               ]}
             />
-            <p className="text-sm text-slate-600">
-              {needsAction === 0 ? "Nothing left to upload." : `${needsAction} still ${needsAction === 1 ? "needs" : "need"} your upload.`}
-            </p>
           </div>
         )}
 
@@ -257,7 +250,7 @@ export default function Documents() {
           </span>
           <span className="min-w-0 flex-1">
             <span className="block text-[15px] font-extrabold text-slate-900">Fill and print the pre-OJT forms</span>
-            <span className="block text-[13px] text-slate-600">Application, Consent, Release and Waiver, filled in from your record in the university's formats. Sign, then upload them here.</span>
+            <span className="block text-[13px] text-slate-600">Application, Consent, Release, Waiver</span>
           </span>
           <Icon name="chevron-right" size={18} className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5" />
         </Link>
@@ -301,7 +294,7 @@ export default function Documents() {
           <Card>
             <CardHeader icon="calendar"
               title="Weekly requirements"
-              description="One upload for each week, due on its Sunday. These are separate from your weekly report."
+              description="Separate from your weekly report"
             />
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
               {weeksShown.map((item) => {
@@ -366,7 +359,6 @@ export default function Documents() {
           <Card>
             <CardHeader icon="inbox"
               title="Upload history"
-              description="Every file you have submitted, newest first"
             />
             <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
               {documents.map((item) => (

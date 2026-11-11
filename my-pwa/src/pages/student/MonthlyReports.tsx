@@ -254,12 +254,12 @@ function MonthWords({ studentId, month, saved, onPrint }: { studentId: string; m
             ["summary", "Summary of the month", "What the month was about: your main work and how you grew."],
             ["highlights", "Highlights", "The moments worth keeping for your narrative report."],
           ] as const
-        ).map(([field, label, hint]) => (
+        ).map(([field, label]) => (
           <div key={field}>
             <label htmlFor={`month-${field}`} className="text-[14.5px] font-bold text-slate-900">
               {label}
             </label>
-            <p className="text-[12.5px] text-slate-600">{hint}</p>
+
             <textarea
               id={`month-${field}`}
               rows={6}

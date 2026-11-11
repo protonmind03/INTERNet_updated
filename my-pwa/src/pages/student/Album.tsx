@@ -115,7 +115,7 @@ export default function Album() {
   };
 
   return (
-    <StudentLayout title="Album" subtitle="Every photo and file you have in INTERNet" folderLabel={{ icon: "album", title: "Album", line: "Your photos and files, by month" }}>
+    <StudentLayout title="Album" subtitle="Every photo and file you have in INTERNet" folderLabel={{ icon: "album", title: "Album" }}>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <Link to="/profile" className="inline-flex min-h-11 items-center gap-1 text-sm font-bold text-psu-700 hover:underline">
           <Icon name="chevron-left" size={16} />
