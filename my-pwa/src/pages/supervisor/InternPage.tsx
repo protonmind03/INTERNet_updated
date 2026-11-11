@@ -441,7 +441,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
       <Card>
         <CardHeader icon="calendar"
           title="Weekly schedule"
-          description={shifts?.[0]?.pattern_weeks === 2 ? "Week 1 and week 2 take turns." : undefined}
+          description={shifts?.[0]?.pattern_weeks === 2 ? "Repeats every two weeks: week 1 and week 2 take turns." : undefined}
         />
         {schedules === null ? (
           <SkeletonRows rows={3} />
