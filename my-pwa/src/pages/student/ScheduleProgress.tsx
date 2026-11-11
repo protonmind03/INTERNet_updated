@@ -239,7 +239,7 @@ export default function ScheduleProgress({
             </div>
           </dl>
         </div>
-        <p className="px-4 pt-2 text-[14px] leading-relaxed text-slate-700 sm:px-5">
+        <p className="px-4 pt-2 text-[14px] leading-relaxed text-slate-700 max-md:hidden sm:px-5">
           {required === 0
             ? "Your required hours have not been set yet."
             : left === 0
@@ -289,7 +289,7 @@ export default function ScheduleProgress({
           <h2 id="hours-where" className="text-[16px] font-extrabold text-slate-900">
             Where your hours are
           </h2>
-          <p className="mt-0.5 text-[13px] text-slate-600">Only verified hours count toward your {required || "required"} hours.</p>
+          <p className="mt-0.5 text-[13px] text-slate-600">Only verified hours count.</p>
           <div aria-hidden="true" className="mt-3 flex h-3.5 overflow-hidden rounded-full bg-psu-100">
             <span className="bg-psu-700" style={{ width: `${verifiedShare}%` }} />
             <span className="hours-waiting" style={{ width: `${pendingShare}%` }} />
@@ -297,16 +297,16 @@ export default function ScheduleProgress({
           </div>
           <ul className="mt-3 divide-y divide-(--role-hairline) text-[14px]">
             {[
-              { key: "Verified", value: verifiedNow, swatch: "bg-psu-700", line: "Counted toward your hours." },
-              { key: "Waiting", value: pendingNow, swatch: "hours-waiting", line: "Counted once your supervisor verifies them, or on their own two working days after a clean day." },
+              { key: "Verified", value: verifiedNow, swatch: "bg-psu-700", line: "" },
+              { key: "Waiting", value: pendingNow, swatch: "hours-waiting", line: "Counts once verified, or by itself two working days after a clean day." },
               { key: "Needs a fix", value: toFix, swatch: "bg-(--status-late-ink)", line: toFixDays > 0 ? `${toFixDays} ${toFixDays === 1 ? "day was" : "days were"} rejected or flagged.` : "Nothing rejected or flagged." },
-              { key: "Still to go", value: left, swatch: "bg-psu-100 ring-1 ring-inset ring-psu-300", line: "What is left of your required hours." },
+              { key: "Still to go", value: left, swatch: "bg-psu-100 ring-1 ring-inset ring-psu-300", line: "" },
             ].map((row) => (
               <li key={row.key} className="flex items-start gap-3 py-2">
                 <span aria-hidden="true" className={`mt-1.5 h-2.5 w-2.5 shrink-0 rounded-full ${row.swatch}`} />
                 <div className="min-w-0 flex-1">
                   <p className="font-bold text-slate-900">{row.key}</p>
-                  <p className="text-[12.5px] text-slate-600">{row.line}</p>
+                  {row.line && <p className="text-[13px] text-slate-600">{row.line}</p>}
                 </div>
                 <p className="tabular shrink-0 text-[15px] font-extrabold text-slate-900">{round1(row.value)} h</p>
               </li>
@@ -327,7 +327,7 @@ export default function ScheduleProgress({
               <h2 id="pace" className="text-[16px] font-extrabold text-slate-900">
                 Your pace
               </h2>
-              <p className="mt-0.5 text-[13px] text-slate-600">Hours a week: your schedule, and what you did lately.</p>
+              <p className="mt-0.5 text-[13px] text-slate-600 max-md:hidden">Hours a week: your schedule, and what you did lately.</p>
             </div>
             <span className={`inb-stamp attention-stamp inb-stamp--${paceVerdict.tone}`}>{paceVerdict.word}</span>
           </div>
@@ -367,7 +367,7 @@ export default function ScheduleProgress({
         <h2 id="over-time" className="text-[16px] font-extrabold text-slate-900">
           Hours over time
         </h2>
-        <p className="mt-0.5 text-[13px] text-slate-600">If you keep to your schedule. The grey line is your plan, the solid line your verified hours.</p>
+        <p className="mt-0.5 text-[13px] text-slate-600">Grey: your plan. Solid: your verified hours.</p>
         <div className="relative mt-2">
           <svg
             viewBox={`0 0 ${WIDTH} ${HEIGHT}`}

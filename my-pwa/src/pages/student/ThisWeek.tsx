@@ -124,7 +124,7 @@ export default function ThisWeek({ logs, now, loading }: { logs: AttendanceLog[]
           })}
         </ol>
       )}
-      <p className="mt-2 text-[12.5px] text-slate-600">Each bar is the day's hours against an 8-hour day. Tap a day to open it.</p>
+      <p className="mt-2 text-[12.5px] text-slate-600 max-md:hidden">Each bar is the day's hours against an 8-hour day. Tap a day to open it.</p>
     </section>
   );
 }

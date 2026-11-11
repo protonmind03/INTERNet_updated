@@ -1218,3 +1218,16 @@ a:hover .ic-accent, button:hover .ic-accent { --ic-accent-o: 0.45; }
    (WCAG 2.5.3, label in name). */
 .css-label::before { content: attr(data-short); }
 .role-dock-badge--css::before { content: attr(data-count); }
+
+/* Trainee phone pass (2026-11-12): more air between a page's cards on a phone. The page's own
+   top-level stack (space-y-3/4/5 straight inside the folder) opens to 24 px, and the cards inside
+   a group to 16 px, so each feature reads as its own block. Tablets and computers keep theirs. */
+@media (max-width: 767px) {
+  [data-role="student"] .student-folder > div:last-child > :is(.space-y-3, .space-y-4, .space-y-5, .space-y-6) > :not(:last-child) { margin-block-end: 1.5rem; }
+  [data-role="student"] .student-folder > div:last-child > :is(.space-y-3, .space-y-4, .space-y-5, .space-y-6) > :is(.space-y-2, .space-y-3) > :not(:last-child) { margin-block-end: 1rem; }
+  [data-role="student"] .student-folder > div:last-child > :is(.grid, .flex-col) { gap: 1.5rem; }
+}
+@media (max-width: 767px) {
+  /* An empty card on a trainee's phone: a short note, not half a screen. */
+  [data-role="student"] .empty-state { padding-block: 1.25rem; }
+}

@@ -184,7 +184,8 @@ export default function AttentionCard({
                 <span className={`inb-stamp attention-stamp ${STAMP_TONE[top.urgency]}`}>{stampWords(top)}</span>
                 <p className="mt-2.5 text-[17px] font-extrabold leading-snug tracking-tight text-slate-900 sm:text-[18px]">{top.title}</p>
                 <p className="mt-1 line-clamp-2 text-[14px] text-slate-600">{top.detail}</p>
-                <p className="mt-1.5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-700">
+                {/* The stamp already says "Overdue 18 days" or "Due today": the line under it would only repeat it. */}
+                <p className={`mt-1.5 inline-flex items-center gap-1.5 text-[13px] font-semibold text-slate-700 ${(top.urgency === "now" && /^overdue/i.test(top.when)) || top.when === "Due today" ? "sr-only" : ""}`}>
                   <Icon name={top.urgency === "soon" ? "calendar" : "clock"} size={14} />
                   {top.when}
                   <span className="sr-only">. {URGENCY_WORD[top.urgency]}.</span>

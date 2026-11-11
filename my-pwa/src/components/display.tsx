@@ -123,9 +123,46 @@ export type SummaryTile<T extends string> = { value: T; label: string; count: nu
  * Counts that are also the filter: each tile is a choice, its number says
  * how many it would show. One is pressed; "All" is usually the first.
  */
-export function SummaryTiles<T extends string>({ label, tiles, value, onChange }: { label: string; tiles: SummaryTile<T>[]; value: T; onChange: (value: T) => void }) {
+export function SummaryTiles<T extends string>({
+  label,
+  tiles,
+  value,
+  onChange,
+  phoneChips = false,
+}: {
+  label: string;
+  tiles: SummaryTile<T>[];
+  value: T;
+  onChange: (value: T) => void;
+  /** Under 768 px, one row of chips ("To do 3") instead of a grid of tiles (the trainee's phone pass). */
+  phoneChips?: boolean;
+}) {
   return (
-    <div role="group" aria-label={label} className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))]">
+    <>
+    {phoneChips && (
+      <div role="group" aria-label={label} className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-0.5 md:hidden [scrollbar-width:none]">
+        {tiles.map((tile) => {
+          const on = tile.value === value;
+          return (
+            <button
+              key={tile.value}
+              type="button"
+              aria-pressed={on}
+              onClick={() => onChange(tile.value)}
+              className={`inline-flex h-10 shrink-0 items-center gap-2 rounded-full px-4 text-[14px] font-semibold ${
+                on ? "bg-psu-700 text-white" : "bg-white text-slate-700 ring-1 ring-inset ring-(--role-hairline)"
+              }`}
+            >
+              {tile.label}
+              <span className={`tabular inline-grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[12px] font-bold ${on ? "bg-white/25 text-white" : "bg-psu-100 text-psu-900"}`}>
+                {tile.count ?? "–"}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    )}
+    <div role="group" aria-label={label} className={`grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] ${phoneChips ? "max-md:hidden" : ""}`}>
       {tiles.map((tile) => {
         const on = tile.value === value;
         return (
@@ -147,6 +184,7 @@ export function SummaryTiles<T extends string>({ label, tiles, value, onChange }
         );
       })}
     </div>
+    </>
   );
 }
 

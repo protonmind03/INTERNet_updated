@@ -280,7 +280,7 @@ function DayReport({
             <label htmlFor={`day-summary-${day}`} className="text-[14.5px] font-bold text-slate-900">
               Your report for the day
             </label>
-            <p className="text-[12.5px] text-slate-600">What you did, what you learned, anything worth remembering for your narrative report.</p>
+            <p className="text-[12.5px] text-slate-600 max-md:hidden">What you did, what you learned, anything worth remembering for your narrative report.</p>
             {summary === null ? (
               <SkeletonRows rows={2} />
             ) : (

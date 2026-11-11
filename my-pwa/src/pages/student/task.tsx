@@ -134,7 +134,7 @@ export default function MyTasks() {
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         <div className="w-full">
-          <SummaryTiles
+          <SummaryTiles phoneChips
             label="Filter tasks"
             value={filter}
             onChange={setFilter}
@@ -236,7 +236,8 @@ function TaskCard({
         <h2 className="min-w-0 flex-1 text-base font-semibold text-slate-900">
           {task.title}
         </h2>
-        {!sameAsTab && (
+        {/* Overdue is said by the red due line under the title. */}
+        {!sameAsTab && !late && (
           <StatusBadge
             status={status}
             tone={late ? "bad" : open && task.review_notes ? "waiting" : open ? "neutral" : undefined}

@@ -141,7 +141,7 @@ export default function WeeklyJournal() {
     <>
       <div className="space-y-5 print:hidden">
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-white px-4 py-3 ring-1 ring-inset ring-(--role-hairline)">
-          <p className="text-[13.5px] text-slate-600">Once a week, write what you did, what you learned and the problems you met. Your supervisor reviews it.</p>
+          <p className="text-[13.5px] text-slate-600 max-md:hidden">Once a week, write what you did, what you learned and the problems you met. Your supervisor reviews it.</p>
           <PracticumWeeklyReport journals={journals} />
         </div>
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
@@ -169,7 +169,7 @@ export default function WeeklyJournal() {
               <EmptyState
                 icon="note"
                 title="Nothing written for this week yet"
-                description="You can write it any day this week, and change it until your supervisor has reviewed it."
+                description="You can change it until your supervisor reviews it."
               />
             )}
           </div>

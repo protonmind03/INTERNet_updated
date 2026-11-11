@@ -129,7 +129,7 @@ export function attentionItems({
       key: `task:${task.id}:${task.due_date}`,
       icon: "tasks",
       title: task.title,
-      detail: days < 0 ? "Task past its due date" : "Task due today",
+      detail: "Task",
       urgency: days < 0 ? "now" : "today",
       when: days < 0 ? overdueWords(days) : "Due today",
       why: "Your supervisor is waiting for this work, and late work can count against your evaluation.",

@@ -85,6 +85,8 @@ export default function StudentFolder({
             aria-label={`${hub?.label ?? ""} parts`}
             className="sticky top-[calc(var(--inb-top-inset,0px)+var(--phone-header-h,76px))] z-20 -mx-4 mb-3 flex gap-1 overflow-x-auto bg-(--role-surface)/95 px-4 py-2 shadow-[0_1px_0_var(--role-hairline)] backdrop-blur-sm md:static md:z-auto md:mx-0 md:mb-0 md:shadow-none md:backdrop-blur-none md:min-w-0 md:flex-1 md:items-center md:rounded-none md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
           >
+            {/* On a phone the parts are one segmented bar, so they never look like the page's filter chips. */}
+            <div className="flex min-w-max flex-1 gap-0.5 rounded-full bg-white p-1 ring-1 ring-inset ring-(--role-hairline) md:contents">
             {tabs.map((item) => {
               const on = item === tab;
               const count = counts[item.path.split("?")[0]] ?? 0;
@@ -94,8 +96,8 @@ export default function StudentFolder({
                   to={item.path}
                   aria-current={on ? "page" : undefined}
                   aria-label={item.short ? `${item.label}${count > 0 ? `, ${count} waiting` : ""}` : undefined}
-                  className={`relative flex h-10 min-w-[56px] flex-auto shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold transition-colors md:h-10 md:flex-none md:flex-row md:gap-[7px] md:rounded-full md:pl-[11px] md:pr-[13px] md:text-[13.5px] pointer-coarse:md:h-11 ${
-                    on ? "bg-psu-800 text-white shadow-raised md:bg-white md:text-psu-900" : "bg-white text-slate-700 ring-1 ring-inset ring-(--role-hairline) hover:text-slate-900 md:bg-transparent md:text-slate-600 md:ring-0 md:hover:bg-white/60"
+                  className={`relative flex h-9 min-w-[56px] flex-auto shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold transition-colors md:h-10 md:flex-none md:flex-row md:gap-[7px] md:rounded-full md:pl-[11px] md:pr-[13px] md:text-[13.5px] pointer-coarse:md:h-11 ${
+                    on ? "bg-psu-800 text-white shadow-raised md:bg-white md:text-psu-900" : "text-slate-600 hover:text-slate-900 md:hover:bg-white/60"
                   }`}
                 >
                   <Icon name={item.icon} size={16} className={`max-md:hidden ${on ? "text-psu-700" : "text-slate-500"}`} />
@@ -116,9 +118,10 @@ export default function StudentFolder({
                 </Link>
               );
             })}
+            </div>
           </nav>
         )}
-        {actions && <div className="flex flex-wrap items-center justify-end gap-2 pb-3 md:ml-auto md:bg-(--folder-paper) md:bg-transparent md:px-1 md:pb-2.5">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center justify-end gap-2 pb-3 md:ml-auto md:bg-transparent md:px-1 md:pb-2.5">{actions}</div>}
       </div>
 
       {/* The open part, on the folder's paper. */}

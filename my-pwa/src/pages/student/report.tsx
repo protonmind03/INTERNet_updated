@@ -166,9 +166,9 @@ export default function ConcernsPanel() {
         }
       : {
           person: "Supervisor's name",
-          personHint: "The supervisor this concern is about",
+          personHint: "",
           context: "Company or host institution",
-          contextHint: "Where it happened",
+          contextHint: "",
         };
 
   const submit = async (event: React.FormEvent) => {
@@ -248,7 +248,7 @@ export default function ConcernsPanel() {
           <form onSubmit={submit} className="space-y-5 p-4 sm:p-5" noValidate>
             <div>
               <h2 className="text-[16px] font-bold text-slate-900">Report a concern</h2>
-              <p className="mt-0.5 text-sm text-slate-500">
+              <p className="mt-0.5 text-sm text-slate-500 max-md:hidden">
                 Tell your OJT coordinator about a problem at your placement.
               </p>
             </div>
