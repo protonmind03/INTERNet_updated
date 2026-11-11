@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import Icon, { type IconName } from "../../components/Icon";
 import type { Hub, HubTab } from "./hubs";
@@ -27,7 +27,8 @@ import type { Hub, HubTab } from "./hubs";
 | took about 30 px of a 390 px screen and one level of boxes from every card
 | inside, so long text wrapped to two or three words a line. On a phone the
 | page sits straight on the canvas, the parts are a slim row of tabs that
-| stays under the header while the page scrolls, and a plain page's label is
+| sticks to the top of the screen (useAwayWhileScrollingDown, below), and
+| a plain page's label is
 | left out when it only repeats the header's title (Profile, Notifications).
 | Tablets and computers keep the folder as it was.
 |
@@ -60,11 +61,16 @@ export default function StudentFolder({
   const shown: Label = label ?? { icon: hub?.icon ?? "folder", title: hub?.label ?? "", line: tab?.blurb };
   const tabs = hub?.tabs ?? [];
   const labelRepeatsTitle = typeof shown.title === "string" && shown.title === pageTitle;
+  const tabsAway = useAwayWhileScrollingDown();
   const labelOnPhone = tabs.length > 1 || labelRepeatsTitle ? "max-md:hidden" : "flex";
 
   return (
     <section className="student-folder md:rounded-[30px] md:bg-psu-100 md:p-2.5 md:shadow-raised md:ring-1 md:ring-inset md:ring-psu-600/10 print:bg-transparent print:p-0 print:shadow-none print:ring-0">
-      <div className="md:flex md:items-end print:hidden">
+      <div
+        className={`md:flex md:items-end print:hidden ${
+          tabs.length > 1 ? `max-md:sticky max-md:top-(--inb-top-inset) max-md:z-20 max-md:transition-transform max-md:duration-200 motion-reduce:transition-none ${tabsAway ? "max-md:-translate-y-[calc(100%+var(--inb-top-inset,0px))]" : ""}` : ""
+        }`}
+      >
         {/* The label tab: the folder's name, and what the open part is for. */}
         <div className={`relative z-[1] min-w-0 items-center gap-3 px-1 pb-3 md:flex md:max-w-[44%] md:flex-[0_1_auto] md:rounded-tl-[22px] md:rounded-tr-none md:bg-(--folder-paper) md:px-3 md:py-2.5 md:pr-1.5 ${labelOnPhone}`}>
           <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-300 text-psu-950 shadow-[inset_0_-2px_0_rgb(0_0_0/0.08)]">
@@ -83,7 +89,7 @@ export default function StudentFolder({
         {tabs.length > 1 && (
           <nav
             aria-label={`${hub?.label ?? ""} parts`}
-            className="sticky top-[calc(var(--inb-top-inset,0px)+var(--phone-header-h,76px))] z-20 -mx-4 mb-3 flex gap-1 overflow-x-auto bg-(--role-surface)/95 px-4 py-2 shadow-[0_1px_0_var(--role-hairline)] backdrop-blur-sm md:static md:z-auto md:mx-0 md:mb-0 md:shadow-none md:backdrop-blur-none md:min-w-0 md:flex-1 md:items-center md:rounded-none md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
+            className="-mx-4 mb-3 flex gap-1 overflow-x-auto bg-(--role-surface)/95 px-4 py-2 shadow-[0_1px_0_var(--role-hairline)] backdrop-blur-sm md:mx-0 md:mb-0 md:shadow-none md:backdrop-blur-none md:min-w-0 md:flex-1 md:items-center md:rounded-none md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
           >
             {/* On a phone the parts are one segmented bar, so they never look like the page's filter chips. */}
             <div className="flex min-w-max flex-1 gap-0.5 rounded-full bg-white p-1 ring-1 ring-inset ring-(--role-hairline) md:contents">
@@ -132,4 +138,26 @@ export default function StudentFolder({
       </div>
     </section>
   );
+}
+
+/*
+| On a phone the header scrolls away with the page, and the folder's row of
+| tabs sticks to the top instead. Like the dock, it steps aside while the page
+| scrolls down and comes back on the way up, so reading gets the whole screen
+| and switching parts is one small scroll up away.
+*/
+function useAwayWhileScrollingDown(): boolean {
+  const [away, setAway] = useState(false);
+  useEffect(() => {
+    let last = window.scrollY;
+    const onScroll = () => {
+      const now = window.scrollY;
+      if (Math.abs(now - last) < 8) return;
+      setAway(now > last && now > 160);
+      last = now;
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return away;
 }

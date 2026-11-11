@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { LaneDash } from "./motifs";
 import { ROLE_THEMES } from "./roles";
 import type { BrandRole } from "./roles";
@@ -30,20 +30,7 @@ type PortalHeaderProps = {
 */
 export default function PortalHeader({ role, context, pageTitle, onMenu, right, variant = "mobile", status, titleIsHeading = true }: PortalHeaderProps) {
   const t = ROLE_THEMES[role];
-  const bar = useRef<HTMLElement>(null);
   const shownTitle = pageTitle ?? t.portal;
-
-  // The phone header's height, for anything that sticks under it (a folder's row of tabs).
-  useEffect(() => {
-    const el = bar.current;
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const root = document.documentElement;
-    const set = () => root.style.setProperty("--phone-header-h", `${Math.round(el.getBoundingClientRect().height)}px`);
-    set();
-    const watch = new ResizeObserver(set);
-    watch.observe(el);
-    return () => watch.disconnect();
-  }, []);
 
   if (variant === "desktop") {
     return (
@@ -59,7 +46,7 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
   }
 
   return (
-    <header ref={bar} className={`surface-brand-bar sticky top-(--inb-top-inset) z-30 ${role === "supervisor" ? "ruled-header" : ""}`}>
+    <header className={`surface-brand-bar sticky top-(--inb-top-inset) z-30 ${role === "supervisor" ? "ruled-header" : ""}`}>
       <div className="flex min-h-[76px] items-center gap-3 px-4 pb-3 pt-[max(0.75rem,env(safe-area-inset-top))]">
         {onMenu && (
           <button
