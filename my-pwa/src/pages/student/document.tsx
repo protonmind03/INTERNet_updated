@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
-import Icon from "../../components/Icon";
+import Icon, { type IconName } from "../../components/Icon";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 import {
   Card,
   CardHeader,
@@ -74,6 +75,8 @@ export default function Documents() {
   // The newest weeks first; older ones are behind "Show all".
   const [allWeeks, setAllWeeks] = useState(false);
   const weeksShown = allWeeks ? due.weekly : due.weekly.slice(0, WEEKS_SHOWN);
+  // Phone pass: under 768 px the page is grouped by what needs doing (PhoneDocuments).
+  const phone = !useMediaQuery("(min-width: 768px)");
 
   const load = useCallback(async () => {
     try {
@@ -209,6 +212,21 @@ export default function Documents() {
         tabIndex={-1}
       />
 
+      {phone ? (
+        <div className="space-y-4">
+          {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+          <PhoneDocuments
+            loading={loading}
+            requirements={requirements}
+            documents={documents}
+            latestByType={latestByType}
+            weekly={due.weekly}
+            uploadingType={uploadingType}
+            onUpload={startUpload}
+            onDownload={download}
+          />
+        </div>
+      ) : (
       <div className="space-y-5">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
@@ -381,7 +399,349 @@ export default function Documents() {
           </Card>
         )}
       </div>
+      )}
     </StudentLayout>
+  );
+}
+
+/*
+| Phone pass (2026-11-12): on a phone the page is grouped by what the trainee
+| has to do. "Needs you" first (to upload, returned, weekly uploads due or
+| overdue), then "Under review", then everything approved folded under
+| "Done". The full upload history is folded at the end, and each requirement
+| keeps its own earlier files. Tablets and computers keep the sections above.
+*/
+type PhoneEntry =
+  | { kind: "requirement"; key: string; requirement: Requirement; latest: StudentDocument | undefined; earlier: StudentDocument[]; state: RequirementState; sort: string }
+  | { kind: "week"; key: string; item: WeeklyItem; late: boolean; sort: string };
+
+function PhoneDocuments({
+  loading,
+  requirements,
+  documents,
+  latestByType,
+  weekly,
+  uploadingType,
+  onUpload,
+  onDownload,
+}: {
+  loading: boolean;
+  requirements: Requirement[];
+  documents: StudentDocument[];
+  latestByType: Map<string, StudentDocument>;
+  weekly: WeeklyItem[];
+  uploadingType: string | null;
+  onUpload: (docType: string, item?: WeeklyItem | null) => void;
+  onDownload: (item: StudentDocument) => void;
+}) {
+  const today = phDateKey(new Date());
+  if (loading) return <SkeletonRows rows={6} />;
+
+  const need: PhoneEntry[] = [];
+  const review: PhoneEntry[] = [];
+  const done: PhoneEntry[] = [];
+  for (const requirement of requirements) {
+    const latest = latestByType.get(requirement.name);
+    const state = stateOf(latest);
+    const earlier = documents.filter((item) => item.doc_type === requirement.name && item !== latest);
+    const overdue = !!requirement.due_on && requirement.due_on < today;
+    // Returned first, then overdue, then by due date; no date last.
+    const sort = `${state === "rejected" ? 0 : overdue ? 1 : 2}${requirement.due_on ?? "9999"}`;
+    const entry: PhoneEntry = { kind: "requirement", key: `r${requirement.id}`, requirement, latest, earlier, state, sort };
+    (state === "approved" ? done : state === "pending" ? review : need).push(entry);
+  }
+  for (const item of weekly) {
+    const late = item.status === "Not submitted" && item.due_date < today;
+    const sort = `${item.status === "Rejected" ? 0 : late ? 1 : 2}${item.due_date}`;
+    const entry: PhoneEntry = { kind: "week", key: `w${item.item_id}`, item, late, sort };
+    (item.status === "Approved" ? done : item.status === "Submitted" ? review : need).push(entry);
+  }
+  need.sort((a, b) => a.sort.localeCompare(b.sort));
+
+  const approved = requirements.filter((item) => stateOf(latestByType.get(item.name)) === "approved").length;
+  const overdueCount = need.filter((entry) => (entry.kind === "week" ? entry.late : !!entry.requirement.due_on && entry.requirement.due_on < today)).length;
+  const percent = requirements.length ? Math.round((approved / requirements.length) * 100) : 0;
+
+  // Two or more weeks of one weekly requirement sit under its name once, each row just its week.
+  const rows = (entries: PhoneEntry[]) => {
+    const out: ReactNode[] = [];
+    const placed = new Set<string>();
+    for (const entry of entries) {
+      if (entry.kind !== "week") {
+        out.push(row(entry));
+        continue;
+      }
+      const same = entries.filter((other): other is Extract<PhoneEntry, { kind: "week" }> => other.kind === "week" && other.item.name === entry.item.name);
+      if (same.length < 2) {
+        out.push(row(entry));
+        continue;
+      }
+      if (placed.has(entry.item.name)) continue;
+      placed.add(entry.item.name);
+      out.push(
+        <li key={`g-${entry.item.name}`} className="pt-3">
+          <p className="text-[15px] font-semibold text-slate-900">
+            {entry.item.name} <span className="tabular font-normal text-slate-500">· {same.length} weeks</span>
+          </p>
+          <ul className="divide-y divide-slate-100">{same.map((week) => row(week, true))}</ul>
+        </li>
+      );
+    }
+    return out;
+  };
+
+  const row = (entry: PhoneEntry, grouped = false) =>
+    entry.kind === "requirement" ? (
+      <PhoneRequirementRow
+        key={entry.key}
+        entry={entry}
+        uploading={uploadingType === entry.requirement.name}
+        disabled={uploadingType !== null}
+        onUpload={() => onUpload(entry.requirement.name)}
+        onDownload={onDownload}
+      />
+    ) : (
+      <PhoneWeekRow
+        key={entry.key}
+        item={entry.item}
+        late={entry.late}
+        grouped={grouped}
+        uploading={uploadingType === `${entry.item.name}#${entry.item.item_id}`}
+        disabled={uploadingType !== null}
+        onUpload={() => onUpload(entry.item.name, entry.item)}
+      />
+    );
+
+  return (
+    <>
+      {requirements.length > 0 && (
+        <section aria-label="Your requirements" className="rounded-2xl bg-white p-4 ring-1 ring-inset ring-(--role-hairline)">
+          <div className="flex items-baseline justify-between gap-3">
+            <p className="text-[15px] font-extrabold text-slate-900">
+              <span className="tabular">{approved}</span> of <span className="tabular">{requirements.length}</span> requirements approved
+            </p>
+            <span className="tabular text-[13px] font-semibold text-slate-600">{percent}%</span>
+          </div>
+          <div className="mt-2 h-2 overflow-hidden rounded-full bg-psu-100" aria-hidden="true">
+            <div className="h-full rounded-full bg-psu-700" style={{ width: `${percent}%` }} />
+          </div>
+          <p className="mt-2 text-[13.5px] text-slate-600">
+            {need.length === 0 ? "Nothing to upload right now." : `${need.length} ${need.length === 1 ? "needs" : "need"} your upload`}
+            {overdueCount > 0 && <span className="font-semibold text-red-700"> · {overdueCount} overdue</span>}
+            {review.length > 0 && ` · ${review.length} under review`}
+          </p>
+        </section>
+      )}
+
+      {need.length > 0 && (
+        <PhoneGroup title="Needs you" count={need.length} tone="need">
+          {rows(need)}
+        </PhoneGroup>
+      )}
+      {review.length > 0 && (
+        <PhoneGroup title="Under review" count={review.length} tone="review">
+          {rows(review)}
+        </PhoneGroup>
+      )}
+
+      <Link
+        to="/documents/forms"
+        className="flex min-h-14 items-center gap-3 rounded-2xl bg-white px-4 py-3 ring-1 ring-inset ring-(--role-hairline) hover:bg-psu-50"
+      >
+        <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-300 text-psu-950">
+          <Icon name="printer" size={19} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-[15px] font-bold text-slate-900">Fill and print the pre-OJT forms</span>
+          <span className="block text-[13px] text-slate-600">Application, Consent, Release, Waiver</span>
+        </span>
+        <Icon name="chevron-right" size={18} className="shrink-0 text-slate-500" />
+      </Link>
+
+      {done.length > 0 && (
+        <PhoneFold title="Done" count={done.length} icon="check-circle">
+          <ul className="divide-y divide-slate-100">{rows(done)}</ul>
+        </PhoneFold>
+      )}
+
+      {documents.length > 0 && (
+        <PhoneFold title="All files you sent" count={documents.length} icon="inbox">
+          <ul className="divide-y divide-slate-100">
+            {documents.map((item) => (
+              <li key={item.id}>
+                <button
+                  type="button"
+                  onClick={() => onDownload(item)}
+                  className="flex min-h-14 w-full items-center gap-3 py-2.5 text-left hover:bg-slate-50"
+                >
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14px] font-semibold text-slate-900">{item.doc_type}</span>
+                    <span className="block truncate text-[13px] text-slate-600">
+                      {formatDate(item.uploaded_at)} · {formatFileSize(Number(item.size_bytes))}
+                    </span>
+                  </span>
+                  <StatusBadge status={item.status === "Pending" ? "Under review" : item.status} />
+                  <Icon name="download" size={18} className="shrink-0 text-slate-500" />
+                  <span className="sr-only">Download {item.original_filename}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </PhoneFold>
+      )}
+    </>
+  );
+}
+
+function PhoneGroup({ title, count, tone, children }: { title: string; count: number; tone: "need" | "review"; children: ReactNode }) {
+  return (
+    <section aria-label={title} className="overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-(--role-hairline)">
+      <h2 className={`flex items-center gap-2 border-b border-slate-100 px-4 py-2.5 text-[13px] font-extrabold uppercase tracking-wide ${tone === "need" ? "text-psu-800" : "text-sky-800"}`}>
+        {title}
+        <span className={`tabular inline-grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11.5px] ${tone === "need" ? "bg-psu-700 text-white" : "bg-sky-100 text-sky-900"}`}>{count}</span>
+      </h2>
+      <ul className="divide-y divide-slate-100 px-4">{children}</ul>
+    </section>
+  );
+}
+
+function PhoneFold({ title, count, icon, children }: { title: string; count: number; icon: IconName; children: ReactNode }) {
+  return (
+    <details className="group overflow-hidden rounded-2xl bg-white ring-1 ring-inset ring-(--role-hairline)">
+      <summary className="flex min-h-14 cursor-pointer list-none items-center gap-3 px-4 [&::-webkit-details-marker]:hidden">
+        <Icon name={icon} size={18} className="shrink-0 text-slate-500" />
+        <span className="flex-1 text-[15px] font-bold text-slate-900">
+          {title} <span className="tabular font-semibold text-slate-500">· {count}</span>
+        </span>
+        <Icon name="chevron-down" size={18} className="shrink-0 text-slate-500 transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="border-t border-slate-100 px-4">{children}</div>
+    </details>
+  );
+}
+
+function PhoneUploadButton({ label, uploading, disabled, onClick, strong }: { label: string; uploading: boolean; disabled: boolean; onClick: () => void; strong?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      aria-label={`${uploading ? "Uploading" : "Upload"}: ${label}`}
+      className={`inline-flex h-11 shrink-0 items-center justify-center gap-1.5 rounded-xl px-3.5 text-[14px] font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+        strong ? "bg-psu-700 text-white hover:bg-psu-800" : "border border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+      }`}
+    >
+      {uploading ? <BrandLoader variant="button" role="student" process="upload" /> : <Icon name="upload" size={16} />}
+      {uploading ? "Uploading" : "Upload"}
+    </button>
+  );
+}
+
+function PhoneRequirementRow({
+  entry,
+  uploading,
+  disabled,
+  onUpload,
+  onDownload,
+}: {
+  entry: Extract<PhoneEntry, { kind: "requirement" }>;
+  uploading: boolean;
+  disabled: boolean;
+  onUpload: () => void;
+  onDownload: (item: StudentDocument) => void;
+}) {
+  const { requirement, latest, earlier, state } = entry;
+  const mark = STATE_ICON[state];
+  const canUpload = state === "missing" || state === "rejected";
+  const today = phDateKey(new Date());
+  const overdue = canUpload && !!requirement.due_on && requirement.due_on < today;
+  const meta = [
+    requirement.due_on ? `${overdue ? "Was due" : "Due"} ${formatDate(requirement.due_on)}` : "",
+    requirement.reviewer_role === "coordinator" ? "Coordinator reviews" : "",
+  ].filter(Boolean);
+
+  return (
+    <li className="py-3">
+      <div className="flex items-start gap-3">
+        <span aria-hidden="true" className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${mark.className}`}>
+          <Icon name={mark.icon} size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-semibold leading-snug text-slate-900">{requirement.name}</p>
+          {state === "rejected" && <p className="text-[13px] font-semibold text-red-700">Returned to you</p>}
+          {meta.length > 0 && <p className={`text-[13px] ${overdue ? "font-semibold text-red-700" : "text-slate-600"}`}>{meta.join(" · ")}</p>}
+          {state === "missing" && requirement.description && <p className="mt-0.5 line-clamp-2 text-[13px] text-slate-600">{requirement.description}</p>}
+          {latest && state !== "missing" && (
+            <button type="button" onClick={() => onDownload(latest)} className="mt-0.5 block min-h-8 max-w-full truncate text-left text-[13px] text-psu-700 hover:underline">
+              {latest.original_filename}
+              <span className="text-slate-500"> · {formatDate(latest.uploaded_at)}</span>
+            </button>
+          )}
+        </div>
+        {canUpload && <PhoneUploadButton label={requirement.name} uploading={uploading} disabled={disabled} onClick={onUpload} strong={state === "rejected"} />}
+      </div>
+      {latest?.review_notes && (
+        <p className={`ml-11 mt-2 rounded-lg px-3 py-2 text-[13.5px] ${state === "rejected" ? "bg-red-50 text-red-800" : "bg-slate-100 text-slate-700"}`}>
+          <span className="font-semibold">Reviewer:</span> {latest.review_notes}
+        </p>
+      )}
+      {earlier.length > 0 && (
+        <details className="ml-11 mt-1">
+          <summary className="flex min-h-9 cursor-pointer items-center text-[13px] font-semibold text-slate-600">
+            {earlier.length === 1 ? "1 earlier file" : `${earlier.length} earlier files`}
+          </summary>
+          <ul className="space-y-1 pb-1">
+            {earlier.map((item) => (
+              <li key={item.id}>
+                <button type="button" onClick={() => onDownload(item)} className="block min-h-8 max-w-full truncate text-left text-[13px] text-psu-700 hover:underline">
+                  {formatDate(item.uploaded_at)} · {item.status === "Pending" ? "Under review" : item.status}
+                  <span className="sr-only">, download {item.original_filename}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </li>
+  );
+}
+
+function PhoneWeekRow({ item, late, grouped, uploading, disabled, onUpload }: { item: WeeklyItem; late: boolean; grouped: boolean; uploading: boolean; disabled: boolean; onUpload: () => void }) {
+  const canUpload = item.status === "Not submitted" || item.status === "Rejected";
+  const state: RequirementState = item.status === "Approved" ? "approved" : item.status === "Submitted" ? "pending" : item.status === "Rejected" ? "rejected" : "missing";
+  const mark = late ? { icon: "alert" as const, className: "bg-red-50 text-red-600" } : STATE_ICON[state];
+  return (
+    <li className="py-3">
+      <div className="flex items-start gap-3">
+        <span aria-hidden="true" className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg ${mark.className}`}>
+          <Icon name={mark.icon} size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          {grouped ? (
+            <p className="text-[15px] font-semibold leading-snug text-slate-900">Week of {formatDate(item.period_start)}</p>
+          ) : (
+            <p className="text-[15px] font-semibold leading-snug text-slate-900">
+              {item.name}
+              <span className="block text-[13px] font-normal text-slate-600">Week of {formatDate(item.period_start)}</span>
+            </p>
+          )}
+          {canUpload && (
+            <p className={`text-[13px] ${late || item.status === "Rejected" ? "font-semibold text-red-700" : "text-slate-600"}`}>
+              {item.status === "Rejected" ? "Returned to you" : `${late ? "Was due" : "Due"} ${formatDate(item.due_date)}`}
+            </p>
+          )}
+          {!canUpload && item.original_filename && <p className="truncate text-[13px] text-slate-600">{item.original_filename}</p>}
+        </div>
+        {canUpload && (
+          <PhoneUploadButton label={`${item.name}, week of ${formatDate(item.period_start)}`} uploading={uploading} disabled={disabled} onClick={onUpload} strong={item.status === "Rejected" || late} />
+        )}
+      </div>
+      {item.status === "Rejected" && item.review_notes && (
+        <p className="ml-11 mt-2 rounded-lg bg-red-50 px-3 py-2 text-[13.5px] text-red-800">
+          <span className="font-semibold">Reviewer:</span> {item.review_notes}
+        </p>
+      )}
+    </li>
   );
 }
 
