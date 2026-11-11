@@ -23,6 +23,14 @@ import type { Hub, HubTab } from "./hubs";
 | a folder the label tab is left out there and the folder opens on its row
 | of tabs; the label stays on pages that are not in a folder (Today).
 |
+| Phone pass (2026-11-12): under 768 px the folder is flat. Its rim and paper
+| took about 30 px of a 390 px screen and one level of boxes from every card
+| inside, so long text wrapped to two or three words a line. On a phone the
+| page sits straight on the canvas, the parts are a slim row of tabs that
+| stays under the header while the page scrolls, and a plain page's label is
+| left out when it only repeats the header's title (Profile, Notifications).
+| Tablets and computers keep the folder as it was.
+|
 */
 
 type Label = { icon: IconName; title: ReactNode; line?: ReactNode };
@@ -33,8 +41,11 @@ export default function StudentFolder({
   label,
   counts = {},
   actions,
+  pageTitle,
   children,
 }: {
+  /** The header's title: a plain page's label that only repeats it is left out on a phone. */
+  pageTitle?: string;
   /** The page's own buttons (Mark all as read), at the end of the folder's rim. */
   actions?: ReactNode;
   /** The folder this page is in; none for a page drawn in a plain folder. */
@@ -48,18 +59,20 @@ export default function StudentFolder({
 }) {
   const shown: Label = label ?? { icon: hub?.icon ?? "folder", title: hub?.label ?? "", line: tab?.blurb };
   const tabs = hub?.tabs ?? [];
+  const labelRepeatsTitle = typeof shown.title === "string" && shown.title === pageTitle;
+  const labelOnPhone = tabs.length > 1 || labelRepeatsTitle ? "max-md:hidden" : "flex";
 
   return (
-    <section className="student-folder rounded-[26px] bg-psu-100 p-1.5 shadow-raised ring-1 ring-inset ring-psu-600/10 md:rounded-[30px] md:p-2.5 print:bg-transparent print:p-0 print:shadow-none print:ring-0">
+    <section className="student-folder md:rounded-[30px] md:bg-psu-100 md:p-2.5 md:shadow-raised md:ring-1 md:ring-inset md:ring-psu-600/10 print:bg-transparent print:p-0 print:shadow-none print:ring-0">
       <div className="md:flex md:items-end print:hidden">
         {/* The label tab: the folder's name, and what the open part is for. */}
-        <div className={`relative z-[1] min-w-0 items-center gap-3 rounded-t-[20px] bg-(--folder-paper) px-3 py-2.5 md:flex md:max-w-[44%] md:flex-[0_1_auto] md:rounded-tl-[22px] md:rounded-tr-none md:pr-1.5 ${tabs.length > 1 ? "hidden" : "flex"}`}>
+        <div className={`relative z-[1] min-w-0 items-center gap-3 px-1 pb-3 md:flex md:max-w-[44%] md:flex-[0_1_auto] md:rounded-tl-[22px] md:rounded-tr-none md:bg-(--folder-paper) md:px-3 md:py-2.5 md:pr-1.5 ${labelOnPhone}`}>
           <span aria-hidden="true" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-300 text-psu-950 shadow-[inset_0_-2px_0_rgb(0_0_0/0.08)]">
             <Icon name={shown.icon} size={20} />
           </span>
           <div className="min-w-0">
             <p className="font-folder truncate text-[17px] font-extrabold leading-tight text-slate-900 md:text-[20px]">{shown.title}</p>
-            {shown.line && <p className="truncate text-[12.5px] text-slate-600">{shown.line}</p>}
+            {shown.line && <p className="text-[13px] leading-snug text-slate-600 md:truncate md:text-[12.5px]">{shown.line}</p>}
           </div>
           {/* The tab's curve down to the rim. */}
           <svg aria-hidden="true" viewBox="0 0 67 100" preserveAspectRatio="none" className="absolute -right-[46px] top-0 hidden h-full w-[47px] md:block">
@@ -70,7 +83,7 @@ export default function StudentFolder({
         {tabs.length > 1 && (
           <nav
             aria-label={`${hub?.label ?? ""} parts`}
-            className="flex gap-1 overflow-x-auto rounded-t-[20px] bg-(--folder-paper) px-1.5 pb-1.5 pt-1.5 md:min-w-0 md:flex-1 md:items-center md:rounded-none md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
+            className="sticky top-[calc(var(--inb-top-inset,0px)+var(--phone-header-h,76px))] z-20 -mx-4 mb-3 flex gap-1 overflow-x-auto bg-(--role-surface)/95 px-4 py-2 shadow-[0_1px_0_var(--role-hairline)] backdrop-blur-sm md:static md:z-auto md:mx-0 md:mb-0 md:shadow-none md:backdrop-blur-none md:min-w-0 md:flex-1 md:items-center md:rounded-none md:bg-transparent md:pb-3 md:pl-[54px] md:pr-1 md:pt-1 [scrollbar-width:none]"
           >
             {tabs.map((item) => {
               const on = item === tab;
@@ -81,11 +94,11 @@ export default function StudentFolder({
                   to={item.path}
                   aria-current={on ? "page" : undefined}
                   aria-label={item.short ? `${item.label}${count > 0 ? `, ${count} waiting` : ""}` : undefined}
-                  className={`relative flex h-14 min-w-[64px] flex-1 shrink-0 flex-col items-center justify-center gap-[3px] rounded-xl px-1.5 text-[11.5px] font-semibold transition-colors md:h-10 md:flex-none md:flex-row md:gap-[7px] md:rounded-full md:pl-[11px] md:pr-[13px] md:text-[13.5px] pointer-coarse:md:h-11 ${
-                    on ? "bg-white text-psu-900 shadow-raised" : "text-slate-600 hover:bg-white/60 hover:text-slate-900"
+                  className={`relative flex h-10 min-w-[56px] flex-auto shrink-0 items-center justify-center gap-1.5 rounded-full px-2.5 text-[13px] font-semibold transition-colors md:h-10 md:flex-none md:flex-row md:gap-[7px] md:rounded-full md:pl-[11px] md:pr-[13px] md:text-[13.5px] pointer-coarse:md:h-11 ${
+                    on ? "bg-psu-800 text-white shadow-raised md:bg-white md:text-psu-900" : "bg-white text-slate-700 ring-1 ring-inset ring-(--role-hairline) hover:text-slate-900 md:bg-transparent md:text-slate-600 md:ring-0 md:hover:bg-white/60"
                   }`}
                 >
-                  <Icon name={item.icon} size={16} className={on ? "text-psu-700" : "text-slate-500"} />
+                  <Icon name={item.icon} size={16} className={`max-md:hidden ${on ? "text-psu-700" : "text-slate-500"}`} />
                   {item.short ? (
                     <>
                       <span className="max-w-full truncate md:hidden">{item.short}</span>
@@ -95,7 +108,7 @@ export default function StudentFolder({
                     <span className="max-w-full truncate">{item.label}</span>
                   )}
                   {count > 0 && (
-                    <span className="tabular absolute right-1 top-1 inline-grid h-[17px] min-w-[17px] place-items-center rounded-full bg-psu-700 px-1 text-[10px] font-bold text-white md:static md:h-5 md:min-w-5 md:px-1.5 md:text-[11px]">
+                    <span className={`tabular inline-grid h-5 min-w-5 place-items-center rounded-full px-1.5 text-[11px] font-bold ${on ? "bg-white text-psu-900 md:bg-psu-700 md:text-white" : "bg-psu-700 text-white"} md:static md:h-5 md:min-w-5 md:px-1.5 md:text-[11px]`}>
                       {count > 9 ? "9+" : count}
                       <span className="sr-only"> waiting</span>
                     </span>
@@ -105,12 +118,12 @@ export default function StudentFolder({
             })}
           </nav>
         )}
-        {actions && <div className="flex flex-wrap items-center justify-end gap-2 bg-(--folder-paper) px-2.5 pb-2 md:ml-auto md:bg-transparent md:px-1 md:pb-2.5">{actions}</div>}
+        {actions && <div className="flex flex-wrap items-center justify-end gap-2 pb-3 md:ml-auto md:bg-(--folder-paper) md:bg-transparent md:px-1 md:pb-2.5">{actions}</div>}
       </div>
 
       {/* The open part, on the folder's paper. */}
       <div
-        className="min-w-0 rounded-b-[20px] bg-(--folder-paper) p-2.5 sm:p-4 md:rounded-[0_22px_22px_22px] md:px-3 md:py-5 lg:px-4 print:bg-white print:p-0"
+        className="min-w-0 md:rounded-[0_22px_22px_22px] md:bg-(--folder-paper) md:px-3 md:py-5 lg:px-4 print:bg-white print:p-0"
       >
         {children}
       </div>

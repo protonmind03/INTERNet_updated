@@ -16,6 +16,7 @@ import { pendingPhotos, usePendingPhotoSender } from "../lib/pendingPhotos";
 import { signOut as endSession, useAccount } from "../lib/session";
 import { useSpotlightParam } from "../lib/spotlight";
 import { useWaitingCount } from "../lib/useWaitingCount";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import type { IconName } from "../components/Icon";
 import { HUBS, hubAddresses, hubFor, type HubId } from "../pages/student/hubs";
 import ScanButton from "../pages/student/ScanButton";
@@ -128,6 +129,9 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
   // Report photos kept on this phone are sent whenever it comes back online, from any page.
   usePendingPhotoSender();
   const [unsentPhotos, setUnsentPhotos] = useState(0);
+  // Phone pass (2026-11-12): on a phone the header's one line is the company, short and always
+  // whole; the page's longer subtitle was cut off there, and the folder's tabs already say where you are.
+  const tablet = useMediaQuery("(min-width: 768px)");
   useEffect(() => {
     if (!confirmSignOut) return;
     let current = true;
@@ -176,7 +180,7 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
       <RoleShell
         role="student"
         title={title}
-        context={subtitle ?? student.company ?? undefined}
+        context={tablet ? (subtitle ?? student.company ?? undefined) : (student.company ?? undefined)}
         headerRight={
           <>
             <ScanButton />
@@ -204,7 +208,7 @@ function StudentChrome({ title, subtitle, actions, showPhotoRedo = true, folderL
           <SavedDataNotice />
           {showPhotoRedo && <PhotoRedoBanner />}
           <WaitingToSend />
-          <StudentFolder hub={inHub?.hub} tab={inHub?.tab} label={inHub ? folderLabel : plainLabel} counts={counts} actions={actions}>
+          <StudentFolder hub={inHub?.hub} tab={inHub?.tab} label={inHub ? folderLabel : plainLabel} counts={counts} actions={actions} pageTitle={title}>
             {children}
           </StudentFolder>
           <MessageThreadHost role="student" />

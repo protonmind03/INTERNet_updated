@@ -225,7 +225,7 @@ function Tile({ item, onOpen }: { item: Item; onOpen: () => void }) {
       ) : (
         <span className="flex h-full w-full flex-col items-center justify-center gap-1 p-2 text-center">
           <Icon name="document" size={26} className="text-psu-700" />
-          <span className="line-clamp-2 text-[11px] font-semibold leading-tight text-slate-700">{item.title}</span>
+          <span className="line-clamp-2 text-[12px] font-semibold leading-tight text-slate-700">{item.title}</span>
         </span>
       )}
       {item.kind === "picture" && item.captured_in_app && (

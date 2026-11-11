@@ -142,7 +142,7 @@ function NarrativePage() {
         {data.loading ? (
           <SkeletonRows rows={6} />
         ) : (
-          <div className="grid gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
+          <div className="grid grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:items-start">
             <nav aria-label="Parts of the narrative report" className="rounded-2xl bg-white p-2 ring-1 ring-inset ring-(--role-hairline) lg:sticky lg:top-4">
               <ol>
                 {PARTS.map((part) => {

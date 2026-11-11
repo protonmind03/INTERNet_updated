@@ -158,7 +158,7 @@ export default function DailyReports() {
             );
           })}
         </ol>
-        <p className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[11.5px] text-slate-500" aria-hidden="true">
+        <p className="mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-[12.5px] text-slate-600" aria-hidden="true">
           <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-gold-500" /> Worked</span>
           <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-psu-600" /> Report written</span>
           <span className="inline-flex items-center gap-1"><span className="h-1.5 w-1.5 rounded-full bg-psu-300" /> More than one event</span>

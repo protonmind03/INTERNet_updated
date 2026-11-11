@@ -53,7 +53,7 @@ export default function SubTabs<T extends string>({
               on ? "bg-psu-700 text-white shadow-sm" : "text-slate-600 hover:bg-psu-50 hover:text-slate-900"
             }`}
           >
-            {option.icon && <Icon name={option.icon} size={15} className="shrink-0" />}
+            {option.icon && <Icon name={option.icon} size={15} className="shrink-0 max-sm:hidden" />}
             {option.short ? (
               <>
                 <span className="sm:hidden">{option.short}</span>
