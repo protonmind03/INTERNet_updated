@@ -7,6 +7,16 @@ import { resolveNotificationTarget, type NotificationRole } from "../lib/notific
 import { toast } from "../lib/toast";
 import type { NotificationItem } from "../lib/useNotifications";
 
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A message's plain dates ("2026-11-08") as people write them ("Nov 8, 2026"). */
+function readableDates(message: string): string {
+  return message.replace(/\b(\d{4})-(\d{2})-(\d{2})\b/g, (whole, year: string, month: string, day: string) => {
+    const name = SHORT_MONTHS[Number(month) - 1];
+    return name ? `${name} ${Number(day)}, ${year}` : whole;
+  });
+}
+
 type Filter = "all" | "unread";
 
 /** How many are listed at first, and added by "Show older" (sv10-26: a long term leaves hundreds). */
@@ -121,8 +131,10 @@ export default function NotificationFeed({
                         >
                           {item.title}
                         </span>
-                        <span className="mt-0.5 block text-sm text-slate-600">
-                          {item.message}
+                        {/* Calm pass (2026-11-12): two lines at most (the row opens the record), and
+                            "2026-11-08" in a message reads as "Nov 8, 2026". */}
+                        <span className="mt-0.5 line-clamp-2 text-sm text-slate-600" title={item.message}>
+                          {readableDates(item.message)}
                         </span>
                         <span className="mt-1 block text-xs text-slate-600">
                           {formatDateTime(item.created_at)}

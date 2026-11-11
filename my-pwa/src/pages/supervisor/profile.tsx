@@ -153,7 +153,7 @@ export default function SupervisorProfilePage() {
               </dl>
               <p className="mt-4 flex gap-2 text-sm text-slate-500">
                 <Icon name="info" size={16} className="mt-0.5 shrink-0 text-slate-400" />
-                Your company is set by the OJT coordinator.
+                Set by the OJT coordinator.
               </p>
             </>
           )}
@@ -233,7 +233,7 @@ export default function SupervisorProfilePage() {
           <AccountDetailsForm
             role="supervisor"
             viewer="supervisor"
-            description="Your interns and the OJT coordinator see your job title, work phone and the hours you can be reached. Your mobile only if you choose to show it."
+            description="Your interns and the OJT coordinator see these. Your mobile only if you show it."
           />
 
           {supervisorId && <PasswordForm role="supervisor" accountId={supervisorId} />}

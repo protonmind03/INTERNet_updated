@@ -196,15 +196,18 @@ export default function SupervisorDocuments() {
                         </div>
                       </div>
                       <div className="flex shrink-0 gap-2">
-                        <button
-                          type="button"
-                          onClick={() => void download(item)}
-                          aria-label={`Download ${item.original_filename}`}
-                          className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          <Icon name="download" size={16} />
-                          Download
-                        </button>
+                        {/* Calm pass: one button a row. A file to review opens the decision, which has Download too. */}
+                        {item.status !== "Pending" && (
+                          <button
+                            type="button"
+                            onClick={() => void download(item)}
+                            aria-label={`Download ${item.original_filename}`}
+                            className="inline-flex h-10 items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                          >
+                            <Icon name="download" size={16} />
+                            Download
+                          </button>
+                        )}
                         {item.status === "Pending" && (
                           <button
                             type="button"

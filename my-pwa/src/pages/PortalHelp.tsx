@@ -22,7 +22,7 @@ export function StudentHelp() {
 
 export function SupervisorHelp() {
   return (
-    <SupervisorLayout title="Help" subtitle="Answers for supervisors">
+    <SupervisorLayout title="Help">
       <div className="space-y-6">
         <HelpCentre fixedRole="supervisor" />
         <HelpSections role="supervisor" />

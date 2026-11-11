@@ -35,7 +35,7 @@ import {
   getInitials,
 } from "../../lib/format";
 import { useAccount } from "../../lib/session";
-import { LATE_AFTER_MINUTES } from "../../lib/studentCalendar";
+import { LATE_AFTER_MINUTES, type CalendarShift } from "../../lib/studentCalendar";
 import { daysWaiting, lateDays, minutesText } from "../../lib/supervisorDay";
 import { errorText, toast } from "../../lib/toast";
 import { changeDtrCertification, useDtrCertifications } from "../../lib/useDtrCertifications";
@@ -82,6 +82,31 @@ const KIND_WORD: Record<QueueItem["kind"], string> = {
   absence: "Absence",
   journal: "Weekly report",
 };
+
+const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+/** Runs of days next to each other with the same hours and focus, so Monday to Friday reads as one line. */
+function groupShifts<T extends Pick<CalendarShift, "day" | "start_time" | "end_time" | "hours" | "focus" | "week">>(shifts: T[]): { first: T; last: T; count: number }[] {
+  const runs: { first: T; last: T; count: number }[] = [];
+  for (const shift of shifts) {
+    const run = runs[runs.length - 1];
+    const same =
+      run &&
+      (run.last.week ?? 1) === (shift.week ?? 1) &&
+      WEEKDAYS.indexOf(shift.day) === WEEKDAYS.indexOf(run.last.day) + 1 &&
+      run.last.start_time === shift.start_time &&
+      run.last.end_time === shift.end_time &&
+      String(run.last.hours) === String(shift.hours) &&
+      (run.last.focus ?? "") === (shift.focus ?? "");
+    if (same) {
+      run.last = shift;
+      run.count += 1;
+    } else {
+      runs.push({ first: shift, last: shift, count: 1 });
+    }
+  }
+  return runs;
+}
 
 function clockTime(value: string | null | undefined): string {
   const match = /^(\d{1,2}):(\d{2})/.exec(value || "");
@@ -156,18 +181,16 @@ export default function SupervisorInternPage() {
 
         <InternSummary intern={intern} work={work} projection={projection} />
 
-        <div className="grid grid-cols-3 gap-2.5 print:hidden">
+        {/* Calm pass (2026-11-12): three buttons in a row, not three tiles as tall as a card. */}
+        <div className="flex flex-wrap gap-2 print:hidden">
           {[
             { label: "Record time-in", icon: "camera" as const, run: () => setRecording(true) },
             { label: "Message", icon: "chat" as const, run: () => setWriting(true) },
             { label: "Give a task", icon: "plus" as const, run: () => navigate(`/supervisor/tasks?intern=${encodeURIComponent(intern.student_id)}&new=1`) },
           ].map((action) => (
-            <button key={action.label} type="button" onClick={action.run} className="card-hairline flex min-h-20 flex-col items-center justify-center gap-1.5 rounded-2xl px-2 py-3 text-center text-[13.5px] font-bold text-slate-900 hover:bg-psu-50/60">
-              <span className="grid h-9 w-9 place-items-center rounded-xl bg-psu-50 text-psu-700">
-                <Icon name={action.icon} size={18} />
-              </span>
+            <Button key={action.label} variant="secondary" icon={action.icon} onClick={action.run}>
               {action.label}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -375,11 +398,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
       <Card>
         <CardHeader icon="inbox" tone="warning"
           title="Waiting for you"
-          description={
-            waiting.length + (finalDue ? 1 : 0) === 0
-              ? "Nothing of this intern's is waiting."
-              : "Oldest first."
-          }
+          description={waiting.length + (finalDue ? 1 : 0) === 0 ? "Nothing waiting." : undefined}
         />
         {waiting.length + (finalDue ? 1 : 0) === 0 && <div className="pb-4" />}
         {waiting.length + (finalDue ? 1 : 0) > 0 && (
@@ -422,11 +441,7 @@ function Overview({ intern, work, onReview }: Reviewable) {
       <Card>
         <CardHeader icon="calendar"
           title="Weekly schedule"
-          description={
-            shifts?.[0]?.pattern_weeks === 2
-              ? "Set by the OJT coordinator. Repeats every two weeks: week 1 and week 2 take turns."
-              : "Set by the OJT coordinator."
-          }
+          description={shifts?.[0]?.pattern_weeks === 2 ? "Week 1 and week 2 take turns." : undefined}
         />
         {schedules === null ? (
           <SkeletonRows rows={3} />
@@ -436,19 +451,20 @@ function Overview({ intern, work, onReview }: Reviewable) {
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-slate-100 border-t border-slate-100">
-            {shifts.map((shift) => (
+            {/* Days in a row with the same hours and focus are one line ("Mon–Fri"), not five. */}
+            {groupShifts(shifts).map(({ first, last, count }) => (
               <li
-                key={`${shift.week ?? 1}-${shift.day}`}
+                key={`${first.week ?? 1}-${first.day}`}
                 className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm sm:px-5"
               >
                 <span className="min-w-0">
-                  {shift.pattern_weeks === 2 && <span className="text-slate-600">Week {shift.week ?? 1} · </span>}
-                  <span className="font-medium text-slate-900">{shift.day}</span>
-                  {shift.focus && <span className="text-slate-600"> · {shift.focus}</span>}
+                  {first.pattern_weeks === 2 && <span className="text-slate-600">Week {first.week ?? 1} · </span>}
+                  <span className="font-medium text-slate-900">{count > 1 ? `${first.day.slice(0, 3)}–${last.day.slice(0, 3)}` : first.day}</span>
+                  {first.focus && <span className="text-slate-600"> · {first.focus}</span>}
                 </span>
                 <span className="tabular shrink-0 text-slate-700">
-                  {clockTime(shift.start_time)} – {clockTime(shift.end_time)}
-                  {shift.hours !== null && ` · ${formatHours(shift.hours)}`}
+                  {clockTime(first.start_time)} – {clockTime(first.end_time)}
+                  {first.hours !== null && ` · ${formatHours(first.hours)}`}
                 </span>
               </li>
             ))}
