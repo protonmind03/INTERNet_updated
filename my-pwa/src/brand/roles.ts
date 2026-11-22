@@ -108,16 +108,16 @@ export const ROLE_THEMES: Record<BrandRole, RoleTheme> = {
     tag: "Trainee",
     tagline: "Your road to graduation, one verified day at a time.",
     surface: "dark",
-    // PSU redesign: the trainee header is deep amber, flat (ROLE_PALETTES.student.chrome).
+    // 2026-11-21: navy, brass and mist, as the landing page (ROLE_PALETTES.student).
     colors: {
-      surface: "#8A3A07",
-      surfaceRaised: "#A84A0C",
-      accent: AMBER,
-      accentText: "#3A2A12",
-      text: "#FFFFFF",
-      muted: "#F6E3CB",
-      tagBg: "rgba(250, 204, 21, 0.18)",
-      tagText: AMBER,
+      surface: "#0C1731",
+      surfaceRaised: "#1B2746",
+      accent: "#DBA65D",
+      accentText: "#0C1731",
+      text: "#F2F6F9",
+      muted: "#B3BFCD",
+      tagBg: "rgba(219, 166, 93, 0.18)",
+      tagText: "#DBA65D",
     },
     launchSteps: [
       { label: "Time-in", message: "Checking today’s time-in…" },
@@ -150,16 +150,16 @@ export const ROLE_THEMES: Record<BrandRole, RoleTheme> = {
     tag: "Supervisor",
     tagline: "Guide, verify and evaluate your interns.",
     surface: "dark",
-    // PSU redesign: desk green, flat (ROLE_PALETTES.supervisor.chrome).
+    // 2026-11-21: navy, brass and mist, as the landing page (ROLE_PALETTES.supervisor).
     colors: {
-      surface: "#116C5C",
-      surfaceRaised: "#0C5548",
-      accent: "#D3E9E1",
-      accentText: "#0E2A26",
-      text: "#FFFFFF",
-      muted: "#D3E9E1",
-      tagBg: "rgba(255, 255, 255, 0.14)",
-      tagText: "#FFFFFF",
+      surface: "#0C1731",
+      surfaceRaised: "#1B2746",
+      accent: "#DBA65D",
+      accentText: "#0C1731",
+      text: "#F2F6F9",
+      muted: "#B3BFCD",
+      tagBg: "rgba(219, 166, 93, 0.18)",
+      tagText: "#DBA65D",
     },
     launchSteps: [
       { label: "Interns", message: "Gathering your assigned interns…" },

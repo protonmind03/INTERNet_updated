@@ -1,0 +1,148 @@
+/* Hallmark · shape: kept (search first, topics, answers, still stuck, reference) · genre: modern-minimal · theme: brand · redesign: full
+ * paper: oklch(97.5% 0.005 245) · accent: oklch(76% 0.11 74) · display: Bricolage Grotesque · body: Public Sans · hero: the question and the search on navy, the landing's arcs behind · nav: kept (back to INTERNet) · footer: none · signature: one search, on navy, the first and largest thing on both Help pages
+ * axes: light/grotesk-heavy/warm · posture: three-tone, night carries the search, mist carries the answers · contrast: pass · fold: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P3 H5 E4 S4 R5 V3 · weakest: V, Help is a reference and stays one; the arcs and the three colours tie it to the website and the portals */
+/* Hallmark · dropped the "Help centre" kicker · 54 names it (the title asks the question) */
+/* Hallmark · reworded the topic cards' "·"-joined questions to the first question and "and N more" · 63 names the dot */
+/* Hallmark · waive 39b · the 56px field is the page's one search and each topic button is a whole card · both are the Help page's way in, set large on purpose */
+/* Hallmark · answered F19 · the 500 weight is the field and the reference table's, from the app's shared field style */
+/* Hallmark · dismissed 54 · SectionHead renders a real h2 (the id the section is labelled by), the linter reads the component name */
+/* Hallmark · dismissed 74 · slate is the app's neutral (index.css), cool like the mist; the colours here are the navy and brass scales */
+/* Hallmark · dismissed 29 · the sticky header's light blur keeps the logo and Back link legible over the answers as they scroll under it; it is the app's shared header */
+/* Hallmark · dismissed F16 · the scrollbar is the browser's own on an app page shared with every portal */
+/* Hallmark · dismissed F25 · the words hidden on a phone are the offline table, shown there as one section per role instead */
+/* Hallmark · waive 81 · the .help-arc rings are the copper and silver arcs of the user's device mock-up, behind the search they frame · the website carries the same arcs, at the user's request */
+
+@import "../brand/palette.css";
+
+/*
+|--------------------------------------------------------------------------
+| HELP, REDESIGNED (Hallmark, 2026-11-21)
+|--------------------------------------------------------------------------
+|
+| The public Help centre (/help, main.help-public) and Help inside each
+| portal (HelpCentre, section.help-portal). Navy, brass and mist from
+| brand/palette.css; the Tailwind psu-* and gold-* scales on these pages
+| are the same navy and brass (brand.css).
+|
+*/
+
+/* ---------- The public page ---------- */
+.help-public { background: var(--color-paper); background-image: none; }
+.help-public :focus-visible { outline: 2px solid var(--color-night); outline-offset: 2px; }
+.help-hero :focus-visible { outline-color: var(--color-brass); }
+.help-hero { position: relative; overflow: hidden; isolation: isolate; background-color: var(--color-night); background-image: linear-gradient(180deg, var(--color-night) 0%, var(--color-night-deep) 100%); color: var(--color-on-night); }
+.help-hero-title { margin: 0; font-family: var(--font-display); font-size: clamp(2.25rem, 1.6rem + 2.4vw, 3.5rem); font-weight: 700; line-height: 1.04; letter-spacing: -0.028em; overflow-wrap: break-word; min-width: 0; }
+.help-role-tab--on { background: var(--color-brass); color: var(--color-night); }
+.help-role-tab:active { transform: scale(0.97); }
+
+/* The arcs: as on the website, cut from gradients by a ring mask. */
+.help-arcs { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.help-arc {
+  --w: 44px;
+  position: absolute; display: block; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(closest-side, transparent calc(100% - var(--w)), var(--c1) calc(100% - var(--w)), var(--c2) calc(100% - var(--w) * 0.62), var(--c3) calc(100% - var(--w) * 0.38), var(--c1) calc(100% - 1px), transparent 100%);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - var(--w) - 1px), var(--mask-solid) calc(100% - var(--w)), var(--mask-solid) calc(100% - 1px), transparent 100%);
+  mask: radial-gradient(closest-side, transparent calc(100% - var(--w) - 1px), var(--mask-solid) calc(100% - var(--w)), var(--mask-solid) calc(100% - 1px), transparent 100%);
+}
+.help-arc--1 { --w: 52px; --c1: var(--color-copper); --c2: var(--color-brass); --c3: var(--color-brass-light); width: 760px; right: -260px; top: -300px; opacity: 0.6; }
+.help-arc--2 { --w: 22px; --c1: var(--color-silver-deep); --c2: var(--color-mist); --c3: var(--color-silver); width: 560px; right: 60px; top: 40px; opacity: 0.4; }
+@media (max-width: 767.98px) { .help-arc--1 { width: 460px; right: -280px; } .help-arc--2 { display: none; } }
+
+/* ---------- Inside a portal ---------- */
+.help-band { position: relative; overflow: hidden; isolation: isolate; padding: 24px 20px; background-color: var(--color-night); background-image: linear-gradient(180deg, var(--color-night) 0%, var(--color-night-deep) 100%); color: var(--color-on-night); }
+@media (min-width: 640px) { .help-band { padding: 32px 28px; } }
+.help-band :focus-visible { outline: 2px solid var(--color-brass); outline-offset: 2px; }
+.help-band .help-arc { --w: 30px; --c1: var(--color-copper); --c2: var(--color-brass); --c3: var(--color-brass-light); z-index: -1; width: 420px; right: -170px; top: -210px; opacity: 0.55; }
+.help-band-title { margin: 0; font-family: var(--font-display); font-size: clamp(1.5rem, 1.2rem + 1vw, 2rem); font-weight: 700; letter-spacing: -0.02em; overflow-wrap: break-word; min-width: 0; }
+.help-band-lead { margin: 4px 0 0; font-size: 15px; color: var(--color-on-night-muted); }
+.help-portal-body { padding: 20px; background: var(--color-card); }
+@media (min-width: 640px) { .help-portal-body { padding: 24px 28px 28px; } }
+.help-portal .help-topic-head, .help-public .help-topic-head { letter-spacing: 0; text-transform: none; }
+
+/* ---------- Still need help ---------- */
+.help-stuck { position: relative; overflow: hidden; isolation: isolate; background-color: var(--color-night); }
+.help-stuck::after { content: ""; position: absolute; right: -90px; bottom: -150px; z-index: -1; width: 260px; aspect-ratio: 1; border-radius: 50%; border: 12px solid var(--color-brass); opacity: 0.3; }
+
+@media (prefers-reduced-motion: reduce) {
+  .help-role-tab:active { transform: none; }
+}
+
+/* The parts of the browser the page did not draw. */
+.help-public ::selection, .help-portal ::selection { background: color-mix(in oklab, var(--color-brass) 40%, transparent); color: var(--color-night); }
+.help-public input, .help-portal input { caret-color: var(--color-night); }
+
+/* ---------- Smaller, plainer (2026-11-21, "it's all too huge") ---------- */
+.help-hero-title { font-size: clamp(1.75rem, 1.2rem + 1.6vw, 2.5rem); }
+.help-hero > .relative { padding-block: 32px 36px; }
+.help-role-tab { min-height: 40px; padding-inline: 16px; font-size: 14px; }
+.help-public .field, .help-portal .field { min-height: 48px; font-size: 16px; border-radius: 12px; }
+.help-band { padding-block: 24px; }
+.help-band-title { font-size: clamp(1.375rem, 1.1rem + 0.8vw, 1.75rem); }
+.help-arc--1 { width: 620px; }
+.help-arc--2 { width: 440px; }
+.help-public button:disabled, .help-portal button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+/* ---------- The public Help centre, redesigned as a help desk (2026-11-21) ---------- */
+/* The header and the band: one navy surface, as the website's top bar. */
+.help-top { position: sticky; top: 0; z-index: 20; background: var(--color-night); color: var(--color-on-night); box-shadow: inset 0 -1px 0 color-mix(in oklab, var(--color-on-night) 10%, transparent); }
+.help-top :focus-visible { outline: 2px solid var(--color-brass); outline-offset: 2px; }
+.help-back { display: inline-flex; min-height: 44px; align-items: center; gap: 8px; padding: 0 8px; border-radius: 8px; white-space: nowrap; font-size: 14px; font-weight: 600; color: var(--color-on-night); transition: background-color 120ms; }
+.help-back:hover { background: color-mix(in oklab, var(--color-on-night) 10%, transparent); }
+.help-back:active { background: color-mix(in oklab, var(--color-on-night) 16%, transparent); }
+.help-public .help-hero { padding: 28px 0 24px; background-image: none; background-color: var(--color-night); color: var(--color-on-night); }
+.help-hero-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; }
+.help-public .help-hero-title { font-size: clamp(1.625rem, 1.2rem + 1.2vw, 2.25rem); }
+.help-roles { display: inline-flex; flex-wrap: wrap; gap: 4px; padding: 4px; border-radius: 12px; background: color-mix(in oklab, var(--color-on-night) 8%, transparent); }
+.help-public .help-role-tab { min-height: 40px; padding: 0 16px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--color-on-night-muted); transition: background-color 120ms, color 120ms; }
+.help-public .help-role-tab:hover { color: var(--color-on-night); background: color-mix(in oklab, var(--color-on-night) 8%, transparent); }
+.help-public .help-role-tab[aria-selected="true"] { background: var(--color-brass); color: var(--color-night); }
+.help-popular { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 12px 0 0; font-size: 14px; color: var(--color-on-night-muted); }
+.help-popular-chip { min-height: 32px; padding: 0 12px; border-radius: 8px; background: color-mix(in oklab, var(--color-on-night) 9%, transparent); font-weight: 600; color: var(--color-on-night); transition: background-color 120ms; }
+.help-popular-chip:hover { background: color-mix(in oklab, var(--color-on-night) 16%, transparent); }
+.help-popular-chip:active { background: color-mix(in oklab, var(--color-on-night) 22%, transparent); }
+
+/* The desk: topics down the side, the answers beside them. */
+.help-desk { display: grid; gap: 24px; padding-top: 28px; }
+@media (min-width: 1024px) { .help-desk { grid-template-columns: 15rem minmax(0, 1fr); gap: 40px; } }
+.help-side { display: none; }
+@media (min-width: 1024px) { .help-side { display: block; } .help-side-inner { position: sticky; top: 88px; } }
+.help-side-head { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--color-muted); }
+.help-topics, .help-ref-links { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.help-topic { display: grid; width: 100%; min-height: 40px; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 0 12px; border-radius: 8px; text-align: left; font-size: 14px; font-weight: 500; color: var(--color-night); transition: background-color 120ms; }
+.help-topic em { font-style: normal; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--color-muted); }
+.help-topic svg { color: var(--color-brass-deep); }
+.help-topic:hover { background: var(--color-mist); }
+.help-topic:active { background: var(--color-mist-deep); }
+.help-topic[aria-pressed="true"] { background: var(--color-night); color: var(--color-on-night); font-weight: 600; }
+.help-topic[aria-pressed="true"] em, .help-topic[aria-pressed="true"] svg { color: var(--color-brass); }
+.help-ref-links a { display: flex; min-height: 36px; align-items: center; padding: 0 12px; border-left: 2px solid var(--color-rule); font-size: 14px; color: var(--color-muted); transition: color 120ms, border-color 120ms; }
+.help-ref-links a:hover { border-left-color: var(--color-brass); color: var(--color-night); }
+
+/* The answers: one card, the list inside it. */
+.help-answers { padding: 16px; border-radius: 14px; background: var(--color-card); box-shadow: 0 0 0 1px var(--color-rule); }
+@media (min-width: 640px) { .help-answers { padding: 20px 24px; } }
+.help-answers-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 0 4px 12px; }
+.help-answers-title { margin: 0; font-family: var(--font-display); font-size: 1.25rem; font-weight: 700; color: var(--color-night); }
+.help-show-all { min-height: 36px; padding: 0 12px; border-radius: 8px; font-size: 14px; font-weight: 600; color: var(--color-night); text-decoration: underline; text-decoration-color: var(--color-brass); text-underline-offset: 3px; }
+.help-show-all:hover { background: var(--color-mist); }
+.help-about { display: flex; flex-direction: column; gap: 16px; padding: 20px 24px; border-radius: 14px; background: var(--color-card); box-shadow: 0 0 0 1px var(--color-rule); }
+@media (min-width: 640px) { .help-about { flex-direction: row; align-items: center; } }
+.help-chips { overflow-x: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .help-back, .help-public .help-role-tab, .help-popular-chip, .help-topic, .help-ref-links a { transition: none; }
+}
+.help-side-head.help-ref-head { margin-top: 28px; }
+/* On a phone the topics are one row that scrolls sideways, not three rows of chips. */
+.help-chips { margin-inline: -16px; padding: 4px 16px 8px; scrollbar-width: none; }
+.help-chips > div { flex-wrap: nowrap; }
+.help-chips button { flex-shrink: 0; }
+.help-public h3 { text-wrap: balance; }
+/* "Back to INTERNet" as a button: outlined on the navy, as the website's second buttons. */
+.help-back { min-height: 40px; padding: 0 16px 0 12px; border-radius: 10px; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 40%, transparent); transition: background-color 120ms, box-shadow 120ms, transform 120ms; }
+.help-back:hover { background: color-mix(in oklab, var(--color-on-night) 10%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 70%, transparent); }
+.help-back:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) { .help-back:active { transform: none; } }
+/* An icon button: the arrow alone, a 44px square; its name is said by aria-label and shown on hover by title. */
+.help-back { width: 44px; min-height: 44px; justify-content: center; padding: 0; }

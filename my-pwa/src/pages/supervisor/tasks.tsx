@@ -445,14 +445,14 @@ function TeamTaskRow({
             {first.team_name || "A team that has since been removed"}
             <span className="text-slate-600">
               {" "}
-              ·{" "}
+             ,{" "}
               {scheduled && first.release_day
-                ? `They will see it on ${formatDate(first.release_day)} · due ${formatDate(first.due_date)}`
+                ? `They will see it on ${formatDate(first.release_day)}, due ${formatDate(first.due_date)}`
                 : anyOpen
                   ? dueLabel(first.due_date)
                   : `Due ${formatDate(first.due_date)}`}
             </span>
-            {first.priority && <span className="text-slate-600"> · {first.priority} priority</span>}
+            {first.priority && <span className="text-slate-600">, {first.priority} priority</span>}
           </p>
           {first.description && <p className="mt-1 line-clamp-2 text-sm text-slate-600">{first.description}</p>}
         </div>
@@ -536,14 +536,14 @@ function TaskRow({
           </Link>
           <span className={late ? "font-semibold text-red-600" : "text-slate-500"}>
             {" "}
-            ·{" "}
+           ,{" "}
             {task.scheduled && task.release_day
-              ? `They will see it on ${formatDate(task.release_day)} · due ${formatDate(task.due_date)}`
+              ? `They will see it on ${formatDate(task.release_day)}, due ${formatDate(task.due_date)}`
               : open
                 ? dueLabel(task.due_date)
                 : `Due ${formatDate(task.due_date)}`}
           </span>
-          {task.priority && <span className="text-slate-500"> · {task.priority} priority</span>}
+          {task.priority && <span className="text-slate-500">, {task.priority} priority</span>}
         </p>
         {task.description && (
           <p className="mt-1 line-clamp-2 text-sm text-slate-500">{task.description}</p>

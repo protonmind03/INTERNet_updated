@@ -122,7 +122,7 @@ export default function SupervisorComplaints() {
                   </div>
                   <p className="mt-0.5 text-xs text-slate-500">
                     {formatDateTime(item.created_at)}
-                    {item.reported_student_name && ` · About ${item.reported_student_name}`}
+                    {item.reported_student_name && `, About ${item.reported_student_name}`}
                   </p>
                   <p className="mt-2 whitespace-pre-line text-sm text-slate-700">
                     {item.description}

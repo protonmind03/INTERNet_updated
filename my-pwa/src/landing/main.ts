@@ -1,4 +1,6 @@
 import "./landing.css";
+import "./home.css";
+import "./role.css";
 import { DEVICE_WORD, DOORS, HERO_ORDER, HOW_STEPS, type DeviceKind, type DoorRole } from "./content";
 import { detectDevice, setUpDownload, type Device } from "./download";
 
@@ -171,7 +173,7 @@ function setUpHero(): void {
     caption?.querySelector("[data-hero-device]")?.replaceChildren(DEVICE_WORD[device[role]]);
     caption?.querySelector(".land-dot")?.setAttribute("data-role", role);
     hero.querySelector("[data-hero-hint]")?.replaceChildren(
-      `Switch device · see the ${DOORS[role].name} portal on a ${DEVICE_WORD[nextDevice(device[role])]}`
+      `Switch device: see the ${DOORS[role].name} portal on a ${DEVICE_WORD[nextDevice(device[role])]}`
     );
     hero.querySelectorAll<HTMLElement>("[data-hero-indicator]").forEach((item) => {
       if (item.dataset.heroIndicator === role) item.setAttribute("aria-current", "true");

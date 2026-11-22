@@ -1,0 +1,107 @@
+/* Hallmark · shape: kept (form beside a panel) · genre: modern-minimal · theme: brand · redesign: full
+ * paper: oklch(97.5% 0.005 245) · accent: oklch(76% 0.11 74) · display: Bricolage Grotesque · body: Public Sans · hero: split, the form on mist beside today's register on a tablet's glass · nav: none (a sign-in page leads nowhere) · footer: kept · signature: today's register as a supervisor's tablet screen on the landing's brass and silver arcs
+ * axes: light/grotesk-heavy/warm · posture: three-tone, night carries the brass, mist carries the form · contrast: pass · fold: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4 · weakest: P, a sign-in page argues little; it says the supervisor's job in one line and shows the register they will open */
+/* Hallmark · dropped the "6 to verify" and "92% on time" tiles · 46a names them: figures no record backs; "4 of 5 in today" stays, counted from the example register */
+/* Hallmark · dropped the "Supervisor desk" kicker and the clipboard's clip · 54 names the eyebrow; the clip was ornament */
+/* Hallmark · reworded "Pangasinan State University · Lingayen Campus" to "Pangasinan State University, Lingayen Campus" · 63 names the dot */
+/* Hallmark · waive 81 · the .sv-arc rings are the copper and silver arcs of the user's device mock-up, beside the register they frame · the landing page carries the same arcs, at the user's request */
+
+@import "../brand/palette.css";
+
+/*
+|--------------------------------------------------------------------------
+| THE SUPERVISOR'S SIGN-IN, REDESIGNED (Hallmark, 2026-11-21)
+|--------------------------------------------------------------------------
+|
+| Navy, brass and mist (brand/palette.css), as the website and the portal.
+| Scoped under html[data-role="supervisor"] (useRoleTheme), so it outranks
+| brand.css's sign-in rules and touches no other door.
+|
+*/
+
+/* ---------- A computer ---------- */
+html[data-role="supervisor"] .signin-desk--supervisor { background: var(--color-paper); color: var(--color-ink); }
+html[data-role="supervisor"] .signin-desk--supervisor :focus-visible { outline: 2px solid var(--color-night); outline-offset: 2px; }
+html[data-role="supervisor"] .signin-desk--supervisor .signin-panel :focus-visible { outline-color: var(--color-brass); }
+
+html[data-role="supervisor"] .signin-desk--supervisor .signin-side { background-color: var(--color-mist); background-image: none; }
+html[data-role="supervisor"] .signin-side-tag { padding: 4px 12px; border-radius: 8px; background: var(--color-card); box-shadow: 0 0 0 1px var(--color-rule); font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--color-night); }
+html[data-role="supervisor"] .signin-side-top { right: clamp(24px, 3vw, 48px); display: flex; align-items: center; justify-content: space-between; }
+
+html[data-role="supervisor"] .signin-card--desk { padding: clamp(20px, 3.6vh, 32px) clamp(22px, 2.4vw, 32px); border-radius: 16px; background: var(--color-card); background-image: none; box-shadow: 0 0 0 1px var(--color-rule), 0 30px 60px -36px color-mix(in oklab, var(--color-shadow) 55%, transparent); }
+html[data-role="supervisor"] .signin-card--desk .signin-clipboard-head { padding-bottom: clamp(6px, 1.2vh, 12px); border-bottom: 1px solid var(--color-rule); }
+html[data-role="supervisor"] .signin-desk--supervisor .signin-title { font-weight: 700; color: var(--color-night); }
+html[data-role="supervisor"] .signin-desk--supervisor .signin-sub { color: var(--color-muted); }
+
+/* The form, in the three colours: navy fields' edges and button, brass for focus and the check. */
+html[data-role="supervisor"] .signin-field label { font-weight: 600; color: var(--color-night); }
+html[data-role="supervisor"] .signin-field input { border-color: var(--color-silver-deep); background: var(--color-card); color: var(--color-night); }
+html[data-role="supervisor"] .signin-field input:hover { border-color: var(--color-muted); }
+html[data-role="supervisor"] .signin-field input:focus { border-color: var(--color-brass-deep); outline: 2px solid var(--color-night); outline-offset: 1px; box-shadow: none; }
+html[data-role="supervisor"] .signin-field input:focus-visible { outline: 2px solid var(--color-night); outline-offset: 1px; }
+html[data-role="supervisor"] .signin-help { color: var(--color-muted); }
+html[data-role="supervisor"] .signin-keep input { accent-color: var(--color-night); }
+html[data-role="supervisor"] .signin-link { font-weight: 600; color: var(--color-night); text-decoration-color: var(--color-brass); }
+html[data-role="supervisor"] .signin-link:hover { color: var(--color-brass-deep); }
+html[data-role="supervisor"] .signin-submit { min-height: 48px; border-radius: 10px; background: var(--color-night); color: var(--color-on-night); font-weight: 600; box-shadow: none; transition: background-color 120ms, transform 120ms; }
+html[data-role="supervisor"] .signin-submit:hover { background: var(--color-night-raised); }
+html[data-role="supervisor"] .signin-submit:active { transform: scale(0.98); }
+html[data-role="supervisor"] .signin-submit:disabled { cursor: progress; background: var(--color-night-raised); color: var(--color-on-night-muted); box-shadow: inset 0 0 0 1px var(--color-silver-deep); }
+html[data-role="supervisor"] .signin-install { min-height: 44px; border-radius: 10px; border-color: var(--color-silver-deep); background: transparent; color: var(--color-night); font-weight: 600; transition: background-color 120ms; }
+html[data-role="supervisor"] .signin-install:hover { background: var(--color-mist); }
+html[data-role="supervisor"] .signin-install:active { background: var(--color-mist-deep); }
+html[data-role="supervisor"] .signin-tip { border-radius: 10px; background: var(--color-mist); box-shadow: inset 0 0 0 1px var(--color-rule); color: var(--color-night); }
+html[data-role="supervisor"] .signin-tip svg { color: var(--color-brass-deep); }
+
+/* ---------- The panel: night, the arcs, the register on a tablet's glass ---------- */
+html[data-role="supervisor"] .signin-desk--supervisor .signin-panel { overflow: clip; isolation: isolate; justify-content: center; background-color: var(--color-night); background-image: linear-gradient(180deg, var(--color-night) 0%, var(--color-night-deep) 100%); color: var(--color-on-night); }
+html[data-role="supervisor"] .signin-panel-title { max-width: 18ch; font-weight: 700; color: var(--color-on-night); text-wrap: balance; overflow-wrap: break-word; min-width: 0; }
+html[data-role="supervisor"] .signin-panel-title em { color: inherit; }
+
+.sv-arcs { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.sv-arc {
+  --w: 44px;
+  position: absolute; display: block; aspect-ratio: 1; border-radius: 50%;
+  background: radial-gradient(closest-side, transparent calc(100% - var(--w)), var(--c1) calc(100% - var(--w)), var(--c2) calc(100% - var(--w) * 0.62), var(--c3) calc(100% - var(--w) * 0.38), var(--c1) calc(100% - 1px), transparent 100%);
+  -webkit-mask: radial-gradient(closest-side, transparent calc(100% - var(--w) - 1px), var(--mask-solid) calc(100% - var(--w)), var(--mask-solid) calc(100% - 1px), transparent 100%);
+  mask: radial-gradient(closest-side, transparent calc(100% - var(--w) - 1px), var(--mask-solid) calc(100% - var(--w)), var(--mask-solid) calc(100% - 1px), transparent 100%);
+}
+.sv-arc--1 { --w: 52px; --c1: var(--color-copper); --c2: var(--color-brass); --c3: var(--color-brass-light); width: 900px; right: -420px; bottom: -420px; opacity: 0.6; }
+.sv-arc--2 { --w: 26px; --c1: var(--color-silver-deep); --c2: var(--color-mist); --c3: var(--color-silver); width: 700px; right: -160px; top: -380px; opacity: 0.45; }
+.sv-arc--3 { --w: 10px; --c1: var(--color-brass-deep); --c2: var(--color-brass); --c3: var(--color-brass-light); width: 520px; left: -300px; bottom: -200px; opacity: 0.5; }
+
+/* The tablet: dark glass with a silver rim, the register as its screen. */
+.sv-tablet { max-width: 32rem; margin-top: clamp(14px, 3vh, 26px); padding: 12px; border-radius: 24px; background: var(--color-glass); box-shadow: 0 0 0 2px var(--color-silver), 0 0 0 3px color-mix(in oklab, var(--color-silver-deep) 70%, transparent), 0 44px 70px -34px var(--color-shadow); }
+html[data-role="supervisor"] .sv-tablet .signin-board { max-width: none; margin: 0; border-radius: 14px; background: var(--color-card); color: var(--color-night); box-shadow: none; animation: none; }
+html[data-role="supervisor"] .signin-board-head b { font-weight: 600; }
+html[data-role="supervisor"] .signin-board-live { border-radius: 6px; background: var(--color-mist); color: var(--color-night); font-weight: 600; }
+.sv-board-count { margin: -4px 4px 8px; font-size: 13px; color: var(--color-muted); }
+html[data-role="supervisor"] .signin-board li { font-weight: 400; }
+html[data-role="supervisor"] .signin-board li:nth-child(odd) { background: var(--color-paper); }
+html[data-role="supervisor"] .signin-board li[data-state="offline"] { box-shadow: inset 3px 0 0 var(--color-brass); }
+html[data-role="supervisor"] .signin-avatar { background: var(--color-night); color: var(--color-on-night); font-weight: 600; }
+html[data-role="supervisor"] .signin-board-who { font-weight: 600; }
+html[data-role="supervisor"] .signin-board-time { font-family: var(--font-sans, inherit); font-variant-numeric: tabular-nums; color: var(--color-muted); }
+html[data-role="supervisor"] .signin-board-state { border-radius: 6px; font-weight: 600; }
+html[data-role="supervisor"] .signin-board li[data-state="in"] .signin-board-state { background: var(--color-mist); color: var(--color-night); }
+html[data-role="supervisor"] .signin-board li[data-state="offline"] .signin-board-state { background: var(--color-brass); color: var(--color-night); }
+html[data-role="supervisor"] .signin-verify { color: var(--color-muted); }
+html[data-role="supervisor"] .signin-verify span { border-radius: 8px; background: var(--color-night); color: var(--color-on-night); font-weight: 600; }
+html[data-role="supervisor"] .signin-pills li { border-radius: 8px; background: none; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 24%, transparent); color: var(--color-on-night); font-weight: 600; }
+
+/* ---------- A phone or tablet ---------- */
+html[data-role="supervisor"] .signin-phone--supervisor { background: var(--color-mist); }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-phone-head { position: relative; overflow: clip; isolation: isolate; background-color: var(--color-night); background-image: linear-gradient(180deg, var(--color-night) 0%, var(--color-night-deep) 100%); color: var(--color-on-night); }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-phone-head::after { content: ""; position: absolute; right: -120px; top: -160px; z-index: -1; width: 320px; aspect-ratio: 1; border-radius: 50%; border: 14px solid var(--color-brass); opacity: 0.35; }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-welcome { font-weight: 700; }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-lead { color: var(--color-on-night-muted); }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-chip { border-radius: 8px; background: color-mix(in oklab, var(--color-on-night) 12%, transparent); color: var(--color-on-night); font-weight: 600; letter-spacing: 0; text-transform: none; }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-chip-icon { background: var(--color-brass); color: var(--color-night); }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-sheet { background: var(--color-card); box-shadow: 0 0 0 1px var(--color-rule), 0 -18px 40px -30px var(--color-shadow); }
+html[data-role="supervisor"] .signin-phone--supervisor .signin-clip { display: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-role="supervisor"] .signin-submit, html[data-role="supervisor"] .signin-install { transition: none; }
+  html[data-role="supervisor"] .signin-board li { animation: none !important; }
+}

@@ -93,7 +93,7 @@ function SupervisorScreen() {
         </div>
         <div className="mini-body">
           <div className="mini-card mini-register">
-            <i className="mini-eyebrow">Today&rsquo;s register · 4 of 5 in</i>
+            <i className="mini-eyebrow">Today&rsquo;s register, 4 of 5 in</i>
             <div>
               {[
                 ["A", "7:58"],
@@ -110,15 +110,15 @@ function SupervisorScreen() {
             </div>
           </div>
           <div className="mini-card mini-queue">
-            <i className="mini-eyebrow">To verify · 6</i>
+            <i className="mini-eyebrow">To verify, 6</i>
             <span>
-              Time-in · 7:58 AM <em className="mini-btn mini-btn--role">Verify</em>
+              Time-in, 7:58 AM <em className="mini-btn mini-btn--role">Verify</em>
             </span>
             <span>
-              Task · 2 files <em className="mini-btn mini-btn--line">Review</em>
+              Task, 2 files <em className="mini-btn mini-btn--line">Review</em>
             </span>
             <span>
-              Time-in · offline <em className="mini-stamp mini-stamp--grey">Verified</em>
+              Time-in, offline <em className="mini-stamp mini-stamp--grey">Verified</em>
             </span>
           </div>
         </div>
@@ -162,7 +162,7 @@ function CoordinatorScreen() {
             </div>
           </div>
           <div className="mini-card mini-needs">
-            <i className="mini-eyebrow mini-eyebrow--bad">Needs you · 6</i>
+            <i className="mini-eyebrow mini-eyebrow--bad">Needs you, 6</i>
             <span className="first">
               <code>APPEAL ×3</code> Decide <em className="mini-btn mini-btn--bad">Decide</em>
             </span>
@@ -200,7 +200,7 @@ export function PortalScreen({ role }: { role: DoorRole }) {
 /** A device frame around a role's screen: a phone, a tablet or a laptop. */
 export function Device({ role, kind, children }: { role: DoorRole; kind: "phone" | "tablet" | "laptop"; children?: ReactNode }) {
   return (
-    <span className={`dev dev--${kind}`} data-role={role}>
+    <span className={`dev dev--${kind}`} data-role={role} aria-hidden="true">
       <span className="dev-screen">{children ?? <PortalScreen role={role} />}</span>
       {kind === "laptop" && <span className="dev-base" />}
     </span>
@@ -301,7 +301,7 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
       </div>
       <div className="mini-card">
         <i className="mini-eyebrow">This week&rsquo;s report</i>
-        <span className="mini-text">Activities · Learnings · Challenges</span>
+        <span className="mini-text">Activities, Learnings, Challenges</span>
         <span className="mini-btn mini-btn--role">Submit report</span>
       </div>
     </Frame>,
@@ -312,19 +312,19 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
         <span className="mini-road">
           <span />
         </span>
-        <i className="mini-note">of 486 · finishes Nov 26</i>
+        <i className="mini-note">of 486, finishes Nov 26</i>
       </div>
       <div className="mini-card mini-rows">
         <span>
-          Time record · October <i>Print</i>
+          Time record, October <i>Print</i>
         </span>
       </div>
     </Frame>,
   ],
   supervisor: [
-    <Frame key="1" role="supervisor" title="Review" sub="Today · 5 interns" menu="Review">
+    <Frame key="1" role="supervisor" title="Review" sub="Today, 5 interns" menu="Review">
       <div className="mini-card mini-register mini-span">
-        <i className="mini-eyebrow">Today&rsquo;s register · 4 of 5 in</i>
+        <i className="mini-eyebrow">Today&rsquo;s register, 4 of 5 in</i>
         <div>
           {[
             ["Ana", "7:58"],
@@ -347,29 +347,29 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
       </div>
       <div className="mini-card mini-rows">
         <span>
-          Late today <i>Ben · 12 min</i>
+          Late today <i>Ben, 12 min</i>
         </span>
       </div>
     </Frame>,
     <Frame key="2" role="supervisor" title="To verify" sub="3 time-ins" menu="Review">
       <div className="mini-card mini-queue mini-span">
-        <i className="mini-eyebrow">Time-ins · today</i>
+        <i className="mini-eyebrow">Time-ins, today</i>
         <span>
-          Ana · 7:58 AM <em className="mini-tick">✓</em>
+          Ana, 7:58 AM <em className="mini-tick">✓</em>
         </span>
         <span>
-          Cara · 8:00 AM <em className="mini-tick">✓</em>
+          Cara, 8:00 AM <em className="mini-tick">✓</em>
         </span>
         <span>
-          Dan · offline <em className="mini-btn mini-btn--line">Confirm</em>
+          Dan, offline <em className="mini-btn mini-btn--line">Confirm</em>
         </span>
         <span className="mini-btn mini-btn--role mini-wide">Verify all 2</span>
       </div>
     </Frame>,
     <Frame key="3" role="supervisor" title="Work" sub="To review" menu="Work">
       <div className="mini-card mini-queue">
-        <i className="mini-eyebrow">Task · Inventory sheet</i>
-        <span className="mini-text">2 files · handed in Friday</span>
+        <i className="mini-eyebrow">Task, Inventory sheet</i>
+        <span className="mini-text">2 files, handed in Friday</span>
         <span className="mini-pair">
           <em className="mini-btn mini-btn--line">Return</em>
           <em className="mini-btn mini-btn--role">Review</em>
@@ -386,7 +386,7 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
     </Frame>,
     <Frame key="4" role="supervisor" title="Evaluate" sub="Final evaluation" menu="Evaluate">
       <div className="mini-card mini-rate">
-        <i className="mini-eyebrow">Ana · final evaluation</i>
+        <i className="mini-eyebrow">Ana, final evaluation</i>
         {["Quality of work", "Punctuality", "Teamwork"].map((what, index) => (
           <span key={what}>
             {what} <em>{"★★★★★".slice(0, 5 - (index === 1 ? 1 : 0))}</em>
@@ -403,7 +403,7 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
   coordinator: [
     <Frame key="1" role="coordinator" title="Home" sub="Week 9 of 16" menu="Home">
       <div className="mini-card mini-needs mini-span">
-        <i className="mini-eyebrow mini-eyebrow--bad">Needs you · 6</i>
+        <i className="mini-eyebrow mini-eyebrow--bad">Needs you, 6</i>
         <span className="first">
           <code>APPEAL ×3</code> Decide <em className="mini-btn mini-btn--bad">Decide</em>
         </span>
@@ -427,9 +427,9 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
     <Frame key="2" role="coordinator" title="Appeal" sub="Photo rejection" menu="Decide">
       <div className="mini-card mini-timeline">
         <i className="mini-eyebrow">The day&rsquo;s timeline</i>
-        <span>8:55 · Timed in</span>
-        <span>9:20 · Photo rejected</span>
-        <span>7:10 PM · Appealed</span>
+        <span>8:55, Timed in</span>
+        <span>9:20, Photo rejected</span>
+        <span>7:10 PM, Appealed</span>
       </div>
       <div className="mini-card">
         <i className="mini-eyebrow">Decision</i>
@@ -443,7 +443,7 @@ const STEP_SCREENS: Record<DoorRole, ReactNode[]> = {
     <Frame key="3" role="coordinator" title="Set up the term" sub="1st semester" menu="Setup">
       <div className="mini-card mini-rows">
         <span>
-          Programs and blocks <i>15 · 35</i>
+          Programs and blocks <i>15, 35</i>
         </span>
         <span>
           Schedules <i>Set</i>

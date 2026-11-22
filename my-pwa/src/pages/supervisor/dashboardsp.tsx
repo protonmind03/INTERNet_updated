@@ -4,7 +4,7 @@ import Icon, { type IconName } from "../../components/Icon";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, Modal, SkeletonRows } from "../../components/ui";
 import SupervisorLayout from "../../layouts/SupervisorLayout";
-import { formatDate, formatDayDate, formatHours, formatTime, greetingFor, firstNameOf } from "../../lib/format";
+import { formatDate, formatDayDate, formatHours, formatTime } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
 import { formatPhDay, phToday } from "../../lib/phTime";
 import { useAccount } from "../../lib/session";
@@ -267,13 +267,13 @@ export default function SupervisorDashboard() {
   const bulkOffered = (kind: BulkKind) => bulkCount(kind) >= (kind === "attendance" ? 1 : 2);
   const bulkRows: { key: string; name: string; what: string; id: number }[] =
     confirmBulk === "attendance"
-      ? verifiable.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: `${formatDate(item.entry.date)} · ${formatHours(item.entry.hours)}` }))
+      ? verifiable.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: `${formatDate(item.entry.date)}, ${formatHours(item.entry.hours)}` }))
       : confirmBulk === "document"
         ? waitingDocuments.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: item.entry.doc_type }))
         : confirmBulk === "absence"
           ? waitingAbsences.map((item) => ({ key: item.key, id: item.entry.id, name: item.entry.student_name, what: formatDate(item.entry.date) }))
           : confirmBulk === "counting"
-            ? counting.map((entry) => ({ key: `counting-${entry.id}`, id: entry.id, name: entry.student_name, what: `${formatDate(entry.date)} · ${formatHours(entry.hours)}` }))
+            ? counting.map((entry) => ({ key: `counting-${entry.id}`, id: entry.id, name: entry.student_name, what: `${formatDate(entry.date)}, ${formatHours(entry.hours)}` }))
             : [];
 
   const decideAll = async () => {
@@ -337,7 +337,6 @@ export default function SupervisorDashboard() {
     .filter((entry) => (entry.status === "Verified" || entry.status === "Rejected") && entry.verified_at && String(entry.verified_at).slice(0, 10) === today)
     .slice(0, 4);
   const shownInterns = interns.filter((intern) => inGroup(intern.student_id));
-  const firstName = firstNameOf(supervisor?.name);
   const company = supervisor?.company || "your company";
 
   /** One waiting item, on its kind's colour: a decision card, or a final evaluation to start. */
@@ -526,7 +525,7 @@ export default function SupervisorDashboard() {
         </span>
         <span className="min-w-0 flex-1">
           <span className="block text-[14.5px] font-bold text-slate-900">
-            Counting on their own <span className="tabular text-slate-500">· {counting.length}</span>
+            Counting on their own <span className="tabular text-slate-500">({counting.length})</span>
           </span>
           <span className="block text-[12.5px] text-slate-600">Clean days: camera-checked and timed out. Each counts after two working days unless you reject it.</span>
         </span>
@@ -547,7 +546,7 @@ export default function SupervisorDashboard() {
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[14px] font-bold text-slate-900">{entry.student_name}</span>
               <span className="block text-[12.5px] text-slate-600">
-                {formatDayDate(entry.date)} · {formatTime(entry.time_in)}–{formatTime(entry.time_out)} · <span className="whitespace-nowrap">{formatHours(entry.hours)}</span>
+                {formatDayDate(entry.date)}, {formatTime(entry.time_in)}–{formatTime(entry.time_out)}, <span className="whitespace-nowrap">{formatHours(entry.hours)}</span>
               </span>
             </span>
             <span className="rk-countdown">Counts after {formatPhDay(String(entry.auto_count_on), { weekday: "short", month: "short", day: "numeric" })}</span>
@@ -569,7 +568,7 @@ export default function SupervisorDashboard() {
 
   return (
     <SupervisorLayout
-      title={computer ? `${greetingFor(new Date())}${firstName ? `, ${firstName}` : ""}` : "Review"}
+      title="Review"
       // The company is in the side menu (and the phone header's line); the greeting carries the day.
       subtitle={computer ? formatPhDay(today, { weekday: "long", month: "short", day: "numeric" }) : undefined}
       actions={
@@ -617,14 +616,14 @@ export default function SupervisorDashboard() {
                   </span>
                   <span className="min-w-0">
                     <h2 id="to-verify-title" className="font-display text-[21px] font-extrabold leading-tight text-slate-900">
-                      {title} <span className="tabular text-slate-500">· {visible.length}</span>
+                      {title} <span className="tabular text-slate-500">({visible.length})</span>
                     </h2>
                   </span>
                   <span className="ml-auto">{headBulk}</span>
                 </div>
               ) : (
                 <h2 id="to-verify-title" className="mb-2 px-1 text-[15px] font-bold text-slate-900">
-                  {title} <span className="tabular text-slate-500">· {visible.length}</span>
+                  {title} <span className="tabular text-slate-500">({visible.length})</span>
                 </h2>
               )}
               {!computer && chosen?.bulk && chosen.bulk !== "attendance" && bulkOffered(chosen.bulk) && <div className="mb-3">{bulkButton(chosen.bulk, true)}</div>}

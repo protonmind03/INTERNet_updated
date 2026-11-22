@@ -84,7 +84,7 @@ function Panel<T>({
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold text-slate-900">{panel.name}</span>
             <span className="block text-xs text-slate-600">
-              {panel.block || "No block"} · {count} {count === 1 ? "item" : "items"}
+              {panel.block || "No block"}, {count} {count === 1 ? "item" : "items"}
             </span>
           </span>
           {panel.waiting > 0 ? (

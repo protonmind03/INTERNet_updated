@@ -69,7 +69,7 @@ export default function TaskBoard({ tasks, onReview, onShowReviewed }: { tasks: 
                       {task.scheduled ? (
                         <span className="rounded-md bg-slate-100 px-1.5 py-0.5 font-semibold text-slate-700">Scheduled</span>
                       ) : late ? (
-                        <span className="rounded-md bg-red-50 px-1.5 py-0.5 font-bold text-red-700">Overdue · {formatDate(task.due_date)}</span>
+                        <span className="rounded-md bg-red-50 px-1.5 py-0.5 font-bold text-red-700">Overdue, {formatDate(task.due_date)}</span>
                       ) : column.key === "done" ? (
                         task.review_rating ? <Stars value={Number(task.review_rating)} size={12} /> : <span className="text-slate-500">Due {formatDate(task.due_date)}</span>
                       ) : (

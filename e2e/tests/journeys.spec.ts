@@ -295,14 +295,15 @@ test.describe("the supervisor's menu, and one word for a concern", () => {
     await page.setViewportSize({ width: 1280, height: 900 });
     await signIn(page, "supervisor");
     const menu = page.locator("aside.role-side");
-    // The side menu's groups, in this order (PSU redesign 10 and the menu review).
-    await expect(menu.locator(".role-side-group > :first-child .role-side-text > span:first-child")).toHaveText(
-      ["Review", "Interns", "Attendance", "Work", "Evaluate", "Talk"]
+    // The side menu shows every page, in this order (Hallmark system pass, 2026-11-21: no groups to
+    // open; Interns' work, Evaluate and Talk are quiet headings over their pages).
+    await expect(menu.locator(".role-side-link .role-side-text > span:first-child")).toHaveText(
+      ["Review", "Interns", "Attendance", "Tasks", "Weekly reports", "Documents", "Final evaluations", "Time records", "Messages", "Announcements", "Concerns"]
     );
+    await expect(menu.getByText("Talk", { exact: true })).toBeVisible();
     await expect(menu.getByRole("link", { name: /Incidents/ })).toHaveCount(0);
 
-    const talk = menu.locator(".role-side-group").filter({ hasText: /^Talk/ });
-    await talk.locator("button[aria-expanded]").first().click();
+    const talk = menu;
     await talk.getByRole("link", { name: "Concerns" }).click();
     await expect(page).toHaveURL(/\/supervisor\/complaints$/);
     await expect(page.getByRole("heading", { level: 1, name: "Concerns" })).toBeVisible();

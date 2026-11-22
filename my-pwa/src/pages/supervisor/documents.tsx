@@ -179,7 +179,7 @@ export default function SupervisorDocuments() {
                             />
                           </div>
                           <p className="truncate text-xs text-slate-500">
-                            {item.original_filename} · {formatFileSize(Number(item.size_bytes))} ·{" "}
+                            {item.original_filename}, {formatFileSize(Number(item.size_bytes))},{" "}
                             {formatDate(item.uploaded_at)}
                           </p>
                           {item.review_notes && (

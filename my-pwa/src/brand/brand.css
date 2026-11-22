@@ -251,44 +251,44 @@
   --role-on-side: #ffffff;
 }
 [data-role="student"] {
-  --role-primary: #a84a0c;
-  --role-on-primary: #ffffff;
-  --role-accent: #facc15;
-  --role-on-accent: #3a2a12;
-  --role-surface: #fbf7ef;
+  --role-primary: #233564;
+  --role-on-primary: #fbfdfe;
+  --role-accent: #dba65d;
+  --role-on-accent: #0c1731;
+  --role-surface: #f4f7fa;
   /* The paper inside the trainee's folders (pages/student/StudentFolder.tsx). */
-  --folder-paper: #fffcf7;
-  --role-ink: #3a2a12;
-  --role-chrome: #8a3a07;
-  --role-on-chrome: #ffffff;
-  --role-decor: #facc15;
-  --role-hairline: #ebddc6;
-  --role-dock: #fff8e6;
-  --role-dock-border: #f2e3be;
-  --role-dock-ink: #6e2e08;
-  --role-dock-active: #a84a0c;
-  --role-on-dock-active: #ffffff;
-  --role-side: #8a3a07;
-  --role-on-side: #ffffff;
+  --folder-paper: #fbfdfe;
+  --role-ink: #0c1731;
+  --role-chrome: #0c1731;
+  --role-on-chrome: #f2f6f9;
+  --role-decor: #dba65d;
+  --role-hairline: #cad2db;
+  --role-dock: #fbfdfe;
+  --role-dock-border: #d1dae3;
+  --role-dock-ink: #233564;
+  --role-dock-active: #0c1731;
+  --role-on-dock-active: #f2f6f9;
+  --role-side: #0c1731;
+  --role-on-side: #f2f6f9;
 }
 [data-role="supervisor"] {
-  --role-primary: #116c5c;
-  --role-on-primary: #ffffff;
-  --role-accent: #d3e9e1;
-  --role-on-accent: #0e2a26;
-  --role-surface: #f4f9f6;
-  --role-ink: #0e2a26;
-  --role-chrome: #116c5c;
-  --role-on-chrome: #ffffff;
-  --role-decor: #7fd1ae;
-  --role-hairline: #d3e6dd;
-  --role-dock: #0c5548;
-  --role-dock-border: #0c5548;
-  --role-dock-ink: #ffffff;
-  --role-dock-active: #ffffff;
-  --role-on-dock-active: #0c5548;
-  --role-side: #116c5c;
-  --role-on-side: #ffffff;
+  --role-primary: #233564;
+  --role-on-primary: #fbfdfe;
+  --role-accent: #dba65d;
+  --role-on-accent: #0c1731;
+  --role-surface: #f4f7fa;
+  --role-ink: #0c1731;
+  --role-chrome: #0c1731;
+  --role-on-chrome: #f2f6f9;
+  --role-decor: #dba65d;
+  --role-hairline: #cad2db;
+  --role-dock: #0c1731;
+  --role-dock-border: #0c1731;
+  --role-dock-ink: #f2f6f9;
+  --role-dock-active: #dba65d;
+  --role-on-dock-active: #0c1731;
+  --role-side: #0c1731;
+  --role-on-side: #f2f6f9;
 }
 [data-role="coordinator"] {
   --role-primary: #4f46e5;
@@ -309,32 +309,66 @@
   --role-side: #121a5e;
   --role-on-side: #ffffff;
 }
+/*
+| 2026-11-21: the trainee and supervisor portals' gold is brass, the landing
+| page's accent, so every gold-* class in those portals matches it. The
+| public Help page (.help-public) takes the same navy and brass scales.
+*/
+[data-role="student"], [data-role="supervisor"], .help-public {
+  --route-line: #dba65d;
+  /* Every amber accent in these two portals (the side menu's current mark, the trainee's lane) is brass too. */
+  --inb-amber: #dba65d;
+  --color-gold-50: #fff5e8;
+  --color-gold-100: #fdead0;
+  --color-gold-200: #fad8ab;
+  --color-gold-300: #f1c58b;
+  --color-gold-400: #e6b46e;
+  --color-gold-500: #dba65d;
+  --color-gold-600: #b2823c;
+  --color-gold-700: #8f6527;
+  --color-gold-800: #745018;
+  --color-gold-900: #5b3f13;
+  --color-gold-950: #372508;
+}
+.help-public {
+  --color-psu-50: #f1f5fe;
+  --color-psu-100: #e3eaf7;
+  --color-psu-200: #c9d4ec;
+  --color-psu-300: #9fb1d8;
+  --color-psu-400: #6e85ba;
+  --color-psu-500: #445b93;
+  --color-psu-600: #233564;
+  --color-psu-700: #18274b;
+  --color-psu-800: #0f1b39;
+  --color-psu-900: #08122c;
+  --color-psu-950: #03071b;
+}
 /* The brand blue scale, redrawn in each role colour (ROLE_SCALES in tokens.ts): every psu-* class in a portal follows it. */
 [data-role="student"] {
-  --color-psu-50: #fbf3e8;
-  --color-psu-100: #f6e3cb;
-  --color-psu-200: #edc79a;
-  --color-psu-300: #e0a468;
-  --color-psu-400: #cc7a35;
-  --color-psu-500: #b95f18;
-  --color-psu-600: #a84a0c;
-  --color-psu-700: #8a3a07;
-  --color-psu-800: #6e2e08;
-  --color-psu-900: #55240a;
-  --color-psu-950: #341505;
+  --color-psu-50: #f1f5fe;
+  --color-psu-100: #e3eaf7;
+  --color-psu-200: #c9d4ec;
+  --color-psu-300: #9fb1d8;
+  --color-psu-400: #6e85ba;
+  --color-psu-500: #445b93;
+  --color-psu-600: #233564;
+  --color-psu-700: #18274b;
+  --color-psu-800: #0f1b39;
+  --color-psu-900: #08122c;
+  --color-psu-950: #03071b;
 }
 [data-role="supervisor"] {
-  --color-psu-50: #ecf6f2;
-  --color-psu-100: #d3e9e1;
-  --color-psu-200: #a9d4c5;
-  --color-psu-300: #74b8a3;
-  --color-psu-400: #3f9881;
-  --color-psu-500: #1f7f6b;
-  --color-psu-600: #116c5c;
-  --color-psu-700: #0c5548;
-  --color-psu-800: #0a463c;
-  --color-psu-900: #083830;
-  --color-psu-950: #04221d;
+  --color-psu-50: #f1f5fe;
+  --color-psu-100: #e3eaf7;
+  --color-psu-200: #c9d4ec;
+  --color-psu-300: #9fb1d8;
+  --color-psu-400: #6e85ba;
+  --color-psu-500: #445b93;
+  --color-psu-600: #233564;
+  --color-psu-700: #18274b;
+  --color-psu-800: #0f1b39;
+  --color-psu-900: #08122c;
+  --color-psu-950: #03071b;
 }
 [data-role="coordinator"] {
   --color-psu-50: #eef2ff;
@@ -1046,7 +1080,7 @@
 
 /* ---------- Trainee: the time card (motifs/TimeCard.tsx, LaneDash, HoursRoad) ---------- */
 /* The yellow lane-dash strip along the bottom of the trainee's header. */
-.lane-dash { height: 6px; background-color: var(--role-chrome); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='28' height='6'%3E%3Crect x='4' y='0' width='16' height='6' fill='%23FACC15'/%3E%3C/svg%3E"); background-repeat: repeat-x; }
+.lane-dash { height: 6px; background-color: var(--role-chrome); background-image: repeating-linear-gradient(90deg, transparent 0 4px, var(--inb-amber) 4px 20px, transparent 20px 28px); }
 .time-card { position: relative; border: 1px solid var(--role-hairline); border-radius: 16px; background: #ffffff; }
 .time-card-tear { position: relative; height: 0; margin: 0 14px; border-top: 2px dashed var(--role-hairline); }
 .time-card-tear::before, .time-card-tear::after { content: ""; position: absolute; top: -9px; width: 16px; height: 16px; border-radius: 9999px; background: var(--role-surface); border: 1px solid var(--role-hairline); }

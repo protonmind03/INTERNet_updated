@@ -51,8 +51,8 @@ type Today = { tone: "in" | "out" | "absent" | "none"; text: string };
 /** Where an intern is today, from today's log or a filed absence. */
 function todayOf(log: AttendanceEntry | undefined, absence: AbsenceEntry | undefined): Today {
   if (log && !log.time_out) return { tone: "in", text: `In since ${formatTime(log.time_in)}` };
-  if (log) return { tone: "out", text: `Out ${formatTime(log.time_out)} · ${formatHours(log.hours)}` };
-  if (absence) return { tone: "absent", text: absence.status === "Pending" ? "Absent · to review" : `Absent · ${absence.status.toLowerCase()}` };
+  if (log) return { tone: "out", text: `Out ${formatTime(log.time_out)}, ${formatHours(log.hours)}` };
+  if (absence) return { tone: "absent", text: absence.status === "Pending" ? "Absent, to review" : `Absent, ${absence.status.toLowerCase()}` };
   return { tone: "none", text: "Not in yet" };
 }
 
@@ -197,8 +197,8 @@ export default function SupervisorInterns() {
           <p className="text-[14px] text-slate-600">
             <span className="font-semibold text-slate-900">
               {inToday} of {interns.length} in today
-            </span>{" "}
-            · {average}% of their hours done on average
+            </span>
+           , {average}% of their hours done on average
           </p>
         )}
 
@@ -310,7 +310,7 @@ export default function SupervisorInterns() {
                         <span className="min-w-0">
                           <span className="block truncate text-[15.5px] font-bold text-slate-900">{intern.name}</span>
                           <span className="block truncate text-[13px] text-slate-600">
-                            {[intern.block_name || intern.program_code || intern.program, intern.student_id].filter(Boolean).join(" · ")}
+                            {[intern.block_name || intern.program_code || intern.program, intern.student_id].filter(Boolean).join(", ")}
                           </span>
                         </span>
                         <span className={`inline-flex shrink-0 items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[12px] font-bold ring-1 ring-inset ${TODAY_TONE[now.tone]}`}>
@@ -432,7 +432,7 @@ function InternDialog({
       open
       onClose={onClose}
       title={intern.name}
-      description={[intern.student_id, intern.block_name || intern.program].filter(Boolean).join(" · ")}
+      description={[intern.student_id, intern.block_name || intern.program].filter(Boolean).join(", ")}
       footer={
         <>
           <Button variant="secondary" onClick={onClose}>
@@ -501,11 +501,11 @@ function InternDialog({
           {intern.active_tasks} open {intern.active_tasks === 1 ? "task" : "tasks"}
           {pending > 0 ? (
             <span className="font-semibold text-amber-800">
-              {" "}
-              · {pending} waiting for you
+              {", "}
+             {pending} waiting for you
             </span>
           ) : (
-            " · nothing waiting for you"
+            ", nothing waiting for you"
           )}
         </p>
         <p className="text-sm text-slate-600">

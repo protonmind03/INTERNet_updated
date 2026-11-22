@@ -112,8 +112,8 @@ export default function SupervisorTimeRecord() {
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[15px] font-bold text-slate-900">{item.name}</span>
                           <span className="block text-[13px] text-slate-600">
-                            {formatHours(verified)} verified · {logs.length} {logs.length === 1 ? "day" : "days"}
-                            {pending > 0 && <span className="font-semibold text-amber-800"> · {pending} to verify</span>}
+                            {formatHours(verified)} verified, {logs.length} {logs.length === 1 ? "day" : "days"}
+                            {pending > 0 && <span className="font-semibold text-amber-800">, {pending} to verify</span>}
                           </span>
                         </span>
                         <Icon name="printer" size={18} className="text-psu-700" />

@@ -55,6 +55,10 @@ export type RolePalette = {
 };
 
 /*
+| 2026-11-21: the trainee and supervisor portals take the landing page's
+| three colours: navy (chrome, ink, buttons), brass (the one thing to do
+| now) and mist (the paper). The coordinator keeps its own for now.
+|
 | PSU redesign (internet-revisions, Section 13, "beyond gradients"): every
 | header is one flat role colour (`chrome`), every page sits on the role's
 | paper (`surface`), and `primary` is the accent for buttons, the active
@@ -64,27 +68,27 @@ export type RolePalette = {
 export const ROLE_PALETTES = {
   student: {
     name: "Time card",
-    primary: "#A84A0C",
-    onPrimary: "#FFFFFF",
-    accent: "#FACC15",
-    onAccent: "#3A2A12",
-    surface: "#FBF7EF",
-    ink: "#3A2A12",
-    chrome: "#8A3A07",
-    onChrome: "#FFFFFF",
-    decor: "#FACC15",
+    primary: "#233564",
+    onPrimary: "#FBFDFE",
+    accent: "#DBA65D",
+    onAccent: "#0C1731",
+    surface: "#F4F7FA",
+    ink: "#0C1731",
+    chrome: "#0C1731",
+    onChrome: "#F2F6F9",
+    decor: "#DBA65D",
   },
   supervisor: {
     name: "Logbook",
-    primary: "#116C5C",
-    onPrimary: "#FFFFFF",
-    accent: "#D3E9E1",
-    onAccent: "#0E2A26",
-    surface: "#F4F9F6",
-    ink: "#0E2A26",
-    chrome: "#116C5C",
-    onChrome: "#FFFFFF",
-    decor: "#7FD1AE",
+    primary: "#233564",
+    onPrimary: "#FBFDFE",
+    accent: "#DBA65D",
+    onAccent: "#0C1731",
+    surface: "#F4F7FA",
+    ink: "#0C1731",
+    chrome: "#0C1731",
+    onChrome: "#F2F6F9",
+    decor: "#DBA65D",
   },
   coordinator: {
     name: "Route map",
@@ -121,24 +125,24 @@ export type RoleSurfaces = {
 
 export const ROLE_SURFACES = {
   student: {
-    hairline: "#EBDDC6",
-    dock: "#FFF8E6",
-    dockBorder: "#F2E3BE",
-    dockInk: "#6E2E08",
-    dockActive: "#A84A0C",
-    onDockActive: "#FFFFFF",
-    side: "#8A3A07",
-    onSide: "#FFFFFF",
+    hairline: "#CAD2DB",
+    dock: "#FBFDFE",
+    dockBorder: "#D1DAE3",
+    dockInk: "#233564",
+    dockActive: "#0C1731",
+    onDockActive: "#F2F6F9",
+    side: "#0C1731",
+    onSide: "#F2F6F9",
   },
   supervisor: {
-    hairline: "#D3E6DD",
-    dock: "#0C5548",
-    dockBorder: "#0C5548",
-    dockInk: "#FFFFFF",
-    dockActive: "#FFFFFF",
-    onDockActive: "#0C5548",
-    side: "#116C5C",
-    onSide: "#FFFFFF",
+    hairline: "#CAD2DB",
+    dock: "#0C1731",
+    dockBorder: "#0C1731",
+    dockInk: "#F2F6F9",
+    dockActive: "#DBA65D",
+    onDockActive: "#0C1731",
+    side: "#0C1731",
+    onSide: "#F2F6F9",
   },
   coordinator: {
     hairline: "#E3E6F5",
@@ -159,8 +163,8 @@ export const ROLE_SURFACES = {
  * the role's colour from one place. Step 600 is the role's `primary`.
  */
 export const ROLE_SCALES = {
-  student: ["#FBF3E8", "#F6E3CB", "#EDC79A", "#E0A468", "#CC7A35", "#B95F18", "#A84A0C", "#8A3A07", "#6E2E08", "#55240A", "#341505"],
-  supervisor: ["#ECF6F2", "#D3E9E1", "#A9D4C5", "#74B8A3", "#3F9881", "#1F7F6B", "#116C5C", "#0C5548", "#0A463C", "#083830", "#04221D"],
+  student: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
+  supervisor: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
   coordinator: ["#EEF2FF", "#E0E7FF", "#C7D2FE", "#A5B4FC", "#818CF8", "#6366F1", "#4F46E5", "#4338CA", "#3730A3", "#312E81", "#1E1B4B"],
 } as const;
 

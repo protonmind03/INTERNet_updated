@@ -1,0 +1,50 @@
+/*
+|--------------------------------------------------------------------------
+| THE SYSTEM'S THREE COLOURS (2026-11-21)
+|--------------------------------------------------------------------------
+|
+|   night  - PSU navy: headers, side menus, headings, device glass
+|   brass  - PSU gold toward copper: the one thing to do now, what is current
+|   mist   - brushed silver: the grounds, rims and text on night
+|
+| Shared by the website (landing/home-tokens.css) and the app (the sign-in
+| and Help pages). The portals' own --role-* tokens (brand.css) and
+| ROLE_PALETTES (tokens.ts) carry the same values in hex.
+|
+*/
+:root {
+  /* Night: PSU navy. */
+  --color-night: oklch(21% 0.055 266);
+  --color-night-deep: oklch(16% 0.045 266);
+  --color-night-raised: oklch(28% 0.06 266);
+  /* Brass: PSU gold meeting the mock-up's copper. */
+  --color-brass: oklch(76% 0.11 74);
+  --color-brass-light: oklch(85% 0.08 80);
+  --color-brass-deep: oklch(46% 0.085 62);
+  --color-copper: oklch(62% 0.09 52);
+  /* Mist: brushed aluminium and the pale grey of the floating-screens mock-up. */
+  --color-mist: oklch(93.5% 0.012 245);
+  --color-mist-deep: oklch(88.5% 0.016 248);
+  --color-silver: oklch(79% 0.014 250);
+  --color-silver-deep: oklch(64% 0.016 255);
+  --color-card: oklch(99.2% 0.003 245);
+  /* Graphite: night with its colour drawn out, for the laptop deck and the glass. */
+  --color-graphite: oklch(27% 0.014 266);
+  --color-graphite-line: oklch(35% 0.016 266);
+  --color-glass: oklch(14% 0.02 266);
+
+  --color-paper: oklch(97.5% 0.005 245);
+  --color-paper-2: var(--color-mist);
+  --color-paper-3: var(--color-mist-deep);
+  --color-ink: var(--color-night);
+  --color-ink-2: var(--color-night-raised);
+  --color-muted: oklch(45% 0.03 262);
+  --color-rule: oklch(86% 0.015 250);
+  --color-accent: var(--color-brass);
+  --color-accent-ink: var(--color-night);
+  --color-focus: var(--color-brass);
+  --color-on-night: oklch(97% 0.006 245);
+  --color-on-night-muted: oklch(80% 0.024 252);
+  --color-shadow: oklch(14% 0.04 266);
+  --mask-solid: oklch(0% 0 0);
+}

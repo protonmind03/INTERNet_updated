@@ -80,8 +80,8 @@ export default function FinalEvaluations({ interns, evaluated, loading }: { inte
                 <span className="block truncate text-[15px] font-bold text-slate-900">{intern.name}</span>
                 <span className="block text-[13px] text-slate-600">
                   {formatHours(intern.hours_rendered)} of {formatHours(intern.required_hours)}
-                  {stage === "later" && left > 0 ? ` · ${formatHours(left)} to go` : ""}
-                  {intern.program_code || intern.program ? ` · ${intern.block_name || intern.program_code || intern.program}` : ""}
+                  {stage === "later" && left > 0 ? `, ${formatHours(left)} to go` : ""}
+                  {intern.program_code || intern.program ? `, ${intern.block_name || intern.program_code || intern.program}` : ""}
                 </span>
               </span>
               <span className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[12.5px] font-bold ring-1 ring-inset ${STAGE[stage].tone}`}>
