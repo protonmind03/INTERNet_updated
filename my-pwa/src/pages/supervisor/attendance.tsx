@@ -137,7 +137,7 @@ function LogStatus({ entry }: { entry: AttendanceEntry }) {
   if (countsOnItsOwn(entry)) {
     return <StatusBadge status={`Counts after ${formatPhDay(String(entry.auto_count_on), { weekday: "short", month: "short", day: "numeric" })}`} tone="info" />;
   }
-  if (entry.status === "Verified" && entry.auto_counted) return <StatusBadge status="Verified · automatic" tone="good" />;
+  if (entry.status === "Verified" && entry.auto_counted) return <StatusBadge status="Verified, automatic" tone="good" />;
   return <StatusBadge status={entry.status} />;
 }
 
@@ -153,7 +153,7 @@ function GroupHeader({ group, inTable = false }: { group: AttendanceGroup; inTab
       <span className="text-sm font-semibold text-slate-900">{group.label}</span>
       <span className="text-xs text-slate-600">
         {count} {count === 1 ? "log" : "logs"}
-        {group.needsReview > 0 && ` · ${group.needsReview} need review`}
+        {group.needsReview > 0 && `, ${group.needsReview} need review`}
       </span>
     </div>
   );
@@ -569,13 +569,13 @@ export default function SupervisorAttendanceApproval() {
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-semibold text-slate-900">{entry.student_name}</p>
                                   <p className="tabular text-sm text-slate-600">
-                                    {formatDayDate(entry.date)} · {formatTime(entry.time_in)} – {formatTime(entry.time_out)}
+                                    {formatDayDate(entry.date)}, {formatTime(entry.time_in)} – {formatTime(entry.time_out)}
                                   </p>
                                 </div>
                                 <LogStatus entry={entry} />
                               </div>
                               <p className="tabular mt-1 text-sm text-slate-500">
-                                {formatHours(entry.hours)} · Lunch {breakText(entry).toLowerCase()}
+                                {formatHours(entry.hours)}, Lunch {breakText(entry).toLowerCase()}
                               </p>
                               <LogMarks entry={entry} />
                             </button>
@@ -716,7 +716,7 @@ export default function SupervisorAttendanceApproval() {
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-semibold text-slate-900">
                           {item.student_name}
-                          <span className="font-normal text-slate-500"> · {formatDayDate(item.date)}</span>
+                          <span className="font-normal text-slate-500">, {formatDayDate(item.date)}</span>
                         </p>
                         <p className="text-sm text-slate-600">{item.reason}</p>
                         {item.review_notes && <p className="text-sm text-slate-500">Your note: {item.review_notes}</p>}

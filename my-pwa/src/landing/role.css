@@ -1,0 +1,343 @@
+/* Hallmark · shape: Five Questions (what is it, what can I do, a day, how to start, questions) · genre: modern-minimal · theme: brand · redesign: full
+ * paper: oklch(97.5% 0.005 245) · accent: oklch(76% 0.11 74) · display: Bricolage Grotesque · body: Public Sans · hero: split, the role's device on the landing's brass and silver arcs · nav: kept · footer: kept · signature: "What you can do" laid out the way each role works: a checklist beside the trainee's phone, a task board under the supervisor's tablet, the coordinator's console with what it does, one row each
+ * axes: light/grotesk-heavy/warm · posture: three-tone, night grounds carry the brass, mist grounds carry the type · contrast: pass · fold: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P4 H5 E4 S4 R5 V4 · weakest: S, the hero is shared with the landing on purpose; each role's "what you can do" and "day" take a form no other role's page has (checklist, board, spec; timeline, schedule, week) */
+/* Hallmark · dropped "For trainees" kicker, "What the trainee app does", "Get the app" · 54 names them (eyebrows; the nav and the headings already say it) */
+/* Hallmark · reworded "Everything a trainee needs, in one app" to "What you can do"; "Four steps, every day" to the day's own name ("A trainee's day"); "Good to know" to "Questions trainees ask" · the user asked for a clearer statement of what the visitor can do */
+/* Hallmark · dropped the orbit, bento, console widgets, per-step device screens and drawn install pictures, the "Ready to start?" band (its line is step 1 of "How to start", its button step 2) · the user asked for a simpler page */
+/* Hallmark · added "Three steps from here to the app.", "Get your account", "Sign in", "Use the trainee sign-in page, on any browser.", "Install the app" · step headings for the start, built from the page's own facts */
+/* Hallmark · reworded "12:00 – 5:02 PM" to "12:00 to 5:02 PM" · 19 names the dash */
+/* Hallmark · dropped the landing's arcs from the role heroes · the user asked for each role's hero to be its own: an oval, a ruled page, a route */
+/* Hallmark · waive 80 · .rp2-route is the coordinator console's own "trainees on the road" line (a route and its stops), drawn faint behind the laptop · the user asked for each role's hero to be distinct, and the coordinator's work is the route */
+/* Hallmark · waive 78 · section heads at 36px under a 48 to 52px hero head · the user asked for every size to come down ("it's all too huge"); the step between hero and section is kept */
+/* Hallmark · dismissed F7 · the round shapes are step numbers, ticks and the phone's notch: circles marking an item, not pill-shaped boxes */
+/* Hallmark · waive 59 · each section is its own ground (night, paper, mist, night, paper) · the role pages separate their sections by colour, as the landing does */
+/* Hallmark · waive 44c · the hero's device stands above the copy's centre so the phone's foot clears the fold · the device is the role's picture and is taller than the copy */
+/* Hallmark · waive 72 · the measure reads the closed .role-faq-item boxes, whose answer is hidden · each open answer has 18px at its sides */
+/* Hallmark · answered F19 · the 800 weight is inside the portal screens (the product's own type); the page uses 400, 600 and 700 */
+
+/*
+|--------------------------------------------------------------------------
+| THE ROLE PAGES (Hallmark redesign, second round, 2026-11-21)
+|--------------------------------------------------------------------------
+|
+| /for-trainees, /for-supervisors and /for-coordinators carry body.land-role
+| (and body.land-home, so the top bar, footer, devices and the old --land-*
+| tokens follow home.css). Outside landing.css's @layer, so these win.
+|
+| One skeleton (RolePage.tsx), five plain parts; the middle two are drawn
+| for each role: .rp2-check, .rp2-board, .rp2-spec, then .rp2-line,
+| .rp2-schedule, .rp2-week.
+|
+*/
+
+.land-role main :focus-visible { outline: 2px solid var(--color-night); outline-offset: 3px; }
+.land-role .role-hero :focus-visible, .land-role .rp3-install :focus-visible { outline-color: var(--color-brass); }
+.land-role .land-head { max-width: none; margin-inline: 0; }
+.land-role .land-head .land-h2 { max-width: 20ch; }
+.land-home .land-h2--light { color: var(--color-on-night); }
+.land-home .land-lede--light { color: var(--color-on-night-muted); }
+.land-role .land-section { padding-block: clamp(64px, 9vh, 112px); }
+
+/* ---------- 1. The hero: navy, the arcs, the role's device ---------- */
+.land-role .role-hero { background-color: var(--color-night); background-image: linear-gradient(180deg, var(--color-night) 0%, var(--color-night-deep) 100%); color: var(--color-on-night); }
+.land-role .role-hero::before { content: none; }
+.land-role .role-hero-row { gap: var(--space-xl); }
+@media (min-width: 900px) { .land-role .role-hero-row { gap: var(--gap-columns); } }
+.land-role .role-title { max-width: 15ch; margin: 0; font-size: clamp(2.5rem, 2rem + 2.4vw, 4rem); font-weight: 700; line-height: 1.03; letter-spacing: var(--tracking-display); color: var(--color-on-night); overflow-wrap: break-word; min-width: 0; text-wrap: balance; }
+/* The second phrase takes its own line; same face, weight and colour. */
+.land-role .role-title em { display: block; font-style: normal; color: inherit; }
+.land-role .role-intro { max-width: 34rem; margin-top: var(--space-md); font-size: var(--text-lead); color: var(--color-on-night-muted); }
+.land-role .role-cta { gap: var(--space-sm); margin-top: var(--space-lg); }
+.land-role .role-cta-primary, .land-role .rp2-button, .land-role .install-card-button, .land-role .get-install { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 0.3em; padding: 0 var(--space-lg); border-radius: var(--radius-control); background: var(--color-brass); color: var(--color-night) !important; font-weight: 600; text-decoration: none; box-shadow: none; transition: background-color var(--dur-micro), transform var(--dur-micro); }
+.land-role .role-cta-primary:hover, .land-role .rp2-button:hover, .land-role .install-card-button:hover, .land-role .get-install:hover { background: var(--color-brass-light); transform: none; }
+.land-role .role-cta-primary:active, .land-role .rp2-button:active, .land-role .install-card-button:active, .land-role .get-install:active { transform: scale(0.97); }
+.land-role .role-cta-secondary { min-height: 48px; padding: 0 var(--space-lg); border-radius: var(--radius-control); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 40%, transparent); font-weight: 600; transition: background-color var(--dur-micro), transform var(--dur-micro); }
+.land-role .role-cta-secondary:hover { background: color-mix(in oklab, var(--color-on-night) 10%, transparent); }
+.land-role .role-cta-secondary:active { transform: scale(0.97); }
+.land-role .role-best { gap: var(--space-xs); margin-top: var(--space-lg); }
+.land-role .role-best li { min-height: 32px; padding: 0 var(--space-sm); border-radius: 8px; background: none; box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 22%, transparent); font-size: var(--text-sm); font-weight: 600; color: var(--color-on-night-muted); }
+.land-role .role-best li.on { background: var(--color-mist); box-shadow: none; color: var(--color-night); }
+.land-role .role-best li.role-best-label { box-shadow: none; padding: 0; margin-right: var(--space-2xs); font-size: var(--text-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--color-on-night-muted); }
+.land-role .role-hero-art::before { content: none; }
+.land-role .role-hero-art .dev { animation: none; box-shadow: 0 0 0 2px var(--color-silver), 0 0 0 3px color-mix(in oklab, var(--color-silver-deep) 70%, transparent), var(--shadow-float); }
+
+/* ---------- 2. What you can do ---------- */
+.land-role .rp2-can { background: var(--color-paper); }
+.land-role .rp2-can .land-head, .land-role .rp2-day .land-head { margin-bottom: clamp(32px, 5vh, 56px); }
+.land-role .rp2 .dev { box-shadow: 0 0 0 2px var(--color-silver), 0 0 0 3px color-mix(in oklab, var(--color-silver-deep) 70%, transparent), var(--shadow-float); }
+.land-role .rp2-icon { display: grid; width: 40px; height: 40px; flex-shrink: 0; place-items: center; border-radius: 10px; background: var(--color-mist); color: var(--color-night); }
+
+/* The trainee: a checklist beside the phone. */
+.land-role .rp2-check { display: grid; gap: var(--space-xl); align-items: center; }
+@media (min-width: 900px) { .land-role .rp2-check { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.4fr); gap: var(--gap-columns); } }
+.land-role .rp2-check-device { display: grid; place-items: center; padding: var(--space-xl) 0; border-radius: 24px; background: var(--color-night); }
+.land-role .rp2-check-device .dev--phone { width: 220px; height: 444px; border-radius: 38px; }
+.land-role .rp2-check-device .dev--phone .dev-screen { inset: 10px; border-radius: 30px; }
+.land-role .rp2-check-list { display: grid; gap: 0; margin: 0; padding: 0; list-style: none; }
+@media (min-width: 640px) { .land-role .rp2-check-list { grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: var(--space-xl); } }
+.land-role .rp2-check-list li { display: flex; gap: var(--space-md); padding: var(--space-lg) 0; border-top: 1px solid var(--color-rule); }
+.land-role .rp2-tick { display: grid; width: 28px; height: 28px; flex-shrink: 0; place-items: center; border-radius: 9999px; background: var(--color-brass); color: var(--color-night); }
+.land-role .rp2-check-list b, .land-role .rp2-board-grid b { display: block; font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; color: var(--color-night); }
+.land-role .rp2-check-list i, .land-role .rp2-board-grid i, .land-role .rp2-spec-list dd { display: block; margin-top: var(--space-2xs); font-size: var(--text-md); font-style: normal; line-height: 1.55; color: var(--color-muted); }
+
+/* The supervisor: the tablet on the desk, the jobs as a board below it. */
+.land-role .rp2-board { display: grid; gap: 0; }
+.land-role .rp2-board-device { display: grid; place-items: center; padding: var(--space-xl) var(--space-md) 96px; border-radius: 24px 24px 0 0; background: var(--color-night); }
+.land-role .rp2-board-device .dev--tablet { width: min(100%, 560px); height: auto; aspect-ratio: 7 / 5; }
+.land-role .rp2-board-grid { position: relative; display: grid; gap: var(--space-md); margin: -72px var(--space-md) 0; padding: 0; list-style: none; }
+@media (min-width: 640px) { .land-role .rp2-board-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .land-role .rp2-board-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-inline: var(--space-xl); } }
+.land-role .rp2-board-grid li { display: grid; align-content: start; gap: var(--space-xs); padding: var(--space-lg); border-radius: var(--radius-card); background: var(--color-card); box-shadow: var(--shadow-card); }
+.land-role .rp2-board-grid li .rp2-icon { margin-bottom: var(--space-xs); background: var(--color-brass); }
+
+/* The coordinator: the console on the laptop, and what it does, one row each. */
+.land-role .rp2-spec { display: grid; gap: var(--space-xl); align-items: start; }
+@media (min-width: 1000px) { .land-role .rp2-spec { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: var(--gap-columns); } }
+.land-role .rp2-spec-device { display: grid; place-items: center; padding: var(--space-2xl) var(--space-xl) calc(var(--space-2xl) + 16px); border-radius: 24px; background: var(--color-night); }
+@media (min-width: 1000px) { .land-role .rp2-spec-device { position: sticky; top: calc(var(--top-h) + 24px); } }
+.land-role .rp2-spec-device .dev--laptop { width: min(100% - 64px, 520px); height: auto; aspect-ratio: 5 / 3; }
+.land-role .rp2-spec-list { margin: 0; border-bottom: 1px solid var(--color-rule); }
+.land-role .rp2-spec-list > div { display: grid; gap: var(--space-2xs) var(--space-lg); padding: var(--space-lg) 0; border-top: 1px solid var(--color-rule); }
+@media (min-width: 640px) { .land-role .rp2-spec-list > div { grid-template-columns: minmax(0, 14rem) minmax(0, 1fr); align-items: start; } }
+.land-role .rp2-spec-list dt { display: flex; align-items: center; gap: var(--space-sm); font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; line-height: 1.25; color: var(--color-night); }
+.land-role .rp2-spec-list dd { margin: 0; padding-top: var(--space-2xs); }
+
+/* ---------- 3. The role's day ---------- */
+.land-role .rp2-day { background: var(--color-paper-2); }
+.land-role .rp2-line b, .land-role .rp2-schedule b, .land-role .rp2-week b { display: block; font-family: var(--font-display); font-size: var(--text-lg); font-weight: 600; letter-spacing: -0.01em; color: var(--color-night); }
+.land-role .rp2-line i, .land-role .rp2-schedule i, .land-role .rp2-week i { display: block; margin-top: var(--space-2xs); font-size: var(--text-md); font-style: normal; line-height: 1.55; color: var(--color-muted); }
+
+/* The trainee: four stops along one line. */
+.land-role .rp2-line { position: relative; display: grid; gap: var(--space-xl); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 900px) {
+  .land-role .rp2-line { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-lg); }
+  .land-role .rp2-line::before { content: ""; position: absolute; left: 20px; right: 20px; top: 62px; height: 2px; background: var(--color-silver); }
+}
+.land-role .rp2-line li { position: relative; display: grid; align-content: start; gap: var(--space-xs); }
+.land-role .rp2-line-when { justify-self: start; padding: var(--space-2xs) var(--space-sm); border-radius: 8px; background: var(--color-night); color: var(--color-on-night); font-size: var(--text-sm); font-weight: 600; }
+.land-role .rp2-line-dot { position: relative; display: grid; width: 40px; height: 40px; margin-block: var(--space-xs); place-items: center; border-radius: 9999px; background: var(--color-brass); color: var(--color-night); font-family: var(--font-display); font-weight: 700; box-shadow: 0 0 0 6px var(--color-paper-2); }
+
+/* The supervisor: a schedule, a time and a job on each row. */
+.land-role .rp2-schedule { margin: 0; padding: 0; list-style: none; border-radius: var(--radius-card); background: var(--color-card); box-shadow: var(--shadow-card); }
+.land-role .rp2-schedule li { display: grid; gap: var(--space-2xs) var(--space-xl); padding: var(--space-lg); }
+.land-role .rp2-schedule li + li { border-top: 1px solid var(--color-rule); }
+@media (min-width: 640px) { .land-role .rp2-schedule li { grid-template-columns: 10rem minmax(0, 1fr); padding: var(--space-lg) var(--space-xl); } }
+.land-role .rp2-schedule-when { font-family: var(--font-display); font-size: var(--text-xl); font-weight: 700; line-height: 1.2; color: var(--color-brass-deep); font-variant-numeric: tabular-nums; }
+
+/* The coordinator: a working week, each step on its day. */
+.land-role .rp2-week { display: grid; gap: var(--space-sm); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 900px) { .land-role .rp2-week { grid-template-columns: repeat(5, minmax(0, 1fr)); } }
+.land-role .rp2-week li { display: grid; align-content: start; gap: var(--space-xs); min-height: 13rem; padding: var(--space-lg); border-radius: var(--radius-card); background: var(--color-card); box-shadow: var(--shadow-card); }
+.land-role .rp2-week-day { padding-bottom: var(--space-xs); margin-bottom: var(--space-2xs); border-bottom: 2px solid var(--color-brass); font-size: var(--text-md); font-weight: 600; color: var(--color-night); }
+.land-role .rp2-week li.rp2-week-free { background: transparent; box-shadow: inset 0 0 0 1px var(--color-silver); }
+.land-role .rp2-week li.rp2-week-free .rp2-week-day { border-bottom-color: var(--color-silver); color: var(--color-muted); }
+@media (max-width: 899.98px) { .land-role .rp2-week li.rp2-week-free { display: none; } .land-role .rp2-week li { min-height: 0; } }
+
+/* ---------- 4. How to start ---------- */
+.land-role .rp3-install { position: relative; overflow: clip; background-color: var(--color-night); background-image: none; color: var(--color-on-night); }
+.land-role .rp3-install .land-head { margin-bottom: clamp(32px, 5vh, 48px); }
+
+.land-role .install-card { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-sm) var(--space-lg); margin: 0; padding: 0 0 var(--space-lg); border-radius: 0; border-bottom: 1px solid color-mix(in oklab, var(--color-on-night) 14%, transparent); background: none; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.land-role .install-card-tile { width: 48px; height: 48px; border-radius: 12px; background: var(--color-brass); color: var(--color-night); }
+.land-role .install-card-words b { font-weight: 600; }
+.land-role .install-card-words i { color: var(--color-on-night-muted); }
+.land-role .get-devices { display: grid; gap: var(--space-sm); max-width: none; margin: var(--space-lg) 0 0; }
+@media (min-width: 720px) { .land-role .get-devices { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.land-role .get-device { min-height: 68px; border-radius: 12px; background: color-mix(in oklab, var(--color-on-night) 5%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 16%, transparent); transform: none; transition: box-shadow var(--dur-micro), background-color var(--dur-micro); }
+.land-role .get-device:hover { background: color-mix(in oklab, var(--color-on-night) 9%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 40%, transparent); transform: none; }
+.land-role .get-device:has(input:checked) { background: color-mix(in oklab, var(--color-on-night) 9%, transparent); box-shadow: inset 0 0 0 2px var(--color-brass); }
+.land-role .get-device:has(input:focus-visible) { outline: 2px solid var(--color-brass); outline-offset: 3px; }
+.land-role .get-device:has(input:disabled) { cursor: not-allowed; opacity: 0.5; }
+.land-role .get-device-art { border-radius: 10px; }
+.land-role .get-device:has(input:checked) .get-device-art { background: var(--color-brass); color: var(--color-night); }
+.land-role .get-device b { font-weight: 600; }
+.land-role .get-device i { color: var(--color-on-night-muted); }
+.land-role .get-detected { border-radius: 6px; background: var(--color-mist); color: var(--color-night); font-weight: 600; }
+.land-role .rp3-install .get-steps { margin-top: var(--space-lg); }
+.land-role .rp3-install .get-steps ol { display: grid; gap: var(--space-md); }
+.land-role .rp3-install .get-steps li { display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-sm); text-align: left; animation: none; }
+.land-role .rp3-install .get-steps li b { display: block; font-size: var(--text-md); font-weight: 600; }
+.land-role .rp3-install .get-steps li i { display: block; max-width: none; margin-top: var(--space-3xs); font-size: var(--text-sm); color: var(--color-on-night-muted); }
+.land-role .rp3-install .get-n { width: 28px; height: 28px; margin: 0; flex-shrink: 0; border-radius: 8px; background: var(--color-mist); color: var(--color-night); font-weight: 600; box-shadow: none; }
+.land-role .rp3-install .get-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: var(--space-md) var(--space-xl); margin-top: var(--space-lg); text-align: left; }
+.land-role .rp3-install .get-qr { color: var(--color-on-night-muted); }
+.land-role .rp3-install .get-qr-code { width: 96px; height: 96px; border-radius: 8px; }
+
+/* ---------- 5. Questions ---------- */
+.land-role .rp2-faq { background: var(--color-paper); }
+.land-role .role-faq-item { border-radius: 12px; background: var(--color-card); box-shadow: 0 0 0 1px var(--color-rule); }
+.land-role .role-faq-item summary { border-radius: 12px; transition: background-color var(--dur-micro); }
+.land-role .role-faq-item summary:hover { background: var(--color-paper-2); }
+.land-role .role-faq-item summary:active { background: var(--color-mist-deep); }
+.land-role .role-faq-item summary:focus-visible { outline: 2px solid var(--color-night); outline-offset: 2px; }
+.land-role .role-faq-item summary i { font-size: var(--text-sm); font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--color-muted); }
+.land-role .role-faq-item summary b { font-weight: 600; color: var(--color-night); }
+.land-role .role-faq-mark::before, .land-role .role-faq-mark::after { background: var(--color-night); }
+.land-role .land-lede a, .land-role .rp2-others a { color: var(--color-night); font-weight: 600; text-decoration-color: var(--color-brass); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+.land-role .land-lede a:hover, .land-role .rp2-others a:hover { color: var(--color-brass-deep); }
+.land-role .rp2-others { display: flex; flex-wrap: wrap; gap: var(--space-2xs) var(--space-md); margin: var(--space-lg) 0 0; color: var(--color-muted); }
+
+/* ---------- The portal screens' own small labels, kept legible on the navy headers ---------- */
+.land-home .mini-head, .land-home .mini-head b, .land-home .mini-head i { color: var(--role-on-chrome); }
+.land-home .mini-rate em { color: var(--color-brass-deep); text-shadow: none; }
+
+@media (prefers-reduced-motion: reduce) {
+  .land-role .role-cta-primary, .land-role .role-cta-secondary, .land-role .rp2-button, .land-role .install-card-button, .land-role .get-install, .land-role .get-device, .land-role .role-faq-item summary { transition: none !important; }
+}
+
+/* On the smallest phones the install button takes the card's width and stays on one line. */
+.land-role .install-card-button { white-space: nowrap; }
+@media (max-width: 479.98px) {
+  .land-role .install-card-button { width: 100%; padding-inline: var(--space-sm); font-size: var(--text-sm); }
+}
+/* The step screens are drawn for a device of their own size: shown a little larger here, as the device would show them. */
+.land-role .rp2-board-device .mini, .land-role .rp2-spec-device .mini { zoom: 1.25; }
+.land-role .rp2-check-device .mini { zoom: 1.1; }
+
+/* ---------- The hero, third round: one backdrop per role, from its own work ---------- */
+.land-role .role-hero { min-height: 0; padding-block: calc(var(--top-h) + var(--space-2xl)) var(--space-2xl); }
+@media (min-width: 900px) { .land-role .role-hero { min-height: min(100svh, 620px); padding-block: calc(var(--top-h) + var(--space-xl)) var(--space-xl); } }
+.land-role .role-title { max-width: 16ch; font-size: clamp(2.25rem, 1.5rem + 2.2vw, 3.5rem); line-height: 1.05; }
+.land-role .role-intro { max-width: 32rem; font-size: clamp(1rem, 0.95rem + 0.3vw, 1.125rem); line-height: 1.6; }
+.land-role .role-cta-primary, .land-role .role-cta-secondary { min-height: 46px; }
+.rp2-hero-bg { position: absolute; inset: 0; z-index: -1; overflow: clip; pointer-events: none; }
+
+/* The trainee: the camera check's oval, dashed in brass, around the phone. */
+.rp2-hero-bg--student::before, .rp2-hero-bg--student::after { content: ""; position: absolute; top: 50%; right: clamp(-40px, 8vw, 160px); border-radius: 50%; translate: 0 -46%; }
+.rp2-hero-bg--student::before { width: 440px; height: 600px; border: 3px dashed var(--color-brass); opacity: 0.55; }
+.rp2-hero-bg--student::after { width: 560px; height: 740px; margin-right: -60px; border: 1px solid color-mix(in oklab, var(--color-mist) 22%, transparent); }
+@media (max-width: 899.98px) { .rp2-hero-bg--student::before, .rp2-hero-bg--student::after { top: auto; bottom: -120px; right: 50%; translate: 50% 0; margin-right: 0; } }
+
+/* The supervisor: a logbook's ruled page, its brass margin line, the tablet lying on the desk. */
+.rp2-hero-bg--supervisor { background-image: linear-gradient(180deg, transparent calc(100% - 1px), color-mix(in oklab, var(--color-mist) 9%, transparent) calc(100% - 1px)); background-size: 100% 40px; }
+.rp2-hero-bg--supervisor::before { content: ""; position: absolute; top: 0; bottom: 0; left: clamp(16px, 6vw, 96px); width: 2px; background: var(--color-brass); opacity: 0.5; }
+.rp2-hero-bg--supervisor::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 26%; background: linear-gradient(180deg, transparent 0%, color-mix(in oklab, var(--color-night-raised) 85%, transparent) 100%); }
+@media (min-width: 900px) {
+  .rp2--supervisor .role-hero-art { perspective: 1400px; }
+  .rp2--supervisor .role-hero-art .dev { transform: rotateX(16deg) rotateZ(-3deg); transform-origin: 50% 90%; }
+}
+
+/* The coordinator: a map grid and the route the trainees are on, stops in brass. */
+.rp2-hero-bg--coordinator { background-image: linear-gradient(color-mix(in oklab, var(--color-mist) 6%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklab, var(--color-mist) 6%, transparent) 1px, transparent 1px); background-size: 48px 48px; }
+.rp2-route { position: absolute; inset: 0; width: 100%; height: 100%; }
+.rp2-route path { fill: none; stroke: var(--color-brass); stroke-width: 3; stroke-dasharray: 2 12; stroke-linecap: round; opacity: 0.7; }
+.rp2-route circle { fill: var(--color-night); stroke: var(--color-brass); stroke-width: 3; }
+@media (min-width: 900px) { .rp2--coordinator .role-hero-row { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+
+/* The install link's three parts wrap as whole phrases on a phone, centred. */
+.land-role .get-install { flex-wrap: wrap; column-gap: 0.3em; padding-block: var(--space-xs); text-align: center; }
+/* The route stays on the laptop's side, clear of the words; on a narrow screen the grid alone. */
+.land-role .rp2-route { left: auto; right: 0; width: 56%; }
+@media (max-width: 899.98px) { .land-role .rp2-route { display: none; } }
+
+/* ---------- Smaller, plainer (2026-11-21, "it's all too huge") ---------- */
+.land-role .land-section { padding-block: clamp(48px, 7vh, 88px); }
+.land-role .rp2-can .land-head, .land-role .rp2-day .land-head, .land-role .rp3-install .land-head { margin-bottom: clamp(24px, 4vh, 40px); }
+.land-role .role-title { font-size: clamp(2rem, 1.4rem + 1.8vw, 3rem); }
+.land-role .role-intro { font-size: 1rem; }
+.land-role .role-cta-primary, .land-role .role-cta-secondary, .land-role .rp2-button, .land-role .install-card-button, .land-role .get-install { min-height: 44px; padding-inline: var(--space-md); font-size: 15px; }
+.land-role .role-hero-art[data-device="phone"] .dev { width: 210px; height: 420px; }
+.land-role .role-hero-art[data-device="tablet"] .dev { width: min(100%, 460px); height: 330px; }
+.land-role .role-hero-art[data-device="laptop"] .dev { width: min(100% - 64px, 480px); height: 296px; }
+/* Feature and step text: one step smaller. */
+.land-role .rp2-spec-list dt { font-size: 1.0625rem; }
+.land-role .rp2-icon { width: 34px; height: 34px; border-radius: 8px; }
+.land-role .rp2-icon svg { width: 17px; height: 17px; }
+.land-role .rp2-tick { width: 24px; height: 24px; }
+.land-role .rp2-check-list li { padding-block: var(--space-md); }
+.land-role .rp2-board-grid li { padding: var(--space-md) var(--space-lg); }
+.land-role .rp2-spec-list > div { padding-block: var(--space-md); }
+@media (min-width: 640px) { .land-role .rp2-spec-list > div { grid-template-columns: minmax(0, 12rem) minmax(0, 1fr); } }
+/* The pictures: the screens at their own size (no zoom, so nothing is cut), the devices smaller. */
+.land-role .rp2-board-device .mini, .land-role .rp2-spec-device .mini, .land-role .rp2-check-device .mini { zoom: 1; }
+@media (min-width: 900px) { .land-role .rp2-check { grid-template-columns: minmax(0, 0.7fr) minmax(0, 1.5fr); } }
+.land-role .rp2-check-device { padding: var(--space-lg) 0; border-radius: 20px; }
+.land-role .rp2-check-device .dev--phone { width: 180px; height: 364px; border-radius: 32px; }
+.land-role .rp2-check-device .dev--phone .dev-screen { inset: 8px; border-radius: 25px; }
+.land-role .rp2-board-device { padding: var(--space-lg) var(--space-md) 72px; border-radius: 20px 20px 0 0; }
+.land-role .rp2-board-device .dev--tablet { width: min(100%, 440px); }
+.land-role .rp2-board-grid { margin-top: -52px; }
+.land-role .rp2-spec-device { padding: var(--space-xl) var(--space-lg) calc(var(--space-xl) + 16px); border-radius: 20px; }
+.land-role .rp2-spec-device .dev--laptop { width: min(100% - 64px, 420px); }
+@media (min-width: 1000px) { .land-role .rp2-spec { grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); } }
+.land-role .rp2-schedule-when { font-size: 1.125rem; }
+.land-role .rp2-schedule li { padding-block: var(--space-md); }
+.land-role .rp2-week li { min-height: 11rem; padding: var(--space-md); }
+/* The supervisor's tablet: wider than tall, so its screen is not half empty. */
+.land-role .rp2-board-device .dev--tablet { width: min(100%, 460px); aspect-ratio: 16 / 10; }
+
+/* ---------- Install, redesigned (2026-11-21): what you need on the left, one installer on the right ---------- */
+.land-role .rp3-install .land-head { margin-bottom: 0; }
+.rp3-grid { display: grid; gap: var(--space-xl); align-items: start; }
+@media (min-width: 1000px) { .rp3-grid { grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr); gap: var(--gap-columns); } }
+.rp3-intro .land-lede { margin-top: var(--space-sm); max-width: 30rem; }
+.rp3-need { display: flex; gap: var(--space-sm); max-width: 30rem; margin-top: var(--space-lg); padding: var(--space-md); border-radius: 12px; background: color-mix(in oklab, var(--color-on-night) 6%, transparent); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 12%, transparent); }
+.rp3-need-icon { display: grid; width: 32px; height: 32px; flex-shrink: 0; place-items: center; border-radius: 8px; background: var(--color-mist); color: var(--color-night); }
+.rp3-need b { display: block; font-size: var(--text-md); font-weight: 600; color: var(--color-on-night); }
+.rp3-need i { display: block; margin-top: var(--space-3xs); font-size: 0.9375rem; font-style: normal; line-height: 1.5; color: var(--color-on-night-muted); }
+.rp3-link { display: inline-flex; min-height: 44px; align-items: center; margin-top: var(--space-2xs); font-weight: 600; color: var(--color-brass); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 4px; transition: color var(--dur-micro); }
+.rp3-link:hover { color: var(--color-brass-light); }
+.rp3-link:active { color: var(--color-mist); }
+
+/* The installer: one panel, the device first. */
+.rp3-panel { padding: var(--space-lg); border-radius: 16px; background: var(--color-night-raised); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--color-on-night) 12%, transparent); }
+.land-role .rp3-panel .install-card { gap: var(--space-sm); padding: 0 0 var(--space-md); border-bottom: 1px solid color-mix(in oklab, var(--color-on-night) 12%, transparent); }
+.land-role .rp3-panel .install-card-tile { width: 36px; height: 36px; border-radius: 9px; }
+.land-role .rp3-panel .install-card-words b { font-size: 0.9375rem; }
+.land-role .rp3-panel .install-card-words i { font-size: var(--text-sm); }
+/* The device switcher: three compact tiles in one row. */
+.land-role .rp3-panel .get-devices { gap: var(--space-xs); margin-top: var(--space-md); }
+@media (min-width: 560px) { .land-role .rp3-panel .get-devices { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.land-role .rp3-panel .get-device { min-height: 56px; gap: var(--space-sm); padding: var(--space-xs) var(--space-sm); border-radius: 10px; }
+.land-role .rp3-panel .get-device-art { width: 32px; height: 32px; border-radius: 8px; }
+.land-role .rp3-panel .get-device-art svg { width: 18px; height: 18px; }
+.land-role .rp3-panel .get-device b { font-size: var(--text-sm); line-height: 1.3; }
+.land-role .rp3-panel .get-device i { font-size: 12.5px; line-height: 1.3; }
+.land-role .rp3-panel .get-detected { top: -9px; right: 8px; padding: 0 var(--space-xs); font-size: 11.5px; }
+/* The three steps: one list, read top to bottom. */
+.land-role .rp3-panel .get-steps { margin-top: var(--space-lg); }
+.land-role .rp3-panel .get-steps ol { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
+.land-role .rp3-panel .get-steps li { display: flex; flex-direction: row; align-items: flex-start; gap: var(--space-sm); padding: var(--space-sm) 0; text-align: left; animation: none; }
+.land-role .rp3-panel .get-steps li + li { border-top: 1px solid color-mix(in oklab, var(--color-on-night) 10%, transparent); }
+.land-role .rp3-panel .get-steps li b { display: block; font-size: 0.9375rem; font-weight: 600; }
+.land-role .rp3-panel .get-steps li i { display: block; max-width: none; margin-top: var(--space-3xs); font-size: var(--text-sm); line-height: 1.45; color: var(--color-on-night-muted); }
+.land-role .rp3-panel .get-n { width: 26px; height: 26px; margin: 0; flex-shrink: 0; border-radius: 9999px; background: var(--color-mist); color: var(--color-night); font-size: 13px; font-weight: 600; box-shadow: none; }
+.land-role .rp3-panel .get-actions { flex-direction: row; flex-wrap: wrap; justify-content: flex-start; align-items: center; gap: var(--space-md) var(--space-lg); margin-top: var(--space-md); padding-top: var(--space-md); border-top: 1px solid color-mix(in oklab, var(--color-on-night) 12%, transparent); text-align: left; }
+.land-role .rp3-panel .get-qr { gap: var(--space-sm); max-width: 20rem; font-size: var(--text-sm); color: var(--color-on-night-muted); }
+.land-role .rp3-panel .get-qr-code { width: 80px; height: 80px; border-radius: 8px; }
+.land-role .rp3-panel .get-warning { max-width: none; font-size: var(--text-sm); }
+@media (max-width: 479.98px) { .rp3-panel { padding: var(--space-md); } .land-role .rp3-panel .get-install { width: 100%; } }
+@media (prefers-reduced-motion: reduce) { .rp3-link { transition: none; } }
+/* In one row the tiles show the device alone; the steps below name the browser. */
+@media (min-width: 560px) { .land-role .rp3-panel .get-device i { display: none; } .land-role .rp3-panel .get-device { min-height: 52px; } }
+
+/* ---------- Install, one per role (2026-11-21): the installer is the role's own device, on its hero's ground ---------- */
+.rp3-install { position: relative; isolation: isolate; }
+.rp3-install::before, .rp3-install::after { content: ""; position: absolute; z-index: -1; pointer-events: none; }
+.rp3-panel { position: relative; }
+
+/* The trainee: a phone, the camera-check oval faint behind it, the steps on one line. */
+.rp2--student .rp3-install::before { right: -120px; top: 50%; width: 520px; height: 700px; translate: 0 -50%; border-radius: 50%; border: 3px dashed var(--color-brass); opacity: 0.22; }
+@media (min-width: 1000px) { .rp2--student .rp3-panel { justify-self: center; width: min(100%, 440px); } }
+.rp2--student .rp3-panel { padding: 40px var(--space-lg) var(--space-lg); border: 10px solid var(--color-glass); border-radius: 40px; box-shadow: 0 0 0 2px var(--color-silver), 0 40px 60px -34px var(--color-shadow); }
+.rp2--student .rp3-panel::before { content: ""; position: absolute; left: 50%; top: 10px; width: 84px; height: 18px; translate: -50% 0; border-radius: 9999px; background: var(--color-glass); }
+@media (min-width: 560px) { .rp2--student .rp3-panel .get-devices { grid-template-columns: minmax(0, 1fr); } .rp2--student .rp3-panel .get-device i { display: block; } }
+.rp2--student .rp3-panel .get-steps li { position: relative; border-top: 0 !important; }
+.rp2--student .rp3-panel .get-steps li:not(:last-child)::after { content: ""; position: absolute; left: 12px; top: 40px; bottom: -10px; width: 2px; background: color-mix(in oklab, var(--color-brass) 55%, transparent); }
+.rp2--student .rp3-panel .get-n { background: var(--color-brass); }
+
+/* The supervisor: a tablet on a ruled logbook page, the brass margin line. */
+.rp2--supervisor .rp3-install::before { inset: 0; background-image: linear-gradient(180deg, transparent calc(100% - 1px), color-mix(in oklab, var(--color-mist) 8%, transparent) calc(100% - 1px)); background-size: 100% 40px; }
+.rp2--supervisor .rp3-install::after { top: 0; bottom: 0; left: clamp(16px, 6vw, 96px); width: 2px; background: var(--color-brass); opacity: 0.45; }
+.rp2--supervisor .rp3-panel { border: 14px solid var(--color-glass); border-radius: 30px; box-shadow: 0 0 0 2px var(--color-silver), 0 40px 60px -34px var(--color-shadow); }
+.rp2--supervisor .rp3-panel::before { content: ""; position: absolute; left: 50%; top: -10px; width: 6px; height: 6px; translate: -50% 0; border-radius: 9999px; background: var(--color-graphite-line); }
+.rp2--supervisor .rp3-panel .get-n { border-radius: 6px; }
+
+/* The coordinator: a laptop, its silver deck below, on the map grid with the route. */
+.rp2--coordinator .rp3-install::before { inset: 0; background-image: linear-gradient(color-mix(in oklab, var(--color-mist) 5%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in oklab, var(--color-mist) 5%, transparent) 1px, transparent 1px); background-size: 48px 48px; }
+.rp2--coordinator .rp3-install::after { left: -10%; right: -10%; bottom: 14%; height: 2px; background-image: linear-gradient(90deg, var(--color-brass) 0 3px, transparent 3px 14px); background-size: 14px 2px; opacity: 0.5; transform: rotate(-4deg); }
+.rp2--coordinator .rp3-panel { margin-bottom: 28px; border: 12px solid var(--color-glass); border-bottom-width: 16px; border-radius: 18px 18px 6px 6px; box-shadow: 0 0 0 2px var(--color-silver), 0 40px 60px -34px var(--color-shadow); }
+.rp2--coordinator .rp3-panel::after { content: ""; position: absolute; left: -44px; right: -44px; bottom: -36px; height: 18px; border-radius: 2px 2px 16px 16px; background: linear-gradient(180deg, var(--color-mist) 0%, var(--color-silver) 55%, var(--color-silver-deep) 100%); box-shadow: 0 16px 24px -12px var(--color-shadow); }
+@media (max-width: 559.98px) { .rp2--coordinator .rp3-panel::after { left: -20px; right: -20px; } }
+@media (min-width: 900px) { .rp2--coordinator .rp3-panel .get-steps ol { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); } .rp2--coordinator .rp3-panel .get-steps li { flex-direction: column; border-top: 0 !important; } }

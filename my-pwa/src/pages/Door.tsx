@@ -11,6 +11,7 @@ import { HOME_PATH, preloadHome } from "../lib/homePages";
 import { rememberChoice } from "../lib/keepSignedIn";
 import { useInstallPrompt } from "../lib/useInstallPrompt";
 import { useMediaQuery } from "../lib/useMediaQuery";
+import "./door-supervisor.css";
 
 /*
 |--------------------------------------------------------------------------
@@ -262,7 +263,7 @@ function FormFooter({ role }: { role: Role }) {
       </p>
       <p className="signin-seal-line">
         <PsuSeal size={22} clearSpace={false} />
-        Pangasinan State University · Lingayen Campus
+        Pangasinan State University, Lingayen Campus
       </p>
     </div>
   );
@@ -486,19 +487,24 @@ function useManilaClock(): string {
   return now;
 }
 
-/** The supervisor on a computer: the form on a clipboard, beside today's register. */
+/*
+| The supervisor on a computer (Hallmark redesign, 2026-11-21): the form on
+| a plain card over the mist, and on the navy side today's register as a
+| tablet's screen on the landing page's brass and silver arcs
+| (door-supervisor.css). The register is an example, as before.
+*/
 function SupervisorDesk({ form, extra }: { form: ReactNode; extra: ReactNode }) {
   const now = useManilaClock();
+  const inToday = REGISTER_EXAMPLE.filter((row) => row.state !== "out").length;
   return (
     <main className="signin-desk signin-desk--supervisor">
       <section className="signin-side" aria-labelledby="door-title">
         <div className="signin-side-top">
           <Logo tone="onLight" />
-          <span className="signin-side-tag">Supervisor desk</span>
+          <span className="signin-side-tag">Supervisor portal</span>
         </div>
         <div className="signin-side-middle">
-          <div className="signin-card signin-card--clipboard">
-            <span className="signin-clip" aria-hidden="true" />
+          <div className="signin-card signin-card--desk">
             <div className="signin-clipboard-head">
               <h1 id="door-title" className="signin-title">
                 Sign in
@@ -518,48 +524,36 @@ function SupervisorDesk({ form, extra }: { form: ReactNode; extra: ReactNode }) 
         </div>
       </section>
       <aside className="signin-panel">
-        <span className="signin-watermark" aria-hidden="true">
-          <Glyph d="M9 12l2 2 4-4M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z" size={420} />
+        <span className="sv-arcs" aria-hidden="true">
+          <i className="sv-arc sv-arc--1" />
+          <i className="sv-arc sv-arc--2" />
+          <i className="sv-arc sv-arc--3" />
         </span>
         <div className="signin-panel-copy">
-          <p className="signin-kicker">Supervisor desk</p>
-          <h2 className="signin-panel-title">
-            Guide, verify and <em>evaluate</em> your interns.
-          </h2>
-          <ul className="signin-stats" aria-label="An example of a supervisor's morning">
-            <li style={{ ["--i" as string]: 0 }}>
-              <b>4/5</b>
-              <i>in today</i>
-            </li>
-            <li style={{ ["--i" as string]: 1 }}>
-              <b>6</b>
-              <i>to verify</i>
-            </li>
-            <li style={{ ["--i" as string]: 2 }}>
-              <b>92%</b>
-              <i>on time</i>
-            </li>
-          </ul>
-          <div className="signin-board" aria-label="An example of today's register">
-            <p className="signin-board-head">
-              <b>Today&rsquo;s register</b>
-              <span className="signin-board-live">
-                {now}
-              </span>
-            </p>
-            <ul>
-              {REGISTER_EXAMPLE.map((row, index) => (
-                <li key={row.who} data-state={row.state} style={{ ["--i" as string]: index }}>
-                  <span className="signin-avatar">{row.who.slice(0, 1)}</span>
-                  <span className="signin-board-who">{row.who}</span>
-                  <span className="signin-board-time">{row.time}</span>
-                  <span className="signin-board-state">{row.state === "in" ? "Verified" : row.state === "late" ? "Late 12 min" : row.state === "offline" ? "Confirm" : "Not in yet"}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="signin-verify">
-              <span>Verify all 2</span> offline time-ins are confirmed one by one
-            </p>
+          <h2 className="signin-panel-title">Guide, verify and evaluate your interns.</h2>
+          <div className="sv-tablet" aria-label="An example of today's register">
+            <div className="signin-board">
+              <p className="signin-board-head">
+                <b>Today&rsquo;s register</b>
+                <span className="signin-board-live">{now}</span>
+              </p>
+              <p className="sv-board-count">
+                {inToday} of {REGISTER_EXAMPLE.length} in today
+              </p>
+              <ul>
+                {REGISTER_EXAMPLE.map((row, index) => (
+                  <li key={row.who} data-state={row.state} style={{ ["--i" as string]: index }}>
+                    <span className="signin-avatar">{row.who.slice(0, 1)}</span>
+                    <span className="signin-board-who">{row.who}</span>
+                    <span className="signin-board-time">{row.time}</span>
+                    <span className="signin-board-state">{row.state === "in" ? "Verified" : row.state === "late" ? "Late 12 min" : row.state === "offline" ? "Confirm" : "Not in yet"}</span>
+                  </li>
+                ))}
+              </ul>
+              <p className="signin-verify">
+                <span>Verify all 2</span> offline time-ins are confirmed one by one
+              </p>
+            </div>
           </div>
         </div>
         <ul className="signin-pills">

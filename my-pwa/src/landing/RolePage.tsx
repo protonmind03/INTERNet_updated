@@ -1,5 +1,3 @@
-import BrandIcon from "../brand/BrandIcon";
-import { BRAND } from "../brand/geometry";
 import { HELP_ANSWERS } from "../lib/helpAnswers";
 import { AndroidMark, AppleMark, BackToTop, Footer, Glyph, TopBar } from "./Chrome";
 import { ICON } from "./icons";
@@ -12,17 +10,22 @@ import { Device, StepScreen } from "./Screens";
 |--------------------------------------------------------------------------
 |
 | Rendered to plain HTML when the site is built, like the landing page,
-| and enhanced by the same script (main.ts). What the role's portal does,
-| the role's day, and installing the role's app, with the device the
-| visitor is on detected and said first ("You're on a computer…"). Common
-| questions come from the Help centre's own answers (lib/helpAnswers.ts).
+| and enhanced by the same script (main.ts). Hallmark redesign, second
+| round (2026-11-21): five plain parts, each answering one question.
 |
-| Each role's page is drawn around the device that role works on (fix
-| 10-26): the trainee's around a phone (features orbiting it, a day on a
-| clock, phone-shaped install steps), the supervisor's around a tablet (a
-| bento board, a shift track of tablet screens), the coordinator's around
-| a laptop (the features as a console, the week as a calendar, install
-| steps in a browser window). The figures on the screens are examples.
+|   1. What is it?          the hero: the portal on its device, sign in
+|   2. What can I do?       the six things the portal does, laid out the
+|                           way the role works (a checklist beside the
+|                           trainee's phone, a task board under the
+|                           supervisor's tablet, a list of what the
+|                           coordinator's console does, one row each)
+|   3. What is a day like?  the four steps, as a timeline, a schedule or a
+|                           week
+|   4. How do I start?      get an account, sign in, install (the device
+|                           the visitor is on is detected; main.ts)
+|   5. Questions            from the Help centre's own answers
+|
+| The figures on the screens are examples.
 |
 */
 
@@ -48,249 +51,108 @@ const FEATURE_ICON: Record<RoleFeature["icon"], string> = {
 const DEVICE_ART = { android: <AndroidMark />, ios: <AppleMark />, desktop: <Glyph d={ICON.computer} size={26} /> };
 const CHIP_ICON = { Phone: ICON.phone, Tablet: ICON.tablet, Computer: ICON.computer } as const;
 
-/* ---------- What the app does: one layout per role ---------- */
+/* ---------- 2. What you can do: one layout per role ---------- */
 
 function FeatureIcon({ feature }: { feature: RoleFeature }) {
   return (
-    <span className="role-feature-icon">
-      <Glyph d={FEATURE_ICON[feature.icon]} size={22} />
+    <span className="rp2-icon" aria-hidden="true">
+      <Glyph d={FEATURE_ICON[feature.icon]} size={20} />
     </span>
   );
 }
 
-/** The trainee: the phone in the middle, the six features around it. */
-function TraineeFeatures({ features }: { features: RoleFeature[] }) {
-  const side = (list: RoleFeature[], from: number, align: "left" | "right") => (
-    <ul className={`rp-orbit-list rp-orbit-list--${align}`}>
-      {list.map((feature, index) => (
-        <li key={feature.title} className="rp-orbit-item" style={{ ["--i" as string]: from + index }}>
-          <FeatureIcon feature={feature} />
-          <span>
+/** The trainee: a checklist of what the app does, beside the phone that does it. */
+function TraineeCanDo({ features }: { features: RoleFeature[] }) {
+  return (
+    <div className="rp2-check">
+      <div className="rp2-check-device" aria-hidden="true">
+        <Device role="student" kind="phone">
+          <StepScreen role="student" step={1} />
+        </Device>
+      </div>
+      <ul className="rp2-check-list">
+        {features.map((feature) => (
+          <li key={feature.title}>
+            <span className="rp2-tick" aria-hidden="true">
+              <Glyph d="M5 12l4 4L19 6" size={16} stroke={2.6} />
+            </span>
+            <span>
+              <b>{feature.title}</b>
+              <i>{feature.body}</i>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+/** The supervisor: the tablet on the desk, and the jobs it does as a board of tasks. */
+function SupervisorCanDo({ features }: { features: RoleFeature[] }) {
+  return (
+    <div className="rp2-board">
+      <div className="rp2-board-device" aria-hidden="true">
+        <Device role="supervisor" kind="tablet">
+          <StepScreen role="supervisor" step={2} />
+        </Device>
+      </div>
+      <ul className="rp2-board-grid">
+        {features.map((feature) => (
+          <li key={feature.title}>
+            <FeatureIcon feature={feature} />
             <b>{feature.title}</b>
             <i>{feature.body}</i>
-          </span>
-          <span className="rp-orbit-link" aria-hidden="true" />
-        </li>
-      ))}
-    </ul>
-  );
-  return (
-    <div className="rp-orbit">
-      {side(features.slice(0, 3), 0, "left")}
-      <div className="rp-orbit-phone" aria-hidden="true">
-        <span className="rp-orbit-rings">
-          <span />
-          <span />
-          <span />
-        </span>
-        <Device role="student" kind="phone" />
-        <span className="rp-orbit-badge rp-orbit-badge--1">
-          <Glyph d={ICON.camera} size={14} /> 7:58 AM · camera check passed
-        </span>
-        <span className="rp-orbit-badge rp-orbit-badge--2">
-          <Glyph d={ICON.check} size={14} /> Day verified
-        </span>
-      </div>
-      {side(features.slice(3), 3, "right")}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-/** The supervisor: a bento board with the tablet in its largest tile. */
-function SupervisorFeatures({ features }: { features: RoleFeature[] }) {
+/** The coordinator: the console on the laptop, and what it does, one row each. */
+function CoordinatorCanDo({ features }: { features: RoleFeature[] }) {
   return (
-    <ul className="rp-bento">
-      <li className="rp-bento-hero" aria-hidden="true">
-        <span className="rp-bento-hero-head">
-          <span className="rp-live" />
-          Review · today
-        </span>
-        <Device role="supervisor" kind="tablet" />
-        <span className="rp-bento-hero-foot">
-          <b>6</b> waiting · oldest first
-        </span>
-      </li>
-      {features.map((feature, index) => (
-        <li key={feature.title} className={`rp-bento-tile${index >= 4 ? " rp-bento-tile--wide" : ""}`} style={{ ["--i" as string]: index }}>
-          <FeatureIcon feature={feature} />
-          <b>{feature.title}</b>
-          <i>{feature.body}</i>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-/** A small picture inside each console widget, after what the feature is. */
-function WidgetArt({ icon }: { icon: RoleFeature["icon"] }) {
-  if (icon === "alert")
-    return (
-      <span className="rp-w-list">
-        <span>
-          <em className="bad" />
-          Appeal · 2 days old
-        </span>
-        <span>
-          <em className="warn" />
-          Flagged log · clock
-        </span>
-        <span>
-          <em />
-          No supervisor yet
-        </span>
-      </span>
-    );
-  if (icon === "filter")
-    return (
-      <span className="rp-w-chips">
-        <em className="on">2026 · 1st term</em>
-        <em>CCS</em>
-        <em className="on">BSIT</em>
-        <em>Block A</em>
-        <em>Company</em>
-      </span>
-    );
-  if (icon === "calendar")
-    return (
-      <span className="rp-w-cal">
-        {Array.from({ length: 21 }, (_, i) => (
-          <em key={i} className={i === 9 ? "hol" : i % 7 > 4 ? "off" : i < 12 ? "on" : ""} />
-        ))}
-      </span>
-    );
-  if (icon === "chart")
-    return (
-      <span className="rp-w-bars">
-        {[54, 72, 64, 88, 76, 94, 82].map((height, i) => (
-          <em key={i} style={{ height: `${height}%`, ["--i" as string]: i }} />
-        ))}
-      </span>
-    );
-  if (icon === "audit")
-    return (
-      <span className="rp-w-log">
-        <span>
-          <code>09:14</code> Time-out corrected
-        </span>
-        <span>
-          <code>10:02</code> Block moved
-        </span>
-        <span>
-          <code>11:47</code> Appeal decided
-        </span>
-      </span>
-    );
-  return (
-    <span className="rp-w-chat">
-      <em>Orientation is on Monday.</em>
-      <em className="me">Noted, sent to all.</em>
-    </span>
-  );
-}
-
-/** The coordinator: the features as the console itself, on a laptop. */
-function CoordinatorFeatures({ features }: { features: RoleFeature[] }) {
-  return (
-    <div className="rp-console">
-      <div className="rp-console-screen">
-        <div className="rp-console-bar" aria-hidden="true">
-          <span className="rp-console-dots">
-            <i />
-            <i />
-            <i />
-          </span>
-          <span className="rp-console-url">internet.psu.edu.ph/coordinator</span>
-        </div>
-        <div className="rp-console-body">
-          <nav className="rp-console-side" aria-hidden="true">
-            <span className="rp-console-brand">
-              <BrandIcon size={22} tile={BRAND.amber} fg={BRAND.navy} />
-              Console
-            </span>
-            {features.map((feature, index) => (
-              <span key={feature.title} className={index === 0 ? "rp-console-nav on" : "rp-console-nav"}>
-                <Glyph d={FEATURE_ICON[feature.icon]} size={14} />
-                {feature.title}
-              </span>
-            ))}
-          </nav>
-          <ul className="rp-console-grid">
-            {features.map((feature, index) => (
-              <li key={feature.title} className="rp-widget" style={{ ["--i" as string]: index }}>
-                <span className="rp-widget-head">
-                  <FeatureIcon feature={feature} />
-                  <b>{feature.title}</b>
-                </span>
-                <i>{feature.body}</i>
-                <span className="rp-widget-art" aria-hidden="true">
-                  <WidgetArt icon={feature.icon} />
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
+    <div className="rp2-spec">
+      <div className="rp2-spec-device" aria-hidden="true">
+        <Device role="coordinator" kind="laptop">
+          <StepScreen role="coordinator" step={2} />
+        </Device>
       </div>
-      <span className="rp-console-base" aria-hidden="true" />
+      <dl className="rp2-spec-list">
+        {features.map((feature) => (
+          <div key={feature.title}>
+            <dt>
+              <FeatureIcon feature={feature} />
+              {feature.title}
+            </dt>
+            <dd>{feature.body}</dd>
+          </div>
+        ))}
+      </dl>
     </div>
   );
 }
 
-/* ---------- The role's day: one layout per role ---------- */
+/* ---------- 3. The role's day: one layout per role ---------- */
 
 /** When each step happens, as an example day or week. */
 const DAY_TIMES: Record<DoorRole, [string, string, string, string]> = {
-  student: ["7:58 AM", "12:00 – 5:02 PM", "During the week", "Every verified day"],
+  student: ["7:58 AM", "12:00 to 5:02 PM", "During the week", "Every verified day"],
   supervisor: ["8:15 AM", "9:00 AM", "After lunch", "End of the month"],
   coordinator: ["Mon", "Tue", "Wed", "Fri"],
 };
 
-/** The trainee: a day on a timeline, a phone beside each step. */
-function TraineeDay({ steps }: { steps: Array<{ title: string; body: string }> }) {
-  return (
-    <ol className="rp-timeline">
-      {steps.map((step, index) => (
-        <li key={step.title} className="rp-timeline-step" style={{ ["--i" as string]: index }}>
-          <span className="rp-timeline-time">{DAY_TIMES.student[index]}</span>
-          <span className="rp-timeline-node" aria-hidden="true">
-            {index + 1}
-          </span>
-          <span className="rp-timeline-card">
-            <span className="rp-timeline-words">
-              <b>{step.title}</b>
-              <i>{step.body}</i>
-            </span>
-            <span className="rp-timeline-phone" aria-hidden="true">
-              <span className="dev dev--phone dev--mini" data-role="student">
-                <span className="dev-screen">
-                  <StepScreen role="student" step={index + 1} />
-                </span>
-              </span>
-            </span>
-          </span>
-        </li>
-      ))}
-    </ol>
-  );
-}
+type Step = { title: string; body: string };
 
-/** The supervisor: a shift track, a tablet screen on each stop. */
-function SupervisorDay({ steps }: { steps: Array<{ title: string; body: string }> }) {
+/** The trainee: four stops along one line, left to right. */
+function TraineeDay({ steps }: { steps: Step[] }) {
   return (
-    <ol className="rp-track">
+    <ol className="rp2-line">
       {steps.map((step, index) => (
-        <li key={step.title} className="rp-track-step" style={{ ["--i" as string]: index }}>
-          <span className="rp-track-screen" aria-hidden="true">
-            <span className="dev dev--tablet" data-role="supervisor">
-              <span className="dev-screen">
-                <StepScreen role="supervisor" step={index + 1} />
-              </span>
-            </span>
-          </span>
-          <span className="rp-track-stop">
-            <span className="rp-track-node" aria-hidden="true">
-              {index + 1}
-            </span>
-            <span className="rp-track-time">{DAY_TIMES.supervisor[index]}</span>
+        <li key={step.title}>
+          <span className="rp2-line-when">{DAY_TIMES.student[index]}</span>
+          <span className="rp2-line-dot" aria-hidden="true">
+            {index + 1}
           </span>
           <b>{step.title}</b>
           <i>{step.body}</i>
@@ -300,46 +162,48 @@ function SupervisorDay({ steps }: { steps: Array<{ title: string; body: string }
   );
 }
 
-/** The coordinator: a week calendar, each step an event on its day. */
-function CoordinatorDay({ steps }: { steps: Array<{ title: string; body: string }> }) {
-  const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+/** The supervisor: the day as a schedule, a time and a job on each row. */
+function SupervisorDay({ steps }: { steps: Step[] }) {
   return (
-    <div className="rp-week">
-      <div className="rp-week-head" aria-hidden="true">
-        {days.map((day, index) => (
-          <span key={day}>
-            <b>{day}</b>
-            <i>{index + 20}</i>
+    <ol className="rp2-schedule">
+      {steps.map((step, index) => (
+        <li key={step.title}>
+          <span className="rp2-schedule-when">{DAY_TIMES.supervisor[index]}</span>
+          <span className="rp2-schedule-what">
+            <b>{step.title}</b>
+            <i>{step.body}</i>
           </span>
-        ))}
-      </div>
-      <ol className="rp-week-grid">
-        {steps.map((step, index) => {
-          const column = days.indexOf(DAY_TIMES.coordinator[index]) + 1;
-          return (
-            <li key={step.title} className="rp-week-event" style={{ gridColumn: column, gridRow: index % 2 === 0 ? "1 / span 2" : "2 / span 2", ["--i" as string]: index }}>
-              <span className="rp-week-when">
-                <span className="rp-week-n">{index + 1}</span>
-                {DAY_TIMES.coordinator[index]}
-              </span>
-              <span className="rp-week-screen" aria-hidden="true">
-                <span className="dev dev--laptop" data-role="coordinator">
-                  <span className="dev-screen">
-                    <StepScreen role="coordinator" step={index + 1} />
-                  </span>
-                </span>
-              </span>
-              <b>{step.title}</b>
-              <i>{step.body}</i>
-            </li>
-          );
-        })}
-      </ol>
-    </div>
+        </li>
+      ))}
+    </ol>
   );
 }
 
-/* ---------- Installing the role's app ---------- */
+/** The coordinator: a working week, each step on its day. */
+function CoordinatorWeek({ steps }: { steps: Step[] }) {
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+  return (
+    <ol className="rp2-week">
+      {days.map((day) => {
+        const index = DAY_TIMES.coordinator.indexOf(day);
+        const step = index >= 0 ? steps[index] : null;
+        return (
+          <li key={day} className={step ? "" : "rp2-week-free"}>
+            <span className="rp2-week-day">{day}</span>
+            {step && (
+              <>
+                <b>{step.title}</b>
+                <i>{step.body}</i>
+              </>
+            )}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+/* ---------- 4. How to start: an account, a sign-in, the app ---------- */
 
 type InstallKey = (typeof INSTALL_DEVICES)[number]["key"];
 
@@ -354,160 +218,102 @@ const INSTALL_LABEL: Partial<Record<DoorRole, Partial<Record<InstallKey, string>
   coordinator: { android: "Android phone", ios: "iPhone" },
 };
 
-/** One install step drawn in the frame it happens in: a phone, a tablet, or a browser window. */
-function InstallArt({ role, device, step }: { role: DoorRole; device: InstallKey; step: number }) {
-  const frame = device === "desktop" ? "window" : role === "supervisor" ? "tablet" : "phone";
-  // A drawn element (typed from one, as this page imports only the brand kit and its own files).
-  let inner: ReturnType<typeof BrandIcon>;
-  if (step === 3) {
-    inner = (
-      <span className="ia-home">
-        {device === "desktop" ? (
-          <>
-            <span className="ia-taskbar">
-              <em />
-              <em />
-              <BrandIcon size={22} tile={BRAND.amber} fg={BRAND.navy} />
-              <em />
-            </span>
-            <i>INTERNet {DOORS[role].name}</i>
-          </>
-        ) : (
-          <>
-            <span className="ia-apps">
-              <em />
-              <em />
-              <em />
-              <BrandIcon size={34} tile={BRAND.amber} fg={BRAND.navy} />
-              <em />
-              <em />
-            </span>
-            <i>INTERNet</i>
-          </>
-        )}
-      </span>
-    );
-  } else if (step === 2) {
-    inner = (
-      <span className="ia-dialog">
-        <b>{device === "ios" ? "Add to Home Screen" : "Install app?"}</b>
-        <span className="ia-dialog-app">
-          <BrandIcon size={22} tile={BRAND.amber} fg={BRAND.navy} />
-          <i>INTERNet {DOORS[role].name}</i>
-        </span>
-        <span className="ia-dialog-actions">
-          <em>Cancel</em>
-          <em className="go">{device === "ios" ? "Add" : "Install"}</em>
-        </span>
-      </span>
-    );
-  } else {
-    inner = (
-      <span className="ia-page">
-        <span className="ia-bar">
-          <i>{device === "desktop" ? "internet…/sign-in" : "sign-in"}</i>
-          <b>{device === "ios" ? "⬆" : device === "desktop" ? "⊕" : "⋮"}</b>
-        </span>
-        <span className="ia-lines">
-          <em />
-          <em />
-        </span>
-        <span className="ia-cta">{device === "ios" ? "Share" : "Install the app"}</span>
-      </span>
-    );
-  }
-  return (
-    <span className={`ia ia--${frame}`} aria-hidden="true">
-      {frame === "window" && (
-        <span className="ia-window-dots">
-          <em />
-          <em />
-          <em />
-        </span>
-      )}
-      <span className="ia-screen">{inner}</span>
-    </span>
-  );
-}
-
-function Install({ role }: { role: DoorRole }) {
+/*
+| Install (Hallmark redesign, 2026-11-21): two columns. On the left, what
+| this is and what the visitor needs first (an account from the OJT
+| coordinator); on the right, one installer: the device (detected by
+| main.ts, changeable), its three steps, and one button, with the QR code
+| on a computer. One set of numbered steps, one brass button.
+*/
+function Start({ role }: { role: DoorRole }) {
   const door = DOORS[role];
   const order = INSTALL_ORDER[role].map((key) => INSTALL_DEVICES.find((device) => device.key === key)!);
   return (
-    <section id="install" className={`land-section role-install role-install--${role}`} aria-labelledby="install-title" data-download data-role={role} data-fixed-role={role}>
-      <span className="role-install-motif" aria-hidden="true" />
-      <div className="land-wrap">
-        <div className="role-install-head">
-          <div>
-            <p className="land-eyebrow role-install-eyebrow">Get the app</p>
-            <h2 id="install-title" className="land-h2 land-h2--light">
-              Install INTERNet for {door.plural}
-            </h2>
-            <p className="land-lede land-lede--light">{ROLE_PAGES[role].installLead} Pick your device; the one you&rsquo;re on is chosen for you.</p>
+    <section id="install" className={`land-section rp3-install role-install--${role}`} aria-labelledby="install-title" data-download data-role={role} data-fixed-role={role}>
+      <div className="land-wrap rp3-grid">
+        <div className="rp3-intro">
+          <h2 id="install-title" className="land-h2 land-h2--light">
+            Install INTERNet for {door.plural}
+          </h2>
+          <p className="land-lede land-lede--light">{ROLE_PAGES[role].installLead}</p>
+          <div className="rp3-need">
+            <span className="rp3-need-icon" aria-hidden="true">
+              <Glyph d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 21a7 7 0 0 1 14 0" size={18} />
+            </span>
+            <span>
+              <b>Before you install</b>
+              <i>Your OJT coordinator creates your account. Sign in with the details they gave you.</i>
+              <a href={doorPath(role)} className="rp3-link">
+                Sign in as a {door.name.toLowerCase()}
+              </a>
+            </span>
           </div>
+        </div>
+
+        <div className="rp3-panel">
           {/* "You're on a computer…": the detected device, said first (main.ts). */}
           <div className="install-card" data-install-card>
             <span className="install-card-tile" data-install-art>
-              <Glyph d={ICON.phone} size={26} />
+              <Glyph d={ICON.phone} size={20} />
             </span>
             <span className="install-card-words">
               <b data-install-title>Install INTERNet on your device.</b>
               <i data-install-sub>The steps for your device are shown below.</i>
             </span>
-            <a className="install-card-button" href={installPath(role)} data-install-go>
-              Install the {door.name.toLowerCase()} app
-            </a>
           </div>
-        </div>
-        <div role="radiogroup" aria-label="Your device" className="get-devices">
-          {order.map((device, index) => (
-            <label key={device.key} className="get-device" data-device-tile={device.key}>
-              <input type="radio" name="download-device" value={device.key} defaultChecked={index === 0} />
-              <span className="get-device-art">{DEVICE_ART[device.key]}</span>
-              <span>
-                <b>{INSTALL_LABEL[role]?.[device.key] ?? device.label}</b>
-                <i>{device.browsers}</i>
-              </span>
-              <span className="get-detected" hidden data-detected={device.key}>
-                Detected
-              </span>
-            </label>
+
+          <div role="radiogroup" aria-label="Your device" className="get-devices">
+            {order.map((device, index) => (
+              <label key={device.key} className="get-device" data-device-tile={device.key}>
+                <input type="radio" name="download-device" value={device.key} defaultChecked={index === 0} />
+                <span className="get-device-art">{DEVICE_ART[device.key]}</span>
+                <span>
+                  <b>{INSTALL_LABEL[role]?.[device.key] ?? device.label}</b>
+                  <i>{device.browsers}</i>
+                </span>
+                <span className="get-detected" hidden data-detected={device.key}>
+                  Detected
+                </span>
+              </label>
+            ))}
+          </div>
+
+          {order.map((device) => (
+            <div key={device.key} className="get-steps" data-device={device.key}>
+              <ol>
+                {device.steps.map((step, index) => (
+                  <li key={step.title}>
+                    <span className="get-n">{index + 1}</span>
+                    <span>
+                      <b>{step.title}</b>
+                      <i>{step.body}</i>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <div className="get-actions">
+                <a className="get-install" data-install-link href={installPath(role)}>
+                  <span>Open the</span>
+                  <span data-door-name>{door.name.toLowerCase()}</span>
+                  <span>sign-in to install</span>
+                </a>
+                {device.key === "ios" && (
+                  <p className="get-warning" data-not-safari hidden>
+                    These steps are for Safari. If Add to Home Screen is missing from this browser&rsquo;s Share menu, open the page in Safari.
+                  </p>
+                )}
+                {device.key === "desktop" && (
+                  <div className="get-qr">
+                    <div className="get-qr-code" data-qr aria-hidden="true" />
+                    <p>
+                      Or scan this with your phone to open the <span data-door-name>{door.name.toLowerCase()}</span> sign-in there.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
           ))}
         </div>
-        {order.map((device) => (
-          <div key={device.key} className="get-steps" data-device={device.key}>
-            <ol>
-              {device.steps.map((step, index) => (
-                <li key={step.title} style={{ ["--i" as string]: index }}>
-                  <InstallArt role={role} device={device.key} step={index + 1} />
-                  <span className="get-n">{index + 1}</span>
-                  <b>{step.title}</b>
-                  <i>{step.body}</i>
-                </li>
-              ))}
-            </ol>
-            <div className="get-actions">
-              <a className="get-install" data-install-link href={installPath(role)}>
-                <span>Open the</span>
-                <span data-door-name>{door.name.toLowerCase()}</span>
-                <span>sign-in to install</span>
-              </a>
-              {device.key === "ios" && (
-                <p className="get-warning" data-not-safari hidden>
-                  These steps are for Safari. If Add to Home Screen is missing from this browser&rsquo;s Share menu, open the page in Safari.
-                </p>
-              )}
-              {device.key === "desktop" && (
-                <div className="get-qr">
-                  <div className="get-qr-code" data-qr aria-hidden="true" />
-                  <p>
-                    Or scan this with your phone to open the <span data-door-name>{door.name.toLowerCase()}</span> sign-in there.
-                  </p>
-                </div>
-              )}
-            </div>
-          </div>
-        ))}
       </div>
     </section>
   );
@@ -532,14 +338,28 @@ export default function RolePage({ role }: { role: DoorRole }) {
       </a>
       <span id="top" />
       <TopBar page={role} />
-      <main id="main" data-role={role} className="role-page">
+      <main id="main" data-role={role} className={`role-page rp2 rp2--${role}`}>
+        {/* 1. What is it? */}
         <section className="role-hero" aria-labelledby="role-title" data-hero>
+          {/* Each role's own backdrop: the camera check's oval, a logbook's ruled page, a route on a map (role.css). */}
+          <span className={`rp2-hero-bg rp2-hero-bg--${role}`} aria-hidden="true">
+            {role === "coordinator" && (
+              <svg className="rp2-route" viewBox="0 0 1200 600" preserveAspectRatio="xMidYMid slice">
+                <path d="M-20 470 C 180 430, 260 300, 420 320 S 640 470, 780 360 S 980 140, 1220 170" />
+                {[
+                  [140, 448],
+                  [420, 320],
+                  [700, 410],
+                  [900, 230],
+                  [1110, 160],
+                ].map(([x, y]) => (
+                  <circle key={x} cx={x} cy={y} r="9" />
+                ))}
+              </svg>
+            )}
+          </span>
           <div className="land-wrap role-hero-row">
             <div className="role-hero-copy">
-              <p className="role-kicker">
-                <span className="land-dot" aria-hidden="true" />
-                {page.kicker}
-              </p>
               <h1 id="role-title" className="role-title">
                 {page.title} <em>{page.titleEm}</em>
               </h1>
@@ -571,49 +391,50 @@ export default function RolePage({ role }: { role: DoorRole }) {
           </div>
         </section>
 
-        <section className={`land-section rp-features rp-features--${role}`} aria-labelledby="role-features">
+        {/* 2. What can I do? */}
+        {/* No visible heading (the user asked to remove it); the section keeps its name for screen readers. */}
+        <section className="land-section rp2-can" aria-label="What you can do">
           <div className="land-wrap">
             <div className="land-head">
-              <p className="land-eyebrow rp-eyebrow">What the {door.cardTitle.toLowerCase()} does</p>
-              <h2 id="role-features" className="land-h2">
-                Everything a {door.name.toLowerCase()} needs, in one app
-              </h2>
               <p className="land-lede">{door.deviceWhy}</p>
             </div>
-            {role === "student" ? (
-              <TraineeFeatures features={page.features} />
-            ) : role === "supervisor" ? (
-              <SupervisorFeatures features={page.features} />
-            ) : (
-              <CoordinatorFeatures features={page.features} />
-            )}
+            {role === "student" ? <TraineeCanDo features={page.features} /> : role === "supervisor" ? <SupervisorCanDo features={page.features} /> : <CoordinatorCanDo features={page.features} />}
           </div>
         </section>
 
-        <section className={`land-section rp-day rp-day--${role}`} aria-labelledby="role-day-title">
+        {/* 3. What is a day like? */}
+        <section className="land-section rp2-day" aria-labelledby="role-day-title">
           <div className="land-wrap">
             <div className="land-head">
-              <p className="land-eyebrow rp-eyebrow">{day.title}</p>
               <h2 id="role-day-title" className="land-h2">
-                Four steps, every {day.title.endsWith("week") ? "week" : "day"}
+                {day.title}
               </h2>
               <p className="land-lede">{DAY_LEAD[role]}</p>
             </div>
-            {role === "student" ? <TraineeDay steps={day.steps} /> : role === "supervisor" ? <SupervisorDay steps={day.steps} /> : <CoordinatorDay steps={day.steps} />}
+            {role === "student" ? <TraineeDay steps={day.steps} /> : role === "supervisor" ? <SupervisorDay steps={day.steps} /> : <CoordinatorWeek steps={day.steps} />}
           </div>
         </section>
 
-        <Install role={role} />
+        {/* 4. How do I start? */}
+        <Start role={role} />
 
-        <section className="land-section land-section--white" aria-labelledby="role-faq-title">
+        {/* 5. Questions */}
+        <section className="land-section rp2-faq" aria-labelledby="role-faq-title">
           <div className="land-wrap role-faq">
             <div>
-              <p className="land-eyebrow">Questions {door.plural} ask</p>
               <h2 id="role-faq-title" className="land-h2">
-                Good to know
+                Questions {door.plural} ask
               </h2>
               <p className="land-lede">
                 More answers in the <a href={`/help?role=${role}`}>Help centre</a>.
+              </p>
+              <p className="rp2-others">
+                <span>Not a {door.name.toLowerCase()}?</span>
+                {others.map((other) => (
+                  <a key={other} href={ROLE_PAGE_PATH[other]}>
+                    For {DOORS[other].plural}
+                  </a>
+                ))}
               </p>
             </div>
             <div className="role-faq-list">
@@ -630,32 +451,6 @@ export default function RolePage({ role }: { role: DoorRole }) {
                 </details>
               ))}
             </div>
-          </div>
-        </section>
-
-        <section className="role-final" aria-labelledby="role-final-title">
-          <div className="land-wrap role-final-row">
-            <div>
-              <h2 id="role-final-title" className="role-final-title">
-                Ready to start?
-              </h2>
-              <p>Your OJT coordinator creates your account. Sign in with the details they gave you.</p>
-            </div>
-            <p className="role-final-actions">
-              <a href={doorPath(role)} className="role-cta-primary">
-                Sign in as a {door.name.toLowerCase()}
-                <Glyph d={ICON.arrow} size={18} />
-              </a>
-              <span className="role-final-others">
-                Not a {door.name.toLowerCase()}?{" "}
-                {others.map((other, index) => (
-                  <span key={other}>
-                    {index > 0 && " · "}
-                    <a href={ROLE_PAGE_PATH[other]}>For {DOORS[other].plural}</a>
-                  </span>
-                ))}
-              </span>
-            </p>
           </div>
         </section>
       </main>

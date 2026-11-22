@@ -144,9 +144,9 @@ const pct = (minutes: number) => `${((Math.min(END, Math.max(START, minutes)) - 
 
 function statusOf(log: AttendanceEntry | undefined): { text: string; tone: "info" | "bad" | "neutral" } {
   if (!log) return { text: "Not in yet", tone: "bad" };
-  if (log.time_out) return { text: `Out · ${formatTime(log.time_out).replace(/\s?[AP]M$/i, "")}`, tone: "neutral" };
+  if (log.time_out) return { text: `Out ${formatTime(log.time_out).replace(/\s?[AP]M$/i, "")}`, tone: "neutral" };
   if (log.break_time && !log.break_end_time) return { text: "At lunch", tone: "info" };
-  return { text: `In · ${formatTime(log.time_in).replace(/\s?[AP]M$/i, "")}`, tone: "neutral" };
+  return { text: `In ${formatTime(log.time_in).replace(/\s?[AP]M$/i, "")}`, tone: "neutral" };
 }
 
 /** Rows the day board shows before "Show all", so the queue below stays in view. */
@@ -281,7 +281,7 @@ function attendanceChips(entry: AttendanceEntry): Array<{ text: string; tone: "i
 
 function lateText(entry: AttendanceEntry): string {
   if (entry.late_minutes === null || entry.late_minutes === undefined) return "";
-  return entry.late_minutes > 0 ? ` · ${entry.late_minutes} min late` : " · on time";
+  return entry.late_minutes > 0 ? `, ${entry.late_minutes} min late` : ", on time";
 }
 
 export function DecisionCard({
@@ -304,7 +304,7 @@ export function DecisionCard({
 
   let line = "";
   if (attendance) {
-    line = `${formatTime(attendance.time_in)}${lateText(attendance)}${open ? " · still on the clock" : attendance.hours ? ` · ${formatHours(attendance.hours)}` : ""}`;
+    line = `${formatTime(attendance.time_in)}${lateText(attendance)}${open ? ", still on the clock" : attendance.hours ? `, ${formatHours(attendance.hours)}` : ""}`;
   } else if (item.kind === "task") {
     line = item.entry.title;
   } else if (item.kind === "document") {
@@ -353,7 +353,7 @@ export function DecisionCard({
           <span className="block truncate text-[14.5px] font-bold text-slate-900">{item.entry.student_name}</span>
           <span className="block truncate text-[13px] text-slate-600">
             {line}
-            {offline ? " · recorded offline" : ""}
+            {offline ? ", recorded offline" : ""}
           </span>
         </span>
         <span className="flex flex-wrap items-center justify-end gap-2">
@@ -375,7 +375,7 @@ export function DecisionCard({
         {(line || offline) && (
           <p className="tabular truncate text-[13px] text-slate-600">
             {line}
-            {offline ? " · offline" : ""}
+            {offline ? ", offline" : ""}
           </p>
         )}
         {badges.length > 0 && <p className="mt-1 flex flex-wrap gap-1.5">{badges}</p>}
@@ -391,7 +391,7 @@ export function DecidedRow({ entry }: { entry: AttendanceEntry }) {
     <div className="flex items-center justify-between gap-3 px-4 py-3">
       <p className="min-w-0 truncate text-[14.5px]">
         <b className="text-slate-900">{entry.student_name}</b>
-        <span className="text-slate-600"> · time-in {formatTime(entry.time_in)}</span>
+        <span className="text-slate-600">, time-in {formatTime(entry.time_in)}</span>
       </p>
       {entry.status === "Verified" ? <Stamp tone="grey">Verified</Stamp> : <Stamp tone="bad">Rejected</Stamp>}
     </div>
@@ -426,7 +426,7 @@ export function ThisWeek({ work, finalDue, projections }: { work: SupervisorWork
     dueByDay.set(date, [...(dueByDay.get(date) ?? []), task.title]);
   }
   for (const [date, titles] of dueByDay) {
-    rows.push({ date, title: titles.length === 1 ? `Task due: ${titles[0]}` : `${titles.length} tasks due`, line: titles.length > 1 ? titles.slice(0, 2).join(" · ") : "With your interns", to: "/supervisor/tasks" });
+    rows.push({ date, title: titles.length === 1 ? `Task due: ${titles[0]}` : `${titles.length} tasks due`, line: titles.length > 1 ? titles.slice(0, 2).join(", ") : "With your interns", to: "/supervisor/tasks" });
   }
   const reports = work.queue.filter((item) => item.kind === "journal").length;
   if (reports > 0) rows.push({ date: today, title: "Weekly reports", line: `${reports} to read`, to: "/supervisor/journals" });

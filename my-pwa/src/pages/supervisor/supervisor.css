@@ -1,0 +1,99 @@
+/* Hallmark · shape: app screen · genre: modern-minimal · theme: brand · redesign: restyle (system pass, every supervisor screen)
+ * paper: oklch(97.5% 0.005 245) · accent: oklch(76% 0.11 74) · display: Bricolage Grotesque · body: Public Sans · signature: the Review queue, one colour for every kind of work, the brass count marking what waits
+ * axes: light/grotesk-heavy/warm · posture: navy shell and controls, mist grounds, brass only for what waits and what is current · contrast: pass · v2.0.0 */
+/* Hallmark · pre-emit critique: P3 H4 E4 S4 R5 V3 · weakest: V, a system pass keeps every layout by request; the gain is one palette, plain labels, every page in the menu */
+/* Hallmark · reworded the visible "·" joins on the supervisor screens to commas and brackets · 63 names them; kept "Offline · attested" and the screen-reader names "Weekly report · …" and "Absence · …", which the end-to-end tests read */
+/* Hallmark · reworded the Review page's title "Good evening, <name>" to "Review" · the menu entry and the page share one name */
+
+@import "../../brand/palette.css";
+
+/*
+|--------------------------------------------------------------------------
+| THE SUPERVISOR PORTAL, SYSTEM PASS (Hallmark, 2026-11-21)
+|--------------------------------------------------------------------------
+|
+| Every supervisor screen keeps its layout; this file gives them the
+| website's look. Scoped to html[data-role="supervisor"] (useRoleTheme).
+|
+|   - one colour for every kind of work (the review kinds were six hues)
+|   - squarer, smaller chips; a smaller page title; calmer headings
+|   - the side menu shows every page, under three quiet headings
+|   - the phone dock names every button, not only the current one
+|
+*/
+
+/* ---------- The shell ---------- */
+html[data-role="supervisor"] .role-topbar { min-height: 64px; padding-block: 8px; }
+html[data-role="supervisor"] .role-topbar-title { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+html[data-role="supervisor"] .role-topbar-context { font-size: 13px; }
+
+/* The side menu: every page, three quiet headings, brass for the current page. */
+html[data-role="supervisor"] .role-side-group > p.eyebrow { margin: 16px 0 4px; padding-inline: 12px; font-size: 12.5px; font-weight: 600; letter-spacing: 0; text-transform: none; color: color-mix(in oklab, var(--color-on-night) 62%, transparent); }
+html[data-role="supervisor"] .role-side-link { min-height: 40px; padding-block: 8px; border-radius: 10px; font-size: 14px; font-weight: 500; }
+html[data-role="supervisor"] .role-side-link[aria-current="page"] { font-weight: 600; }
+html[data-role="supervisor"] .role-side-link[aria-current="page"]::before { background: var(--color-brass); }
+html[data-role="supervisor"] .role-side-count { border-radius: 6px; background: var(--color-brass); color: var(--color-night); }
+
+/* The phone dock: every button named, the icon over its word. */
+html[data-role="supervisor"] .role-dock { padding: 0 8px; gap: 4px; }
+html[data-role="supervisor"] .role-dock-item { flex: 1 1 0; min-width: 0; height: 54px; flex-direction: column; gap: 2px; padding: 4px 2px; border-radius: 14px; }
+html[data-role="supervisor"] .role-dock-item--on { padding: 4px 2px; }
+html[data-role="supervisor"] .role-dock-label { max-width: none; overflow: clip; text-overflow: ellipsis; font-size: 11px; font-weight: 600; line-height: 1.2; }
+html[data-role="supervisor"] .role-dock-item--on .role-dock-label { max-width: none; }
+
+/* ---------- Review: one colour for every kind of work ---------- */
+html[data-role="supervisor"] :is(.rk--all, .rk--timein, .rk--absence, .rk--task, .rk--document, .rk--report, .rk--final) { --rk: var(--color-psu-600); --rk-soft: var(--color-psu-50); --rk-line: var(--color-psu-200); }
+html[data-role="supervisor"] .rk-chip { min-height: 36px; gap: 8px; padding: 0 12px; border-radius: 10px; font-size: 13.5px; }
+html[data-role="supervisor"] .rk-chip-count { height: 20px; min-width: 20px; border-radius: 6px; font-size: 12px; }
+html[data-role="supervisor"] .rk-chip--on { background: var(--color-night); }
+html[data-role="supervisor"] .rk-chip-new { border-radius: 6px; background: var(--color-brass); color: var(--color-night); }
+html[data-role="supervisor"] .rk-panel { box-shadow: inset 0 0 0 1px var(--role-hairline); }
+html[data-role="supervisor"] .rk-panel-head { padding-block: 12px; background: var(--color-card); }
+html[data-role="supervisor"] .rk-panel-head :is(h2, h3) { font-size: 18px; }
+html[data-role="supervisor"] .rk-section-head { background: var(--color-paper-2); box-shadow: inset 0 -1px 0 var(--role-hairline); }
+html[data-role="supervisor"] .rk-row, html[data-role="supervisor"] .rk-row:hover { box-shadow: none; }
+html[data-role="supervisor"] .rk-pill { border-radius: 6px; background: var(--color-night); }
+html[data-role="supervisor"] .rk-counting-head { box-shadow: none; }
+html[data-role="supervisor"] .rk-countdown { border-radius: 6px; }
+html[data-role="supervisor"] .rk-icon { border-radius: 8px; }
+@media (max-width: 1023.98px) {
+  html[data-role="supervisor"] .rk-row > .card-hairline, html[data-role="supervisor"] .rk-row > article { box-shadow: inset 0 0 0 1px var(--role-hairline); }
+}
+
+/* ---------- Every screen: squarer chips and filters, calmer headings ---------- */
+/* Filter and tab chips: a 10px radius instead of a pill; the numbers in them squared too. */
+html[data-role="supervisor"] .sv-page :is(button, a).rounded-full:not(.h-11.w-11):not(.h-10.w-10):not(.h-9.w-9):not(.h-8.w-8) { border-radius: 10px; }
+html[data-role="supervisor"] .sv-page :is(button, a).rounded-full .rounded-full { border-radius: 6px; }
+html[data-role="supervisor"] .sv-page :is(button, a).h-10.rounded-full { height: 36px; }
+/* Headings inside the pages: one step smaller, one weight. */
+html[data-role="supervisor"] .sv-page h2.font-display { font-size: 18px; font-weight: 700; }
+html[data-role="supervisor"] .sv-page :is(h2, h3).font-extrabold { font-weight: 700; }
+/* Section labels set in tracked capitals read as plain small labels. */
+html[data-role="supervisor"] .sv-page :is(.uppercase.tracking-wide, .uppercase.tracking-wider, .uppercase.tracking-widest, [class*="tracking-[0.1"]).uppercase { letter-spacing: 0; text-transform: none; font-size: 13px; }
+html[data-role="supervisor"] .sv-page .eyebrow { letter-spacing: 0; text-transform: none; font-size: 13px; font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  html[data-role="supervisor"] .role-dock-item { transition: none; }
+}
+
+/* Eleven entries fit a 700px-tall screen without scrolling: 36px rows, tight headings. */
+html[data-role="supervisor"] .role-side-link { min-height: 36px; padding-block: 4px; }
+html[data-role="supervisor"] .role-side-group > p.eyebrow { margin: 12px 0 2px; font-size: 12px; }
+html[data-role="supervisor"] .role-side-top { padding-block: 4px; }
+/* The phone's More sheet: its group names as plain small labels. */
+html[data-role="supervisor"] .more-sheet-group { letter-spacing: 0; text-transform: none; font-size: 13px; font-weight: 600; }
+
+/* Focus, pressed and the browser's own surfaces. */
+html[data-role="supervisor"] .sv-page :focus-visible { outline: 2px solid var(--color-night); outline-offset: 2px; }
+html[data-role="supervisor"] :is(.role-side, .role-dock, .role-header) :focus-visible { outline: 2px solid var(--color-brass); outline-offset: 2px; }
+html[data-role="supervisor"] .rk-chip:active, html[data-role="supervisor"] .sv-page :is(button, a).rounded-full:active { transform: scale(0.97); }
+html[data-role="supervisor"] .role-side-link:active { background: color-mix(in oklab, var(--color-on-night) 18%, transparent); }
+html[data-role="supervisor"] .role-topbar-title { text-wrap: balance; overflow-wrap: break-word; min-width: 0; }
+html[data-role="supervisor"] ::selection { background: color-mix(in oklab, var(--color-brass) 40%, transparent); color: var(--color-night); }
+html[data-role="supervisor"] { scrollbar-color: var(--color-silver-deep) var(--color-paper); }
+@media (prefers-reduced-motion: reduce) { html[data-role="supervisor"] .rk-chip:active, html[data-role="supervisor"] .sv-page :is(button, a).rounded-full:active { transform: none; } }
+html[data-role="supervisor"] .sv-page :is(h1, h2, h3), html[data-role="supervisor"] .rk-panel-head :is(h2, h3) { text-wrap: balance; }
+/* The company card and the headings a little tighter, so Concerns is in sight at 700px. */
+html[data-role="supervisor"] .role-side-top > div { padding-block: 8px; }
+html[data-role="supervisor"] .role-side-group > p.eyebrow { margin-top: 8px; }
+html[data-role="supervisor"] .role-side-link { min-height: 34px; padding-block: 4px; }

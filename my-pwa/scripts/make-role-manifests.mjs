@@ -66,6 +66,8 @@ for (const [role, app] of Object.entries(APPS)) {
     background_color: colour(role, "surface"),
     theme_color: colour(role, "chrome"),
     categories: ["education", "productivity"],
+    // Links from the website open in the browser, not in an installed app (fix 10-26).
+    handle_links: "not-preferred",
     launch_handler: { client_mode: ["navigate-existing", "auto"] },
     icons: [icon("", 192), icon("", 512), icon("-maskable", 192), icon("-maskable", 512)],
     shortcuts: app.shortcuts.map(([name, short_name, description, url]) => ({

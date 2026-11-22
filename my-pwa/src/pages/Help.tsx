@@ -4,6 +4,7 @@ import { HELP_ANSWERS, HELP_ROLE_NAME, type HelpAnswer, type HelpRole } from "..
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { BrandLockup, PsuSeal } from "../brand";
 import { ATTENDANCE_RULES_HELP, DECIDED_FIRST, OFFLINE_TABLE, type OfflineRow } from "../lib/offlineHelp";
+import "./help.css";
 
 /*
 |--------------------------------------------------------------------------
@@ -143,8 +144,8 @@ function AnswerList({ answers, query, grouped }: { answers: HelpAnswer[]; query:
     <div className="space-y-5">
       {topics.map((topic) => (
         <section key={topic} aria-label={topic}>
-          <h3 className="mb-1.5 flex items-center gap-2 px-3 text-[13px] font-bold uppercase tracking-[0.1em] text-slate-500">
-            <span className="text-psu-700">
+          <h3 className="help-topic-head mb-1.5 flex items-center gap-2 px-3 text-[14px] font-semibold text-slate-600">
+            <span className="text-gold-700">
               <Glyph d={TOPIC_ICON[topic] ?? DEFAULT_ICON} size={15} />
             </span>
             {topic}
@@ -235,23 +236,23 @@ function StillStuck({ role, fixedRole }: { role: HelpRole; fixedRole?: HelpRole 
   })();
   const message = fixedRole ? MESSAGE_PAGE[fixedRole] : undefined;
   return (
-    <section aria-labelledby="still-stuck" className="rounded-2xl bg-psu-900 p-5 text-white sm:p-6">
+    <section aria-labelledby="still-stuck" className="help-stuck rounded-2xl bg-psu-900 p-5 text-white sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 id="still-stuck" className="font-display text-[20px] font-extrabold">
+          <h2 id="still-stuck" className="font-display text-[20px] font-bold">
             Still need help?
           </h2>
           <p className="mt-1 text-sm text-white/80">Your OJT coordinator and your supervisor can sort out what these answers cannot.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {message ? (
-            <Link to={message.path} className="inline-flex min-h-11 items-center rounded-xl bg-gold-400 px-4 text-sm font-extrabold text-psu-900 hover:bg-gold-300">
+            <Link to={message.path} className="inline-flex min-h-11 items-center rounded-xl bg-gold-500 px-4 text-sm font-semibold text-psu-950 hover:bg-gold-300 active:bg-gold-400">
               {message.label}
             </Link>
           ) : signedIn ? (
             <span className="inline-flex min-h-11 items-center rounded-xl bg-white/10 px-4 text-sm font-semibold">Message them from your portal</span>
           ) : role !== "coordinator" ? (
-            <Link to={`/${role}/sign-in`} className="inline-flex min-h-11 items-center rounded-xl bg-gold-400 px-4 text-sm font-extrabold text-psu-900 hover:bg-gold-300">
+            <Link to={`/${role}/sign-in`} className="inline-flex min-h-11 items-center rounded-xl bg-gold-500 px-4 text-sm font-semibold text-psu-950 hover:bg-gold-300 active:bg-gold-400">
               Sign in to message them
             </Link>
           ) : null}
@@ -281,14 +282,19 @@ export function HelpCentre({ fixedRole }: { fixedRole: HelpRole }) {
   const { query, setQuery, topic, setTopic, mine, topics, shown, searching } = useHelpFilter(fixedRole);
   return (
     <div className="space-y-6">
-      <section aria-labelledby="help-centre-title" className="card-hairline rounded-2xl p-5 sm:p-7">
-        <h2 id="help-centre-title" className="text-[16px] font-bold text-slate-900">
-          {HELP_ROLE_NAME[fixedRole]} help
-        </h2>
-        <div className="mt-3">
-          <SearchField value={query} onChange={setQuery} inputRef={search} />
+      <section aria-labelledby="help-centre-title" className="help-portal card-hairline overflow-hidden rounded-2xl">
+        <div className="help-band">
+          <span className="help-arc" aria-hidden="true" />
+          <h2 id="help-centre-title" className="help-band-title">
+            {HELP_ROLE_NAME[fixedRole]} help
+          </h2>
+          <p className="help-band-lead">Search the answers, or pick a topic.</p>
+          <div className="mt-4 max-w-2xl">
+            <SearchField value={query} onChange={setQuery} inputRef={search} large />
+          </div>
         </div>
-        <div className="mt-4">
+        <div className="help-portal-body">
+        <div>
           <TopicChips topics={topics} mine={mine} topic={topic} setTopic={setTopic} />
         </div>
         <div className="mt-5 border-t border-slate-200 pt-4">
@@ -298,13 +304,21 @@ export function HelpCentre({ fixedRole }: { fixedRole: HelpRole }) {
             <AnswerList answers={shown} query={query} grouped={!searching && !topic} />
           )}
         </div>
+        </div>
       </section>
       {fixedRole !== "coordinator" && <StillStuck role={fixedRole} fixedRole={fixedRole} />}
     </div>
   );
 }
 
-/** The public Help centre at /help. */
+/*
+| The public Help centre at /help (Hallmark redesign, 2026-11-21): a help
+| desk. The question, who is asking and the search on a compact navy band;
+| then the topics as a list down the side (a filter, with their counts) and
+| the answers themselves beside it, straight away; then "Still need help?"
+| and the reference. One way to each answer, no topic cards repeating the
+| list.
+*/
 export default function Help() {
   const standalone = useMediaQuery("(display-mode: standalone)");
   const [params] = useSearchParams();
@@ -322,8 +336,7 @@ export default function Help() {
     setTopic(next);
     answersRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
-  const sections = [
-    { id: "answers", label: "Answers" },
+  const reference = [
     ...(role === "student" ? [{ id: "attendance-times", label: "Attendance times" }] : []),
     { id: "offline", label: "With no connection" },
     ...(role === "student" ? [{ id: "privacy", label: "Privacy notice" }] : []),
@@ -332,35 +345,32 @@ export default function Help() {
   ];
 
   return (
-    <main className="app-canvas min-h-[calc(100dvh-var(--inb-top-inset))] pb-12">
-      <header className="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 backdrop-blur">
+    <main className="help-public app-canvas min-h-[calc(100dvh-var(--inb-top-inset))] pb-14">
+      <header className="help-top">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between gap-3 px-4">
-          <BrandLockup size={22} tagline={null} />
+          <BrandLockup size={22} tagline={null} tone="onDark" />
           {/* Inside the installed app there is no way back to the website (PSU redesign 5). */}
           {standalone ? (
-            <button type="button" onClick={() => window.history.back()} className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-psu-700 hover:bg-psu-50">
-              <Glyph d="M15 18l-6-6 6-6" size={16} />
-              Back
+            <button type="button" onClick={() => window.history.back()} aria-label="Back" title="Back" className="help-back">
+              <Glyph d="M15 18l-6-6 6-6" size={20} />
             </button>
           ) : (
             // A full page load: "/" inside the app redirects to the signed-in portal; the landing page is its own file.
-            <a href="/" className="inline-flex min-h-11 items-center gap-1.5 rounded-lg px-2 text-sm font-semibold text-psu-700 hover:bg-psu-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-psu-600">
-              <Glyph d="M15 18l-6-6 6-6" size={16} />
-              Back to INTERNet
+            <a href="/" aria-label="Back to INTERNet" title="Back to INTERNet" className="help-back">
+              <Glyph d="M15 18l-6-6 6-6" size={20} />
             </a>
           )}
         </div>
       </header>
 
-      {/* The question, who is asking, and the search: first, and largest. */}
-      <section aria-labelledby="help-title" className="bg-psu-900 text-white" style={{ backgroundImage: "var(--inb-grain)" }}>
-        <div className="mx-auto w-full max-w-6xl px-4 py-9 sm:py-12">
-          <div className="max-w-3xl animate-page-in">
-            <p className="text-[12.5px] font-extrabold uppercase tracking-[0.14em] text-gold-300">Help centre</p>
-            <h1 id="help-title" className="font-display mt-2 text-[34px] font-extrabold leading-tight tracking-tight sm:text-[44px]">
+      {/* The question, who is asking, and the search. */}
+      <section aria-labelledby="help-title" className="help-hero">
+        <div className="mx-auto w-full max-w-6xl px-4">
+          <div className="help-hero-row">
+            <h1 id="help-title" className="help-hero-title">
               How can we help?
             </h1>
-            <div role="tablist" aria-label="I'm a" className="mt-5 inline-flex flex-wrap gap-1 rounded-2xl bg-white/10 p-1">
+            <div role="tablist" aria-label="I'm a" className="help-roles">
               {ROLES.map((each) => (
                 <button
                   key={each}
@@ -371,38 +381,55 @@ export default function Help() {
                     setRole(each);
                     setTopic(null);
                   }}
-                  className={`min-h-11 rounded-xl px-4 text-sm font-bold transition-colors ${each === role ? "bg-white text-psu-900" : "text-white/85 hover:bg-white/10"}`}
+                  className="help-role-tab"
                 >
                   I&rsquo;m a {HELP_ROLE_NAME[each].toLowerCase()}
                 </button>
               ))}
             </div>
-            <div className="mt-4">
-              <SearchField value={query} onChange={setQuery} inputRef={search} large />
-            </div>
-            <p className="mt-3 flex flex-wrap items-center gap-2 text-sm text-white/75">
-              Popular:
-              {POPULAR[role].map((word) => (
-                <button key={word} type="button" onClick={() => setQuery(word)} className="min-h-8 rounded-full bg-white/10 px-3 font-semibold text-white hover:bg-white/20">
-                  {word}
-                </button>
-              ))}
-            </p>
           </div>
+          <div className="mt-4 max-w-3xl">
+            <SearchField value={query} onChange={setQuery} inputRef={search} large />
+          </div>
+          <p className="help-popular">
+            <span>Popular:</span>
+            {POPULAR[role].map((word) => (
+              <button key={word} type="button" onClick={() => setQuery(word)} className="help-popular-chip">
+                {word}
+              </button>
+            ))}
+          </p>
         </div>
       </section>
 
-      <div className="mx-auto grid w-full max-w-6xl gap-8 px-4 pt-8 lg:grid-cols-[13rem_minmax(0,1fr)]">
-        {/* On this page: wide screens only, kept in view. */}
-        <nav aria-label="On this page" className="hidden lg:block">
-          <div className="sticky top-24">
-            <p className="text-[12px] font-bold uppercase tracking-[0.12em] text-slate-500">On this page</p>
-            <ul className="mt-2 space-y-0.5 border-l border-slate-200">
-              {sections.map((section) => (
+      <div className="help-desk mx-auto w-full max-w-6xl px-4">
+        {/* The topics, down the side on a computer: a filter, with their counts; then the reference. */}
+        <nav aria-label="Topics and this page" className="help-side">
+          <div className="help-side-inner">
+            <p className="help-side-head">Topics</p>
+            <ul className="help-topics">
+              <li>
+                <button type="button" aria-pressed={!topic && !searching} onClick={() => { setQuery(""); pickTopic(null); }} className="help-topic">
+                  <Glyph d={DEFAULT_ICON} size={16} />
+                  <span>All answers</span>
+                  <em>{mine.length}</em>
+                </button>
+              </li>
+              {topics.map((each) => (
+                <li key={each}>
+                  <button type="button" aria-pressed={topic === each} onClick={() => pickTopic(topic === each ? null : each)} className="help-topic">
+                    <Glyph d={TOPIC_ICON[each] ?? DEFAULT_ICON} size={16} />
+                    <span>{each}</span>
+                    <em>{mine.filter((answer) => answer.topic === each).length}</em>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <p className="help-side-head help-ref-head">On this page</p>
+            <ul className="help-ref-links">
+              {reference.map((section) => (
                 <li key={section.id}>
-                  <a href={`#${section.id}`} className="-ml-px block border-l-2 border-transparent py-1.5 pl-3 text-sm font-medium text-slate-600 hover:border-psu-600 hover:text-psu-800">
-                    {section.label}
-                  </a>
+                  <a href={`#${section.id}`}>{section.label}</a>
                 </li>
               ))}
             </ul>
@@ -410,45 +437,14 @@ export default function Help() {
         </nav>
 
         <div className="min-w-0 space-y-6">
-          {/* Topics: a card each, the way in when the words to search for are not known. */}
-          {!searching && (
-            <section aria-labelledby="topics-title">
-              <h2 id="topics-title" className="sr-only">
-                Topics
-              </h2>
-              <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                {topics.map((each) => {
-                  const inTopic = mine.filter((answer) => answer.topic === each);
-                  const on = topic === each;
-                  return (
-                    <li key={each}>
-                      <button
-                        type="button"
-                        aria-pressed={on}
-                        onClick={() => pickTopic(on ? null : each)}
-                        className={`group flex h-full w-full flex-col gap-2 rounded-2xl p-4 text-left transition ${on ? "bg-psu-700 text-white shadow-lg shadow-psu-900/20" : "card-hairline bg-white hover:-translate-y-0.5 hover:shadow-md"}`}
-                      >
-                        <span className="flex items-center justify-between gap-2">
-                          <span className={`grid h-10 w-10 place-items-center rounded-xl ${on ? "bg-white/15 text-gold-300" : "bg-psu-50 text-psu-700"}`}>
-                            <Glyph d={TOPIC_ICON[each] ?? DEFAULT_ICON} size={19} />
-                          </span>
-                          <span className={`tabular rounded-full px-2 py-0.5 text-xs font-bold ${on ? "bg-white/15" : "bg-slate-100 text-slate-600"}`}>
-                            {inTopic.length} {inTopic.length === 1 ? "answer" : "answers"}
-                          </span>
-                        </span>
-                        <span className={`font-display text-[17px] font-extrabold ${on ? "" : "text-slate-900"}`}>{each}</span>
-                        <span className={`line-clamp-2 text-[13.5px] ${on ? "text-white/80" : "text-slate-600"}`}>{inTopic.map((answer) => answer.question).join(" · ")}</span>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
+          {/* A phone: the topics as one row of chips, above the answers. */}
+          <div className="help-chips lg:hidden">
+            <TopicChips topics={topics} mine={mine} topic={topic} setTopic={pickTopic} />
+          </div>
 
-          <section ref={answersRef} id="answers" aria-labelledby="answers-title" className="scroll-mt-24 card-hairline rounded-2xl bg-white p-4 sm:p-6">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-2 px-1">
-              <h2 id="answers-title" className="text-lg font-semibold text-slate-900">
+          <section ref={answersRef} id="answers" aria-labelledby="answers-title" className="help-answers scroll-mt-24">
+            <div className="help-answers-head">
+              <h2 id="answers-title" className="help-answers-title">
                 {searching ? (
                   <>
                     {shown.length} {shown.length === 1 ? "answer" : "answers"} for &ldquo;{query.trim()}&rdquo;
@@ -466,14 +462,14 @@ export default function Help() {
                     setQuery("");
                     setTopic(null);
                   }}
-                  className="min-h-9 rounded-lg px-2 text-sm font-semibold text-psu-700 hover:bg-psu-50"
+                  className="help-show-all"
                 >
                   Show all answers
                 </button>
               )}
             </div>
             {shown.length === 0 ? (
-              <p className="px-1 text-sm text-slate-600">Nothing matches. Try another word, a topic above, or the reference below.</p>
+              <p className="px-1 text-sm text-slate-600">Nothing matches. Try another word, a topic, or the reference below.</p>
             ) : (
               <AnswerList answers={shown} query={query} grouped={!searching && !topic} />
             )}
@@ -481,15 +477,15 @@ export default function Help() {
 
           <StillStuck role={role} />
           <HelpSections role={role} everyRole />
-          <section id="about" aria-labelledby="about-title" className="flex scroll-mt-24 flex-col gap-4 rounded-2xl card-hairline bg-white p-5 sm:flex-row sm:items-center sm:p-6">
-            <PsuSeal size={60} clearSpace={false} />
+          <section id="about" aria-labelledby="about-title" className="help-about scroll-mt-24">
+            <PsuSeal size={52} clearSpace={false} />
             <div>
               <h2 id="about-title" className="text-lg font-semibold text-slate-900">
                 About INTERNet
               </h2>
-              <p className="mt-1 text-sm leading-relaxed text-slate-700">
-                Attendance, tasks, requirements and records for on-the-job training at Pangasinan State University – Lingayen Campus, for
-                trainees, their supervisors and the OJT coordinator.
+              <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-slate-700">
+                Attendance, tasks, requirements and records for on-the-job training at Pangasinan State University, Lingayen Campus, for trainees, their
+                supervisors and the OJT coordinator.
               </p>
             </div>
           </section>
@@ -512,7 +508,7 @@ function SectionHead({ id, icon, title, lead }: { id: string; icon: string; titl
         <h2 id={id} className="text-lg font-semibold text-slate-900">
           {title}
         </h2>
-        {lead && <p className="mt-1 text-sm leading-relaxed text-slate-700">{lead}</p>}
+        {lead && <p className="mt-1 max-w-[68ch] text-sm leading-relaxed text-slate-700">{lead}</p>}
       </div>
     </div>
   );
@@ -651,7 +647,7 @@ export function HelpSections({ role, everyRole = false }: { role?: HelpRole; eve
             title="Contact the OJT office"
             lead={
               <>
-                Ask your program&rsquo;s OJT coordinator at the OJT office, Pangasinan State University – Lingayen Campus. The coordinator creates every
+                Ask your program&rsquo;s OJT coordinator at the OJT office, Pangasinan State University, Lingayen Campus. The coordinator creates every
                 account, so a supervisor or trainee without one asks there. A forgotten password can be reset from each role&rsquo;s sign-in page.
               </>
             }

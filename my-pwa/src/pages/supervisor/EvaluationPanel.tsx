@@ -306,7 +306,7 @@ export default function EvaluationPanel({ intern }: { intern: { student_id: stri
                           <dd className="tabular shrink-0 font-medium text-slate-900">
                             {item.average.toFixed(1)}
                             {item.count > 1 && (
-                              <span className="font-normal text-slate-500"> · {item.count}</span>
+                              <span className="font-normal text-slate-500">, {item.count}</span>
                             )}
                           </dd>
                         </div>
@@ -331,7 +331,7 @@ export default function EvaluationPanel({ intern }: { intern: { student_id: stri
                           ? "You"
                           : item.evaluator_name ||
                             (item.evaluator_type === "teacher" ? "OJT coordinator" : "Supervisor")}{" "}
-                        · {formatDate(item.eval_date || item.created_at)}
+                       on {formatDate(item.eval_date || item.created_at)}
                       </p>
                       {item.comments && (
                         <p className="mt-1.5 whitespace-pre-line text-sm text-slate-600">

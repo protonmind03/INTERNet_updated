@@ -173,7 +173,7 @@ export default function SupervisorInternPage() {
   return (
     <SupervisorLayout
       title={intern.name}
-      subtitle={[intern.student_id, intern.block_name || intern.program_code || intern.program].filter(Boolean).join(" · ")}
+      subtitle={[intern.student_id, intern.block_name || intern.program_code || intern.program].filter(Boolean).join(", ")}
       actions={back}
     >
       <div className="space-y-5">
@@ -260,7 +260,7 @@ function InternSummary({ intern, work, projection }: { intern: Intern; work: Sup
           </p>
           {projection?.projected_finish && <p className="text-[13.5px] text-slate-600">Expected to finish {formatDate(projection.projected_finish)}</p>}
         </div>
-        <span className="st-badge st-badge--neutral shrink-0">{log ? (log.time_out ? `Out · ${formatTime(log.time_out)}` : `In · ${formatTime(log.time_in)}`) : "Not in today"}</span>
+        <span className="st-badge st-badge--neutral shrink-0">{log ? (log.time_out ? `Out ${formatTime(log.time_out)}` : `In ${formatTime(log.time_in)}`) : "Not in today"}</span>
       </div>
       <ProgressBar value={percent} className="mt-3" label={`${intern.name}: ${Math.round(percent)} percent of required hours`} />
       {(intern.program_code || intern.program) && (
@@ -268,7 +268,7 @@ function InternSummary({ intern, work, projection }: { intern: Intern; work: Sup
           <ProgramMark shortCode={intern.program_code || programCodeOf(intern.program)} major={intern.major} markKey={intern.org_mark_key} size={28} alt={intern.org_name ? `${intern.org_name} logo` : ""} />
           <span className="min-w-0 truncate text-[13.5px] text-slate-700">
             {[intern.program || intern.program_code, intern.major].filter(Boolean).join(", ")}
-            {intern.org_name ? <span className="text-slate-500"> · {intern.org_name}</span> : null}
+            {intern.org_name ? <span className="text-slate-500">, {intern.org_name}</span> : null}
           </span>
         </div>
       )}
@@ -458,13 +458,13 @@ function Overview({ intern, work, onReview }: Reviewable) {
                 className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-4 py-2.5 text-sm sm:px-5"
               >
                 <span className="min-w-0">
-                  {first.pattern_weeks === 2 && <span className="text-slate-600">Week {first.week ?? 1} · </span>}
+                  {first.pattern_weeks === 2 && <span className="text-slate-600">Week {first.week ?? 1}, </span>}
                   <span className="font-medium text-slate-900">{count > 1 ? `${first.day.slice(0, 3)}–${last.day.slice(0, 3)}` : first.day}</span>
-                  {first.focus && <span className="text-slate-600"> · {first.focus}</span>}
+                  {first.focus && <span className="text-slate-600">, {first.focus}</span>}
                 </span>
                 <span className="tabular shrink-0 text-slate-700">
                   {clockTime(first.start_time)} – {clockTime(first.end_time)}
-                  {first.hours !== null && ` · ${formatHours(first.hours)}`}
+                  {first.hours !== null && `, ${formatHours(first.hours)}`}
                 </span>
               </li>
             ))}
@@ -690,11 +690,11 @@ function Tasks({ intern, work, onReview }: Reviewable) {
                   <p className="break-words text-sm font-medium text-slate-900">{task.title}</p>
                   <p className="text-sm text-slate-600">
                     {task.scheduled && task.release_day
-                      ? `The intern will see it on ${formatDate(task.release_day)} · due ${formatDate(task.due_date)}`
+                      ? `The intern will see it on ${formatDate(task.release_day)}, due ${formatDate(task.due_date)}`
                       : open
                         ? dueLabel(task.due_date)
                         : `Due ${formatDate(task.due_date)}`}
-                    {task.team_name && ` · Team: ${task.team_name}`}
+                    {task.team_name && `, Team: ${task.team_name}`}
                   </p>
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
@@ -748,7 +748,7 @@ function Documents({ intern, work, onReview }: Reviewable) {
               <div className="min-w-0">
                 <p className="break-words text-sm font-medium text-slate-900">{entry.doc_type}</p>
                 <p className="truncate text-sm text-slate-600">
-                  {entry.original_filename} · {formatDate(entry.uploaded_at)}
+                  {entry.original_filename}, {formatDate(entry.uploaded_at)}
                 </p>
                 {entry.status === "Rejected" && entry.review_notes && (
                   <p className="mt-0.5 break-words text-sm text-slate-600">Your note: {entry.review_notes}</p>

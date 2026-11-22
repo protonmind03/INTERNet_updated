@@ -193,7 +193,7 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         <div className="rounded-xl border border-psu-200 bg-psu-50 px-4 py-3">
           <p className="text-xs font-medium text-psu-800">
             Intern's correction
-            {entry.corrected_at && ` · ${formatDateTime(entry.corrected_at)}`}
+            {entry.corrected_at && `, ${formatDateTime(entry.corrected_at)}`}
           </p>
           <p className="mt-1 whitespace-pre-line text-sm text-psu-950">
             {entry.correction_note}
@@ -375,7 +375,7 @@ export function CorrectTimesDialog({
       open
       onClose={() => !saving && onClose()}
       title="Correct the times"
-      description={`${entry.student_name} · ${formatLongDate(entry.date)}`}
+      description={`${entry.student_name}, ${formatLongDate(entry.date)}`}
       locked={saving}
       footer={
         <>
@@ -564,7 +564,7 @@ function TaskDetail({ entry, work, onDecided, shortcuts }: DetailProps<TaskEntry
     <DetailShell
       eyebrow="Task submission"
       title={entry.title}
-      meta={`${entry.student_name} · submitted ${formatDateTime(entry.submitted_at)}`}
+      meta={`${entry.student_name}, submitted ${formatDateTime(entry.submitted_at)}`}
     >
       {entry.description && <Quote label="What you asked for">{entry.description}</Quote>}
       {entry.attachment_name && (
@@ -654,7 +654,7 @@ function DocumentDetail({ entry, work, onDecided, shortcuts }: DetailProps<Docum
     <DetailShell
       eyebrow="Document"
       title={entry.doc_type}
-      meta={`${entry.student_name} · uploaded ${formatDateTime(entry.uploaded_at)}`}
+      meta={`${entry.student_name}, uploaded ${formatDateTime(entry.uploaded_at)}`}
     >
       <div className="flex items-center gap-3 rounded-xl border border-slate-200 p-4">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-psu-50 text-psu-700">
@@ -714,7 +714,7 @@ function AbsenceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Absenc
     <DetailShell
       eyebrow="Absence"
       title={entry.student_name}
-      meta={`${formatLongDate(entry.date)} · filed ${formatDateTime(entry.created_at)}`}
+      meta={`${formatLongDate(entry.date)}, filed ${formatDateTime(entry.created_at)}`}
     >
       <Quote label="Intern's reason">{entry.reason}</Quote>
       <p className="text-sm text-slate-600">
@@ -765,7 +765,7 @@ function JournalDetail({ entry, work, onDecided, shortcuts }: DetailProps<Journa
     <DetailShell
       eyebrow="Weekly report"
       title={entry.student_name}
-      meta={`Week of ${formatDate(entry.week_start)} to ${formatDate(weekEnd)} · sent ${formatDateTime(entry.submitted_at)}`}
+      meta={`Week of ${formatDate(entry.week_start)} to ${formatDate(weekEnd)}, sent ${formatDateTime(entry.submitted_at)}`}
     >
       {entry.review_notes && (
         <Quote label="What you asked for when you returned it">{entry.review_notes}</Quote>

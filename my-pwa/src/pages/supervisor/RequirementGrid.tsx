@@ -123,7 +123,7 @@ export default function RequirementGrid({
                               <span className="tabular text-[12px] font-bold">
                                 {cell.approved}
                                 <Icon name="check" size={10} className="mx-0.5 inline" />
-                                {cell.pending > 0 && <span className="ml-1">· {cell.pending} new</span>}
+                                {cell.pending > 0 && <span className="ml-1">({cell.pending} new)</span>}
                               </span>
                             </button>
                           ) : (
@@ -139,7 +139,7 @@ export default function RequirementGrid({
                           <button
                             type="button"
                             onClick={() => (status === "Pending" ? onReview(cell.latest!.id) : onDownload(cell.latest!))}
-                            title={`${MARK[status].word} · ${formatDate(cell.latest.uploaded_at)}`}
+                            title={`${MARK[status].word}, ${formatDate(cell.latest.uploaded_at)}`}
                             className={`req-cell mx-auto ring-1 ring-inset ${MARK[status].cls}`}
                             aria-label={`${label}: ${MARK[status].word}${status === "Pending" ? ", review it" : ", download it"}`}
                           >

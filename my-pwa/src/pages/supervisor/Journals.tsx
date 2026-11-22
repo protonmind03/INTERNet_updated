@@ -227,7 +227,7 @@ export default function SupervisorJournals() {
                             Week of {formatDate(journal.week_start)} to {formatDate(weekEnd(journal.week_start))}
                           </span>
                           <span className="block truncate text-[13px] text-slate-600">
-                            Sent {formatDateTime(journal.submitted_at)} · {journal.activities}
+                            Sent {formatDateTime(journal.submitted_at)}, {journal.activities}
                           </span>
                         </span>
                         <StatusBadge status={STATE[journal.status].label} tone={STATE[journal.status].tone} />

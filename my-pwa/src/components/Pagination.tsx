@@ -36,7 +36,7 @@ export default function Pagination<T>({
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-4 py-3 sm:px-5 print:hidden">
       <p className="text-xs text-slate-500">
         {pageCount > 1 ? `Showing ${from}–${to} of ${total} ${plural}` : `${total} ${plural}`}
-        {extra && ` · ${extra}`}
+        {extra && `, ${extra}`}
       </p>
       {pageCount > 1 && (
         <nav aria-label="Pages" className="flex items-center gap-1">

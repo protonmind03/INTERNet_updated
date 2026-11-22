@@ -13,6 +13,7 @@ import { getInitials } from "../lib/format";
 import { useNavCounts } from "../lib/navCounts";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { signOut as endSession, useAccount } from "../lib/session";
+import "../pages/supervisor/supervisor.css";
 
 /*
 |--------------------------------------------------------------------------
@@ -22,7 +23,7 @@ import { signOut as endSession, useAccount } from "../lib/session";
 | PSU redesign, Section 10 (components/RoleShell.tsx draws the frame). The
 | supervisor's logbook: a flat green header with faint ruled lines and only
 | the bell; on a phone the green dock with Review, Interns, Tasks,
-| Attendance and More. On a tablet or computer a solid green side menu:
+| Attendance and More. On a tablet or computer a solid navy side menu (since the Hallmark system pass, 2026-11-21, every page in sight under three quiet headings, nothing to open):
 | the company at the top, the account at the bottom, and groups that open
 | one at a time:
 |
@@ -109,37 +110,20 @@ export default function SupervisorLayout({
   };
 
   const waiting = counts[REVIEW] ?? 0;
+  // Hallmark system pass (2026-11-21): every page in sight, no groups to open. The three
+  // headings (sentence case) only group them; each entry is still one page, named as titled.
   const side: SideItem[] = [
-    // One module (sv10-26): its kinds are chosen inside the page, each in its own colour.
-    { label: "Review", path: REVIEW, icon: "tasks", count: waiting},
-    { label: "Interns", path: "/supervisor/interns", icon: "users"},
-    { label: "Attendance", path: "/supervisor/attendance", icon: "clock"},
-    {
-      label: "Work",
-      icon: "clipboard",
-      children: [
-        { label: "Tasks", path: "/supervisor/tasks" },
-        { label: "Weekly reports", path: "/supervisor/journals" },
-        { label: "Documents", path: "/supervisor/documents" },
-      ],
-    },
-    {
-      label: "Evaluate",
-      icon: "star",
-      children: [
-        { label: "Final evaluations", path: `${REVIEW}?tab=final` },
-        { label: "Time records", path: "/supervisor/time-record" },
-      ],
-    },
-    {
-      label: "Talk",
-      icon: "chat",
-      children: [
-        { label: "Messages", path: "/supervisor/messages" },
-        { label: "Announcements", path: "/supervisor/announcements" },
-        { label: "Concerns", path: "/supervisor/complaints" },
-      ],
-    },
+    { label: "Review", path: REVIEW, icon: "tasks", count: waiting },
+    { label: "Interns", path: "/supervisor/interns", icon: "users" },
+    { label: "Attendance", path: "/supervisor/attendance", icon: "clock" },
+    { label: "Tasks", path: "/supervisor/tasks", icon: "clipboard", section: "Interns' work" },
+    { label: "Weekly reports", path: "/supervisor/journals", icon: "note" },
+    { label: "Documents", path: "/supervisor/documents", icon: "document" },
+    { label: "Final evaluations", path: `${REVIEW}?tab=final`, icon: "star", section: "Evaluate" },
+    { label: "Time records", path: "/supervisor/time-record", icon: "printer" },
+    { label: "Messages", path: "/supervisor/messages", icon: "chat", section: "Talk" },
+    { label: "Announcements", path: "/supervisor/announcements", icon: "megaphone" },
+    { label: "Concerns", path: "/supervisor/complaints", icon: "flag" },
   ];
   const company = supervisor.company || "Your company";
 
@@ -187,7 +171,7 @@ export default function SupervisorLayout({
           onSignOut: () => setConfirmSignOut(true),
         }}
       >
-        <div className="mx-auto w-full max-w-7xl animate-page-in px-4 pb-32 pt-4 md:px-8 md:pb-12 md:pt-6 print:max-w-none print:p-0">
+        <div className="sv-page mx-auto w-full max-w-7xl animate-page-in px-4 pb-32 pt-4 md:px-8 md:pb-12 md:pt-6 print:max-w-none print:p-0">
           {!tablet && actions && <div className="mb-4 flex flex-wrap justify-end gap-2">{actions}</div>}
           <SavedDataNotice />
           {children}

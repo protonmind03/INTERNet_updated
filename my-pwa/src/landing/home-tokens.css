@@ -1,0 +1,29 @@
+/*
+| The landing page's tokens (Hallmark redesign, 2026-11-21).
+| Three colours, each with a job:
+|   night  - PSU navy: the hero, the checks section, every heading and the device glass
+|   brass  - PSU gold pulled toward the copper of the device mock-up: the one action, the arcs, what is current
+|   mist   - the silver of the mock-ups' aluminium: the light grounds, the device rims, the text on night
+| Every other value is a step of one of the three (lighter, deeper, or mixed with transparency).
+*/
+@import "../brand/palette.css";
+
+:root {
+  --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px; --space-3xl: 96px; --space-4xl: 144px;
+  --text-xs: 0.8125rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.125rem; --text-xl: 1.375rem; --text-2xl: 1.953rem; --text-3xl: 2.441rem;
+  --text-display: clamp(2rem, 1.4rem + 2vw, 3.25rem);
+  --text-section: clamp(1.5rem, 1.1rem + 1.2vw, 2.25rem); --text-title: clamp(1.0625rem, 0.5vw + 0.875rem, 1.25rem); --text-lead: clamp(1rem, 0.2vw + 0.95rem, 1.0625rem);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1); --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-micro: 120ms; --dur-short: 220ms; --dur-long: 700ms;
+  --container: 1320px; --gutter: clamp(16px, 4vw, 56px); --gap-columns: 48px;
+
+  /* The three colours live in brand/palette.css (imported above). */
+  --font-display: "Bricolage Grotesque Variable", "Public Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-body: "Public Sans Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-outlier: var(--font-body);
+
+  --radius-card: 14px; --radius-control: 10px; --radius-pill: 999px; --rule-hair: 1px;
+  --shadow-card: 0 0 0 1px var(--color-rule), 0 24px 48px -30px color-mix(in oklab, var(--color-shadow) 50%, transparent);
+  --shadow-float: 0 44px 70px -34px color-mix(in oklab, var(--color-shadow) 70%, transparent);
+  --tracking-display: -0.028em;
+}

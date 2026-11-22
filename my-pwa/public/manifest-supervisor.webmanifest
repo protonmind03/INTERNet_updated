@@ -8,8 +8,8 @@
   "start_url": "/supervisor/sign-in?source=app",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#F4F9F6",
-  "theme_color": "#116C5C",
+  "background_color": "#F4F7FA",
+  "theme_color": "#0C1731",
   "categories": [
     "education",
     "productivity"
