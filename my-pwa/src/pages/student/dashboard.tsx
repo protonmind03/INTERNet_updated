@@ -16,7 +16,7 @@ import { useMediaQuery } from "../../lib/useMediaQuery";
 import { useProjections } from "../../lib/useProjections";
 import { LateTimeOutDialog } from "./AttendanceCorrections";
 import AttentionCard from "./AttentionCard";
-import { attentionItems, useHiddenAttention } from "./attention";
+import { attentionItems, useHiddenAttention, type Clearance } from "./attention";
 import { PhotoRedoDialog } from "./PhotoRedo";
 import TimeInProvider from "./TimeInProvider";
 import TodayCard from "./TodayCard";
@@ -97,6 +97,8 @@ function DashboardPage() {
   const [summary, setSummary] = useState<DashboardData | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [journals, setJournals] = useState<{ list: Journal[]; week: string | null }>({ list: [], week: null });
+  // Phase 1.2: the Requirements card. Kept on the phone, so it shows offline too.
+  const [clearance, setClearance] = useState<Clearance | null>(null);
   // The completion checklist's lines (documents, hours…), for the shortcuts' status.
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,12 +111,13 @@ function DashboardPage() {
     if (!studentId) return;
     const id = encodeURIComponent(studentId);
     try {
-      const [summaryResponse, tasksResponse, checklistResponse, journalsResponse] = await Promise.all([
+      const [summaryResponse, tasksResponse, checklistResponse, journalsResponse, clearanceResponse] = await Promise.all([
         savedFetch("student", "dashboard", `${API_URL}/api/dashboard/${id}`, withStudentAuth()),
         savedFetch("student", "tasks", `${API_URL}/api/tasks/student/${id}`, withStudentAuth()),
         // Extras to Today: without them the shortcuts and reminders simply show less.
         savedFetch("student", "completion", `${API_URL}/api/students/${id}/completion`, withStudentAuth()).catch(() => null),
         savedFetch("student", "journals", `${API_URL}/api/journals/student/${id}`, withStudentAuth()).catch(() => null),
+        savedFetch("student", "clearance", `${API_URL}/api/students/${id}/clearance`, withStudentAuth()).catch(() => null),
       ]);
       if (!summaryResponse.ok) throw new Error("Could not load your progress.");
       setSummary((await summaryResponse.json()) as DashboardData);
@@ -125,6 +128,10 @@ function DashboardPage() {
       if (checklistResponse?.ok) {
         const data = await checklistResponse.json().catch(() => ({}));
         setChecklist(Array.isArray(data.items) ? (data.items as ChecklistItem[]) : []);
+      }
+      if (clearanceResponse?.ok) {
+        const data = await clearanceResponse.json().catch(() => null);
+        if (data && Array.isArray(data.missing)) setClearance(data as Clearance);
       }
       if (journalsResponse?.ok) {
         const data = await journalsResponse.json().catch(() => ({}));
@@ -176,8 +183,9 @@ function DashboardPage() {
         journals: journals.list,
         deliverables,
         weekly,
+        clearance,
       }),
-    [attendance.todayLog, attendance.openPastLog, attendance.logs, tasks, journals.list, deliverables, weekly]
+    [attendance.todayLog, attendance.openPastLog, attendance.logs, tasks, journals.list, deliverables, weekly, clearance]
   );
 
   const upNext = useMemo<UpNextItem[]>(() => {

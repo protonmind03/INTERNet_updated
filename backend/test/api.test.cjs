@@ -1725,7 +1725,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -13405,6 +13405,158 @@ test("requirements pack: seeded and targeted by program and by sex; restricted f
     await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [sid]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.2: eligibility, clearance for deployment, and the deployment gate
+*/
+
+test("deployment gate: off changes nothing; on, an uncleared student is refused on every time-in path; clearing (or clearing anyway, with a reason) lets them in", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const sids = [`GATE-${stamp}-A`.toUpperCase(), `GATE-${stamp}-B`.toUpperCase(), `GATE-${stamp}-C`.toUpperCase()];
+  const supervisor = await supervisorSession();
+  const supervisorId = String(supervisor.supervisor.supervisor_id);
+  const gate = (value) => jsonRequest("/api/coordinator/ojt-settings/deployment_gate_enabled", jsonBody(coordinatorToken, "PUT", { value }));
+  for (const [index, sid] of sids.entries()) {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id, company) VALUES ($1, $2, $3, $4, TRUE, $5, $6)`,
+      [sid, `${sid.toLowerCase()}@demo.invalid`, await bcrypt.hash("GateTrainee123!", 4), `Gate Trainee ${index}`, supervisorId, index === 2 ? null : "Demo Agency"]
+    );
+  }
+  try {
+    const me = await login("student", `${sids[0].toLowerCase()}@demo.invalid`, "GateTrainee123!");
+    const challenge = () => jsonRequest("/api/attendance/liveness-challenge", jsonBody(me.token, "POST", {}));
+    const photoForm = (fields) => {
+      const form = new FormData();
+      for (const [key, value] of Object.entries(fields)) form.set(key, value);
+      form.set("image", new Blob([sampleFiles.jpg], { type: "image/jpeg" }), "in.jpg");
+      return form;
+    };
+    const timeIn = () => jsonRequest("/api/attendance", { method: "POST", headers: authHeaders(me.token), body: photoForm({ student_id: sids[0] }) });
+    const offline = () =>
+      jsonRequest("/api/attendance/offline-time-in", jsonBody(me.token, "POST", {
+        occurred_at: new Date(Date.now() - 60_000).toISOString(), client_request_id: `gate-${stamp}`, client_sent_at: new Date().toISOString(),
+      }));
+    const recorded = () =>
+      jsonRequest("/api/supervisor/attendance/record", { method: "POST", headers: authHeaders(supervisor.token), body: photoForm({ student_id: sids[0], reason: "Camera not working" }) });
+    const vouchers = () => jsonRequest("/api/attendance/offline-vouchers", jsonBody(me.token, "POST", { key_id: "none", client_sent_at: new Date().toISOString() }));
+
+    // Off by default: nothing is refused for clearance.
+    const settings = await jsonRequest("/api/coordinator/ojt-settings", { headers: authHeaders(coordinatorToken) });
+    assert.equal(settings.body.settings.deployment_gate_enabled, false, "the gate starts off");
+    assert.equal((await challenge()).response.status, 200, "with the gate off an uncleared student gets a camera check");
+    assert.notEqual((await vouchers()).body.code, "NOT_CLEARED");
+
+    // Who may change it, and what it takes.
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/deployment_gate_enabled", jsonBody(studentToken, "PUT", { value: true }))).response.status, 403);
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/deployment_gate_enabled", jsonBody(supervisor.token, "PUT", { value: true }))).response.status, 403);
+    assert.equal((await gate("yes")).response.status, 400);
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/no_such_rule", jsonBody(coordinatorToken, "PUT", { value: true }))).response.status, 404);
+    const on = await gate(true);
+    assert.equal(on.response.status, 200, JSON.stringify(on.body));
+    assert.deepEqual([on.body.old, on.body.value], [false, true]);
+
+    // On: every path refuses with what is missing.
+    for (const [name, call] of [["camera check", challenge], ["time-in", timeIn], ["offline time-in", offline], ["supervisor's record", recorded], ["vouchers", vouchers]]) {
+      const answer = await call();
+      assert.equal(answer.response.status, 403, `${name}: ${JSON.stringify(answer.body)}`);
+      assert.equal(answer.body.code, "NOT_CLEARED", name);
+      assert.ok(answer.body.missing.includes("Academic eligibility"), `${name} lists what is missing`);
+      assert.ok(answer.body.missing.includes("Chest X-ray"), `${name} names the requirements`);
+    }
+    assert.match((await timeIn()).body.message, /^Not cleared for deployment yet: .*Chest X-ray.*\. Your coordinator clears you once these are approved\.$/);
+
+    // The student's own card.
+    const own = await jsonRequest(`/api/students/${sids[0]}/clearance`, { headers: authHeaders(me.token) });
+    assert.equal(own.response.status, 200);
+    assert.equal(own.body.gate_enabled, true);
+    assert.equal(own.body.cleared, false);
+    assert.ok(own.body.items.some((item) => item.name === "Chest X-ray" && item.state === "missing"));
+    assert.equal((await jsonRequest(`/api/students/${sids[1]}/clearance`, { headers: authHeaders(me.token) })).response.status, 403, "only their own");
+
+    // The board, coordinator only.
+    assert.equal((await jsonRequest("/api/coordinator/clearance", { headers: authHeaders(studentToken) })).response.status, 403);
+    assert.equal((await jsonRequest("/api/coordinator/clearance", { headers: authHeaders(supervisor.token) })).response.status, 403);
+    const board = await jsonRequest("/api/coordinator/clearance", { headers: authHeaders(coordinatorToken) });
+    assert.equal(board.response.status, 200);
+    const rowA = board.body.students.find((row) => row.student_id === sids[0]);
+    assert.equal(rowA.ready, false);
+    const rowC = board.body.students.find((row) => row.student_id === sids[2]);
+    assert.ok(rowC.missing.includes("Company assignment"), "no company is missing too");
+
+    // Eligibility.
+    const eligibility = (sid, body) => jsonRequest(`/api/coordinator/students/${sid}/eligibility`, jsonBody(coordinatorToken, "PUT", body));
+    assert.equal((await eligibility(sids[0], { status: "deficient" })).response.status, 400, "deficient needs a note");
+    assert.equal((await eligibility(sids[0], { status: "maybe" })).response.status, 400);
+    assert.equal((await eligibility("NOBODY-AT-ALL", { status: "eligible" })).response.status, 404);
+    assert.equal((await eligibility(sids[0], { status: "eligible" })).response.status, 200);
+
+    // Not ready: clearing needs a reason of 10 or more characters.
+    const clear = (sid, body = {}) => jsonRequest(`/api/coordinator/students/${sid}/clearance`, jsonBody(coordinatorToken, "POST", body));
+    const refused = await clear(sids[0]);
+    assert.equal(refused.response.status, 400);
+    assert.equal(refused.body.code, "NOT_READY");
+    assert.ok(!refused.body.missing.includes("Academic eligibility"), "eligibility is no longer missing");
+    assert.equal((await clear(sids[0], { override_reason: "too short" })).response.status, 400);
+    const anyway = await clear(sids[0], { override_reason: "Medical results are with the clinic; cleared for orientation week." });
+    assert.equal(anyway.response.status, 200, JSON.stringify(anyway.body));
+    assert.equal(anyway.body.override, true);
+    assert.equal((await clear(sids[0], { override_reason: "Medical results are with the clinic again." })).response.status, 409, "already cleared");
+    let overrideAudit;
+    for (let i = 0; i < 20 && !overrideAudit; i += 1) {
+      overrideAudit = (await pool.query(`SELECT details FROM audit_log WHERE action = 'student.clear_override' AND entity_id = $1`, [sids[0]])).rows[0];
+      if (!overrideAudit) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(overrideAudit, "an override is audited");
+    assert.match(overrideAudit.details.override_reason, /with the clinic/);
+    assert.ok(overrideAudit.details.missing.includes("Chest X-ray"), "with what was missing");
+
+    // Cleared: the camera check is given again.
+    assert.equal((await challenge()).response.status, 200, "a cleared student gets the camera check");
+    const ownAfter = await jsonRequest(`/api/students/${sids[0]}/clearance`, { headers: authHeaders(me.token) });
+    assert.equal(ownAfter.body.cleared, true);
+
+    // Ready: eligible, every applicable item approved, a company. Then a plain clear, in bulk.
+    await eligibility(sids[1], { status: "eligible" });
+    const items = (await pool.query(
+      `SELECT r.name FROM ojt_requirements r JOIN students s ON s.student_id = $1
+       WHERE r.is_active AND r.pre_deployment AND (COALESCE(jsonb_array_length(r.applies_to->'sex'), 0) = 0)
+         AND (COALESCE(jsonb_array_length(r.applies_to->'program_ids'), 0) = 0)`,
+      [sids[1]]
+    )).rows.map((row) => row.name);
+    for (const name of items) {
+      await pool.query(
+        `INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status) VALUES ($1, $2, 'x.pdf', $3, 'application/pdf', 1, 'Approved')`,
+        [sids[1], name, `gate-${stamp}-${name.replace(/\W/g, "")}.pdf`]
+      );
+    }
+    const bulk = await jsonRequest("/api/coordinator/clearance/bulk", jsonBody(coordinatorToken, "POST", { student_ids: [sids[1], sids[2], "NOBODY-AT-ALL"] }));
+    assert.equal(bulk.response.status, 200, JSON.stringify(bulk.body));
+    const status = Object.fromEntries(bulk.body.results.map((row) => [row.student_id, row.status]));
+    assert.equal(status[sids[1]], "cleared", "a ready student is cleared");
+    assert.equal(status[sids[2]], "not_ready", "bulk never overrides");
+    assert.equal(status["NOBODY-AT-ALL"], "missing");
+    assert.equal((await jsonRequest("/api/coordinator/clearance/bulk", jsonBody(coordinatorToken, "POST", { student_ids: [] }))).response.status, 400);
+
+    // Taken back: refused again.
+    assert.equal((await jsonRequest(`/api/coordinator/students/${sids[0]}/clearance`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 200);
+    assert.equal((await challenge()).response.status, 403, "after the clearance is taken back");
+    assert.equal((await jsonRequest(`/api/coordinator/students/${sids[0]}/clearance`, jsonBody(coordinatorToken, "DELETE", {}))).response.status, 404);
+
+    // The change of the rule is audited with the old and the new value.
+    const settingAudit = (await pool.query(`SELECT details FROM audit_log WHERE action = 'setting.change' AND entity_id = 'deployment_gate_enabled' ORDER BY id DESC LIMIT 1`)).rows[0];
+    assert.deepEqual([settingAudit.details.old, settingAudit.details.new], [false, true]);
+  } finally {
+    await pool.query(`UPDATE ojt_settings SET value = 'false' WHERE key = 'deployment_gate_enabled'`);
+    await pool.query(`DELETE FROM documents WHERE student_id = ANY($1::varchar[])`, [sids]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = ANY($1::varchar[])`, [sids]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::varchar[])`, [sids]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1::varchar[])`, [sids]);
     await pool.end();
   }
 });

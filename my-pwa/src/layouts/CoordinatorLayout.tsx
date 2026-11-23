@@ -63,7 +63,10 @@ const MORE: DockGroup[] = [
   {
     label: "Decide",
     // Concerns and Appeals are the Decide page's own tabs.
-    items: [{ label: "Needs attention", path: "/coordinator/monitoring?scope=attention", icon: "alert" }],
+    items: [
+      { label: "Needs attention", path: "/coordinator/monitoring?scope=attention", icon: "alert" },
+      { label: "Clearance", path: "/coordinator/clearance", icon: "check" },
+    ],
   },
   {
     label: "Track",
@@ -164,6 +167,7 @@ export default function CoordinatorLayout({
         { label: "Concerns", path: RESOLUTION, count: decide },
         { label: "Appeals", path: `${RESOLUTION}?tab=appeals` },
         { label: "Needs attention", path: "/coordinator/monitoring?scope=attention", count: flagged },
+        { label: "Clearance", path: "/coordinator/clearance" },
       ],
     },
     {

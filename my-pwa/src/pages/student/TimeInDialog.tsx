@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { BrandLoader } from "../../brand";
 import Icon from "../../components/Icon";
 import LivenessCamera, { type LivenessReport } from "../../components/LivenessCamera";
@@ -7,6 +8,8 @@ import { cue } from "../../lib/cues";
 import { formatTime } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { useDraft } from "../../lib/useDraft";
+import { readRecord } from "../../lib/offlineStore";
+import type { Clearance } from "./attention";
 import type { OfflineVoucher } from "../../lib/offlineTimeIn";
 import type { LivenessChallenge } from "./useAttendance";
 
@@ -86,6 +89,21 @@ export default function TimeInDialog({
   const [voucher, setVoucher] = useState<OfflineVoucher | null | undefined>(undefined);
   const [withoutPhoto, setWithoutPhoto] = useState(false);
   const offlineCamera = noConnection && Boolean(voucher) && !withoutPhoto;
+  // Phase 1.2: with no connection, the readiness Today last saw. Not cleared
+  // with the gate on: the time-in would be refused when it arrives, so say
+  // so now. Online, the server's camera check says the same.
+  const [blocked, setBlocked] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!open || !noConnection) return;
+    let cancelled = false;
+    void readRecord<Clearance>("student", "clearance").then((saved) => {
+      if (!cancelled) setBlocked(saved && saved.gate_enabled && !saved.cleared ? saved.missing : null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, noConnection]);
+  const showBlocked = noConnection && blocked !== null;
 
   useEffect(() => {
     if (!open || !noConnection) return;
@@ -246,7 +264,7 @@ export default function TimeInDialog({
       }
       locked={saving}
       footer={
-        !capture && noConnection && !offlineCamera ? (
+        showBlocked ? undefined : !capture && noConnection && !offlineCamera ? (
           <>
             <Button variant="secondary" onClick={close} disabled={saving}>
               Cancel
@@ -267,7 +285,18 @@ export default function TimeInDialog({
         ) : undefined
       }
     >
-      {!capture && offlineCamera && voucher ? (
+      {showBlocked ? (
+        <div className="space-y-3">
+          <p role="alert" className="rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
+            {blocked?.length
+              ? `Not cleared for deployment yet: ${blocked.join(", ")}. Your coordinator clears you once these are approved.`
+              : "Not cleared for deployment yet. Everything is in: ask your OJT coordinator to clear you."}
+          </p>
+          <Link to="/documents" onClick={close} className="inline-flex min-h-11 items-center font-semibold text-psu-700 hover:underline">
+            Open documents
+          </Link>
+        </div>
+      ) : !capture && offlineCamera && voucher ? (
         <div className="space-y-4">
           <LivenessCamera
             key={voucher.jti}

@@ -178,6 +178,7 @@ const CoordinatorEvaluations = page("coordinator", () => import("./pages/coordin
 const CoordinatorAnalytics = page("coordinator", () => import("./pages/coordinator/Analytics"));
 const CoordinatorProfile = page("coordinator", () => import("./pages/coordinator/Profile"));
 const CoordinatorRequirements = page("coordinator", () => import("./pages/coordinator/Requirements"));
+const CoordinatorClearance = page("coordinator", () => import("./pages/coordinator/Clearance"));
 const CoordinatorDocuments = page("coordinator", () => import("./pages/coordinator/Documents"));
 const CoordinatorAnnouncements = page("coordinator", () => import("./pages/coordinator/Announcements"));
 const CoordinatorMessages = page("coordinator", () => import("./pages/coordinator/Messages"));
@@ -500,6 +501,8 @@ function App() {
           path="/coordinator/documents"
           element={<OwnPage><CoordinatorDocuments /></OwnPage>}
         />
+
+        <Route path="/coordinator/clearance" element={<CoordinatorClearance />} />
 
         <Route
           path="/coordinator/announcements"

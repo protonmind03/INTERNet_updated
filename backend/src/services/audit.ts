@@ -105,6 +105,47 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
   },
+  // Phase 1.2: eligibility, clearance for deployment, and the OJT rules.
+  {
+    method: "PUT",
+    path: "/api/coordinator/students/:studentId/eligibility",
+    action: "student.eligibility",
+    entityType: "student",
+    entityId: param("studentId"),
+    keep: ["status"],
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/students/:studentId/clearance",
+    action: (source) => (source.result.override === true ? "student.clear_override" : "student.clear"),
+    entityType: "student",
+    entityId: param("studentId"),
+    keep: ["override_reason"],
+    from: (source) => ({ missing: source.result.missing }),
+  },
+  {
+    method: "DELETE",
+    path: "/api/coordinator/students/:studentId/clearance",
+    action: "student.unclear",
+    entityType: "student",
+    entityId: param("studentId"),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/clearance/bulk",
+    action: "student.clear_bulk",
+    entityType: "student",
+    entityId: () => null,
+    from: (source) => ({ cleared: source.result.cleared }),
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/ojt-settings/:key",
+    action: "setting.change",
+    entityType: "setting",
+    entityId: param("key"),
+    from: (source) => ({ old: source.result.old, new: source.result.value }),
+  },
   // A student's own optional details (migration 078): which ones, never their values.
   {
     method: "PUT",

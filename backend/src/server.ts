@@ -23,6 +23,8 @@ import { runPhotoPurgeIfDue } from "./services/photoPurge";
 import { runUploadsPackIfDue } from "./services/backups";
 import { stripImageMetadata } from "./services/imageMetadata";
 import { requireCorsOrigins } from "./services/corsOrigins";
+import { registerClearanceRoutes } from "./routes/clearance";
+import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
 import {
@@ -2445,6 +2447,12 @@ app.post(
     if (!auth) return res.status(401).json({ message: "Sign in again." });
 
     try {
+      // Phase 1.2: not cleared, with the gate on: no camera check for a time-in,
+      // so the student is told why before taking a photo that would be refused.
+      if (req.body?.purpose !== "break-end") {
+        const notCleared = await deploymentBlock(pool, auth.id);
+        if (notCleared) return res.status(403).json(notCleared);
+      }
       const student = await pool.query<{ liveness_strict: boolean }>(
         `SELECT liveness_strict FROM students WHERE student_id = $1`,
         [auth.id]
@@ -2542,6 +2550,9 @@ app.post(
           });
         }
       }
+      // Phase 1.2: with the deployment gate on, only a student cleared for deployment times in.
+      const notCleared = await deploymentBlock(pool, auth.id);
+      if (notCleared) return res.status(403).json(notCleared);
       if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
         return res.status(400).json({
           message: "Attendance photo must be a JPG or PNG image.",
@@ -4286,6 +4297,14 @@ app.post(
       if (intern.rows.length === 0) {
         return res.status(403).json({
           message: "You can only record attendance for interns assigned to you.",
+        });
+      }
+      // Phase 1.2: an intern not cleared for deployment is not recorded either.
+      const notCleared = await deploymentBlock(pool, studentId);
+      if (notCleared) {
+        return res.status(403).json({
+          ...notCleared,
+          message: `${intern.rows[0].name} is not cleared for deployment yet${notCleared.missing.length ? `: ${notCleared.missing.join(", ")}` : ""}. The OJT coordinator clears them.`,
         });
       }
 
@@ -10445,6 +10464,8 @@ registerPasskeyRoutes(app, { pool, requireRole });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
+// Phase 1.2: the clearance board, the deployment gate's setting, and the student's own readiness.
+registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 // Revisions, November 2026: the trainee's feedback form, progress reports and narrative drafts.
 registerTraineeRecordRoutes(app, { pool, requireRole, notifyCoordinators });
 

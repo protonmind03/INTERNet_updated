@@ -50,6 +50,8 @@ export type AttentionItem = {
 };
 
 type Task = { id: number; title: string; status: string; due_date: string | null };
+/** GET /api/students/:id/clearance (Phase 1.2): what deployment still needs. */
+export type Clearance = { gate_enabled: boolean; cleared: boolean; ready: boolean; missing: string[] };
 type Journal = { id: number; week_start: string; status: string; review_notes?: string | null };
 
 const OPEN_TASK = ["Pending", "In Progress"];
@@ -67,6 +69,7 @@ export function attentionItems({
   journals,
   deliverables,
   weekly,
+  clearance = null,
 }: {
   todayLog: AttendanceLog | null | undefined;
   openPastLog: AttendanceLog | null | undefined;
@@ -75,8 +78,27 @@ export function attentionItems({
   journals: Journal[];
   deliverables: OnceDeliverable[];
   weekly: WeeklyItem[];
+  clearance?: Clearance | null;
 }): AttentionItem[] {
   const items: AttentionItem[] = [];
+
+  // Phase 1.2: what stands between the student and deployment, while the
+  // deployment gate is on and until they are cleared. With the gate off
+  // nothing changes, so it is not shown.
+  if (clearance && clearance.gate_enabled && !clearance.cleared) {
+    items.push({
+      key: `clearance:${clearance.missing.join("|")}`,
+      icon: "clipboard",
+      title: "Requirements",
+      detail: clearance.missing.length
+        ? `Still needed: ${clearance.missing.join(", ")}`
+        : "Everything is in. Your coordinator clears you for deployment.",
+      urgency: "now",
+      when: "Needed before you can time in",
+      why: "Your coordinator clears you for deployment once these are approved and a company is assigned.",
+      action: { label: "Open documents", to: "/documents" },
+    });
+  }
 
   if (todayLog && todayLog.photo_redo_status === "required" && !todayLog.time_out) {
     items.push({

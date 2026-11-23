@@ -17,6 +17,7 @@ import {
 } from "../services/offlineAttestation";
 import { isLivenessPrompt, pickLivenessPrompts, requiredPrompts, type LivenessLevel } from "../services/liveness";
 import { consentRequired, hasCurrentConsent } from "../services/privacy";
+import { deploymentBlock } from "../services/deploymentClearance";
 import { phSql, phToday } from "../services/phTime";
 import { PASSKEY_STEPS, stepOptions } from "../services/passkeys";
 import { correctedTime, judgeTimeIn, loadDayPlan, loadDayRuleSettings, planForApp } from "../services/dayRules";
@@ -175,6 +176,9 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
     let client: PoolClient | null = null;
     try {
       const auth = (req as Authed).auth!;
+      // Phase 1.2: no vouchers for a student who may not time in yet.
+      const notCleared = await deploymentBlock(pool, auth.id);
+      if (notCleared) return res.status(403).json(notCleared);
       const keyId = typeof req.body?.key_id === "string" ? req.body.key_id : "";
       const key = await pool.query<{ id: number }>(
         `SELECT id FROM device_keys WHERE student_id = $1 AND key_id = $2 AND revoked_at IS NULL`,
@@ -446,6 +450,9 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
           });
         }
       }
+      // Phase 1.2: with the deployment gate on, only a student cleared for deployment times in.
+      const notCleared = await deploymentBlock(pool, auth.id);
+      if (notCleared) return res.status(403).json(notCleared);
       const rawNote = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 500) : "";
 
       const existingFor = async () =>
