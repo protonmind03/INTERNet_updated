@@ -30,6 +30,7 @@ import { phClock, phSql } from "./phTime";
 import { bindFilters, filterConditions, type StudentFilters } from "./studentScope";
 import { performanceFigures, withStatus, type Performance } from "./performance";
 import { asPattern, onDate, weeklyHours, type SchedulePattern } from "./schedulePattern";
+import { coordinatorReviews } from "./deliverables";
 
 
 /** Days a supervisor may leave something waiting before the coordinator is told. */
@@ -379,7 +380,7 @@ export async function coordinatorAlerts(
           WHERE s.is_active = TRUE AND ${inTerm} AND t.status = 'Submitted'
         UNION ALL
         SELECT s.supervisor_id, d.uploaded_at FROM documents d JOIN students s ON s.student_id = d.student_id
-          WHERE s.is_active = TRUE AND ${inTerm} AND d.status = 'Pending'
+          WHERE s.is_active = TRUE AND ${inTerm} AND d.status = 'Pending' AND NOT ${coordinatorReviews("d")}
         UNION ALL
         SELECT s.supervisor_id, b.created_at FROM absences b JOIN students s ON s.student_id = b.student_id
           WHERE s.is_active = TRUE AND ${inTerm} AND b.status = 'Pending'

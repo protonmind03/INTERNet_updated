@@ -23,6 +23,7 @@ import { ProgramMark } from "../../brand/MarkImages";
 import { programCodeOf } from "../../brand/psuMarks";
 import SignatureCard from "./SignatureCard";
 import { resolutionPath } from "./resolutionTabs";
+import { GovernmentNumbersCard, SexCard, type Personal } from "./PersonalDetails";
 
 type StudentProfile = {
   student_id: string;
@@ -36,7 +37,8 @@ type StudentProfile = {
   major?: string | null;
   org_mark_key?: string | null;
   org_name?: string | null;
-} & Contact;
+} & Contact &
+  Personal;
 
 
 
@@ -175,6 +177,14 @@ export default function StudentProfilePage() {
               </Button>
             </form>
           </Card>
+          {studentId && profile && (
+            <SexCard
+              key={`sex-${studentId}`}
+              studentId={studentId}
+              personal={profile}
+              onSaved={(personal) => setProfile((current) => (current ? { ...current, ...personal } : current))}
+            />
+          )}
           {studentId && <PasswordForm role="student" accountId={studentId} />}
           <p className="px-1 text-sm text-slate-600">Changing your password signs you out on your other devices.</p>
         </>
@@ -196,6 +206,14 @@ export default function StudentProfilePage() {
             />
           )}
           <AccountDetailsForm role="student" viewer="student" title="How you prefer to be reached" />
+          {studentId && profile && (
+            <GovernmentNumbersCard
+              key={`numbers-${studentId}`}
+              studentId={studentId}
+              personal={profile}
+              onSaved={(personal) => setProfile((current) => (current ? { ...current, ...personal } : current))}
+            />
+          )}
         </>
       ),
     },

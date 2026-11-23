@@ -34,10 +34,19 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
   app.put("/api/coordinator/requirements/:id/deliverable", requireCoordinator, async (req, res) => {
     try {
       if (!/^[0-9]{1,9}$/.test(String(req.params.id))) return res.status(404).json({ message: "Requirement not found." });
-      const found = await pool.query<{ name: string }>(`SELECT name FROM ojt_requirements WHERE id = $1`, [req.params.id]);
+      const found = await pool.query<{ name: string; restricted: boolean }>(
+        `SELECT name, restricted FROM ojt_requirements WHERE id = $1`,
+        [req.params.id]
+      );
       if (found.rows.length === 0) return res.status(404).json({ message: "Requirement not found." });
       const settings = readDeliverable(req.body, found.rows[0].name);
       if ("problem" in settings) return res.status(400).json({ message: settings.problem });
+      // Migration 078: a supervisor never sees a restricted (health or clearance) document.
+      if ((settings.restricted ?? found.rows[0].restricted) && settings.reviewer_role === "supervisor") {
+        return res.status(400).json({
+          message: "A restricted requirement is reviewed by the coordinator: supervisors never see those files. Choose the coordinator, or make it not restricted.",
+        });
+      }
 
       // Only programs and blocks that exist can be named.
       const known = await pool.query<{ programs: number; blocks: number }>(
@@ -54,13 +63,18 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
 
       const saved = await pool.query(
         `UPDATE ojt_requirements
-         SET due_date = $2::date, due_rule = $3, reviewer_role = $4, applies_to = $5::jsonb, updated_at = NOW()
+         SET due_date = $2::date, due_rule = $3, reviewer_role = $4, applies_to = $5::jsonb,
+             category = COALESCE($6, category), restricted = COALESCE($7, restricted),
+             pre_deployment = COALESCE($8, pre_deployment), updated_at = NOW()
          WHERE id = $1
          RETURNING id, name, description, is_active, sort_order,
-                   TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, due_rule, reviewer_role, applies_to`,
-        [req.params.id, settings.due_date, settings.due_rule, settings.reviewer_role, JSON.stringify(settings.applies_to)]
+                   TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, due_rule, reviewer_role, applies_to,
+                   category, restricted, pre_deployment`,
+        [req.params.id, settings.due_date, settings.due_rule, settings.reviewer_role, JSON.stringify(settings.applies_to),
+          settings.category ?? null, settings.restricted ?? null, settings.pre_deployment ?? null]
       );
       const everyone = settings.applies_to.program_ids.length + settings.applies_to.block_ids.length === 0;
+      const kept = saved.rows[0] as { category: string; restricted: boolean; pre_deployment: boolean };
       return res.json({
         message: "Due date and reviewer saved.",
         requirement: saved.rows[0],
@@ -71,6 +85,10 @@ export function registerDeliverableRoutes(app: express.Express, deps: Dependenci
           everyone
             ? "for everyone"
             : `for ${settings.applies_to.program_ids.length} program(s) and ${settings.applies_to.block_ids.length} block(s)`,
+          ...(settings.applies_to.sex ? [`${settings.applies_to.sex.join(" and ")} students only`] : []),
+          ...(kept.category !== "general" ? [kept.category] : []),
+          ...(kept.restricted ? ["restricted"] : []),
+          ...(kept.pre_deployment ? ["needed before deployment"] : []),
         ].join("; "),
       });
     } catch (error) {

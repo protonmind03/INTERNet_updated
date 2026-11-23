@@ -915,12 +915,15 @@ test("coordinator document oversight is read-only and coordinator-only", async (
   assert.ok(Array.isArray(body.documents));
   assert.ok(Array.isArray(body.students));
   assert.equal(JSON.stringify(body).includes("file_path"), false);
+  // Counted over what is asked of each student: since migration 078 seeds
+  // items for one sex or some programs, that can be fewer than every requirement.
   for (const row of body.students) {
     assert.equal(
       row.approved + row.missing.length,
-      body.requirements.length,
-      `${row.student_id}: approved + missing should equal the requirement count`
+      row.required,
+      `${row.student_id}: approved + missing should equal the requirements asked of them`
     );
+    assert.ok(row.required <= body.requirements.length, `${row.student_id}: asked no more than every requirement`);
   }
 
   // The coordinator may review only for a student with no active supervisor,
@@ -13273,6 +13276,135 @@ test("the demo seed adds PSU Lingayen agencies and fictional trainees, all @demo
     const agencySupervisor = await login("supervisor", "demo-sup-0105@demo.invalid", "SupervisorDemo123!");
     assert.equal(agencySupervisor.supervisor.supervisor_id, "DEMO-SUP-0105");
   } finally {
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.1: the requirements pack, targeting by sex, restricted documents
+*/
+
+test("requirements pack: seeded and targeted by program and by sex; restricted files are never a supervisor's, and every opening is audited", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const sid = `PACK-${stamp}`.toUpperCase();
+  const email = `pack.${stamp}@demo.invalid`;
+  const supervisor = await supervisorSession();
+  const supervisorId = String(supervisor.supervisor.supervisor_id);
+  const bshm = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BSHM'`)).rows[0].id;
+  const bsit = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BSIT'`)).rows[0].id;
+  const pdf = Buffer.from("%PDF-1.4\n%%EOF\n");
+  const made = { documents: [] };
+  await pool.query(
+    `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id, program_id) VALUES ($1, $2, $3, 'Pack Trainee', TRUE, $4, $5)`,
+    [sid, email, await bcrypt.hash("PackTrainee123!", 4), supervisorId, bsit]
+  );
+  try {
+    const me = await login("student", email, "PackTrainee123!");
+    const mine = async () =>
+      (await jsonRequest("/api/ojt-requirements", { headers: authHeaders(me.token) })).body.requirements.map((row) => row.name);
+
+    // The pack is there, needed before deployment; the old generic item is retired.
+    const pack = (await pool.query(
+      `SELECT name, category, restricted, pre_deployment, reviewer_role, is_active FROM ojt_requirements
+       WHERE name IN ('Medical examination', 'Urinalysis', 'Chest X-ray', 'CBC', 'Pregnancy test', 'Anti-hepatitis vaccination',
+                      'NBI clearance', 'Police clearance', 'Barangay clearance', 'Certification of Units Earned', 'Medical')`
+    )).rows;
+    const by = Object.fromEntries(pack.map((row) => [row.name, row]));
+    assert.equal(pack.length, 11);
+    for (const name of ["Chest X-ray", "NBI clearance", "Pregnancy test"]) {
+      assert.equal(by[name].restricted, true, `${name} is restricted`);
+      assert.equal(by[name].pre_deployment, true);
+      assert.equal(by[name].reviewer_role, "coordinator", "a restricted item is the coordinator's to review");
+    }
+    assert.equal(by["Certification of Units Earned"].category, "academic");
+    assert.equal(by["Certification of Units Earned"].restricted, false);
+    assert.equal(by.Medical.is_active, false, "the old generic Medical item is inactive, not deleted");
+
+    // By sex: not given, male, female.
+    const personal = (body, token = me.token, id = sid) => jsonRequest(`/api/students/${encodeURIComponent(id)}/personal`, jsonBody(token, "PUT", body));
+    assert.ok(!(await mine()).includes("Pregnancy test"), "not asked when sex is not given");
+    assert.equal((await personal({ sex: "male" })).response.status, 200);
+    assert.ok(!(await mine()).includes("Pregnancy test"), "not asked of a male student");
+    assert.equal((await personal({ sex: "female" })).response.status, 200);
+    assert.ok((await mine()).includes("Pregnancy test"), "asked of a female student");
+    assert.ok((await mine()).includes("Chest X-ray"), "the rest of the pack is asked of everyone");
+
+    // By program: anti-hepatitis for the food-related programs only.
+    assert.ok(!(await mine()).includes("Anti-hepatitis vaccination"), "not asked of BSIT");
+    await pool.query(`UPDATE students SET program_id = $2 WHERE student_id = $1`, [sid, bshm]);
+    assert.ok((await mine()).includes("Anti-hepatitis vaccination"), "asked of BSHM");
+
+    // The details route: own only, numbers checked in form and stored one way.
+    assert.equal((await personal({ sex: "other" })).response.status, 400);
+    assert.equal((await personal({ sss_number: "12345" })).response.status, 400);
+    assert.equal((await personal({ pagibig_number: "1234-5678-901" })).response.status, 400);
+    const numbers = await personal({ sss_number: "3456789012", pagibig_number: "1234 5678 9012" });
+    assert.equal(numbers.response.status, 200, JSON.stringify(numbers.body));
+    assert.equal(numbers.body.personal.sss_number, "34-5678901-2");
+    assert.equal(numbers.body.personal.pagibig_number, "1234-5678-9012");
+    assert.equal(numbers.body.personal.sex, "female", "a field left out is kept");
+    assert.equal((await personal({ sex: "female" }, studentToken, sid)).response.status, 403, "another student cannot");
+    const profile = await jsonRequest(`/api/students/${encodeURIComponent(sid)}/profile`, { headers: authHeaders(me.token) });
+    assert.equal(profile.body.student.sss_number, "34-5678901-2");
+    let detailsAudit;
+    for (let i = 0; i < 20 && !detailsAudit; i += 1) {
+      detailsAudit = (await pool.query(`SELECT details FROM audit_log WHERE action = 'student.personal_details' AND entity_id = $1 ORDER BY id DESC LIMIT 1`, [sid])).rows[0];
+      if (!detailsAudit) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(detailsAudit, "the change is audited");
+    assert.ok(!JSON.stringify(detailsAudit.details).includes("5678901"), "by field name, never the value");
+
+    // A restricted upload goes to the coordinator.
+    const upload = async (docType) => {
+      const form = new FormData();
+      form.append("doc_type", docType);
+      form.append("file", new Blob([pdf], { type: "application/pdf" }), "result.pdf");
+      const response = await fetch(new URL("/api/documents", apiBaseUrl), { method: "POST", headers: authHeaders(me.token), body: form });
+      const body = await response.json();
+      assert.equal(response.status, 201, JSON.stringify(body));
+      const id = body.document?.id ?? body.id;
+      made.documents.push(id);
+      return id;
+    };
+    const xray = await upload("Chest X-ray");
+
+    // The supervisor: not in the list, not openable, not among the requirement names.
+    const supervisorDocs = await jsonRequest("/api/documents/supervisor", { headers: authHeaders(supervisor.token) });
+    assert.ok(!supervisorDocs.body.documents.some((row) => row.id === xray), "not in the supervisor's documents");
+    assert.equal((await jsonRequest(`/api/documents/${xray}/file`, { headers: authHeaders(supervisor.token) })).response.status, 404);
+    const supervisorNames = (await jsonRequest("/api/ojt-requirements", { headers: authHeaders(supervisor.token) })).body.requirements.map((row) => row.name);
+    assert.ok(!supervisorNames.includes("Chest X-ray") && !supervisorNames.includes("Pregnancy test"), "a supervisor is not told of restricted items");
+    const album = await jsonRequest(`/api/students/${encodeURIComponent(sid)}/album`, { headers: authHeaders(me.token) });
+    assert.ok(!album.body.documents.some((row) => row.id === xray), "not in the album, even the student's own");
+    // A supervisor cannot be made its reviewer.
+    const xrayId = (await pool.query(`SELECT id FROM ojt_requirements WHERE name = 'Chest X-ray'`)).rows[0].id;
+    assert.equal((await jsonRequest(`/api/coordinator/requirements/${xrayId}/deliverable`, jsonBody(coordinatorToken, "PUT", { reviewer_role: "supervisor" }))).response.status, 400);
+
+    // Every opening is audited, by the student and the coordinator, each time.
+    const opened = async () => Number((await pool.query(`SELECT COUNT(*) FROM audit_log WHERE action = 'document.view_restricted' AND entity_id = $1`, [String(xray)])).rows[0].count);
+    assert.equal((await fetch(new URL(`/api/documents/${xray}/file`, apiBaseUrl), { headers: authHeaders(me.token) })).status, 200);
+    assert.equal((await fetch(new URL(`/api/documents/${xray}/file`, apiBaseUrl), { headers: authHeaders(coordinatorToken) })).status, 200);
+    assert.equal((await fetch(new URL(`/api/documents/${xray}/file`, apiBaseUrl), { headers: authHeaders(coordinatorToken) })).status, 200);
+    // The row is written after the answer; give it a moment.
+    for (let i = 0; i < 20 && (await opened()) < 3; i += 1) await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(await opened(), 3, "each opening, by anyone, is one audit row");
+
+    // The ZIP leaves restricted files out unless asked for them.
+    const zip = (extra) => fetch(new URL(`/api/coordinator/documents/zip?doc_type=${encodeURIComponent("Chest X-ray")}${extra}`, apiBaseUrl), { headers: authHeaders(coordinatorToken) });
+    const without = await zip("");
+    assert.equal(without.status, 404, "no file matches without include_restricted");
+    await without.arrayBuffer();
+    const withRestricted = await zip("&include_restricted=1");
+    assert.equal(withRestricted.status, 200);
+    await withRestricted.arrayBuffer();
+  } finally {
+    for (const id of made.documents) await pool.query(`DELETE FROM documents WHERE id = $1`, [id]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM upload_ledger WHERE account_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.end();
   }
 });

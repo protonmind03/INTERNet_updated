@@ -61,7 +61,7 @@ type Rule = {
   /** When set, only these kinds of account are logged. */
   roles?: string[];
   /** For reads: the same person reading the same thing again within this long is not logged twice. */
-  quietMinutes?: number;
+  quietMinutes?: number | ((source: Source) => number | undefined);
 };
 
 /** How long a repeated read by the same person stays one entry. */
@@ -105,6 +105,15 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
   },
+  // A student's own optional details (migration 078): which ones, never their values.
+  {
+    method: "PUT",
+    path: "/api/students/:studentId/personal",
+    action: "student.personal_details",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ changed: source.result.changed }),
+  },
   {
     method: "GET",
     path: "/api/students/:studentId/data-export",
@@ -136,11 +145,13 @@ export const AUDIT_RULES: Rule[] = [
   {
     method: "GET",
     path: "/api/documents/:documentId/file",
-    action: "document.view",
+    // A coordinator opening a document; anyone opening a restricted (health
+    // or clearance) one, and every time (migration 078).
+    action: (source) =>
+      source.noted?.restricted === true ? "document.view_restricted" : source.actorRole === "coordinator" ? "document.view" : null,
     entityType: "document",
     entityId: param("documentId"),
-    roles: ["coordinator"],
-    quietMinutes: READ_QUIET_MINUTES,
+    quietMinutes: (source) => (source.noted?.restricted === true ? undefined : READ_QUIET_MINUTES),
     from: (source) => ({
       student_id: source.noted?.student_id,
       name: source.noted?.doc_type,
@@ -254,6 +265,9 @@ export const AUDIT_RULES: Rule[] = [
       pictures: source.noted?.pictures,
       missing: source.noted?.missing,
       bytes: source.noted?.bytes,
+      // Migration 078: restricted files are in it only when asked for, and then listed.
+      restricted_included: source.noted?.restricted_included,
+      restricted_documents: source.noted?.restricted_documents,
     }),
   },
   // The log itself: taking a copy of it out is recorded in it.
@@ -938,6 +952,7 @@ export function auditEntryFor(
   }
 
   const entityId = rule.entityId(source);
+  const quiet = typeof rule.quietMinutes === "function" ? rule.quietMinutes(source) : rule.quietMinutes;
   return {
     action,
     entityType: typeof rule.entityType === "function" ? rule.entityType(source) : rule.entityType,
@@ -946,7 +961,7 @@ export function auditEntryFor(
         ? null
         : String(entityId).slice(0, 80),
     details,
-    ...(rule.quietMinutes ? { quietMinutes: rule.quietMinutes } : {}),
+    ...(quiet ? { quietMinutes: quiet } : {}),
   };
 }
 

@@ -2,6 +2,7 @@ import type express from "express";
 import type { Pool } from "pg";
 import { sameId } from "../services/ids";
 import { phToday } from "../services/phTime";
+import { restrictedDocument } from "../services/deliverables";
 import {
   FEEDBACK_CRITERIA,
   FEEDBACK_SCALE,
@@ -389,6 +390,8 @@ export function registerTraineeRecordRoutes(app: express.Express, deps: Dependen
          WHERE d.student_id = $1
            AND (d.mime_type LIKE 'image/%' OR d.mime_type = 'application/pdf')
            AND d.doc_type !~* '(medical|psycholog|health|diagnos)'
+           -- Migration 078: no restricted (health or clearance) document, whatever its name.
+           AND NOT ${restrictedDocument("d")}
          ORDER BY d.uploaded_at DESC
          LIMIT 500`,
         [studentId]

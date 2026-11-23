@@ -58,6 +58,7 @@ import {
   coordinatorReviews,
   dueOn,
   oneOff,
+  restrictedDocument,
   syncItemWithDocument,
 } from "./services/deliverables";
 import { readReleaseDay, released, scheduledLater } from "./services/taskRelease";
@@ -4402,7 +4403,9 @@ app.get(
           (SELECT COUNT(*) FROM tasks t
               WHERE TRIM(t.student_id::text) IN (SELECT student_id FROM mine) AND t.status = 'Submitted') AS tasks,
           (SELECT COUNT(*) FROM documents d
-              WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending') AS documents,
+              WHERE TRIM(d.student_id::text) IN (SELECT student_id FROM mine) AND d.status = 'Pending'
+                -- Only what the supervisor can review: not the coordinator's, never a restricted one.
+                AND NOT ${coordinatorReviews("d")}) AS documents,
           (SELECT COUNT(*) FROM absences b
               WHERE TRIM(b.student_id::text) IN (SELECT student_id FROM mine) AND b.status = 'Pending') AS absences,
           (SELECT COUNT(*) FROM journals j
@@ -8620,6 +8623,8 @@ app.get(
       SELECT s.student_id, s.email, s.name, s.program, s.company, s.supervisor_id,
         s.required_hours, s.is_active,
         s.phone, s.emergency_contact_name, s.emergency_contact_phone,
+        -- Migration 078: optional, the student's own.
+        s.sex, s.sss_number, s.pagibig_number,
         -- PSU redesign (migration 071): the program's or major's organisation mark for Profile.
         p.short_code AS program_code, m.name AS major,
         COALESCE(m.mark_key, p.mark_key) AS org_mark_key,
@@ -8815,6 +8820,79 @@ app.put(
     } catch (error) {
       console.error("UPDATE STUDENT CONTACT ERROR:", error);
       return res.status(500).json({ message: "Failed to save your contact details." });
+    }
+  }
+);
+
+/*
+| Migration 078: the student's own optional details. Sex is used only to
+| target a requirement (the pregnancy test); the SSS and Pag-IBIG numbers
+| are advised for employment after OJT. Each is checked in form only and
+| stored in one way ("34-5678901-2", "1234-5678-9012"). A field left out is
+| kept; null or "" clears it.
+*/
+const GOVERNMENT_NUMBERS = {
+  sss_number: { digits: 10, groups: [2, 7, 1], label: "An SSS number has 10 digits, as in 34-5678901-2." },
+  pagibig_number: { digits: 12, groups: [4, 4, 4], label: "A Pag-IBIG MID number has 12 digits, as in 1234-5678-9012." },
+} as const;
+
+/** The number in its stored form, null for empty, or "bad". */
+function governmentNumber(value: unknown, kind: keyof typeof GOVERNMENT_NUMBERS): string | null | "bad" {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string" || !/^[\d\s-]{1,30}$/.test(value)) return "bad";
+  const digits = value.replace(/\D/g, "");
+  const { digits: length, groups } = GOVERNMENT_NUMBERS[kind];
+  if (digits.length !== length) return "bad";
+  let at = 0;
+  return groups.map((size) => digits.slice(at, (at += size))).join("-");
+}
+
+app.put(
+  "/api/students/:studentId/personal",
+  requireRole("student"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      const { studentId } = req.params;
+      if (!auth || !sameId(auth.id, studentId)) {
+        return res.status(403).json({ message: "You can only update your own details." });
+      }
+      const body = (req.body ?? {}) as Record<string, unknown>;
+      const sent = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+      const sex = body.sex === null || body.sex === "" ? null : body.sex;
+      if (sent("sex") && sex !== null && sex !== "female" && sex !== "male") {
+        return res.status(400).json({ message: "Choose female or male, or leave it empty." });
+      }
+      const numbers: Record<string, string | null> = {};
+      for (const kind of Object.keys(GOVERNMENT_NUMBERS) as (keyof typeof GOVERNMENT_NUMBERS)[]) {
+        if (!sent(kind)) continue;
+        const value = governmentNumber(body[kind], kind);
+        if (value === "bad") return res.status(400).json({ message: `${GOVERNMENT_NUMBERS[kind].label} Check it and save again.` });
+        numbers[kind] = value;
+      }
+      const changed = ["sex", ...Object.keys(numbers)].filter(sent);
+      if (changed.length === 0) return res.status(400).json({ message: "Nothing to save." });
+
+      const result = await pool.query(
+        `UPDATE students SET
+           sex = CASE WHEN $2 THEN $3 ELSE sex END,
+           sss_number = CASE WHEN $4 THEN $5 ELSE sss_number END,
+           pagibig_number = CASE WHEN $6 THEN $7 ELSE pagibig_number END
+         WHERE student_id = $1
+         RETURNING sex, sss_number, pagibig_number`,
+        [
+          studentId,
+          sent("sex"), sex,
+          sent("sss_number"), numbers.sss_number ?? null,
+          sent("pagibig_number"), numbers.pagibig_number ?? null,
+        ]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Student not found." });
+      // `changed` names the fields for the audit log, never their values.
+      return res.json({ message: "Details saved.", personal: result.rows[0], changed });
+    } catch (error) {
+      console.error("UPDATE STUDENT PERSONAL ERROR:", error);
+      return res.status(500).json({ message: "Failed to save your details." });
     }
   }
 );
@@ -9394,7 +9472,8 @@ app.get(
         const own = await pool.query(
           `
           SELECT r.id, r.name, r.description, r.is_active, r.sort_order, r.reviewer_role, r.due_rule,
-                 TO_CHAR(${dueOn("r", "t")}, 'YYYY-MM-DD') AS due_on
+                 TO_CHAR(${dueOn("r", "t")}, 'YYYY-MM-DD') AS due_on,
+                 r.category, r.restricted, r.pre_deployment
           FROM students s
           JOIN ojt_requirements r ON r.is_active = TRUE AND ${oneOff("r")} AND ${appliesTo("r", "s")}
           LEFT JOIN terms t ON t.id = s.term_id
@@ -9408,12 +9487,15 @@ app.get(
       const result = await pool.query(
         `
         SELECT id, name, description, is_active, sort_order,
-               TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, due_rule, reviewer_role, applies_to
+               TO_CHAR(due_date, 'YYYY-MM-DD') AS due_date, due_rule, reviewer_role, applies_to,
+               category, restricted, pre_deployment
         FROM ojt_requirements
         WHERE ($1::boolean OR is_active = TRUE)
+          -- Migration 078: a supervisor is not told of the restricted (health and clearance) items.
+          AND ($2::text <> 'supervisor' OR restricted = FALSE)
         ORDER BY sort_order, name
         `,
-        [includeInactive]
+        [includeInactive, auth?.role ?? ""]
       );
       return res.json({ requirements: result.rows });
     } catch (error) {
@@ -9764,9 +9846,17 @@ app.post(
       if (studentResult.rows.length === 0) {
         return res.status(403).json({ message: "Student account is unavailable." });
       }
-      if (!studentResult.rows[0].supervisor_id) {
+      // Whoever reviews this requirement is told: the supervisor, unless it says the coordinator.
+      const reviewer = await pool.query<{ reviewer_role: string }>(
+        `SELECT reviewer_role FROM ojt_requirements WHERE name = $1`,
+        [docType]
+      );
+      const coordinatorReviewsIt = reviewer.rows[0]?.reviewer_role === "coordinator";
+      // Only a document the supervisor reviews needs one: medical results and
+      // clearances come before a company is assigned (migration 078).
+      if (!coordinatorReviewsIt && !studentResult.rows[0].supervisor_id) {
         return res.status(409).json({
-          message: "No supervisor is assigned to this account yet.",
+          message: "No supervisor is assigned to this account yet. Ask your OJT coordinator to assign one, then upload it again.",
         });
       }
 
@@ -9797,12 +9887,7 @@ app.post(
         );
       }
 
-      // Whoever reviews this requirement is told: the supervisor, unless it says the coordinator.
-      const reviewer = await pool.query<{ reviewer_role: string }>(
-        `SELECT reviewer_role FROM ojt_requirements WHERE name = $1`,
-        [docType]
-      );
-      if (reviewer.rows[0]?.reviewer_role === "coordinator") {
+      if (coordinatorReviewsIt) {
         await notifyCoordinators({
           title: "Document submitted for review",
           message: `A student uploaded ${docType} (${path.basename(req.file.originalname)}), which the coordinator reviews.`,
@@ -9896,8 +9981,10 @@ app.get(
         INNER JOIN students s ON s.student_id = d.student_id
         WHERE s.supervisor_id = $1
           AND s.is_active = TRUE
-          -- A deliverable the coordinator reviews is not in the supervisor's queue.
+          -- A deliverable the coordinator reviews is not in the supervisor's queue,
+          -- and a restricted (health or clearance) document is never shown (migration 078).
           AND NOT ${coordinatorReviews("d")}
+          AND NOT ${restrictedDocument("d")}
         ORDER BY CASE WHEN d.status = 'Pending' THEN 0 ELSE 1 END,
                  d.uploaded_at DESC, d.id DESC
         LIMIT 1000
@@ -9978,7 +10065,7 @@ app.get(
              SELECT name FROM ojt_requirements r WHERE r.is_active = TRUE AND ${oneOff("r")}
            )
           WHERE s.is_active = TRUE${scope.sql}
-          GROUP BY s.student_id, s.name, s.program, s.company, sup.name, s.program_id, s.block_id
+          GROUP BY s.student_id, s.name, s.program, s.company, sup.name, s.program_id, s.block_id, s.sex
           ORDER BY s.name
           `
         ),
@@ -10157,13 +10244,15 @@ app.get(
     try {
       const result = await pool.query(
         `
-        SELECT d.file_path, d.original_filename, d.mime_type, d.student_id, d.doc_type
+        SELECT d.file_path, d.original_filename, d.mime_type, d.student_id, d.doc_type,
+               ${restrictedDocument("d")} AS restricted
         FROM documents d
         LEFT JOIN students s ON s.student_id = d.student_id
         WHERE d.id = $1
           AND (
             ($2 = 'student' AND d.student_id = $3)
-            OR ($2 = 'supervisor' AND s.supervisor_id = $3)
+            -- A supervisor never opens a restricted (health or clearance) document.
+            OR ($2 = 'supervisor' AND s.supervisor_id = $3 AND NOT ${restrictedDocument("d")})
             OR $2 = 'coordinator'
           )
         `,
@@ -10178,10 +10267,12 @@ app.get(
         .replace(/[\r\n"]/g, "_")
         .trim();
       const file = await readPrivateFile(fileName);
-      // For the audit log, when it is a coordinator who opens it (services/audit.ts).
+      // For the audit log: a coordinator opening any document, and anyone
+      // opening a restricted one, every time (services/audit.ts).
       res.locals.auditNote = {
         student_id: result.rows[0].student_id,
         doc_type: result.rows[0].doc_type,
+        restricted: result.rows[0].restricted === true,
       };
       return res
         .type(file.contentType || result.rows[0].mime_type)

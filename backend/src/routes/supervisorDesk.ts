@@ -5,6 +5,7 @@ import { SLOW_REVIEW_DAYS } from "../services/insights";
 import { readReleaseDay, scheduledLater } from "../services/taskRelease";
 import { deleteKeeping } from "../services/removedRecords";
 import { sqlSameId } from "../services/ids";
+import { coordinatorReviews } from "../services/deliverables";
 
 /*
 |--------------------------------------------------------------------------
@@ -615,6 +616,8 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
            UNION ALL
            SELECT 'document', d.uploaded_at FROM documents d JOIN students s ON s.student_id = d.student_id
              WHERE s.is_active = TRUE AND s.supervisor_id = $1 AND d.status = 'Pending'
+               -- Only what the supervisor reviews: never a restricted one (migration 078).
+               AND NOT ${coordinatorReviews("d")}
            UNION ALL
            SELECT 'absence', b.created_at FROM absences b JOIN students s ON s.student_id = b.student_id
              WHERE s.is_active = TRUE AND s.supervisor_id = $1 AND b.status = 'Pending'

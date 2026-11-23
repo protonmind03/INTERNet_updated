@@ -20,6 +20,7 @@ import { BLOCK_NAME_SQL } from "../services/academics";
 import { compareSchedule, patternKey, readPattern, scheduleKey, type PatternDay, type ReadPattern } from "../services/schedules";
 import { termSetup } from "../services/termSetup";
 import { sameId } from "../services/ids";
+import { restrictedDocument } from "../services/deliverables";
 
 /*
 |--------------------------------------------------------------------------
@@ -205,14 +206,18 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       const docType = typeof req.query.doc_type === "string" ? req.query.doc_type.trim() : "";
       if (docType.length > 100) return res.status(400).json({ message: "That is not a requirement." });
       const withPictures = req.query.include_pictures === "1" || req.query.include_pictures === "true";
+      // Migration 078: restricted (health and clearance) files only when asked for by name.
+      const withRestricted = req.query.include_restricted === "1" || req.query.include_restricted === "true";
 
       const bound = bindFilters(
-        `SELECT d.id, d.file_path, d.doc_type, d.original_filename, d.size_bytes::float AS size_bytes, s.name AS student_name
+        `SELECT d.id, d.file_path, d.doc_type, d.original_filename, d.size_bytes::float AS size_bytes, s.name AS student_name,
+                ${restrictedDocument("d")} AS restricted
          FROM documents d
          JOIN students s ON s.student_id = d.student_id
-         WHERE ($1::text = '' OR d.status = $1) AND ($2::text = '' OR d.doc_type = $2)${filterConditions(read.filters, "s")}
+         WHERE ($1::text = '' OR d.status = $1) AND ($2::text = '' OR d.doc_type = $2)
+           AND ($3::boolean OR NOT ${restrictedDocument("d")})${filterConditions(read.filters, "s")}
          ORDER BY s.name, d.doc_type, d.uploaded_at, d.id`,
-        [status, docType],
+        [status, docType, withRestricted],
         read.filters
       );
       const found = await pool.query<{
@@ -222,6 +227,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
         original_filename: string;
         size_bytes: number;
         student_name: string | null;
+        restricted: boolean;
       }>(bound.text, bound.values);
       // The same students' pictures, when asked for. Never a concern's.
       type PictureRow = { file_path: string; mime_type: string; size_bytes: number; owner_type: string; entry_date: string | null; student_name: string | null };
@@ -317,7 +323,15 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
           true
         );
       }
-      res.locals.auditNote = { filters: filterText, files: sent, pictures: picturesSent, missing: missing.length, bytes };
+      res.locals.auditNote = {
+        filters: filterText,
+        files: sent,
+        pictures: picturesSent,
+        missing: missing.length,
+        bytes,
+        restricted_included: withRestricted,
+        restricted_documents: found.rows.filter((row) => row.restricted).map((row) => row.id),
+      };
       zip.end();
       return undefined;
     } catch (error) {

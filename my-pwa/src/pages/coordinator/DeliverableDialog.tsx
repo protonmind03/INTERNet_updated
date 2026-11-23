@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button, FormError, Modal } from "../../components/ui";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
-import { type DeliverableFields } from "./deliverableText";
+import { CATEGORY_LABELS, type DeliverableFields, type RequirementCategory } from "./deliverableText";
 
 /*
 | A requirement's deliverable settings: when it is due, who reviews what
@@ -34,6 +34,12 @@ export default function DeliverableDialog({
   const [reviewer, setReviewer] = useState<"supervisor" | "coordinator">(requirement.reviewer_role ?? "supervisor");
   const [programs, setPrograms] = useState<Set<number>>(() => new Set(requirement.applies_to?.program_ids ?? []));
   const [blocks, setBlocks] = useState<Set<number>>(() => new Set(requirement.applies_to?.block_ids ?? []));
+  // Migration 078: one sex only (the pregnancy test), or everyone.
+  const savedSex = requirement.applies_to?.sex ?? [];
+  const [sex, setSex] = useState<"" | "female" | "male">(savedSex.length === 1 ? (savedSex[0] as "female" | "male") : "");
+  const [category, setCategory] = useState<RequirementCategory>(requirement.category ?? "general");
+  const [restricted, setRestricted] = useState(requirement.restricted ?? false);
+  const [preDeployment, setPreDeployment] = useState(requirement.pre_deployment ?? false);
   const [catalogue, setCatalogue] = useState<{ programs: Program[]; blocks: Block[] } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -76,8 +82,12 @@ export default function DeliverableDialog({
           body: {
             due_date: kind === "date" ? date : null,
             due_rule: kind === "week" ? `week:${weekNumber}` : kind === "weekly" ? "weekly" : null,
-            reviewer_role: reviewer,
-            applies_to: { program_ids: [...programs], block_ids: [...blocks] },
+            // A restricted file is never shown to a supervisor, so the coordinator reviews it.
+            reviewer_role: restricted ? "coordinator" : reviewer,
+            applies_to: { program_ids: [...programs], block_ids: [...blocks], sex: sex ? [sex] : [] },
+            category,
+            restricted,
+            pre_deployment: preDeployment,
           },
         }
       );
@@ -103,7 +113,7 @@ export default function DeliverableDialog({
         if (!saving) onClose();
       }}
       title={`Due date and reviewer: ${requirement.name}`}
-      description="When it is due, who reviews it, and who it is asked of."
+      description="What kind it is, when it is due, who reviews it, and who it is asked of."
       size="lg"
       locked={saving}
       footer={
@@ -181,17 +191,66 @@ export default function DeliverableDialog({
         </fieldset>
 
         <fieldset>
+          <legend className="text-sm font-semibold text-slate-900">What kind of requirement is it?</legend>
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm text-slate-700">
+              Category
+              <select
+                value={category}
+                onChange={(event) => setCategory(event.target.value as RequirementCategory)}
+                className="field mt-1"
+              >
+                {(Object.keys(CATEGORY_LABELS) as RequirementCategory[]).map((key) => (
+                  <option key={key} value={key}>
+                    {CATEGORY_LABELS[key]}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="mt-3 space-y-2">
+            <label className={option}>
+              <input type="checkbox" className={radio} checked={restricted} onChange={(event) => setRestricted(event.target.checked)} />
+              <span>
+                <span className="block text-sm font-medium text-slate-900">Restricted</span>
+                <span className="block text-xs text-slate-600">
+                  For health and clearance documents. Only the student and the OJT office open them, and every opening
+                  is logged. Supervisors never see them, and they stay out of the album and ZIPs.
+                </span>
+              </span>
+            </label>
+            <label className={option}>
+              <input type="checkbox" className={radio} checked={preDeployment} onChange={(event) => setPreDeployment(event.target.checked)} />
+              <span>
+                <span className="block text-sm font-medium text-slate-900">Needed before deployment</span>
+                <span className="block text-xs text-slate-600">It must be approved before the student is cleared for deployment.</span>
+              </span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
           <legend className="text-sm font-semibold text-slate-900">Who reviews what students upload?</legend>
+          {restricted && (
+            <p className="mt-1 text-xs text-slate-600">A restricted requirement is always reviewed by the coordinator.</p>
+          )}
           <div className="mt-2 space-y-2">
             <label className={option}>
-              <input type="radio" name="reviewer" className={radio} checked={reviewer === "supervisor"} onChange={() => setReviewer("supervisor")} />
+              <input
+                type="radio"
+                name="reviewer"
+                className={radio}
+                checked={!restricted && reviewer === "supervisor"}
+                disabled={restricted}
+                onChange={() => setReviewer("supervisor")}
+              />
               <span>
                 <span className="block text-sm font-medium text-slate-900">The student's supervisor</span>
                 <span className="block text-xs text-slate-600">It goes to their Review queue, as now.</span>
               </span>
             </label>
             <label className={option}>
-              <input type="radio" name="reviewer" className={radio} checked={reviewer === "coordinator"} onChange={() => setReviewer("coordinator")} />
+              <input type="radio" name="reviewer" className={radio} checked={restricted || reviewer === "coordinator"} onChange={() => setReviewer("coordinator")} />
               <span>
                 <span className="block text-sm font-medium text-slate-900">The OJT coordinator</span>
                 <span className="block text-xs text-slate-600">
@@ -209,6 +268,19 @@ export default function DeliverableDialog({
               ? "Everyone. Tick programs or blocks to ask it only of them."
               : "Only students in a ticked program or a ticked block."}
           </p>
+          <label className="mt-2 block max-w-64 text-sm text-slate-700">
+            Students
+            <select value={sex} onChange={(event) => setSex(event.target.value as "" | "female" | "male")} className="field mt-1">
+              <option value="">Everyone</option>
+              <option value="female">Female students only</option>
+              <option value="male">Male students only</option>
+            </select>
+          </label>
+          {sex && (
+            <p className="mt-1 text-xs text-slate-600">
+              Students who have not given their sex in Profile are not asked it.
+            </p>
+          )}
           {catalogue === null ? (
             <p className="mt-2 text-sm text-slate-600">Loading programs and blocks…</p>
           ) : listedPrograms.length + listedBlocks.length === 0 ? (

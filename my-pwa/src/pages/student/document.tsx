@@ -40,6 +40,9 @@ type Requirement = {
   /** "YYYY-MM-DD" when the coordinator gave it a due date. Missing from an older server. */
   due_on?: string | null;
   reviewer_role?: "supervisor" | "coordinator";
+  /** Migration 078: a health or clearance file only the OJT office sees; needed before deployment. */
+  restricted?: boolean;
+  pre_deployment?: boolean;
 };
 
 /** Who reviews a file, in the words shown after an upload. */
@@ -650,6 +653,8 @@ function PhoneRequirementRow({
   const meta = [
     requirement.due_on ? `${overdue ? "Was due" : "Due"} ${formatDate(requirement.due_on)}` : "",
     requirement.reviewer_role === "coordinator" ? "Coordinator reviews" : "",
+    requirement.restricted ? "Private: only the OJT office sees it" : "",
+    requirement.pre_deployment ? "Needed before deployment" : "",
   ].filter(Boolean);
 
   return (

@@ -5,7 +5,19 @@ export type DeliverableFields = {
   due_date?: string | null;
   due_rule?: string | null;
   reviewer_role?: "supervisor" | "coordinator";
-  applies_to?: { program_ids?: number[]; block_ids?: number[] } | null;
+  applies_to?: { program_ids?: number[]; block_ids?: number[]; sex?: string[] } | null;
+  /** Migration 078. */
+  category?: RequirementCategory;
+  restricted?: boolean;
+  pre_deployment?: boolean;
+};
+
+export type RequirementCategory = "general" | "medical" | "clearance" | "academic";
+export const CATEGORY_LABELS: Record<RequirementCategory, string> = {
+  general: "General",
+  medical: "Medical",
+  clearance: "Clearance",
+  academic: "Academic",
 };
 
 /** The settings in a line for the list: "Due every week · Reviewed by the coordinator · 2 programs". Empty when all are as before. */
@@ -26,7 +38,15 @@ export function deliverableLine(item: DeliverableFields): string {
   ]
     .filter(Boolean)
     .join(" and ");
-  return [due, item.reviewer_role === "coordinator" ? "Reviewed by the coordinator" : "", who ? `Only ${who}` : ""]
+  const sexes = item.applies_to?.sex ?? [];
+  return [
+    due,
+    item.reviewer_role === "coordinator" ? "Reviewed by the coordinator" : "",
+    who ? `Only ${who}` : "",
+    sexes.length === 1 ? `${sexes[0] === "female" ? "Female" : "Male"} students only` : "",
+    item.restricted ? "Restricted" : "",
+    item.pre_deployment ? "Needed before deployment" : "",
+  ]
     .filter(Boolean)
     .join(" · ");
 }

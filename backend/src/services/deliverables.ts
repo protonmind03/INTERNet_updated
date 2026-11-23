@@ -28,13 +28,37 @@
 
 import type { Pool } from "pg";
 
-/** SQL: requirement `r` (an alias) is asked of student `s` (an alias). */
+/**
+ * SQL: requirement `r` (an alias) is asked of student `s` (an alias): one
+ * of its programs or blocks (or it lists none), and, when it lists sexes
+ * (migration 078), one of those. A student who has not said is not asked
+ * an item for one sex only.
+ */
 export const appliesTo = (r: string, s: string) => `(
-  (COALESCE(jsonb_array_length(${r}.applies_to->'program_ids'), 0) = 0
-   AND COALESCE(jsonb_array_length(${r}.applies_to->'block_ids'), 0) = 0)
-  OR COALESCE((${r}.applies_to->'program_ids') @> to_jsonb(${s}.program_id), FALSE)
-  OR COALESCE((${r}.applies_to->'block_ids') @> to_jsonb(${s}.block_id), FALSE)
+  (
+    (COALESCE(jsonb_array_length(${r}.applies_to->'program_ids'), 0) = 0
+     AND COALESCE(jsonb_array_length(${r}.applies_to->'block_ids'), 0) = 0)
+    OR COALESCE((${r}.applies_to->'program_ids') @> to_jsonb(${s}.program_id), FALSE)
+    OR COALESCE((${r}.applies_to->'block_ids') @> to_jsonb(${s}.block_id), FALSE)
+  )
+  AND (
+    COALESCE(jsonb_array_length(${r}.applies_to->'sex'), 0) = 0
+    OR COALESCE((${r}.applies_to->'sex') @> to_jsonb(${s}.sex), FALSE)
+  )
 )`;
+
+/**
+ * SQL: document `d` (an alias) is of a restricted requirement (migration
+ * 078): a health or clearance document. Only the student, the coordinators
+ * and the director see it; never a supervisor, the album, a preview or a
+ * ZIP that did not ask for it.
+ */
+export const restrictedDocument = (d: string) =>
+  `EXISTS (SELECT 1 FROM ojt_requirements rq WHERE rq.name = ${d}.doc_type AND rq.restricted)`;
+
+export const REQUIREMENT_CATEGORIES = ["general", "medical", "clearance", "academic"] as const;
+export type RequirementCategory = (typeof REQUIREMENT_CATEGORIES)[number];
+const SEXES = ["female", "male"] as const;
 
 /** SQL: requirement `r` is a single document, not one a week. */
 export const oneOff = (r: string) => `${r}.due_rule IS DISTINCT FROM 'weekly'`;
@@ -54,7 +78,12 @@ export type DeliverableSettings = {
   due_date: string | null;
   due_rule: string | null;
   reviewer_role: "supervisor" | "coordinator";
-  applies_to: { program_ids: number[]; block_ids: number[] };
+  /** `sex` (migration 078) only when the requirement is for one sex. */
+  applies_to: { program_ids: number[]; block_ids: number[]; sex?: string[] };
+  /** Migration 078: only when sent; one left out keeps what is saved. */
+  category?: RequirementCategory;
+  restricted?: boolean;
+  pre_deployment?: boolean;
 };
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -102,11 +131,28 @@ export function readDeliverable(body: unknown, name: string): { problem: string 
   const programs = idList(applies.program_ids);
   const blocks = idList(applies.block_ids);
   if (!programs || !blocks) return { problem: "That list of programs and blocks is not readable." };
+  const sexes = applies.sex === undefined || applies.sex === null ? [] : applies.sex;
+  if (!Array.isArray(sexes) || sexes.some((item) => !(SEXES as readonly unknown[]).includes(item))) {
+    return { problem: "A requirement can be asked of female students, male students, or everyone." };
+  }
+  const category = input.category === undefined ? null : input.category;
+  if (category !== null && !(REQUIREMENT_CATEGORIES as readonly unknown[]).includes(category)) {
+    return { problem: "A requirement is general, medical, a clearance, or academic." };
+  }
+  const flag = (key: string): boolean | null | "bad" =>
+    input[key] === undefined ? null : typeof input[key] === "boolean" ? (input[key] as boolean) : "bad";
+  const restricted = flag("restricted");
+  const preDeployment = flag("pre_deployment");
+  if (restricted === "bad" || preDeployment === "bad") return { problem: "Restricted and needed before deployment are yes or no." };
+  const sex = [...new Set(sexes as string[])].sort();
   return {
     due_date: dueDate as string | null,
     due_rule: dueRule as string | null,
     reviewer_role: reviewer,
-    applies_to: { program_ids: programs, block_ids: blocks },
+    applies_to: { program_ids: programs, block_ids: blocks, ...(sex.length ? { sex } : {}) },
+    ...(category !== null ? { category: category as RequirementCategory } : {}),
+    ...(restricted !== null ? { restricted } : {}),
+    ...(preDeployment !== null ? { pre_deployment: preDeployment } : {}),
   };
 }
 

@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-261 routes in 17 files; 53 services in use.
+262 routes in 17 files; 53 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -21,7 +21,7 @@ flowchart LR
   doors --> pwa
   apps --> doors
   subgraph api["backend, the Express API"]
-    server["server.ts<br/>96 routes: /api/coordinator, /api/attendance, /api/notifications"]
+    server["server.ts<br/>97 routes: /api/coordinator, /api/attendance, /api/notifications"]
     routes_academics["routes/academics.ts<br/>11 routes: /api/coordinator"]
     routes_accountDetails["routes/accountDetails.ts<br/>7 routes: /api/coordinator, /api/me"]
     routes_appeals["routes/appeals.ts<br/>4 routes: /api/appeals, /api/coordinator"]
@@ -161,6 +161,7 @@ flowchart LR
   routes_offlineTimeIn --> services_privacy
   routes_passkeys --> services_passkeys
   routes_programme --> services_academics
+  routes_programme --> services_deliverables
   routes_programme --> services_documentZip
   routes_programme --> services_ids
   routes_programme --> services_insights
@@ -173,6 +174,7 @@ flowchart LR
   routes_programme --> services_termSetup
   routes_projections --> services_ids
   routes_projections --> services_projection
+  routes_supervisorDesk --> services_deliverables
   routes_supervisorDesk --> services_ids
   routes_supervisorDesk --> services_insights
   routes_supervisorDesk --> services_phTime
@@ -180,6 +182,7 @@ flowchart LR
   routes_supervisorDesk --> services_taskRelease
   routes_timeRecord --> services_ids
   routes_timeRecord --> services_uploadQuota
+  routes_traineeRecord --> services_deliverables
   routes_traineeRecord --> services_ids
   routes_traineeRecord --> services_phTime
   routes_traineeRecord --> services_traineeRecord
@@ -244,11 +247,13 @@ flowchart LR
   services_deadlineReminders --> services_photoRedo
   services_deadlineReminders --> services_projection
   services_deadlineReminders --> services_taskRelease
+  services_digests --> services_deliverables
   services_digests --> services_emailBudget
   services_digests --> services_loopLock
   services_digests --> services_mailer
   services_digests --> services_notificationPreferences
   services_digests --> services_phTime
+  services_insights --> services_deliverables
   services_insights --> services_digests
   services_insights --> services_mailer
   services_insights --> services_notificationPreferences
@@ -335,7 +340,7 @@ flowchart LR
 
 | File | Routes | Address families (most routes first) |
 |---|---|---|
-| `server.ts` | 96 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/supervisor`, `/api/tasks`, `/api/complaints`, `/api/push` |
+| `server.ts` | 97 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/students`, `/api/supervisor`, `/api/tasks`, `/api/complaints` |
 | `routes/academics.ts` | 11 | `/api/coordinator` |
 | `routes/accountDetails.ts` | 7 | `/api/coordinator`, `/api/me` |
 | `routes/appeals.ts` | 4 | `/api/appeals`, `/api/coordinator` |
@@ -379,7 +384,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `corsOrigins.ts` | `server.ts` |
 | `dayRules.ts` | `routes/offlineTimeIn.ts`, `server.ts` |
 | `deadlineReminders.ts` | `server.ts` |
-| `deliverables.ts` | `routes/deliverables.ts`, `routes/extensions.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |
+| `deliverables.ts` | `routes/deliverables.ts`, `routes/extensions.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/performance.ts` |
 | `digests.ts` | `server.ts`, `services/insights.ts` |
 | `documentZip.ts` | `routes/programme.ts` |
 | `emailBudget.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/mailer.ts` |

@@ -15,6 +15,7 @@
 */
 
 import type { Pool } from "pg";
+import { coordinatorReviews } from "./deliverables";
 import { isEmailConfigured, sendEmail } from "./mailer";
 import { EmailLimitError } from "./emailBudget";
 import { allowsChannel } from "./notificationPreferences";
@@ -122,7 +123,8 @@ export async function sendSupervisorDigests(pool: Pool, deps: DigestDeps = {}): 
       (SELECT COUNT(*)::int FROM tasks t JOIN students s ON s.student_id = t.student_id
         WHERE s.supervisor_id = sup.supervisor_id AND s.is_active = TRUE AND t.status = 'Submitted') AS tasks,
       (SELECT COUNT(*)::int FROM documents d JOIN students s ON s.student_id = d.student_id
-        WHERE s.supervisor_id = sup.supervisor_id AND s.is_active = TRUE AND d.status = 'Pending') AS documents,
+        WHERE s.supervisor_id = sup.supervisor_id AND s.is_active = TRUE AND d.status = 'Pending'
+          AND NOT ${coordinatorReviews("d")}) AS documents,
       (SELECT COUNT(*)::int FROM absences b JOIN students s ON s.student_id = b.student_id
         WHERE s.supervisor_id = sup.supervisor_id AND s.is_active = TRUE AND b.status = 'Pending') AS absences,
       (SELECT COUNT(*)::int FROM journals j JOIN students s ON s.student_id = j.student_id

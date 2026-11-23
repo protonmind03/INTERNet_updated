@@ -17,7 +17,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import DeliverableDialog from "./DeliverableDialog";
-import { deliverableLine, type DeliverableFields } from "./deliverableText";
+import { CATEGORY_LABELS, deliverableLine, type DeliverableFields } from "./deliverableText";
 
 /*
  * Coordinator use case "Set OJT Requirements":
@@ -225,6 +225,9 @@ function RequiredDocuments() {
                         {item.name}
                       </p>
                       {!item.is_active && <StatusBadge status="Retired" tone="neutral" />}
+                      {item.category && item.category !== "general" && (
+                        <StatusBadge status={CATEGORY_LABELS[item.category]} tone="neutral" />
+                      )}
                     </div>
                     {item.description && (
                       <p className="mt-0.5 text-sm text-slate-500">{item.description}</p>
