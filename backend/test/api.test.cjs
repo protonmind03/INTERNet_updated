@@ -13210,3 +13210,50 @@ test("required hours by program: seeded for BPA, BSIT and BSBA; a new or importe
     await pool.end();
   }
 });
+
+/*
+| Phase 0.5: demo data that looks like PSU Lingayen
+*/
+
+test("the demo seed adds PSU Lingayen agencies and fictional trainees, all @demo.invalid, without touching the demo accounts", async (t) => {
+  if (!process.env.DATABASE_PUBLIC_URL) return t.skip("needs the local database the seed filled");
+  const pool = localTestPool();
+  try {
+    const agencies = (await pool.query(
+      `SELECT name, slots, moa_start, moa_expiry FROM companies WHERE contact_email = 'ojt-focal@demo.invalid' ORDER BY name`
+    )).rows;
+    assert.equal(agencies.length, 5, "five agencies");
+    assert.ok(agencies.some((row) => row.name === "Provincial Government of Pangasinan"));
+    assert.ok(agencies.every((row) => row.slots > 0 && row.moa_start && row.moa_expiry));
+
+    const trainees = (await pool.query(
+      `SELECT s.student_id, s.email, s.required_hours, p.short_code, p.required_hours AS program_hours
+       FROM students s LEFT JOIN programs p ON p.id = s.program_id
+       WHERE s.student_id LIKE 'DEMO-STU-01%' ORDER BY s.student_id`
+    )).rows;
+    assert.equal(trainees.length, 6);
+    assert.deepEqual([...new Set(trainees.map((row) => row.short_code))].sort(), ["BPA", "BSBA", "BSIT"]);
+    for (const row of trainees) {
+      assert.match(row.email, /@demo\.invalid$/, "a made-up address that can never receive mail");
+      assert.equal(row.required_hours, row.program_hours, `${row.student_id} has the program's hours`);
+    }
+    const supervisors = (await pool.query(`SELECT email FROM supervisors WHERE supervisor_id LIKE 'DEMO-SUP-01%'`)).rows;
+    assert.equal(supervisors.length, 5);
+    assert.ok(supervisors.every((row) => /@demo\.invalid$/.test(row.email)));
+
+    const states = (await pool.query(
+      `SELECT DISTINCT status, time_out IS NULL AS open FROM attendance WHERE student_id LIKE 'DEMO-STU-01%'`
+    )).rows;
+    for (const wanted of ["Verified", "Pending", "Rejected"]) assert.ok(states.some((row) => row.status === wanted), `a ${wanted} day`);
+    assert.ok(states.some((row) => row.open), "a day with no time-out");
+    assert.equal((await pool.query(`SELECT 1 FROM documents WHERE student_id LIKE 'DEMO-STU-01%' AND status = 'Pending'`)).rows.length, 1);
+    assert.equal((await pool.query(`SELECT 1 FROM journals WHERE student_id LIKE 'DEMO-STU-01%' AND status = 'Submitted'`)).rows.length, 1);
+
+    // The demo accounts the other tests use are as they were.
+    assert.equal((await pool.query(`SELECT 1 FROM students WHERE supervisor_id = 'DEMO-SUP-0001'`)).rows.length, 2);
+    const agencySupervisor = await login("supervisor", "demo-sup-0105@demo.invalid", "SupervisorDemo123!");
+    assert.equal(agencySupervisor.supervisor.supervisor_id, "DEMO-SUP-0105");
+  } finally {
+    await pool.end();
+  }
+});

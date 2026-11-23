@@ -329,6 +329,17 @@ Notes:
 - **The demo seed** refuses every database but a local `internet_ojt`. In
   the containers the database is called `db`, so the compose file sets
   `INTERNET_DOCKER_DEV=1`, which allows exactly that host.
+- **What the demo seed adds** besides the demo accounts (Phase 0.5): five
+  agencies like PSU Lingayen's partners (the Provincial Government, DepEd
+  SDO Pangasinan I, PPA PMO Pangasinan, the Registry of Deeds Lingayen,
+  and a made-up private company in Dagupan) with MOA dates relative to
+  today (one ends within the week) and slots; one made-up supervisor each;
+  six made-up trainees in BSIT, BPA and BSBA with their program's hours;
+  last week's attendance in mixed states; one pending Endorsement and one
+  submitted weekly report. Every person is fictional, every email ends in
+  `@demo.invalid` and every ID starts `DEMO-`; the passwords are the demo
+  accounts'. It never changes the demo accounts' own records (the demo
+  supervisor keeps two interns), and a second run adds nothing.
 - **The database address** ends in `?sslmode=disable`: the container has
   no TLS, and the backend otherwise uses TLS for every host that is not
   this computer.
