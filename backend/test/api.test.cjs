@@ -13462,7 +13462,7 @@ test("deployment gate: off changes nothing; on, an uncleared student is refused 
     assert.deepEqual([on.body.old, on.body.value], [false, true]);
 
     // On: every path refuses with what is missing.
-    for (const [name, call] of [["camera check", challenge], ["time-in", timeIn], ["offline time-in", offline], ["supervisor's record", recorded], ["vouchers", vouchers]]) {
+    for (const [name, call] of [["camera check", challenge], ["time-in", timeIn], ["offline time-in", offline], ["vouchers", vouchers]]) {
       const answer = await call();
       assert.equal(answer.response.status, 403, `${name}: ${JSON.stringify(answer.body)}`);
       assert.equal(answer.body.code, "NOT_CLEARED", name);
@@ -13470,6 +13470,12 @@ test("deployment gate: off changes nothing; on, an uncleared student is refused 
       assert.ok(answer.body.missing.includes("Chest X-ray"), `${name} names the requirements`);
     }
     assert.match((await timeIn()).body.message, /^Not cleared for deployment yet: .*Chest X-ray.*\. Your coordinator clears you once these are approved\.$/);
+    // The supervisor is refused too, but never told which (restricted) items are missing.
+    const bySupervisor = await recorded();
+    assert.equal(bySupervisor.response.status, 403, JSON.stringify(bySupervisor.body));
+    assert.equal(bySupervisor.body.code, "NOT_CLEARED");
+    assert.equal(bySupervisor.body.missing, undefined, "no list of what is missing for the supervisor");
+    assert.doesNotMatch(JSON.stringify(bySupervisor.body), /X-ray|Pregnancy|NBI|Medical|Eligibility/i);
 
     // The student's own card.
     const own = await jsonRequest(`/api/students/${sids[0]}/clearance`, { headers: authHeaders(me.token) });

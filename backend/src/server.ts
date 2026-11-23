@@ -4300,11 +4300,12 @@ app.post(
         });
       }
       // Phase 1.2: an intern not cleared for deployment is not recorded either.
-      const notCleared = await deploymentBlock(pool, studentId);
-      if (notCleared) {
+      // The supervisor is not told what is missing: most of it is restricted
+      // health and clearance items (migration 078), which they never see.
+      if (await deploymentBlock(pool, studentId)) {
         return res.status(403).json({
-          ...notCleared,
-          message: `${intern.rows[0].name} is not cleared for deployment yet${notCleared.missing.length ? `: ${notCleared.missing.join(", ")}` : ""}. The OJT coordinator clears them.`,
+          code: "NOT_CLEARED",
+          message: `${intern.rows[0].name} is not cleared for deployment yet. The OJT coordinator clears them.`,
         });
       }
 
