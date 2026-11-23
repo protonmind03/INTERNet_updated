@@ -28,13 +28,14 @@ import CoordinatorHub, { MovedPage, OwnPage } from "./pages/coordinator/Coordina
 |
 */
 
-type PortalRole = "student" | "supervisor" | "coordinator";
+type PortalRole = "student" | "supervisor" | "coordinator" | "director";
 type PageLoader = () => Promise<{ default: ComponentType }>;
 
 const portalPages: Record<PortalRole, PageLoader[]> = {
   student: [],
   supervisor: [],
   coordinator: [],
+  director: [],
 };
 
 function page(role: PortalRole, load: PageLoader) {
@@ -198,6 +199,17 @@ const CoordinatorSupervisorPage = page("coordinator", () => import("./pages/coor
 const StudentHelp = page("student", () => import("./pages/PortalHelp").then((module) => ({ default: module.StudentHelp })));
 const SupervisorHelp = page("supervisor", () => import("./pages/PortalHelp").then((module) => ({ default: module.SupervisorHelp })));
 const CoordinatorHelp = page("coordinator", () => import("./pages/PortalHelp").then((module) => ({ default: module.CoordinatorHelp })));
+// Phase 1.6: the OJT Director's portal.
+const DirectorOverview = page("director", () => import("./pages/director/Overview"));
+const DirectorStudents = page("director", () => import("./pages/director/Students"));
+const DirectorApprovals = page("director", () => import("./pages/director/Approvals"));
+const DirectorPrograms = page("director", () => import("./pages/director/Programs"));
+const DirectorCoordinators = page("director", () => import("./pages/director/Coordinators"));
+const DirectorRules = page("director", () => import("./pages/director/Rules"));
+const DirectorReports = page("director", () => import("./pages/director/Reports"));
+const DirectorNotifications = page("director", () => import("./pages/director/Notifications"));
+const DirectorProfile = page("director", () => import("./pages/director/Profile"));
+const DirectorHelp = page("director", () => import("./pages/PortalHelp").then((module) => ({ default: module.DirectorHelp })));
 
 // The brand kit preview (and the loading prototypes, Iteration 14) only exists in development
 // builds, or in a build made with VITE_BRAND_PREVIEW=true, so it can be tried on a test site.
@@ -234,6 +246,7 @@ function App() {
         <Route path="/student/sign-in" element={<Door role="student" />} />
         <Route path="/supervisor/sign-in" element={<Door role="supervisor" />} />
         <Route path="/coordinator/sign-in" element={<Door role="coordinator" />} />
+        <Route path="/director/sign-in" element={<Door role="director" />} />
         <Route path="/login" element={<ToDoors />} />
         <Route
           path="/forgot-password"
@@ -533,6 +546,19 @@ function App() {
           path="/coordinator/help"
           element={<CoordinatorHelp />}
         />
+
+        {/* Phase 1.6: the OJT Director's portal. */}
+        <Route path="/director" element={<Navigate to="/director/overview" replace />} />
+        <Route path="/director/overview" element={<DirectorOverview />} />
+        <Route path="/director/students" element={<DirectorStudents />} />
+        <Route path="/director/approvals" element={<DirectorApprovals />} />
+        <Route path="/director/programs" element={<DirectorPrograms />} />
+        <Route path="/director/coordinators" element={<DirectorCoordinators />} />
+        <Route path="/director/rules" element={<DirectorRules />} />
+        <Route path="/director/reports" element={<DirectorReports />} />
+        <Route path="/director/notifications" element={<DirectorNotifications />} />
+        <Route path="/director/profile" element={<DirectorProfile />} />
+        <Route path="/director/help" element={<DirectorHelp />} />
 
         <Route
           path="/supervisor/help"

@@ -8,6 +8,7 @@ import Icon, { type IconName } from "../../components/Icon";
 import type { Tone } from "../../components/tones";
 import InfoTip from "../../components/InfoTip";
 import { Button, Card, ErrorNotice, Skeleton, SkeletonRows } from "../../components/ui";
+import OfficeNotice from "./OfficeNotice";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDayDate, formatHours, getInitials, greetingFor, firstNameOf } from "../../lib/format";
 import { useLaunchReady } from "../../lib/launch";
@@ -195,6 +196,8 @@ export default function CoordinatorDashboard() {
         )}
 
         {!wide && <ThisWeek home={home} loading={loading} />}
+        {/* Phase 1.6: at the foot, so it never moves what is above it. */}
+        <OfficeNotice />
       </div>
     </CoordinatorLayout>
   );

@@ -6,6 +6,7 @@ const ROLE_APP: Record<BrandRole, { manifest: string; title: string }> = {
   student: { manifest: "/manifest-student.webmanifest", title: "INTERNet Trainee" },
   supervisor: { manifest: "/manifest-supervisor.webmanifest", title: "INTERNet Supervisor" },
   coordinator: { manifest: "/manifest-coordinator.webmanifest", title: "INTERNet Coordinator" },
+  director: { manifest: "/manifest-director.webmanifest", title: "INTERNet OJT Office" },
   guest: { manifest: "/manifest.json", title: "INTERNet" },
 };
 

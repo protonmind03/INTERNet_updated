@@ -13,18 +13,20 @@ import type { ComponentType } from "react";
 |
 */
 
-export type HomeRole = "student" | "supervisor" | "coordinator";
+export type HomeRole = "student" | "supervisor" | "coordinator" | "director";
 
 export const HOME_PATH: Record<HomeRole, string> = {
   student: "/student/dashboard",
   supervisor: "/supervisor/dashboard",
   coordinator: "/coordinator/dashboard",
+  director: "/director/overview",
 };
 
 export const HOME_PAGE: Record<HomeRole, () => Promise<{ default: ComponentType }>> = {
   student: () => import("../pages/student/dashboard"),
   supervisor: () => import("../pages/supervisor/dashboardsp"),
   coordinator: () => import("../pages/coordinator/Dashboard"),
+  director: () => import("../pages/director/Overview"),
 };
 
 /** Starts fetching a role's first page; a failure is left for the page itself to show. */

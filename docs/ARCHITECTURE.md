@@ -13,9 +13,9 @@ Solid arrows are imports; dotted arrows reach a system outside the code.
 flowchart LR
   subgraph client["my-pwa, the React PWA"]
     landing["index.html, the landing page<br/>pre-rendered at build, src/landing"]
-    doors["The doors<br/>/student/sign-in, /supervisor/sign-in, /coordinator/sign-in"]
+    doors["The doors<br/>/student/sign-in, /supervisor/sign-in, /coordinator/sign-in, /director/sign-in"]
     pwa["Student, supervisor and coordinator portals<br/>app.html, offline queue, service worker"]
-    apps["Installable apps<br/>INTERNet Coordinator, INTERNet Trainee, INTERNet Supervisor, INTERNet: OJT Monitoring & Analytics"]
+    apps["Installable apps<br/>INTERNet Coordinator, INTERNet OJT Office, INTERNet Trainee, INTERNet Supervisor, INTERNet: OJT Monitoring & Analytics"]
   end
   landing --> doors
   doors --> pwa
@@ -393,11 +393,12 @@ flowchart LR
 
 ## The app's pages and installable apps
 
-Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.html`, `for-coordinators.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`.
+Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.html`, `for-coordinators.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`, `/director/sign-in`.
 
 | Manifest | App | id |
 |---|---|---|
 | `public/manifest-coordinator.webmanifest` | INTERNet Coordinator | `/coordinator/` |
+| `public/manifest-director.webmanifest` | INTERNet OJT Office | `/director/` |
 | `public/manifest-student.webmanifest` | INTERNet Trainee | `/student/` |
 | `public/manifest-supervisor.webmanifest` | INTERNet Supervisor | `/supervisor/` |
 | `public/manifest.json` | INTERNet: OJT Monitoring & Analytics | `/` |

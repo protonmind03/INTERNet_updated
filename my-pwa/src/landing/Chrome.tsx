@@ -192,6 +192,10 @@ export function Footer() {
                   <a href={ROLE_PAGE_PATH[role]}>For {DOORS[role].plural}</a>
                 </li>
               ))}
+              {/* Phase 1.6: the OJT Director's portal has no page of its own here, only its door. */}
+              <li>
+                <a href="/director/sign-in">For the OJT office</a>
+              </li>
             </ul>
           </nav>
           <nav aria-label="Help" className="footer-links">

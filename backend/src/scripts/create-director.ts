@@ -10,18 +10,29 @@ import { BCRYPT_ROUNDS } from "../services/passwordHash";
 // (server.ts, requireOffice). The IT administrator's portal (Phase 1.7)
 // will create Directors too; until then this is the way.
 //
-//   npm run director:create -- --email director@example.edu.ph --name "Juana Dela Cruz"
+//   npm run director:create email=director@example.edu.ph name="Juana Dela Cruz"
+//   npm run director:create email=director@example.edu.ph deactivate
+//   (or, straight through tsx or with npm's "--": --email ... --name ... --deactivate)
 //
 // It prints a temporary password once. The account must set its own at
 // first sign-in. On the hosted database, through a tunnel (DEPLOY.md,
 // "Running a data script on the hosted database"):
 //
-//   railway run --service Postgres npm run director:create <port> --email ... --name ...
+//   railway run --service Postgres npm run director:create <port> email=... name="..."
 
+/**
+ * A value, as "--email x" or as the bare word "email=x". The bare form is for
+ * npm without its "--" (PowerShell and railway run drop it, and npm then keeps
+ * --email for itself), the way the other data scripts take "confirm".
+ */
 function option(name: string): string {
   const at = process.argv.indexOf(`--${name}`);
-  return at > 0 && process.argv[at + 1] ? process.argv[at + 1].trim() : "";
+  if (at > 0 && process.argv[at + 1]) return process.argv[at + 1].trim();
+  const bare = process.argv.find((arg) => arg.startsWith(`${name}=`));
+  return bare ? bare.slice(name.length + 1).trim() : "";
 }
+
+const deactivating = () => process.argv.includes("--deactivate") || process.argv.slice(2).includes("deactivate");
 
 /** 14 characters with upper and lower case and a digit, as the password policy asks. */
 function temporaryPassword(): string {
@@ -35,6 +46,24 @@ async function main() {
   const email = option("email").toLowerCase();
   const name = option("name");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new Error("Give the account's email: --email someone@example.edu.ph");
+
+  // --deactivate: the account can no longer sign in, and the coordinators
+  // get the office's powers back when no other active Director remains.
+  if (deactivating()) {
+    const client = await connect();
+    try {
+      const done = await client.query(
+        `UPDATE directors SET is_active = FALSE, auth_version = auth_version + 1 WHERE LOWER(email) = $1 RETURNING director_id`,
+        [email]
+      );
+      if (done.rows.length === 0) throw new Error("No OJT Director account has that email.");
+      console.log(`OJT Director account ${done.rows[0].director_id} deactivated.`);
+    } finally {
+      await client.end();
+    }
+    return;
+  }
+
   if (name.length < 2) throw new Error('Give the account\'s full name: --name "Full Name"');
 
   const client = await connect();

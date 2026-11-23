@@ -572,7 +572,7 @@ Unset, `SW_KILLSWITCH` does nothing.
 
 ## Running a data script on the hosted database (run by you)
 
-The data scripts (`db:hash-legacy-passwords`, `db:backfill-companies`, `db:backfill-programs`,
+The data scripts (`db:hash-legacy-passwords`, `director:create`, `db:backfill-companies`, `db:backfill-programs`,
 `db:backfill-notification-links`, `db:fk-orphans`, `db:fk-validate`,
 `privacy:purge-photos`) reach the
 hosted database the
@@ -1074,3 +1074,19 @@ Screen** and opened from its icon:
    **Skip the camera check** still records End break, and the supervisor sees "camera check not
    run".
 
+
+## The OJT Director's account (run by you, once)
+
+The Director portal (`/director`) needs an account; there is no sign-up.
+Through the tunnel (see "Running a data script on the hosted database"):
+
+1. `railway run --service Postgres npm run director:create <port> email=<the Director's email> name="<their full name>"`
+2. It prints a temporary password once: give it to the Director. They
+   must set their own at first sign-in.
+
+From that moment the coordinators no longer manage the programs and their
+hours, the OJT rules or the coordinator accounts: the Director does. Until
+then the coordinators keep those powers and their Home says no Director
+account exists yet. To turn an account off:
+`railway run --service Postgres npm run director:create <port> email=<email> deactivate`.
+The IT administrator's portal (Phase 1.7) will do both from the web.

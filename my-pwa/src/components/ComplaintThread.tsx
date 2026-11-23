@@ -19,6 +19,7 @@ const ROLE_LABELS: Record<SessionRole, string> = {
   student: "Student",
   supervisor: "Supervisor",
   coordinator: "OJT coordinator",
+  director: "OJT Director",
 };
 
 /**
@@ -31,7 +32,8 @@ export default function ComplaintThread({
   role,
 }: {
   complaintId: number;
-  role: SessionRole;
+  // The OJT Director does not take part in concerns.
+  role: Exclude<SessionRole, "director">;
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);

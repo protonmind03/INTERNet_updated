@@ -69,7 +69,7 @@
       ]
     },
     {
-      "source": "/manifest-(student|supervisor|coordinator).webmanifest",
+      "source": "/manifest-(student|supervisor|coordinator|director).webmanifest",
       "headers": [
         {
           "key": "Cache-Control",

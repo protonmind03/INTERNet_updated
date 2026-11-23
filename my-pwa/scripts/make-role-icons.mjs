@@ -62,7 +62,7 @@ const sources = {
   "-maskable": readPng(path.join(root, "public", "icon-maskable-512.png")),
 };
 
-for (const role of ["student", "supervisor", "coordinator"]) {
+for (const role of ["student", "supervisor", "coordinator", "director"]) {
   const hex = primaryOf(role);
   for (const [kind, source] of Object.entries(sources)) {
     const tinted = tint(source, hex);

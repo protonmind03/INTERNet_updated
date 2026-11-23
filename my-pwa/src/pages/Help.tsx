@@ -53,6 +53,7 @@ const POPULAR: Record<HelpRole, string[]> = {
   student: ["camera check", "time out", "rejected", "install"],
   supervisor: ["verify", "reject", "camera check", "changed"],
   coordinator: ["appeal", "term", "report", "account"],
+  director: ["clearance", "coordinator", "program", "rules"],
 };
 
 function Glyph({ d, size = 18 }: { d: string; size?: number }) {
@@ -495,7 +496,7 @@ export default function Help() {
   );
 }
 
-const ROLE_ROW: Record<HelpRole, OfflineRow["role"]> = { student: "Student", supervisor: "Supervisor", coordinator: "Coordinator" };
+const ROLE_ROW: Record<HelpRole, OfflineRow["role"]> = { student: "Student", supervisor: "Supervisor", coordinator: "Coordinator", director: "Director" };
 
 /** A reference section's heading, with its mark. */
 function SectionHead({ id, icon, title, lead }: { id: string; icon: string; title: string; lead?: ReactNode }) {

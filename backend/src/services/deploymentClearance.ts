@@ -35,6 +35,8 @@ export type Readiness = {
   cleared_for_deployment_at: string | null;
   cleared_by: string | null;
   clearance_override_reason: string | null;
+  /** The projection says they finish after the term ends (student_projections). */
+  at_risk: boolean;
   items: { name: string; state: ItemState }[];
   /** What still stands between the student and being ready, in words. */
   missing: string[];
@@ -54,6 +56,7 @@ export const READINESS_COLUMNS = `
   s.eligibility_status, s.eligibility_note,
   s.cleared_for_deployment_at, s.cleared_by, s.clearance_override_reason,
   (s.company_id IS NOT NULL OR NULLIF(TRIM(COALESCE(s.company, '')), '') IS NOT NULL) AS has_company,
+  COALESCE((SELECT sp.at_risk FROM student_projections sp WHERE sp.student_id = s.student_id), FALSE) AS at_risk,
   COALESCE((
     SELECT json_agg(json_build_object('name', r.name, 'state', COALESCE((
       -- An approved file counts; otherwise the latest one says where it stands.

@@ -19,16 +19,19 @@ const PLACES: Record<string, Record<SessionRole, string>> = {
     student: "/daily-log",
     supervisor: "/supervisor/dashboard",
     coordinator: "/coordinator/monitoring",
+    director: "/director/overview",
   },
   tasks: {
     student: "/task",
     supervisor: "/supervisor/tasks",
     coordinator: "/coordinator/dashboard",
+    director: "/director/overview",
   },
   notifications: {
     student: "/notifications",
     supervisor: "/supervisor/notifications",
     coordinator: "/coordinator/notifications",
+    director: "/director/notifications",
   },
 };
 

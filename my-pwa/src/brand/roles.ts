@@ -7,7 +7,8 @@
  * talking about *their* work.
  */
 
-export type Role = "student" | "supervisor" | "coordinator";
+// Phase 1.6: the OJT Director's portal (/director).
+export type Role = "student" | "supervisor" | "coordinator" | "director";
 export type BrandRole = Role | "guest";
 
 /** Every data process a page can wait on. Pages pass one of these to <BrandLoader process=…>. */
@@ -184,6 +185,39 @@ export const ROLE_THEMES: Record<BrandRole, RoleTheme> = {
       save: "Saving your changes…",
     },
   },
+  director: {
+    role: "director",
+    portal: "OJT Office",
+    tag: "OJT Director",
+    tagline: "The campus at a glance.",
+    surface: "dark",
+    // Phase 1.6: the supervisor's night and brass; the college marks set the portal apart.
+    colors: {
+      surface: "#0C1731",
+      surfaceRaised: "#1B2746",
+      accent: "#DBA65D",
+      accentText: "#0C1731",
+      text: "#F2F6F9",
+      muted: "#B3BFCD",
+      tagBg: "rgba(219, 166, 93, 0.18)",
+      tagText: "#DBA65D",
+    },
+    launchSteps: [
+      { label: "Colleges", message: "Gathering the colleges…" },
+      { label: "Clearance", message: "Counting who is cleared for deployment…" },
+      { label: "Agreements", message: "Checking the agreements that end soon…" },
+    ],
+    messages: {
+      dashboard: "Gathering the campus…",
+      students: "Loading the students…",
+      requirements: "Loading the requirements…",
+      evaluation: "Loading the grades…",
+      analytics: "Building the campus report…",
+      export: "Preparing the export…",
+      profile: "Loading your profile…",
+      save: "Saving the change…",
+    },
+  },
   coordinator: {
     role: "coordinator",
     portal: "Coordinator Portal",
@@ -292,6 +326,7 @@ const ROLE_SUCCESS: Record<BrandRole, Partial<Record<LoadProcess, string>>> = {
     requirements: "Requirement schedule saved.",
     export: "Analytics PDF ready to download.",
   },
+  director: { save: "Saved." },
   guest: { signIn: "Welcome back." },
 };
 
@@ -311,7 +346,7 @@ export function errorText(err: unknown, fallback = "That did not work. Please tr
 export function getActiveRole(): BrandRole {
   try {
     const r = localStorage.getItem("active_role");
-    return r === "student" || r === "supervisor" || r === "coordinator" ? r : "guest";
+    return r === "student" || r === "supervisor" || r === "coordinator" || r === "director" ? r : "guest";
   } catch {
     return "guest";
   }

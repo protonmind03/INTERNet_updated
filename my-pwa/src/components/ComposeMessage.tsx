@@ -51,6 +51,7 @@ const ROLE_LABEL: Record<SessionRole, string> = {
   student: "Intern",
   supervisor: "Supervisor",
   coordinator: "OJT coordinator",
+  director: "OJT Director",
 };
 
 async function readJson(response: Response, fallback: string) {

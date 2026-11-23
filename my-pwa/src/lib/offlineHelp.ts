@@ -12,7 +12,7 @@
 */
 
 export type OfflineRow = {
-  role: "Student" | "Supervisor" | "Coordinator";
+  role: "Student" | "Supervisor" | "Coordinator" | "Director";
   /** Works with no connection at all. */
   works: string[];
   /** Kept on the phone and sent by itself once the server can be reached. */
@@ -58,6 +58,15 @@ export const OFFLINE_TABLE: OfflineRow[] = [
     works: ["Notifications and announcements as they were last loaded", "Text you are typing in a message: kept as a draft"],
     waits: ["Nothing: a decision is never kept for later"],
     needs: ["Every page's current figures, and every decision, change, import and export", "Signing in"],
+  },
+  {
+    role: "Director",
+    works: [
+      "The campus overview, the programs and the coordinators as they were last loaded",
+      "Notifications as they were last loaded",
+    ],
+    waits: ["Nothing: a decision is never kept for later"],
+    needs: ["Every decision and change: the rules, a coordinator's colleges, a program's hours", "Exports", "Signing in"],
   },
 ];
 

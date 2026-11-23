@@ -3,7 +3,7 @@ import { clearSession, type SessionRole } from "./session";
 import { doorOf } from "./doors";
 
 type Role = SessionRole;
-const roles: Role[] = ["coordinator", "student", "supervisor"];
+const roles: Role[] = ["coordinator", "student", "supervisor", "director"];
 
 function roleForAuthorization(header: string | null): Role | null {
   if (!header?.startsWith("Bearer ")) return null;

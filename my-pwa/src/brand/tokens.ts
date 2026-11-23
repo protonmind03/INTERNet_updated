@@ -90,6 +90,19 @@ export const ROLE_PALETTES = {
     onChrome: "#F2F6F9",
     decor: "#DBA65D",
   },
+  // Phase 1.6: the OJT Director, in the supervisor's night and brass; its college marks set it apart.
+  director: {
+    name: "Campus",
+    primary: "#233564",
+    onPrimary: "#FBFDFE",
+    accent: "#DBA65D",
+    onAccent: "#0C1731",
+    surface: "#F4F7FA",
+    ink: "#0C1731",
+    chrome: "#0C1731",
+    onChrome: "#F2F6F9",
+    decor: "#DBA65D",
+  },
   coordinator: {
     name: "Route map",
     primary: "#4F46E5",
@@ -102,10 +115,10 @@ export const ROLE_PALETTES = {
     onChrome: "#FFFFFF",
     decor: "#B8C2FF",
   },
-} as const satisfies Record<"student" | "supervisor" | "coordinator", RolePalette>;
+} as const satisfies Record<"student" | "supervisor" | "coordinator" | "director", RolePalette>;
 
 /** Whether a role's chrome is dark (the seal then sits on its white disc). Every header is now a flat dark role colour. */
-export const ROLE_CHROME_DARK = { student: true, supervisor: true, coordinator: true } as const;
+export const ROLE_CHROME_DARK = { student: true, supervisor: true, coordinator: true, director: true } as const;
 
 /**
  * The rest of each role's surface: the 1 px hairline that replaces shadows,
@@ -144,6 +157,16 @@ export const ROLE_SURFACES = {
     side: "#0C1731",
     onSide: "#F2F6F9",
   },
+  director: {
+    hairline: "#CAD2DB",
+    dock: "#0C1731",
+    dockBorder: "#0C1731",
+    dockInk: "#F2F6F9",
+    dockActive: "#DBA65D",
+    onDockActive: "#0C1731",
+    side: "#0C1731",
+    onSide: "#F2F6F9",
+  },
   coordinator: {
     hairline: "#E3E6F5",
     dock: "#1A237E",
@@ -154,7 +177,7 @@ export const ROLE_SURFACES = {
     side: "#121A5E",
     onSide: "#FFFFFF",
   },
-} as const satisfies Record<"student" | "supervisor" | "coordinator", RoleSurfaces>;
+} as const satisfies Record<"student" | "supervisor" | "coordinator" | "director", RoleSurfaces>;
 
 /**
  * Each role's eleven-step scale. The app's components were written in the
@@ -166,6 +189,7 @@ export const ROLE_SCALES = {
   student: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
   supervisor: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
   coordinator: ["#EEF2FF", "#E0E7FF", "#C7D2FE", "#A5B4FC", "#818CF8", "#6366F1", "#4F46E5", "#4338CA", "#3730A3", "#312E81", "#1E1B4B"],
+  director: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
 } as const;
 
 /** The steps of a scale, in order (Tailwind's names). */

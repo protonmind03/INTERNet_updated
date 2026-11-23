@@ -15,7 +15,7 @@
 |
 */
 
-export type HelpRole = "student" | "supervisor" | "coordinator";
+export type HelpRole = "student" | "supervisor" | "coordinator" | "director";
 
 export type HelpAnswer = {
   id: string;
@@ -27,7 +27,7 @@ export type HelpAnswer = {
   screens: string[];
 };
 
-export const HELP_ROLE_NAME: Record<HelpRole, string> = { student: "Trainee", supervisor: "Supervisor", coordinator: "Coordinator" };
+export const HELP_ROLE_NAME: Record<HelpRole, string> = { student: "Trainee", supervisor: "Supervisor", coordinator: "Coordinator", director: "OJT Director" };
 
 /** The screens' names, as the help sheet's heading says them. */
 export const SCREEN_NAMES: Record<string, string> = {
@@ -239,6 +239,31 @@ export const HELP_ANSWERS: HelpAnswer[] = [
     question: "It says the record changed",
     answer: "Someone decided it after you opened it. The page reloads it; check it again before deciding.",
     screens: ["/supervisor/dashboard", "/supervisor/attendance", "/coordinator/resolution"],
+  },
+  // Phase 1.6: the OJT Director.
+  {
+    id: "director-colleges",
+    roles: ["director"],
+    topic: "The campus",
+    question: "What do the college marks do?",
+    answer: "Choosing a college's mark shows that college only, on every page that has the marks. All colleges shows the whole campus.",
+    screens: ["/director/overview", "/director/students", "/director/programs"],
+  },
+  {
+    id: "director-scope",
+    roles: ["director"],
+    topic: "Coordinators",
+    question: "What does a coordinator see?",
+    answer: "The students of the colleges and programs you tick under their name. With none ticked, they see every student.",
+    screens: ["/director/coordinators"],
+  },
+  {
+    id: "director-gate",
+    roles: ["director"],
+    topic: "Rules",
+    question: "What does the deployment gate do?",
+    answer: "With it on, a student can time in only once their coordinator has cleared them: eligible, every requirement before deployment approved, and a company assigned.",
+    screens: ["/director/rules", "/director/approvals"],
   },
   {
     id: "flagged-log",

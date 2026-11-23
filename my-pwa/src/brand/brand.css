@@ -271,6 +271,26 @@
   --role-side: #0c1731;
   --role-on-side: #f2f6f9;
 }
+/* Phase 1.6: the OJT Director's portal takes the supervisor's night, brass and mist (ROLE_PALETTES.director). */
+[data-role="director"] {
+  --role-primary: #233564;
+  --role-on-primary: #fbfdfe;
+  --role-accent: #dba65d;
+  --role-on-accent: #0c1731;
+  --role-surface: #f4f7fa;
+  --role-ink: #0c1731;
+  --role-chrome: #0c1731;
+  --role-on-chrome: #f2f6f9;
+  --role-decor: #dba65d;
+  --role-hairline: #cad2db;
+  --role-dock: #0c1731;
+  --role-dock-border: #0c1731;
+  --role-dock-ink: #f2f6f9;
+  --role-dock-active: #dba65d;
+  --role-on-dock-active: #0c1731;
+  --role-side: #0c1731;
+  --role-on-side: #f2f6f9;
+}
 [data-role="supervisor"] {
   --role-primary: #233564;
   --role-on-primary: #fbfdfe;
@@ -314,7 +334,7 @@
 | page's accent, so every gold-* class in those portals matches it. The
 | public Help page (.help-public) takes the same navy and brass scales.
 */
-[data-role="student"], [data-role="supervisor"], .help-public {
+[data-role="student"], [data-role="supervisor"], [data-role="director"], .help-public {
   --route-line: #dba65d;
   /* Every amber accent in these two portals (the side menu's current mark, the trainee's lane) is brass too. */
   --inb-amber: #dba65d;
@@ -357,7 +377,7 @@
   --color-psu-900: #08122c;
   --color-psu-950: #03071b;
 }
-[data-role="supervisor"] {
+[data-role="supervisor"], [data-role="director"] {
   --color-psu-50: #f1f5fe;
   --color-psu-100: #e3eaf7;
   --color-psu-200: #c9d4ec;

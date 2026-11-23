@@ -73,3 +73,8 @@ test("on a phone the board fits the screen", async ({ page }) => {
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
 });
+
+test("with no OJT Director account yet, the coordinator's Home says so", async ({ page }) => {
+  await signIn(page, "coordinator");
+  await expect(page.getByText("No OJT Director account yet; ask the system administrator to create one.", { exact: false })).toBeVisible({ timeout: 15_000 });
+});

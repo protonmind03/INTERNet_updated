@@ -13806,6 +13806,10 @@ test("director:create makes a Director account that must change its password, wi
     const signIn = await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
     assert.equal(signIn.response.status, 200);
     assert.throws(() => runBackendScript("create-director.ts", "--email", email, "--name", "Twice"), "the same email cannot be used twice");
+    runBackendScript("create-director.ts", "--email", email, "--deactivate");
+    assert.equal((await pool.query(`SELECT is_active FROM directors WHERE email = $1`, [email])).rows[0].is_active, false, "--deactivate");
+    const refused = await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+    assert.equal(refused.response.status, 403, "a deactivated Director cannot sign in");
   } finally {
     await pool.query(`DELETE FROM directors WHERE email = $1`, [email]);
     await pool.end();

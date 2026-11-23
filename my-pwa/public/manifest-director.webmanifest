@@ -1,0 +1,91 @@
+{
+  "id": "/director/",
+  "name": "INTERNet OJT Office",
+  "short_name": "OJT Office",
+  "description": "The campus at a glance for the OJT Director at PSU Lingayen.",
+  "lang": "en-PH",
+  "dir": "ltr",
+  "start_url": "/director/sign-in?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#F4F7FA",
+  "theme_color": "#0C1731",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "handle_links": "not-preferred",
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "icons": [
+    {
+      "src": "/icons/director-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/director-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/director-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/director-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Overview",
+      "short_name": "Overview",
+      "description": "Every college: interns, clearances and agreements.",
+      "url": "/director/overview",
+      "icons": [
+        {
+          "src": "/icons/director-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Approvals",
+      "short_name": "Approvals",
+      "description": "Clearances given anyway, with their reasons.",
+      "url": "/director/approvals",
+      "icons": [
+        {
+          "src": "/icons/director-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Coordinators",
+      "short_name": "Coordinators",
+      "description": "The coordinators and the students each looks after.",
+      "url": "/director/coordinators",
+      "icons": [
+        {
+          "src": "/icons/director-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

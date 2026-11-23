@@ -211,7 +211,11 @@ export const AUDIT_RULES: Rule[] = [
     // A coordinator opening a document; anyone opening a restricted (health
     // or clearance) one, and every time (migration 078).
     action: (source) =>
-      source.noted?.restricted === true ? "document.view_restricted" : source.actorRole === "coordinator" ? "document.view" : null,
+      source.noted?.restricted === true
+        ? "document.view_restricted"
+        : source.actorRole === "coordinator" || source.actorRole === "director"
+          ? "document.view"
+          : null,
     entityType: "document",
     entityId: param("documentId"),
     quietMinutes: (source) => (source.noted?.restricted === true ? undefined : READ_QUIET_MINUTES),

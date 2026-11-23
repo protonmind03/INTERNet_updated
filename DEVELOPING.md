@@ -13,6 +13,7 @@ together.
 | Student | Dashboard, attendance, tasks, schedule, absences, company and profile as last loaded; drafts of journals, reports, task notes, absences and messages | Time-in (with a photo when the phone is ready, otherwise without one for the supervisor to confirm), within 12 h, judged at the time it was pressed; lunch break and end break, within 12 h; time-out, within 24 h, with up to 3 pictures (about 400 kB each) sent after it | Submitting tasks, documents, journals and absences, and pictures on journals and concerns; messages and concerns; signing in |
 | Supervisor | Interns, logs, tasks, documents, absences, weekly reports and schedules as last loaded; message drafts | Nothing: a decision is never kept for later | Every decision; recording an intern's time-in; giving tasks; messages; signing in |
 | Coordinator | Notifications and announcements as last loaded; message drafts | Nothing | Every page's current figures; every decision, change, import and export; signing in |
+| Director | The campus overview, programs and coordinators as last loaded; notifications | Nothing | Every decision and change (rules, a coordinator's colleges, a program's hours); exports; signing in |
 
 The hours are the server's defaults. Each can be changed per deployment:
 `OFFLINE_MAX_AGE_HOURS_TIME_IN`, `OFFLINE_MAX_AGE_HOURS_LUNCH`,
@@ -375,3 +376,32 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   A restore drill is recorded with `POST /api/coordinator/backups/restore-drill`.
 - `npm run backup:keygen` makes the key pair; `npm run backup:decrypt`
   opens a backup with the private key, for a restore.
+
+## The OJT Director and coordinator scopes (Phase 1.6)
+
+- **A fourth portal, `/director`.** Accounts are in `directors` (migration
+  080); `npm run director:create email=… name="…"` makes one with a
+  temporary password (`deactivate` turns one off). The sign-in is the
+  coordinator's own code path (`staffLogin` in `server.ts`). The theme is
+  the supervisor's night and brass (`ROLE_PALETTES.director`); the row of
+  college marks (`pages/director/CollegeRail.tsx`, `?college=` in the
+  address) is what sets the portal apart.
+- **The office's powers.** `requireOffice` (server.ts): colleges,
+  programs and their hours, majors, the OJT rules (`ojt_settings`), and
+  creating, deactivating or resetting coordinators are the Director's
+  once an active Director exists, and the coordinators' until then. The
+  coordinator's Home can ask `GET /api/coordinator/office`. Blocks,
+  requirements and students stay the coordinators'. `requireStaff` lets
+  both read the shared data.
+- **Coordinator scopes** (`services/coordinatorScope.ts`). A coordinator
+  given colleges or programs sees only those students. The scope is kept
+  for the request when a coordinator signs in, and the shared student
+  filters (`services/studentScope.ts`) add it to every list built on them;
+  a `:studentId` or a record found by its id outside the scope is a 404,
+  like a missing one. A list with its own SQL uses `scopeCondition`. When
+  you add a coordinator list that does not use the shared filters, add
+  the scope to it the same way, and add a record route that names a
+  student's record by id to `SCOPED_RECORDS`.
+- **Tests that make a Director deactivate it afterwards**: while one is
+  active, the coordinators lose the office's powers, which other tests use
+  (`e2e/tests/director-portal.spec.ts` does this with the script).

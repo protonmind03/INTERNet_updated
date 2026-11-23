@@ -14,7 +14,7 @@
 //   manifest, the theme colour, the Home Screen icon (180 x 180) or
 //   lang="en-PH";
 // - Iteration 23: one of the three role apps' manifests
-//   (manifest-{student,supervisor,coordinator}.webmanifest) fails the same
+//   (manifest-{student,supervisor,coordinator,director}.webmanifest) fails the same
 //   checks, or two manifests share an id; the landing page (index.html) has
 //   no lang, theme colour or Home Screen icon, loads the app's script, or
 //   its script is over 90 kB compressed;
@@ -68,7 +68,7 @@ const html = fs.readFileSync(path.join(dist, appPage), "utf8");
 // THE MANIFESTS: the app's own, and each role app's (Iteration 23).
 const manifestHref = html.match(/<link[^>]+rel="manifest"[^>]+href="([^"]+)"/)?.[1] ?? null;
 check(Boolean(manifestHref), `${appPage} links the manifest`, `${appPage} has no <link rel="manifest">.`);
-const manifestUrls = [manifestHref, ...(appPage === "app.html" ? ["/manifest-student.webmanifest", "/manifest-supervisor.webmanifest", "/manifest-coordinator.webmanifest"] : [])].filter(Boolean);
+const manifestUrls = [manifestHref, ...(appPage === "app.html" ? ["/manifest-student.webmanifest", "/manifest-supervisor.webmanifest", "/manifest-coordinator.webmanifest", "/manifest-director.webmanifest"] : [])].filter(Boolean);
 const ids = new Map();
 for (const url of manifestUrls) checkManifest(url);
 

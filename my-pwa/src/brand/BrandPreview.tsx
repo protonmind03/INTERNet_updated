@@ -3,7 +3,9 @@ import { useSearchParams } from "react-router-dom";
 import { BrandIcon, BrandLoader, BrandLockup, PortalHeader, ROLE_THEMES, RouteProgress, SplashScreen, Wordmark } from ".";
 // The kit's own toasts, shown only on this development-only page.
 import { ActionButton, BrandToastProvider } from "./feedback";
-import type { Role } from ".";
+import type { Role as AnyRole } from ".";
+// The preview shows the three original portals (the Director has none of these samples).
+type Role = Exclude<AnyRole, "director">;
 import { PrototypeRun } from "./LoadingPrototypes";
 import { PalettesPanel, SealPanel } from "./BrandV4Panels";
 import { PROTOTYPES, TIMINGS, useReducedMotion, type Timing } from "./loadingPrototypeData";

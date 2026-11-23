@@ -58,11 +58,25 @@ export const DOOR_COPY: Record<
     welcome: "Welcome back",
     wrong: "That email and password don’t match. Check them or reset your password.",
   },
+  // Phase 1.6: not among DOOR_ROLES, so the landing page's three doors stay as they are.
+  director: {
+    name: "OJT Director",
+    article: "the OJT Director",
+    appName: "INTERNet OJT Office",
+    idLabel: "Director email",
+    idPlaceholder: "name@psu.edu.ph",
+    idHelp: "The account the system administrator made for you",
+    idMode: "email",
+    button: "Sign in to the OJT office",
+    welcome: "Welcome back",
+    wrong: "That email and password don’t match. Check them or reset your password.",
+  },
 };
 
 const LAST_ROLE_KEY = "inb_last_role";
 
-const isRole = (value: unknown): value is Role => DOOR_ROLES.includes(value as Role);
+// Every door, the Director's too (Phase 1.6), though the landing page lists only DOOR_ROLES.
+const isRole = (value: unknown): value is Role => typeof value === "string" && Object.prototype.hasOwnProperty.call(DOOR_COPY, value);
 
 /** The door used last on this device; the trainee's when none. */
 export function lastDoorRole(): Role {

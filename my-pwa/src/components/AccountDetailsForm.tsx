@@ -30,6 +30,8 @@ const CONTACT_LABEL: Record<string, string> = {
 type FieldSpec = { key: string; label: string; hint?: string; type?: "text" | "tel" | "contact" | "college" | "show"; max?: number; wide?: boolean };
 
 const FIELDS: Record<SessionRole, FieldSpec[]> = {
+  // Phase 1.6: none yet for the Director.
+  director: [],
   student: [{ key: "preferred_contact", label: "How you prefer to be reached", type: "contact" }],
   supervisor: [
     { key: "position", label: "Job title", max: 120 },

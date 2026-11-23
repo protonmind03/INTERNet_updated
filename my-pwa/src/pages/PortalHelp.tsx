@@ -1,4 +1,5 @@
 import CoordinatorLayout from "../layouts/CoordinatorLayout";
+import DirectorLayout from "../layouts/DirectorLayout";
 import StudentLayout from "../layouts/StudentLayout";
 import SupervisorLayout from "../layouts/SupervisorLayout";
 import { HelpCentre, HelpSections } from "./Help";
@@ -39,5 +40,16 @@ export function CoordinatorHelp() {
         <HelpSections role="coordinator" />
       </div>
     </CoordinatorLayout>
+  );
+}
+
+export function DirectorHelp() {
+  return (
+    <DirectorLayout title="Help">
+      <div className="space-y-6">
+        <HelpCentre fixedRole="director" />
+        <HelpSections role="director" />
+      </div>
+    </DirectorLayout>
   );
 }

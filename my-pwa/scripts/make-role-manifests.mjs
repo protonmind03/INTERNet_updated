@@ -3,7 +3,7 @@
 //
 //   node scripts/make-role-manifests.mjs
 //
-// public/manifest-{student,supervisor,coordinator}.webmanifest, each with its
+// public/manifest-{student,supervisor,coordinator,director}.webmanifest, each with its
 // own id, name, start (the role's door, which opens the portal for someone
 // signed in), colours from ROLE_PALETTES (src/brand/tokens.ts), the role
 // icons (scripts/make-role-icons.mjs) and the role's shortcuts. The scope is
@@ -47,6 +47,17 @@ const APPS = {
       ["Action list", "Actions", "What needs the coordinator today.", "/coordinator/dashboard"],
       ["Monitoring", "Monitoring", "Flagged logs and attendance across the program.", "/coordinator/monitoring"],
       ["Students", "Students", "Every trainee and their placement.", "/coordinator/students"],
+    ],
+  },
+  // Phase 1.6: the OJT Director's portal.
+  director: {
+    name: "INTERNet OJT Office",
+    short_name: "OJT Office",
+    description: "The campus at a glance for the OJT Director at PSU Lingayen.",
+    shortcuts: [
+      ["Overview", "Overview", "Every college: interns, clearances and agreements.", "/director/overview"],
+      ["Approvals", "Approvals", "Clearances given anyway, with their reasons.", "/director/approvals"],
+      ["Coordinators", "Coordinators", "The coordinators and the students each looks after.", "/director/coordinators"],
     ],
   },
 };

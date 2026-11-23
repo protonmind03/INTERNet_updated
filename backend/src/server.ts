@@ -5919,7 +5919,7 @@ app.get(
 
 app.put(
   "/api/notifications/:id/read",
-  requireRole(["student", "supervisor", "coordinator"]),
+  requireRole(["student", "supervisor", "coordinator", "director"]),
   async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth;
@@ -6051,7 +6051,7 @@ app.put(
 // Marks every notification of the signed-in account as read, for any role.
 app.put(
   "/api/notifications/read-all",
-  requireRole(["student", "supervisor", "coordinator"]),
+  requireRole(["student", "supervisor", "coordinator", "director"]),
   async (req, res) => {
     const auth = (req as AuthedRequest).auth;
     if (!auth) {
@@ -9648,7 +9648,7 @@ async function getActiveRequirementNames(studentId?: string): Promise<string[]> 
 
 app.get(
   "/api/ojt-requirements",
-  requireRole(["student", "supervisor", "coordinator"]),
+  requireRole(["student", "supervisor", "coordinator", "director"]),
   async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth;
@@ -10418,7 +10418,7 @@ app.patch(
 
 app.get(
   "/api/documents/:documentId/file",
-  requireRole(["student", "supervisor", "coordinator"]),
+  requireRole(["student", "supervisor", "coordinator", "director"]),
   async (req, res) => {
     const auth = (req as AuthedRequest).auth;
     if (!auth) {
@@ -10443,6 +10443,8 @@ app.get(
             -- A supervisor never opens a restricted (health or clearance) document.
             OR ($2 = 'supervisor' AND s.supervisor_id = $3 AND NOT ${restrictedDocument("d")})
             OR $2 = 'coordinator'
+            -- Phase 1.6: the OJT Director reads every record (and every restricted opening is audited).
+            OR $2 = 'director'
           )
         `,
         [documentId, auth.role, auth.id]
