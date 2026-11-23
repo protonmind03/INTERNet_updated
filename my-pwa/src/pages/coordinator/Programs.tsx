@@ -52,6 +52,8 @@ type Program = {
   org_name?: string | null;
   ojt_applies: boolean;
   is_active: boolean;
+  /** Migration 077: hours a new student of the program gets; null means 180. */
+  required_hours?: number | null;
   students: number;
 };
 type Major = { id: number; program_id: number; name: string; mark_key?: string | null; org_name?: string | null; is_active: boolean };
@@ -264,6 +266,9 @@ export default function CoordinatorPrograms() {
                               <p className="min-w-0 flex-1 text-sm font-medium text-slate-900">{program.name}</p>
                               {!program.is_active && <StatusBadge status="Inactive" tone="neutral" />}
                               <span className="text-xs text-slate-600">{plural(program.students, "student")}</span>
+                              <span className="tabular text-xs text-slate-600">
+                                {program.required_hours ?? 180} h required
+                              </span>
                               <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
                                 <input
                                   type="checkbox"
@@ -466,6 +471,9 @@ function EditDialog({
   const [shortName, setShortName] = useState(kind === "college" ? editing.row?.short_name || "" : "");
   const [shortCode, setShortCode] = useState(kind === "program" ? editing.row?.short_code || "" : "");
   const [formalName, setFormalName] = useState(kind === "program" ? editing.row?.formal_name || "" : "");
+  const [requiredHours, setRequiredHours] = useState(
+    kind === "program" && editing.row?.required_hours ? String(editing.row.required_hours) : ""
+  );
   const [collegeId, setCollegeId] = useState(
     kind === "program" ? String(editing.row?.college_id ?? editing.collegeId ?? "") : ""
   );
@@ -499,10 +507,15 @@ function EditDialog({
       if (shortCode.trim().length < 2 || /\s/.test(shortCode.trim())) {
         return setError("The short code is 2 to 20 characters with no spaces, such as BSIT.");
       }
+      const hours = requiredHours.trim() ? Number(requiredHours) : null;
+      if (hours !== null && (!Number.isInteger(hours) || hours < 1 || hours > 5000)) {
+        return setError("Required hours are a whole number from 1 to 5000. Leave it empty for 180.");
+      }
       body = {
         college_id: Number(collegeId),
         name: name.trim(),
         short_code: shortCode.trim(),
+        required_hours: hours,
         formal_name: formalName.trim() || null,
         mark_key: markKey || null,
         org_name: orgName.trim() || null,
@@ -597,6 +610,27 @@ function EditDialog({
               maxLength={20}
               value={shortCode}
               onChange={(event) => setShortCode(event.target.value)}
+              className="field"
+            />
+          </FormField>
+        )}
+
+        {kind === "program" && (
+          <FormField
+            label="Required hours"
+            htmlFor="academic-required-hours"
+            optional
+            hint="New students of this program start with these. Empty means 180."
+          >
+            <input
+              id="academic-required-hours"
+              type="number"
+              min={1}
+              max={5000}
+              step={1}
+              inputMode="numeric"
+              value={requiredHours}
+              onChange={(event) => setRequiredHours(event.target.value)}
               className="field"
             />
           </FormField>

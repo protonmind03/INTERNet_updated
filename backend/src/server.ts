@@ -72,7 +72,7 @@ import { registerTimeRecordRoutes } from "./routes/timeRecord";
 import { markActed, notificationKind, type NotificationKind } from "./services/notificationKinds";
 import { registerPasskeyRoutes } from "./routes/passkeys";
 import { recordStepVerification, verifyStep, type PasskeyStep } from "./services/passkeys";
-import { loadCatalogue, resolvePlacement } from "./services/academics";
+import { loadCatalogue, requiredHoursFor, resolvePlacement } from "./services/academics";
 import {
   bindFilters,
   filterConditions,
@@ -6485,7 +6485,8 @@ app.post(
         return res.status(400).json({ message: hoursIssue });
       }
       // The pickers send ids; an older form sends only the program as text.
-      const placement = resolvePlacement(await loadCatalogue(pool), {
+      const catalogue = await loadCatalogue(pool);
+      const placement = resolvePlacement(catalogue, {
         program_id: req.body.program_id,
         major_id: req.body.major_id,
         block_id: req.body.block_id,
@@ -6515,7 +6516,8 @@ app.post(
           placement.program_text,
           company || null,
           supervisor_id || null,
-          required_hours || 180,
+          // Given hours win, then the program's (migration 077), then 180.
+          requiredHoursFor(catalogue, required_hours, placement.program_id),
           (req as AuthedRequest).auth?.id || null,
           placement.program_id,
           placement.major_id,

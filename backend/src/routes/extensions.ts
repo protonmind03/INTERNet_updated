@@ -3,7 +3,7 @@ import type express from "express";
 import type { Pool, PoolClient } from "pg";
 import { PRIVACY_NOTICE, hasCurrentConsent } from "../services/privacy";
 import { categoriesFor } from "../services/notificationPreferences";
-import { loadCatalogue, resolvePlacement } from "../services/academics";
+import { hoursLeftEmpty, loadCatalogue, requiredHoursFor, resolvePlacement } from "../services/academics";
 import { phClock, phSql, phToday } from "../services/phTime";
 import { isWeighted, ojtGrade, readGrading, readOutcome, type GradedCriterion } from "../services/evaluationGrade";
 import { readReleaseDay, released, scheduledLater } from "../services/taskRelease";
@@ -928,9 +928,8 @@ export function registerExtensionRoutes(
       const name = text(entry.name);
       const email = text(entry.email).toLowerCase();
       const supervisorId = text(entry.supervisor_id);
-      const requiredHours = entry.required_hours === "" || entry.required_hours == null
-        ? 180
-        : Number(entry.required_hours);
+      // Empty: the program's hours once the row is placed (migration 077), then 180.
+      const hoursGiven = !hoursLeftEmpty(entry.required_hours);
       const fail = (message: string) =>
         results.push({ row: index + 1, student_id: studentId, name, status: "error", message });
 
@@ -942,9 +941,12 @@ export function registerExtensionRoutes(
         fail("The email address is not valid.");
         continue;
       }
-      if (!Number.isFinite(requiredHours) || requiredHours <= 0 || requiredHours > 5000) {
-        fail("Required hours must be a number between 1 and 5000.");
-        continue;
+      if (hoursGiven) {
+        const given = Number(entry.required_hours);
+        if (!Number.isFinite(given) || given <= 0 || given > 5000) {
+          fail("Required hours must be a number between 1 and 5000.");
+          continue;
+        }
       }
       if (supervisorId && !knownSupervisors.has(supervisorId)) {
         fail(`No active supervisor has the ID "${supervisorId}".`);
@@ -1005,7 +1007,7 @@ export function registerExtensionRoutes(
             placement.program_text,
             text(entry.company) || null,
             supervisorId || null,
-            Math.round(requiredHours),
+            requiredHoursFor(catalogue, entry.required_hours, placement.program_id),
             coordinatorId,
             placement.program_id,
             placement.major_id,

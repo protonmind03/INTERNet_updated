@@ -172,10 +172,20 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     if (has(body, "formal_name") && entry.formal_name !== null && (typeof entry.formal_name !== "string" || entry.formal_name.trim().length > 200)) {
       return "A program's formal name must be at most 200 characters.";
     }
+    // Migration 077: hours a new student of the program gets; null clears them (180 then applies).
+    if (has(body, "required_hours") && entry.required_hours !== null && entry.required_hours !== "") {
+      const hours = Number(entry.required_hours);
+      if (!Number.isInteger(hours) || hours < 1 || hours > 5000) return "Required hours must be a whole number from 1 to 5000, or empty.";
+    }
     for (const flag of ["ojt_applies", "is_active"]) {
       if (has(body, flag) && typeof entry[flag] !== "boolean") return `${flag === "ojt_applies" ? "OJT applies" : "Active"} must be yes or no.`;
     }
     return markProblem(body, "org");
+  };
+  /** The program's required hours from a checked body: a whole number, or null for none. */
+  const programHours = (body: unknown): number | null => {
+    const value = ((body ?? {}) as Record<string, unknown>).required_hours;
+    return value === null || value === undefined || value === "" ? null : Number(value);
   };
   const programConflict = (error: unknown): string | null => {
     if (!isUnique(error)) return null;
@@ -191,12 +201,12 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       const college = await pool.query(`SELECT 1 FROM colleges WHERE id = $1`, [Number(req.body.college_id)]);
       if (college.rows.length === 0) return res.status(400).json({ message: "That college does not exist." });
       const saved = await pool.query(
-        `INSERT INTO programs (college_id, name, short_code, ojt_applies, formal_name, mark_key, org_name)
-         VALUES ($1, $2, $3, COALESCE($4::boolean, TRUE), NULLIF($5, ''), $6, NULLIF($7, ''))
-         RETURNING id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active`,
+        `INSERT INTO programs (college_id, name, short_code, ojt_applies, formal_name, mark_key, org_name, required_hours)
+         VALUES ($1, $2, $3, COALESCE($4::boolean, TRUE), NULLIF($5, ''), $6, NULLIF($7, ''), $8::int)
+         RETURNING id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active, required_hours`,
         [Number(req.body.college_id), text(req.body.name), text(req.body.short_code),
           has(req.body, "ojt_applies") ? req.body.ojt_applies : null, text(req.body.formal_name),
-          markValue(req.body, "org"), text(req.body.org_name)]
+          markValue(req.body, "org"), text(req.body.org_name), programHours(req.body)]
       );
       return res.status(201).json({ message: "Program added.", program: saved.rows[0] });
     } catch (error) {
@@ -228,15 +238,17 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
            formal_name = CASE WHEN $9::boolean THEN NULLIF($10, '') ELSE formal_name END,
            mark_key = CASE WHEN $11::boolean THEN $12 ELSE mark_key END,
            org_name = CASE WHEN $13::boolean THEN NULLIF($14, '') ELSE org_name END,
+           required_hours = CASE WHEN $15::boolean THEN $16::int ELSE required_hours END,
            updated_at = NOW()
          WHERE id = $1
-         RETURNING id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active`,
+         RETURNING id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active, required_hours`,
         [programId, has(req.body, "name"), text(req.body?.name), has(req.body, "short_code"), text(req.body?.short_code),
           has(req.body, "college_id") ? Number(req.body.college_id) : null,
           has(req.body, "ojt_applies") ? req.body.ojt_applies : null,
           has(req.body, "is_active") ? req.body.is_active : null,
           has(req.body, "formal_name"), text(req.body?.formal_name),
-          has(req.body, "mark_key"), markValue(req.body, "org"), has(req.body, "org_name"), text(req.body?.org_name)]
+          has(req.body, "mark_key"), markValue(req.body, "org"), has(req.body, "org_name"), text(req.body?.org_name),
+          has(req.body, "required_hours"), programHours(req.body)]
       );
       if (saved.rows.length === 0) return res.status(404).json({ message: "Program not found." });
       return res.json({ message: "Program saved.", program: saved.rows[0] });

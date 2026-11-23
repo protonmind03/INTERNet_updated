@@ -188,7 +188,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "program.create",
     entityType: "program",
     entityId: (source) => nested(source.result.program, "id"),
-    keep: ["name", "short_code", "college_id", "ojt_applies", "formal_name"],
+    keep: ["name", "short_code", "college_id", "ojt_applies", "formal_name", "required_hours"],
   },
   {
     method: "PUT",
@@ -196,7 +196,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "program.edit",
     entityType: "program",
     entityId: param("id"),
-    keep: ["name", "short_code", "college_id", "ojt_applies", "is_active", "formal_name"],
+    keep: ["name", "short_code", "college_id", "ojt_applies", "is_active", "formal_name", "required_hours"],
   },
   {
     method: "POST",

@@ -39,6 +39,8 @@ export type Program = {
   org_name: string | null;
   ojt_applies: boolean;
   is_active: boolean;
+  /** Migration 077: hours a new student of the program gets; null means FALLBACK_REQUIRED_HOURS. */
+  required_hours: number | null;
 };
 export type Major = { id: number; program_id: number; name: string; mark_key: string | null; org_name: string | null; is_active: boolean };
 export type Block = {
@@ -64,7 +66,7 @@ export async function loadCatalogue(db: Db): Promise<Catalogue> {
   const [colleges, programs, majors, blocks] = await Promise.all([
     db.query<College>(`SELECT id, name, short_name, mark_key, is_active FROM colleges ORDER BY name`),
     db.query<Program>(
-      `SELECT id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active FROM programs ORDER BY name`
+      `SELECT id, college_id, name, short_code, formal_name, mark_key, org_name, ojt_applies, is_active, required_hours FROM programs ORDER BY name`
     ),
     db.query<Major>(`SELECT id, program_id, name, mark_key, org_name, is_active FROM majors ORDER BY name`),
     db.query<Block>(
@@ -227,4 +229,22 @@ export function resolvePlacement(catalogue: Catalogue, input: PlacementInput): {
     block_id: block?.id ?? null,
     program_text: program.name,
   };
+}
+
+/** Hours a new student gets when neither they nor their program has any (migration 002's default). */
+export const FALLBACK_REQUIRED_HOURS = 180;
+
+/** True when a request or a file row left the required hours empty. */
+export const hoursLeftEmpty = (value: unknown): boolean =>
+  value === undefined || value === null || (typeof value === "string" && value.trim() === "");
+
+/**
+ * The required hours a new student is created with (Phase 0.3): the hours
+ * given for them, else their program's (migration 077), else 180. The
+ * given value is checked by the caller first.
+ */
+export function requiredHoursFor(catalogue: Catalogue, given: unknown, programId: number | null): number {
+  if (!hoursLeftEmpty(given)) return Math.round(Number(given));
+  const program = programId === null ? undefined : catalogue.programs.find((item) => item.id === programId);
+  return program?.required_hours ?? FALLBACK_REQUIRED_HOURS;
 }

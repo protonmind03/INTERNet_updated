@@ -489,6 +489,40 @@ test.describe("programs, blocks and the filter bar", () => {
     await expect(page).toHaveURL(/\/coordinator\/analytics$/);
   });
 
+  test("a program's required hours show on Programs and fill a new student's hours until the coordinator types their own", async ({ page }) => {
+    await signIn(page, "coordinator");
+    await page.goto("/coordinator/programs");
+    // Migration 077 seeded BSIT with 480 hours.
+    const bsit = page.getByRole("listitem").filter({ has: page.getByText("BS Information Technology", { exact: true }) }).first();
+    await expect(bsit.getByText("480 h required")).toBeVisible();
+    // A row menu closes when the page scrolls (see the block schedule journey): opened again, it stays.
+    const editItem = page.getByRole("menuitem", { name: "Edit", exact: true });
+    await expect(async () => {
+      if (!(await editItem.isVisible())) await page.getByRole("button", { name: "Actions for BS Information Technology" }).click();
+      await expect(editItem).toBeVisible({ timeout: 1500 });
+    }).toPass({ timeout: 20_000 });
+    await editItem.click();
+    const programDialog = page.getByRole("dialog", { name: "Edit program" });
+    await expect(programDialog.locator("#academic-required-hours")).toHaveValue("480");
+    await programDialog.getByRole("button", { name: "Cancel" }).click();
+
+    await page.goto("/coordinator/students");
+    await page.getByRole("button", { name: "Register student" }).first().click();
+    const form = page.getByRole("dialog", { name: "Register a student" });
+    const hours = form.locator("#student-hours");
+    await expect(hours).toHaveValue("180");
+    await form.locator("#student-program-id").selectOption({ label: "BSIT: BS Information Technology" });
+    await expect(hours).toHaveValue("480");
+    await expect(form.getByText("Program default: 480 h")).toBeVisible();
+    // Typed hours stay when the program changes.
+    await hours.fill("500");
+    await form.locator("#student-program-id").selectOption({ label: "BSCS: BS Computer Science" });
+    await expect(hours).toHaveValue("500");
+    await expect(form.getByText("Program default: 180 h")).toBeVisible();
+    await form.getByRole("button", { name: "Cancel" }).click();
+    await expect(form).toBeHidden();
+  });
+
   test("a supervisor with interns of one program and block is not asked to choose between them", async ({ page }) => {
     // The demo supervisor has two interns. The journey above moves the first
     // into a new block each run, so the second is put beside them first.

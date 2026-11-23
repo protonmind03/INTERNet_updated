@@ -70,10 +70,14 @@ const PAGE_SIZE = 20;
 /** The colleges, programs, majors and blocks the form's pickers choose from. */
 type Academics = {
   colleges: { id: number; name: string; short_name: string | null; is_active: boolean }[];
-  programs: { id: number; college_id: number; name: string; short_code: string; ojt_applies: boolean; is_active: boolean }[];
+  // required_hours (migration 077): what a new student of the program gets; null means FALLBACK_REQUIRED_HOURS.
+  programs: { id: number; college_id: number; name: string; short_code: string; ojt_applies: boolean; is_active: boolean; required_hours?: number | null }[];
   majors: { id: number; program_id: number; name: string; is_active: boolean }[];
   blocks: { id: number; program_id: number; major_id: number | null; name: string; term_name: string | null; is_active: boolean }[];
 };
+
+/** Hours a new student gets when their program has none (the server's FALLBACK_REQUIRED_HOURS). */
+const FALLBACK_REQUIRED_HOURS = 180;
 
 const EMPTY_FORM = {
   student_id: "",
@@ -87,7 +91,7 @@ const EMPTY_FORM = {
   block_id: "",
   company: "",
   supervisor_id: "",
-  required_hours: "180",
+  required_hours: String(FALLBACK_REQUIRED_HOURS),
 };
 
 export default function CoordinatorStudents() {
@@ -522,7 +526,7 @@ function StudentDialog({
           block_id: existing.block_id ? String(existing.block_id) : "",
           company: existing.company || "",
           supervisor_id: existing.supervisor_id || "",
-          required_hours: String(existing.required_hours || 180),
+          required_hours: String(existing.required_hours || FALLBACK_REQUIRED_HOURS),
         }
       : EMPTY_FORM
   );
@@ -560,13 +564,24 @@ function StudentDialog({
       (item.is_active || sameId(item.id, form.block_id)) &&
       (!form.major_id || item.major_id === null || sameId(item.major_id, form.major_id))
   );
+  // A new student's hours follow the program chosen (its hours, or 180)
+  // until the coordinator types their own; an existing student's never change by themselves.
+  const [hoursTyped, setHoursTyped] = useState(false);
+  const programHours = (programId: string) => {
+    const program = academics?.programs.find((item) => sameId(item.id, programId));
+    return program ? program.required_hours ?? FALLBACK_REQUIRED_HOURS : null;
+  };
+  const hoursFor = (programId: string, current: string) =>
+    existing || hoursTyped ? current : String(programHours(programId) ?? FALLBACK_REQUIRED_HOURS);
+  const chosenProgramHours = form.program_id ? programHours(form.program_id) : null;
+
   const chooseCollege = (value: string) =>
     setForm((current) => {
       const program = academics?.programs.find((item) => sameId(item.id, current.program_id));
       const keeps = !value || !program || sameId(program.college_id, value);
       return keeps
         ? { ...current, college_id: value }
-        : { ...current, college_id: value, program_id: "", major_id: "", block_id: "" };
+        : { ...current, college_id: value, program_id: "", major_id: "", block_id: "", required_hours: hoursFor("", current.required_hours) };
     });
   const chooseProgram = (value: string) =>
     setForm((current) => {
@@ -578,6 +593,7 @@ function StudentDialog({
         college_id: program ? String(program.college_id) : current.college_id,
         major_id: "",
         block_id: "",
+        required_hours: hoursFor(value, current.required_hours),
       };
     });
   const chooseMajor = (value: string) =>
@@ -862,7 +878,11 @@ function StudentDialog({
         <FormField label="Company" htmlFor="student-company" optional>
           <CompanyPicker id="student-company" value={form.company} onChange={set("company")} />
         </FormField>
-        <FormField label="Required hours" htmlFor="student-hours">
+        <FormField
+          label="Required hours"
+          htmlFor="student-hours"
+          hint={chosenProgramHours !== null ? `Program default: ${chosenProgramHours} h` : undefined}
+        >
           <input
             id="student-hours"
             type="number"
@@ -870,7 +890,10 @@ function StudentDialog({
             step={1}
             inputMode="numeric"
             value={form.required_hours}
-            onChange={(event) => set("required_hours")(event.target.value)}
+            onChange={(event) => {
+              setHoursTyped(true);
+              set("required_hours")(event.target.value);
+            }}
             className="field"
           />
         </FormField>

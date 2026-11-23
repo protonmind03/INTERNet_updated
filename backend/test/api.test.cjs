@@ -13127,3 +13127,86 @@ test("CORS: the server itself will not start in production without FRONTEND_URL 
   assert.notEqual(run.status, 0, "it exits instead of serving");
   assert.match(run.stderr, /FRONTEND_URL or CORS_ORIGINS must name the frontend's address/);
 });
+
+/*
+| Phase 0.3: required hours by program
+*/
+
+test("required hours by program: seeded for BPA, BSIT and BSBA; a new or imported student without hours gets the program's, then 180; given hours win", async (t) => {
+  if (needsWrites(t)) return;
+  const stamp = String(Date.now()).slice(-7);
+  const send = (method, path, payload) => jsonRequest(path, jsonBody(coordinatorToken, method, payload));
+  const pool = localTestPool();
+  const sid = (n) => `RH-${stamp}-${n}`;
+  const made = { college: null, program: null };
+  const hoursOf = async (id) => (await pool.query(`SELECT required_hours FROM students WHERE student_id = $1`, [id])).rows[0]?.required_hours;
+  try {
+    // Migration 077's values, by short code.
+    const academics = await jsonRequest("/api/coordinator/academics", { headers: authHeaders(coordinatorToken) });
+    assert.equal(academics.response.status, 200);
+    const seeded = Object.fromEntries(academics.body.programs.map((row) => [row.short_code, row.required_hours]));
+    assert.equal(seeded.BPA, 400);
+    assert.equal(seeded.BSIT, 480);
+    assert.equal(seeded.BSBA, 600);
+    assert.equal(seeded.BSCS, null, "programs without known hours stay empty");
+
+    const college = await send("POST", "/api/coordinator/colleges", { name: `Hours College ${stamp}` });
+    made.college = college.body.college.id;
+    for (const bad of [0, 5001, 1.5, "many"]) {
+      const refused = await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `Bad ${stamp}`, short_code: `BAD${stamp}`, required_hours: bad });
+      assert.equal(refused.response.status, 400, `${bad} hours are refused`);
+    }
+    const program = await send("POST", "/api/coordinator/programs", { college_id: made.college, name: `BS Hours ${stamp}`, short_code: `BSH${stamp}`, required_hours: 321 });
+    assert.equal(program.response.status, 201, JSON.stringify(program.body));
+    made.program = program.body.program.id;
+    assert.equal(program.body.program.required_hours, 321);
+    const edited = await send("PUT", `/api/coordinator/programs/${made.program}`, { required_hours: 333 });
+    assert.equal(edited.response.status, 200, JSON.stringify(edited.body));
+    assert.equal(edited.body.program.required_hours, 333);
+    assert.equal((await send("PUT", `/api/coordinator/programs/${made.program}`, { name: `BS Hours ${stamp}` })).body.program.required_hours, 333, "a change that leaves the hours out keeps them");
+
+    const create = (n, extra) =>
+      send("POST", "/api/coordinator/students", { student_id: sid(n), email: `${sid(n).toLowerCase()}@demo.invalid`, password: "StartingPass123", name: `Hours Trainee ${n}`, ...extra });
+    assert.equal((await create(1, { program_id: made.program })).response.status, 201);
+    assert.equal(await hoursOf(sid(1)), 333, "no hours given: the program's");
+    assert.equal((await create(2, { program_id: made.program, required_hours: 200 })).response.status, 201);
+    assert.equal(await hoursOf(sid(2)), 200, "given hours win");
+    assert.equal((await create(3, { program: `bsh${stamp}`, required_hours: "" })).response.status, 201);
+    assert.equal(await hoursOf(sid(3)), 333, "a program typed as its short code counts too");
+    assert.equal((await create(4, {})).response.status, 201);
+    assert.equal(await hoursOf(sid(4)), 180, "no program: 180, as before");
+    assert.equal((await create(5, { program: "Not A Listed Program" })).response.status, 201);
+    assert.equal(await hoursOf(sid(5)), 180, "a program only as text: 180");
+
+    const rows = [
+      { student_id: sid(6), name: "Imported Six", email: `${sid(6).toLowerCase()}@demo.invalid`, program: `BSH${stamp}` },
+      { student_id: sid(7), name: "Imported Seven", email: `${sid(7).toLowerCase()}@demo.invalid`, program: `BSH${stamp}`, required_hours: "250" },
+      { student_id: sid(8), name: "Imported Eight", email: `${sid(8).toLowerCase()}@demo.invalid`, required_hours: "" },
+      { student_id: sid(9), name: "Imported Nine", email: `${sid(9).toLowerCase()}@demo.invalid`, program: "BSIT" },
+      { student_id: sid(10), name: "Imported Ten", email: `${sid(10).toLowerCase()}@demo.invalid`, program: `BSH${stamp}`, required_hours: "0" },
+    ];
+    const dry = await send("POST", "/api/coordinator/students/import", { students: rows, dry_run: true });
+    assert.equal(dry.response.status, 200, JSON.stringify(dry.body));
+    const imported = await send("POST", "/api/coordinator/students/import", { students: rows });
+    assert.equal(imported.response.status, 201, JSON.stringify(imported.body));
+    const status = Object.fromEntries(imported.body.results.map((row) => [row.student_id, row.status]));
+    assert.equal(status[sid(10)], "error", "0 hours are still refused");
+    assert.equal(await hoursOf(sid(6)), 333, "import without hours: the program's");
+    assert.equal(await hoursOf(sid(7)), 250, "import with hours: those");
+    assert.equal(await hoursOf(sid(8)), 180, "import with no program: 180");
+    assert.equal(await hoursOf(sid(9)), 480, "import into a seeded program: its hours");
+
+    // Changing a program's hours leaves its students as they are.
+    await send("PUT", `/api/coordinator/programs/${made.program}`, { required_hours: null });
+    assert.equal(await hoursOf(sid(1)), 333);
+    assert.equal((await create(11, { program_id: made.program })).response.status, 201);
+    assert.equal(await hoursOf(sid(11)), 180, "a program with its hours cleared: 180");
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id LIKE $1`, [`RH-${stamp}-%`]);
+    await pool.query(`DELETE FROM students WHERE student_id LIKE $1`, [`RH-${stamp}-%`]);
+    if (made.program) await pool.query(`DELETE FROM programs WHERE id = $1`, [made.program]);
+    if (made.college) await pool.query(`DELETE FROM colleges WHERE id = $1`, [made.college]);
+    await pool.query(`DELETE FROM audit_log WHERE entity_id LIKE $1 OR details->>'name' LIKE $2`, [`RH-${stamp}-%`, `%${stamp}%`]);
+    await pool.end();
+  }
+});
