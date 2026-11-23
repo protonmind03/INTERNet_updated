@@ -18,6 +18,7 @@
     "db:backfill-programs": "tsx src/scripts/backfill-programs.ts",
     "db:backfill-notification-links": "tsx src/scripts/backfill-notification-links.ts",
     "uploads:copy-to-bucket": "tsx src/scripts/copy-uploads-to-bucket.ts",
+    "db:hash-legacy-passwords": "tsx src/scripts/hash-legacy-passwords.ts",
     "db:fk-orphans": "tsx src/scripts/fk-orphans.ts",
     "db:fk-validate": "tsx src/scripts/fk-validate.ts",
     "db:id-spaces": "tsx src/scripts/id-spaces.ts",

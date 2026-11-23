@@ -412,12 +412,11 @@ pool.on("error", (error) => {
 | AUTH HELPERS (JWT + PASSWORD HASHING)
 |--------------------------------------------------------------------------
 |
-| Student/supervisor accounts were created with plain-text passwords
-| before this migration, so `verifyPassword` accepts either a bcrypt
-| hash (new accounts, and anything created through the coordinator's
-| User Management screens) or a legacy plain-text match, so existing
-| logins keep working. New accounts should always be hashed going
-| forward — `hashPassword` is used everywhere a password is written.
+| Every stored password is a bcrypt hash; `hashPassword` is used
+| everywhere a password is written. `verifyPassword` accepts nothing
+| else: a value that is not a bcrypt hash (an account made before
+| passwords were hashed) always fails. `npm run db:hash-legacy-passwords`
+| hashes such rows once, before go-live (docs/GO-LIVE-CHECKLIST.md).
 |
 */
 
@@ -804,8 +803,8 @@ async function hashPassword(
   return bcrypt.hash(plain, BCRYPT_ROUNDS);
 }
 
-function needsRehash(stored: unknown): boolean {
-  if (typeof stored !== "string" || !stored.startsWith("$2")) return true;
+/** True for a bcrypt hash made with fewer rounds than BCRYPT_ROUNDS. */
+function needsRehash(stored: string): boolean {
   try {
     return bcrypt.getRounds(stored) < BCRYPT_ROUNDS;
   } catch {
@@ -884,24 +883,19 @@ async function verifyPassword(
   plain: string,
   stored: string
 ): Promise<boolean> {
-  const looksHashed =
-    typeof stored === "string" &&
-    stored.startsWith("$2");
-
-  if (looksHashed) {
-    return bcrypt.compare(plain, stored);
-  }
-
-  // Legacy plain-text row — compare directly.
-  return plain === stored;
+  // Only a bcrypt hash can match. A plain-text value left from before
+  // passwords were hashed never does (npm run db:hash-legacy-passwords).
+  if (typeof stored !== "string" || !stored.startsWith("$2")) return false;
+  return bcrypt.compare(plain, stored);
 }
 
 /**
- * Re-hashes a legacy plain-text password with bcrypt after a successful
- * login so that plain-text credentials disappear from the database over
- * time without forcing a password reset.
+ * After a successful sign-in, stores the password again with
+ * BCRYPT_ROUNDS when its hash was made with fewer (the demo seed uses 10),
+ * so weaker hashes disappear over time without a password reset. Plain
+ * text never reaches this: it cannot sign in.
  */
-async function upgradeLegacyPassword(
+async function strengthenPasswordHash(
   role: keyof typeof accountTables,
   accountId: string,
   plain: string,
@@ -915,7 +909,7 @@ async function upgradeLegacyPassword(
       [await hashPassword(plain), accountId, stored]
     );
   } catch (error) {
-    console.error("LEGACY PASSWORD UPGRADE ERROR:", error);
+    console.error("PASSWORD HASH UPGRADE ERROR:", error);
   }
 }
 
@@ -1918,7 +1912,7 @@ app.post(
         });
       }
 
-      await upgradeLegacyPassword(
+      await strengthenPasswordHash(
         "student",
         String(student.student_id),
         password,
@@ -2031,7 +2025,7 @@ app.post(
         });
       }
 
-      await upgradeLegacyPassword(
+      await strengthenPasswordHash(
         "supervisor",
         String(supervisor.supervisor_id),
         password,
@@ -6199,7 +6193,7 @@ app.post("/api/login/coordinator", loginGuard("coordinator"), async (req, res) =
       });
     }
 
-    await upgradeLegacyPassword(
+    await strengthenPasswordHash(
       "coordinator",
       String(coordinator.coordinator_id),
       password,

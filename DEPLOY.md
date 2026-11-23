@@ -562,7 +562,7 @@ Unset, `SW_KILLSWITCH` does nothing.
 
 ## Running a data script on the hosted database (run by you)
 
-The data scripts (`db:backfill-companies`, `db:backfill-programs`,
+The data scripts (`db:hash-legacy-passwords`, `db:backfill-companies`, `db:backfill-programs`,
 `db:backfill-notification-links`, `db:fk-orphans`, `db:fk-validate`,
 `privacy:purge-photos`) reach the
 hosted database the

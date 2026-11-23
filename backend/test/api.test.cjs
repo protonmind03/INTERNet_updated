@@ -13040,3 +13040,57 @@ test("the album lists the trainee's own report photos and document files, leavin
   assert.equal((await jsonRequest(`/api/students/${id}/album`, { headers: authHeaders(coordinatorToken) })).response.status, 200);
   assert.equal((await jsonRequest(`/api/students/${id}/album`)).response.status, 401);
 });
+
+/*
+| Phase 0.1: no plain-text passwords
+*/
+
+test("a plain-text password can no longer sign in; db:hash-legacy-passwords hashes it and then it works", async (t) => {
+  if (needsWrites(t)) return;
+  const { execFileSync } = require("node:child_process");
+  const path = require("node:path");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const id = `LEGACY-${stamp}`.toUpperCase();
+  const email = `legacy.${stamp}@demo.invalid`;
+  const plain = `LegacyPlain${stamp}9`;
+  const run = (...args) =>
+    execFileSync(process.execPath, [path.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), path.join(__dirname, "../src/scripts/hash-legacy-passwords.ts"), ...args], {
+      cwd: path.join(__dirname, ".."),
+      env: process.env,
+      encoding: "utf8",
+    });
+  const signIn = () =>
+    jsonRequest("/api/login/student", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password: plain }),
+    });
+  const stored = async () => (await pool.query(`SELECT password FROM students WHERE student_id = $1`, [id])).rows[0].password;
+  await pool.query(
+    `INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Legacy Trainee', TRUE)`,
+    [id, email, plain]
+  );
+  try {
+    assert.equal((await signIn()).response.status, 401, "a stored plain-text value never matches");
+
+    const dry = run();
+    assert.match(dry, /students: \d+ plain-text passwords/);
+    assert.doesNotMatch(dry, new RegExp(`${plain}|${email}|${id}`), "only counts are printed");
+    assert.equal(await stored(), plain, "a dry run writes nothing");
+
+    const written = run("--confirm");
+    assert.match(written, /students: \d+ of \d+ plain-text passwords hashed/);
+    assert.doesNotMatch(written, new RegExp(`${plain}|${email}|${id}`), "only counts are printed");
+    const hash = await stored();
+    assert.match(hash, /^\$2[aby]\$12\$/, "hashed with the server's 12 rounds");
+
+    const after = await signIn();
+    assert.equal(after.response.status, 200, JSON.stringify(after.body));
+    assert.equal(typeof after.body.token, "string");
+    assert.match(run(), /Nothing to do|students: 0 plain-text passwords/);
+  } finally {
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
+    await pool.end();
+  }
+});

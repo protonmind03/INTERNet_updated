@@ -1,0 +1,93 @@
+import bcrypt from "bcryptjs";
+import { confirmed as writeConfirmed, connect } from "./fk-shared";
+
+// Hashes every password still stored as plain text.
+//
+// The sign-in no longer accepts a plain-text password (Phase 0.1): a stored
+// value that is not a bcrypt hash always fails. Run this once on the hosted
+// database before going live (docs/GO-LIVE-CHECKLIST.md), so accounts made
+// before passwords were hashed can still sign in with what they know.
+//
+// It looks at students, supervisors and coordinators, finds the rows whose
+// password does not start with "$2" (a bcrypt hash), and stores the bcrypt
+// hash of that value instead, with the same 12 rounds as the server. It
+// prints counts only, never an email, an ID or a password.
+//
+// Without --confirm it only counts and changes nothing.
+//
+//   npm run db:hash-legacy-passwords               (dry run)
+//   npm run db:hash-legacy-passwords -- --confirm
+//
+// On the hosted database, through a tunnel (DEPLOY.md, "Running a data
+// script on the hosted database"):
+//
+//   railway connect Postgres --tunnel-only
+//   railway run --service Postgres npm run db:hash-legacy-passwords <port>
+//   railway run --service Postgres npm run db:hash-legacy-passwords <port> confirm
+
+/** The same rounds as BCRYPT_ROUNDS in server.ts. */
+const BCRYPT_ROUNDS = 12;
+
+const tables = [
+  { table: "students", idColumn: "student_id" },
+  { table: "supervisors", idColumn: "supervisor_id" },
+  { table: "coordinators", idColumn: "coordinator_id" },
+] as const;
+
+async function main() {
+  const confirmed = writeConfirmed();
+  const client = await connect();
+  let total = 0;
+  try {
+    if (!confirmed) await client.query("SET default_transaction_read_only = on");
+    await client.query("BEGIN");
+    for (const { table, idColumn } of tables) {
+      const rows = (
+        await client.query<{ id: string; password: string | null }>(
+          `SELECT ${idColumn}::text AS id, password FROM ${table}
+           WHERE password IS NOT NULL AND password NOT LIKE '$2%'
+           ORDER BY ${idColumn}`
+        )
+      ).rows;
+      let hashed = 0;
+      if (confirmed) {
+        for (const row of rows) {
+          // Only if the value is still the one read, so a password changed
+          // meanwhile is never overwritten.
+          const result = await client.query(
+            `UPDATE ${table} SET password = $1 WHERE ${idColumn}::text = $2 AND password = $3`,
+            [await bcrypt.hash(String(row.password), BCRYPT_ROUNDS), row.id, row.password]
+          );
+          hashed += result.rowCount ?? 0;
+        }
+      }
+      total += rows.length;
+      console.log(
+        confirmed
+          ? `${table}: ${hashed} of ${rows.length} plain-text passwords hashed`
+          : `${table}: ${rows.length} plain-text passwords`
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    await client.end();
+  }
+  if (!confirmed) {
+    console.log(
+      total === 0
+        ? "Nothing to do: every password is already hashed."
+        : "Dry run: nothing was changed. Run again with --confirm to hash them."
+    );
+  } else {
+    console.log("Done.");
+  }
+}
+
+main().catch((error: unknown) => {
+  // The message only: a database error can quote the row it failed on.
+  console.error("Hashing legacy passwords failed:", error instanceof Error ? error.message : "unknown error");
+  process.exitCode = 1;
+});

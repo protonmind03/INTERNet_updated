@@ -31,35 +31,43 @@ Do the steps in order. Do not skip ahead.
   - the supervisor's intern Reports;
   - the coordinator's student record.
 
+**4. Hash any plain-text passwords.**
+- The new version refuses a password stored as plain text: such an account could no longer sign in.
+- Run the script on production through the tunnel (DEPLOY.md, "Running a data script on the hosted database"). It prints counts only, never a password or an email.
+  - `railway connect Postgres --tunnel-only` (leave it running; note the port);
+  - `railway run --service Postgres npm run db:hash-legacy-passwords <port>`: a dry run that counts them;
+  - if any count is above 0, run it again with `confirm` at the end.
+- Run it again without `confirm`: every count should be 0. Rehearse it on the step 2 copy first.
+
 ## Going live
 
-**4. Make it live.**
+**5. Make it live.**
 - Update `main` to `ui-redesign`. It is a fast-forward, with no merge.
 - Railway runs the migrations before it starts the new version (`preDeployCommand`).
 - If a migration fails, the old version keeps running.
 
-**5. Check production.**
+**6. Check production.**
 - `/api/health` and `/api/health/ready` both answer `{"status":"ok"}`. Before going live, `/ready` answers 404.
 - The public site loads.
 - Sign in as each role.
 
 ## After
 
-**6. Turn on the backup service.**
+**7. Turn on the backup service.**
 - In Railway, set the `backup` service's Root Directory to `/` (the repository root) and deploy. It then reads the root `railway.json` (the backup job, its Dockerfile and the nightly schedule). Its six variables are already set. (A config-file path is not kept by the dashboard for this service, so it is not used.)
 - Test it once: set Cron Schedule to a few minutes from now in UTC (Philippine time minus 8 hours).
 - Check that the run succeeded in its Deployments log.
 - Check that `backups/database/daily/<date>.dump.age` appears in the Cloudflare bucket.
 - Set the schedule back to `30 17 * * *`.
 
-**7. Back up the uploaded files every week.**
+**8. Back up the uploaded files every week.**
 - Add the same five `BACKUP_R2_*` and `BACKUP_AGE_RECIPIENT` variables to the backend service.
 - Do not add `BACKUP_DATABASE_URL` there.
 
-**8. Push notifications (optional).**
+**9. Push notifications (optional).**
 - Add `WEB_PUSH_VAPID_PUBLIC_KEY`, `WEB_PUSH_VAPID_PRIVATE_KEY` and `WEB_PUSH_SUBJECT` to the backend. The values are in the key file given to you on 8 November.
 
-**9. The next morning.**
+**10. The next morning.**
 - Go to Profile settings > What is switched on > Database backup. It should say "On", with last night's time.
 
 ## If something goes wrong
