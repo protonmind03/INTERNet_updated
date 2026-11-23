@@ -30,6 +30,8 @@ INTERNet is weak on what happens **before deployment** and at **grading time**:
 - Only the agency's 50% of the grade is computed.
 - There is no Director role, and every coordinator sees every student.
 
+There is also no portal for the Director or for whoever runs the system: the plan adds a **Director portal** and a separate **IT Admin portal** with separate duties (the admin never sees student records or grades).
+
 These are the gaps the Director is most likely to notice. Each one has a fix planned below, and the step-by-step prompt is in `docs/IMPLEMENTATION-PROMPT.md`.
 
 ---
@@ -85,7 +87,7 @@ These are the gaps the Director is most likely to notice. Each one has a fix pla
 | 50% from the HTE evaluation | ✅ | The weighted FM-AA-INT-13 form (migration 074, `backend/src/services/evaluationGrade.ts`). Its criteria are a **sample** until the university confirms them. |
 | 50% from the university / instructor: logs, punctuality, pre-internship preparation, conduct | ❌ | Only a free 1–5 "teacher" rating (migration 002), which feeds no grade. |
 | Final grade = 50 / 50 | ❌ | Not computed. |
-| KDCC / OJT office holds the forms; Director oversight | ❌ | The only roles are student, supervisor and coordinator. **Every coordinator sees every student** (`GET /api/coordinator/students`), and any coordinator can deactivate another (`extensions.ts:3900-3985`). |
+| KDCC / OJT office holds the forms; Director oversight | ❌ | The only roles are student, supervisor and coordinator. **Every coordinator sees every student** (`GET /api/coordinator/students`), and any coordinator can deactivate another (`extensions.ts:3900-3985`). Planned: a Director portal and a separate IT Admin portal (implementation prompt items 1.6 and 1.7). |
 | Completion | 🟡 | Completion checklist and review request (migration 027). The certificate is an upload from the agency, and the coordinator has no approve/close step. |
 
 ---
@@ -98,7 +100,7 @@ These are the gaps the Director is most likely to notice. Each one has a fix pla
 | F2 | "The hours are wrong; it says 180." | Give each program its required hours (BPA 400, BSIT 480, BSBA 600, the others set by the Director). New and imported students take the program's hours, and a per-student override stays possible. |
 | F3 | "There is no overtime rule." | Overtime requests: the student files one, the supervisor approves it. The limit is 2 per week and can be changed. Time beyond the scheduled day counts only when overtime was approved. |
 | F4 | "The grade is not 50/50." | An instructor rubric: logs and diaries, punctuality (computed from submission dates), pre-internship preparation and conduct. The final grade is the HTE half plus the instructor half, worked out on the server, shown and exportable. The weights can be changed per term. |
-| F5 | "How do I see every college, and how do coordinators see only their own?" | A `director` role with campus-wide view, settings and coordinator management. Coordinators are limited to their assigned colleges or programs. |
+| F5 | "How do I see every college, and how do coordinators see only their own?" | A **Director portal** of its own (`/director`): campus overview by college, programs and hours, coordinators and their scopes, term rules, approvals (agencies, grade release, clearance overrides), campus reports and audit. Coordinators are limited to their assigned colleges or programs. A separate **IT Admin portal** (`/admin`) for university MIS handles accounts, unlocks, password resets, system status and backups, and is barred from student records and grades. |
 | F6 | "Is the MOA notarized? Are private agencies screened? What about slots?" | HTE type, MOA file with notarized flag and dates, a screening checklist for private agencies, an approval status, and slots **enforced** when students are assigned. |
 | F7 | "The biometric check should verify the location." | An optional geofence: the HTE's location and radius. Time-in keeps only "inside / outside, about N m" and never a location trail. Outside the fence, the log goes to the supervisor instead of being refused. |
 | F8 | "What about cheap phones, no data, or a camera that fails?" | These already exist: time-in without a photo (the supervisor confirms), the supervisor records the time-in in person, offline vouchers, and the QR hand-off from a computer. Show them in the demo. |
