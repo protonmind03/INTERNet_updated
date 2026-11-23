@@ -12468,7 +12468,8 @@ const pwaRoot = nodePath.join(__dirname, "..", "..", "my-pwa");
 test("the landing page imports only the brand kit and its own files, and writes no colour by hand", () => {
   const dir = nodePath.join(pwaRoot, "src", "landing");
   // ../lib/helpAnswers: a role's own page asks the Help centre's questions, written once (fix.md, 2026-10-25).
-  const allowed = [/^\.\//, /^\.\.\/brand\/(BrandLockup|PsuSeal|tokens|Wordmark|BrandIcon|geometry)$/, /^\.\.\/lib\/helpAnswers$/, /^react-dom\/server$/, /^qrcode$/, /^tailwindcss$/, /^@fontsource-variable\//, /^\.\.\/brand\/brand\.css$/];
+  // ../brand/palette.css: the three colours (night, brass, mist) shared by the website and the app (2026-11-21 redesign).
+  const allowed = [/^\.\//, /^\.\.\/brand\/(BrandLockup|PsuSeal|tokens|Wordmark|BrandIcon|geometry)$/, /^\.\.\/lib\/helpAnswers$/, /^react-dom\/server$/, /^qrcode$/, /^tailwindcss$/, /^@fontsource-variable\//, /^\.\.\/brand\/(brand|palette)\.css$/];
   for (const file of fs.readdirSync(dir)) {
     const source = fs.readFileSync(nodePath.join(dir, file), "utf8");
     // A type-only import ("import type { ReactNode } from 'react'") brings no code with it.
