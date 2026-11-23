@@ -31,6 +31,7 @@ import BlockScheduleDialog from "./BlockScheduleDialog";
 import { useStudentFilters } from "./useStudentFilters";
 import ResetPassword from "./ResetPassword";
 import { sameId } from "../../lib/ids";
+import { FALLBACK_REQUIRED_HOURS, isWholeHours, MAX_REQUIRED_HOURS } from "../../lib/requiredHours";
 
 type Student = {
   student_id: string;
@@ -76,8 +77,6 @@ type Academics = {
   blocks: { id: number; program_id: number; major_id: number | null; name: string; term_name: string | null; is_active: boolean }[];
 };
 
-/** Hours a new student gets when their program has none (the server's FALLBACK_REQUIRED_HOURS). */
-const FALLBACK_REQUIRED_HOURS = 180;
 
 const EMPTY_FORM = {
   student_id: "",
@@ -632,8 +631,8 @@ function StudentDialog({
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       return setError("Enter a valid email address.");
     }
-    if (sendHours && (!Number.isInteger(hours) || hours < 1 || hours > 5000)) {
-      return setError("Required hours must be a whole number from 1 to 5000.");
+    if (sendHours && !isWholeHours(hours)) {
+      return setError(`Required hours must be a whole number from 1 to ${MAX_REQUIRED_HOURS}.`);
     }
     if (!existing) {
       if (!form.student_id.trim()) return setError("Enter the student ID.");

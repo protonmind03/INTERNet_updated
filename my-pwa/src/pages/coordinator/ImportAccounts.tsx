@@ -3,6 +3,7 @@ import Icon from "../../components/Icon";
 import { Button, FormError, Modal, StatusBadge } from "../../components/ui";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import { FALLBACK_REQUIRED_HOURS } from "../../lib/requiredHours";
 
 /*
 |--------------------------------------------------------------------------
@@ -34,7 +35,7 @@ const KINDS = {
       { key: "program", label: "Program", fallback: "—" },
       { key: "block", label: "Block", fallback: "—" },
       { key: "supervisor_id", label: "Supervisor ID", fallback: "—" },
-      { key: "required_hours", label: "Hours", fallback: "180" },
+      { key: "required_hours", label: "Hours", fallback: String(FALLBACK_REQUIRED_HOURS) },
     ],
   },
   supervisors: {

@@ -173,9 +173,8 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       return "A program's formal name must be at most 200 characters.";
     }
     // Migration 077: hours a new student of the program gets; null clears them (180 then applies).
-    if (has(body, "required_hours") && requiredHoursProblem(entry.required_hours)) {
-      return "Required hours must be a whole number from 1 to 5000, or empty.";
-    }
+    const hoursProblem = has(body, "required_hours") ? requiredHoursProblem(entry.required_hours) : null;
+    if (hoursProblem) return hoursProblem;
     for (const flag of ["ojt_applies", "is_active"]) {
       if (has(body, flag) && typeof entry[flag] !== "boolean") return `${flag === "ojt_applies" ? "OJT applies" : "Active"} must be yes or no.`;
     }
@@ -183,7 +182,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
   };
   /** The program's required hours from a checked body: a whole number, or null for none. */
   const programHours = (body: unknown): number | null =>
-    wholeHours(((body ?? {}) as Record<string, unknown>).required_hours);
+    wholeHours((body as { required_hours?: unknown } | undefined)?.required_hours);
   const programConflict = (error: unknown): string | null => {
     if (!isUnique(error)) return null;
     return String((error as { constraint?: string }).constraint).includes("short_code")

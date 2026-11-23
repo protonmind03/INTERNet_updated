@@ -799,12 +799,9 @@ async function hashPassword(
 }
 
 /** True for a bcrypt hash made with fewer rounds than BCRYPT_ROUNDS. */
+// Only reached for a value verifyPassword accepted: always a whole bcrypt hash.
 function needsRehash(stored: string): boolean {
-  try {
-    return bcrypt.getRounds(stored) < BCRYPT_ROUNDS;
-  } catch {
-    return false;
-  }
+  return bcrypt.getRounds(stored) < BCRYPT_ROUNDS;
 }
 
 /**

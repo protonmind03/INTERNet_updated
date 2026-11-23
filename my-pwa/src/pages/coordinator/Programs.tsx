@@ -23,6 +23,7 @@ import { coordinatorRequest } from "./request";
 import BlockScheduleDialog from "./BlockScheduleDialog";
 import { refreshFilterOptions } from "./useStudentFilters";
 import { sameId } from "../../lib/ids";
+import { FALLBACK_REQUIRED_HOURS, isWholeHours, MAX_REQUIRED_HOURS } from "../../lib/requiredHours";
 
 /*
 |--------------------------------------------------------------------------
@@ -267,7 +268,7 @@ export default function CoordinatorPrograms() {
                               {!program.is_active && <StatusBadge status="Inactive" tone="neutral" />}
                               <span className="text-xs text-slate-600">{plural(program.students, "student")}</span>
                               <span className="tabular text-xs text-slate-600">
-                                {program.required_hours ?? 180} h required
+                                {program.required_hours ?? FALLBACK_REQUIRED_HOURS} h required
                               </span>
                               <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
                                 <input
@@ -508,8 +509,8 @@ function EditDialog({
         return setError("The short code is 2 to 20 characters with no spaces, such as BSIT.");
       }
       const hours = requiredHours.trim() ? Number(requiredHours) : null;
-      if (hours !== null && (!Number.isInteger(hours) || hours < 1 || hours > 5000)) {
-        return setError("Required hours are a whole number from 1 to 5000. Leave it empty for 180.");
+      if (hours !== null && !isWholeHours(hours)) {
+        return setError(`Required hours are a whole number from 1 to ${MAX_REQUIRED_HOURS}. Leave it empty for ${FALLBACK_REQUIRED_HOURS}.`);
       }
       body = {
         college_id: Number(collegeId),
@@ -620,13 +621,13 @@ function EditDialog({
             label="Required hours"
             htmlFor="academic-required-hours"
             optional
-            hint="New students of this program start with these. Empty means 180."
+            hint={`New students of this program start with these. Empty means ${FALLBACK_REQUIRED_HOURS}.`}
           >
             <input
               id="academic-required-hours"
               type="number"
               min={1}
-              max={5000}
+              max={MAX_REQUIRED_HOURS}
               step={1}
               inputMode="numeric"
               value={requiredHours}

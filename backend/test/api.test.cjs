@@ -3061,6 +3061,16 @@ test("an announcement reaches only the audience and company it was sent to", asy
 | The forgot-to-time-out reminder
 */
 
+/** Runs one of backend/src/scripts with tsx, the way npm runs it, and returns what it printed. */
+function runBackendScript(file, ...args) {
+  const { execFileSync } = require("node:child_process");
+  return execFileSync(process.execPath, [nodePath.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), nodePath.join(__dirname, "../src/scripts", file), ...args], {
+    cwd: nodePath.join(__dirname, ".."),
+    env: process.env,
+    encoding: "utf8",
+  });
+}
+
 // A pool on the throwaway database, for the few checks that have no route
 // to go through. Refuses anything that is not on this machine.
 function localTestPool() {
@@ -10068,8 +10078,6 @@ test("old notifications get a link only where their title names one page", async
   assert.equal(backfillLink("supervisor", "message", "New message"), null, "a message needs its thread");
   if (needsWrites(t)) return;
 
-  const { execFileSync } = require("node:child_process");
-  const path = require("node:path");
   const pool = localTestPool();
   const supervisor = await supervisorSession();
   const supervisorId = String(supervisor.supervisor.supervisor_id);
@@ -10080,12 +10088,7 @@ test("old notifications get a link only where their title names one page", async
      RETURNING id`,
     [supervisorId]
   )).rows.map((row) => row.id);
-  const run = (...args) =>
-    execFileSync(process.execPath, [path.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), path.join(__dirname, "../src/scripts/backfill-notification-links.ts"), ...args], {
-      cwd: path.join(__dirname, ".."),
-      env: process.env,
-      encoding: "utf8",
-    });
+  const run = (...args) => runBackendScript("backfill-notification-links.ts", ...args);
   const links = async () => (await pool.query(`SELECT link FROM notifications WHERE id = ANY($1::int[]) ORDER BY id`, [rows])).rows.map((row) => row.link);
   try {
     const dry = run();
@@ -13047,8 +13050,6 @@ test("the album lists the trainee's own report photos and document files, leavin
 
 test("a plain-text password can no longer sign in; db:hash-legacy-passwords hashes it and then it works", async (t) => {
   if (needsWrites(t)) return;
-  const { execFileSync } = require("node:child_process");
-  const path = require("node:path");
   const pool = localTestPool();
   const stamp = Date.now().toString(36);
   // The second starts like a bcrypt hash without being one: it is plain text too.
@@ -13057,12 +13058,7 @@ test("a plain-text password can no longer sign in; db:hash-legacy-passwords hash
     email: `legacy${n}.${stamp}@demo.invalid`,
     plain,
   }));
-  const run = (...args) =>
-    execFileSync(process.execPath, [path.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), path.join(__dirname, "../src/scripts/hash-legacy-passwords.ts"), ...args], {
-      cwd: path.join(__dirname, ".."),
-      env: process.env,
-      encoding: "utf8",
-    });
+  const run = (...args) => runBackendScript("hash-legacy-passwords.ts", ...args);
   const signIn = (account) =>
     jsonRequest("/api/login/student", {
       method: "POST",

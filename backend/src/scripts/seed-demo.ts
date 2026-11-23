@@ -105,7 +105,11 @@ const DEMO_PDF = Buffer.from(
 );
 
 /** Adds the PSU Lingayen demo rows. Files it stores are listed in `written`, to remove if the transaction fails. */
-async function seedAgencyDemo(client: Client, written: string[]): Promise<void> {
+async function seedAgencyDemo(
+  client: Client,
+  written: string[],
+  passwords: { supervisor: string; student: string }
+): Promise<void> {
   const agencyIds: number[] = [];
   for (const agency of demoAgencies) {
     await client.query(
@@ -122,20 +126,19 @@ async function seedAgencyDemo(client: Client, written: string[]): Promise<void> 
     agencyIds.push(row.rows[0].id);
   }
 
-  const supervisorPassword = await bcrypt.hash(demoSupervisor.password, 10);
   for (const each of demoAgencySupervisors) {
     await client.query(
       `INSERT INTO supervisors (supervisor_id, email, password, name, company, company_id, department, job_title, is_active)
        VALUES ($1, $2, $3, $4, $5, $6, 'OJT Training', $7, TRUE)
        ON CONFLICT DO NOTHING`,
-      [each.id, each.email, supervisorPassword, each.name, demoAgencies[each.agency].name, agencyIds[each.agency], each.job]
+      [each.id, each.email, passwords.supervisor, each.name, demoAgencies[each.agency].name, agencyIds[each.agency], each.job]
     );
   }
 
-  const studentPassword = await bcrypt.hash(demoStudent.password, 10);
   for (const each of demoAgencyTrainees) {
     const supervisor = demoAgencySupervisors[each.supervisor];
-    // The program's name and hours (180 if it has none).
+    // The program's name and hours, then 180, as requiredHoursFor gives
+    // (services/academics.ts; its catalogue needs a pool, not this transaction).
     await client.query(
       `INSERT INTO students
          (student_id, email, password, name, program, program_id, company, company_id, supervisor_id, required_hours, is_active)
@@ -143,7 +146,7 @@ async function seedAgencyDemo(client: Client, written: string[]): Promise<void> 
        FROM (SELECT 1) AS one
        LEFT JOIN programs p ON LOWER(p.short_code) = LOWER($5)
        ON CONFLICT DO NOTHING`,
-      [each.id, each.email, studentPassword, each.name, each.program,
+      [each.id, each.email, passwords.student, each.name, each.program,
         demoAgencies[supervisor.agency].name, agencyIds[supervisor.agency], supervisor.id]
     );
     for (const day of ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]) {
@@ -426,7 +429,7 @@ async function seedDemoData() {
       );
     }
 
-    await seedAgencyDemo(client, written);
+    await seedAgencyDemo(client, written, { supervisor: supervisorPassword, student: studentPassword });
 
     await client.query("COMMIT");
   } catch (error) {

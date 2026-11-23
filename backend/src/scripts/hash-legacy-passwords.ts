@@ -41,14 +41,19 @@ async function main() {
     if (!confirmed) await client.query("SET default_transaction_read_only = on");
     await client.query("BEGIN");
     for (const { table, idColumn } of tables) {
-      const rows = (
-        await client.query<{ id: string; password: string | null }>(
-          `SELECT ${idColumn}::text AS id, password FROM ${table}
-           WHERE password IS NOT NULL AND password !~ $1
-           ORDER BY ${idColumn}`,
-          [BCRYPT_HASH_SQL]
-        )
-      ).rows;
+      const plainText = `FROM ${table} WHERE password IS NOT NULL AND password !~ $1`;
+      // A dry run only counts: the passwords themselves are read only to hash them.
+      const rows = confirmed
+        ? (
+            await client.query<{ id: string; password: string }>(
+              `SELECT ${idColumn}::text AS id, password ${plainText} ORDER BY ${idColumn}`,
+              [BCRYPT_HASH_SQL]
+            )
+          ).rows
+        : [];
+      const count = confirmed
+        ? rows.length
+        : (await client.query<{ n: number }>(`SELECT COUNT(*)::int AS n ${plainText}`, [BCRYPT_HASH_SQL])).rows[0].n;
       let hashed = 0;
       if (confirmed) {
         for (const row of rows) {
@@ -61,11 +66,11 @@ async function main() {
           hashed += result.rowCount ?? 0;
         }
       }
-      total += rows.length;
+      total += count;
       console.log(
         confirmed
-          ? `${table}: ${hashed} of ${rows.length} plain-text passwords hashed`
-          : `${table}: ${rows.length} plain-text passwords`
+          ? `${table}: ${hashed} of ${count} plain-text passwords hashed`
+          : `${table}: ${count} plain-text passwords`
       );
     }
     await client.query("COMMIT");

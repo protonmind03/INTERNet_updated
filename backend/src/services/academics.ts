@@ -232,10 +232,10 @@ export function resolvePlacement(catalogue: Catalogue, input: PlacementInput): {
 }
 
 /** Hours a new student gets when neither they nor their program has any (migration 002's default). */
-export const FALLBACK_REQUIRED_HOURS = 180;
+const FALLBACK_REQUIRED_HOURS = 180;
 
 /** True when a request or a file row left the required hours empty. */
-export const hoursLeftEmpty = (value: unknown): boolean =>
+const hoursLeftEmpty = (value: unknown): boolean =>
   value === undefined || value === null || (typeof value === "string" && value.trim() === "");
 
 /**
@@ -248,7 +248,7 @@ export function wholeHours(value: unknown): number | null {
   return Number.isInteger(hours) && hours >= 1 && hours <= 5000 ? hours : null;
 }
 
-export const REQUIRED_HOURS_MESSAGE = "Required hours must be a whole number from 1 to 5000.";
+const REQUIRED_HOURS_MESSAGE = "Required hours must be a whole number from 1 to 5000.";
 
 /** Why given required hours are not acceptable, or null when they are fine or left empty. */
 export function requiredHoursProblem(value: unknown): string | null {
