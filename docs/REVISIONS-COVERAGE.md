@@ -84,3 +84,13 @@ E2E specs are in `e2e/tests/`. Backend tests are in `backend/test/api.test.cjs`,
   - offline report photos;
   - "Save to phone" on iPhone;
   - the hover rail on a touch tablet (it opens with its button there).
+
+## 4. IMPLEMENTATION-PROMPT.md, Phase 0 (23 November 2026)
+
+| # | Asked for | Where it is | Checked by | Status |
+|---|---|---|---|---|
+| 0.1 | No plain-text password fallback; a script hashes legacy rows | `verifyPassword` in `server.ts`; `scripts/hash-legacy-passwords.ts`; go-live step 4 | backend: "a plain-text password can no longer sign in; db:hash-legacy-passwords hashes it and then it works" | Done |
+| 0.2 | CORS fails closed in production | `services/corsOrigins.ts`, `server.ts` | backend: the two "CORS:" tests (the rule, and the real server refusing to start) | Done |
+| 0.3 | Required hours by program | Migration 077; `requiredHoursFor` in `services/academics.ts`; `routes/academics.ts`; `Programs.tsx`, `Students.tsx` | backend: "required hours by program …"; `journeys.spec.ts`: "a program's required hours show on Programs …" | Done |
+| 0.4 | Deployment doc matches the nightly photo purge | `DEPLOY.md`, "Privacy notice and photo retention"; go-live checklist | Read against `services/photoPurge.ts` | Done (manual) |
+| 0.5 | Demo data that looks like PSU Lingayen | `scripts/seed-demo.ts`; `DEVELOPING.md` | backend: "the demo seed adds PSU Lingayen agencies …" | Done |

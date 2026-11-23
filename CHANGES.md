@@ -2102,3 +2102,32 @@ the new card: clean.
 
 **Not checked:** the sounds heard by a person, and vibration felt on a
 phone. The tests can tell that a cue was given, not what it sounded like.
+
+## 41. Phase 0: safe fixes before the Director demo (23 November 2026)
+
+From `IMPLEMENTATION-PROMPT.md` (version 3), Phase 0. One commit per item
+on `ui-redesign`.
+
+| Item | What changed |
+|---|---|
+| 0.1 | The sign-in accepts only a bcrypt hash: a password stored as plain text never matches. `npm run db:hash-legacy-passwords` (a dry run without `confirm`, counts only) hashes such rows; it is step 4 of `docs/GO-LIVE-CHECKLIST.md`. A bcrypt hash with fewer than 12 rounds is still strengthened on sign-in. |
+| 0.2 | In production the server will not start without `FRONTEND_URL` or `CORS_ORIGINS` (`services/corsOrigins.ts`); before, it allowed every origin. Development is unchanged. |
+| 0.3 | Migration 077: `programs.required_hours` (BPA 400, BSIT 480, BSBA 600). A new or imported student without hours gets the program's, then 180; given hours win; existing students keep theirs. Programs shows and edits it; the student form fills it in and says "Program default: N h". |
+| 0.4 | `DEPLOY.md` now says old time-in photos are removed every night at 02:30 once `PHOTO_RETENTION_DAYS` is set, and that it must be set before go-live. |
+| 0.5 | `db:seed-demo` adds five PSU Lingayen-like agencies, their made-up supervisors, six made-up BSIT/BPA/BSBA trainees, last week's attendance in mixed states, a pending Endorsement and a weekly report, all `@demo.invalid`. |
+
+A separate commit lets the landing test admit `brand/palette.css`, which
+the three-colour redesign added; that test failed before Phase 0.
+
+**New go-live steps:** hash plain-text passwords (step 4); confirm
+`FRONTEND_URL`; set `PHOTO_RETENTION_DAYS`.
+
+Reviewed with `/code-review` (high), `/simplify` and `/security-review`;
+their fixes are two more commits (`d2ba112`, `4a783b3`). The security
+review found nothing.
+
+**Checked** the way CI runs, on a new database with the clock on UTC:
+backend 283 of 284 (the one failure comes from the untracked
+`seed-showcase.ts`, which CI does not have), lint, route and
+architecture checks clean; frontend build, lint and `check:pwa` (146)
+clean; end-to-end 105 of 105, none skipped.
