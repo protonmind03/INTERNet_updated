@@ -39,6 +39,7 @@ Do the steps in order. Do not skip ahead.
   - if any count is above 0, run it again with `confirm` at the end.
 - Run it again without `confirm`: every count should be 0. Rehearse it on the step 2 copy first.
 - Check that the production backend has `FRONTEND_URL` set in Railway. The new version will not start in production without it (or `CORS_ORIGINS`).
+- Set `PHOTO_RETENTION_DAYS` on the production backend (a whole number of days, at least 30, agreed with the university). From then on the server removes older time-in photos of decided logs by itself every night at 02:30. Back up the uploaded files first: the first night removes every photo already past the limit. (DEPLOY.md, "Privacy notice and photo retention".)
 
 ## Going live
 

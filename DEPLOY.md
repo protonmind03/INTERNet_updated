@@ -112,8 +112,10 @@ Optional, each can be added later:
   The app asks either way. See "Privacy notice and photo retention" below
   before setting it.
 - `PHOTO_RETENTION_DAYS` (off unless a whole number, at least 30): how old
-  a decided log's time-in photo may be before the purge script removes
-  it. Setting it removes nothing by itself.
+  a decided log's time-in photo may be before it is removed. Once it is
+  set, the server removes those photos **by itself every night at 02:30**
+  Philippine time. **Set it before going live** (see "Privacy notice and
+  photo retention" below).
 - `LOGIN_MAX_FAILURES` (default 5): wrong passwords allowed on one account
   before a 15-minute lockout.
 - `LOGIN_IP_MAX_FAILURES` (default 100): wrong passwords allowed from one
@@ -732,19 +734,34 @@ unable to time in, with no way to agree. Once everyone has the current app
 (a week after the deploy is a safe wait), set `PRIVACY_CONSENT_REQUIRED` to
 `true` on Railway and the server refuses a time-in without consent.
 
-**Removing old photos (run by you).** Off until `PHOTO_RETENTION_DAYS` is
-set. Nothing is removed automatically; this script is the only thing that
-removes a photo, and it keeps the log, its times and its hours.
+**Removing old photos (automatic once set).** Off until
+`PHOTO_RETENTION_DAYS` is set. **It must be set before going live**: with
+it unset, time-in photos are kept with no limit. Choose the number of days
+with the university (at least 30), and say the same in the privacy
+notice's retention text.
 
-1. Back up the uploaded files first (see "Uploaded files" above).
-2. Open a shell in the backend service (`railway ssh`). The photos are on
-   that server's disk, so the script cannot do this from a laptop.
-3. `npm run privacy:purge-photos` prints how many photos are older than
+Once it is set, the server removes every time-in photo older than that
+**by itself, each night at 02:30** Philippine time
+(`backend/src/services/photoPurge.ts`, from the server's own scheduler).
+It keeps the log, its times and its hours, and touches only logs that are
+Verified or Rejected. Each night's run is a row in `photo_purge_runs`
+(one per date, even with two copies of the server). With the variable
+unset nothing runs and nothing is recorded.
+
+Before setting it the first time, back up the uploaded files (see
+"Uploaded files" above): the first night removes every photo already past
+the limit.
+
+To see or run it by hand (optional):
+
+1. Open a shell in the backend service (`railway ssh`). While the photos
+   are on that server's disk, the script cannot do this from a laptop.
+2. `npm run privacy:purge-photos` prints how many photos are older than
    the limit and removes nothing.
-4. `npm run privacy:purge-photos -- --confirm` removes them.
+3. `npm run privacy:purge-photos -- --confirm` removes them now instead of
+   waiting for the night.
 
-Only logs that are Verified or Rejected are touched. This has been run on
-a local database only, not on the host.
+The script has been run on a local database only, not on the host.
 
 ## Before a Round 2 release goes live
 
@@ -1019,7 +1036,8 @@ weekly report, adds up over a term: this is the best reason yet to move
 uploads to a bucket (see "Keeping uploaded files in a bucket").
 
 **A decision owed: how long pictures are kept.** `PHOTO_RETENTION_DAYS`
-and `npm run photos:purge` cover time-in photos only. Pictures attached
+(the nightly removal, and `npm run privacy:purge-photos`) covers time-in
+photos only. Pictures attached
 to entries are kept with no limit, like documents. If they should also
 expire, say after how long and whether a concern's pictures are an
 exception, and the purge can be extended.
