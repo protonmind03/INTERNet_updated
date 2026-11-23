@@ -2123,7 +2123,7 @@ the three-colour redesign added; that test failed before Phase 0.
 `FRONTEND_URL`; set `PHOTO_RETENTION_DAYS`.
 
 Reviewed with `/code-review` (high), `/simplify` and `/security-review`;
-their fixes are two more commits (`d2ba112`, `4a783b3`). The security
+their fixes are two more commits (`8c643df`, `b3abee0`). The security
 review found nothing.
 
 **Checked** the way CI runs, on a new database with the clock on UTC:
