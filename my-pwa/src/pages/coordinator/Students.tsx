@@ -625,12 +625,15 @@ function StudentDialog({
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     const hours = Number(form.required_hours);
+    // A new student's hours, never typed, are left to the server: it uses the
+    // program's (even one typed as text when the lists did not load), then 180.
+    const sendHours = Boolean(existing) || hoursTyped;
     if (!form.name.trim()) return setError("Enter the student's full name.");
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
       return setError("Enter a valid email address.");
     }
-    if (!Number.isFinite(hours) || hours <= 0) {
-      return setError("Required hours must be a number greater than zero.");
+    if (sendHours && (!Number.isInteger(hours) || hours < 1 || hours > 5000)) {
+      return setError("Required hours must be a whole number from 1 to 5000.");
     }
     if (!existing) {
       if (!form.student_id.trim()) return setError("Enter the student ID.");
@@ -656,7 +659,7 @@ function StudentDialog({
           : {}),
         company: form.company.trim() || null,
         supervisor_id: form.supervisor_id || null,
-        required_hours: hours,
+        ...(sendHours ? { required_hours: hours } : {}),
       };
       if (existing) {
         await coordinatorRequest(

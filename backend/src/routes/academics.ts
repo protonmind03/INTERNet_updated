@@ -1,6 +1,6 @@
 import type express from "express";
 import type { Pool } from "pg";
-import { BLOCK_NAME_SQL, loadCatalogue } from "../services/academics";
+import { BLOCK_NAME_SQL, loadCatalogue, requiredHoursProblem, wholeHours } from "../services/academics";
 import { markKey } from "../services/psuMarks";
 
 /*
@@ -173,9 +173,8 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       return "A program's formal name must be at most 200 characters.";
     }
     // Migration 077: hours a new student of the program gets; null clears them (180 then applies).
-    if (has(body, "required_hours") && entry.required_hours !== null && entry.required_hours !== "") {
-      const hours = Number(entry.required_hours);
-      if (!Number.isInteger(hours) || hours < 1 || hours > 5000) return "Required hours must be a whole number from 1 to 5000, or empty.";
+    if (has(body, "required_hours") && requiredHoursProblem(entry.required_hours)) {
+      return "Required hours must be a whole number from 1 to 5000, or empty.";
     }
     for (const flag of ["ojt_applies", "is_active"]) {
       if (has(body, flag) && typeof entry[flag] !== "boolean") return `${flag === "ojt_applies" ? "OJT applies" : "Active"} must be yes or no.`;
@@ -183,10 +182,8 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     return markProblem(body, "org");
   };
   /** The program's required hours from a checked body: a whole number, or null for none. */
-  const programHours = (body: unknown): number | null => {
-    const value = ((body ?? {}) as Record<string, unknown>).required_hours;
-    return value === null || value === undefined || value === "" ? null : Number(value);
-  };
+  const programHours = (body: unknown): number | null =>
+    wholeHours(((body ?? {}) as Record<string, unknown>).required_hours);
   const programConflict = (error: unknown): string | null => {
     if (!isUnique(error)) return null;
     return String((error as { constraint?: string }).constraint).includes("short_code")

@@ -3,7 +3,7 @@ import "dotenv/config";
 import bcrypt from "bcryptjs";
 import { Client } from "pg";
 import { PH_PG_OPTIONS } from "../services/phTime";
-import { deletePrivateFile, newStoredFileName, savePrivateFile } from "../services/privateFileStore";
+import { currentRemoteStore, deletePrivateFile, newStoredFileName, savePrivateFile } from "../services/privateFileStore";
 
 const demoSupervisor = {
   id: "DEMO-SUP-0001",
@@ -156,8 +156,10 @@ async function seedAgencyDemo(client: Client, written: string[]): Promise<void> 
     }
 
     // Last week in Philippine dates (the connection's time zone), recorded
-    // by the supervisor so no photo is needed.
-    for (const [index, state] of demoWeek[each.id].entries()) {
+    // by the supervisor so no photo is needed. Only once: a run in a later
+    // week does not add another week.
+    const hasLogs = await client.query(`SELECT 1 FROM attendance WHERE student_id = $1 LIMIT 1`, [each.id]);
+    for (const [index, state] of hasLogs.rows.length > 0 ? [] : demoWeek[each.id].entries()) {
       const open = state === "Open";
       const status = open ? "Pending" : state;
       const decided = status === "Verified" || status === "Rejected";
@@ -183,26 +185,30 @@ async function seedAgencyDemo(client: Client, written: string[]): Promise<void> 
     }
   }
 
-  // One weekly report waiting for its supervisor.
+  // One weekly report waiting for its supervisor, once.
   await client.query(
     `INSERT INTO journals (student_id, week_start, activities, learnings, challenges, solutions, status, submitted_at, updated_at)
-     VALUES ($1, date_trunc('week', CURRENT_DATE)::date - 7,
-             'Encoded applicant records and helped prepare a training schedule.',
-             'How a government office tracks its documents from receipt to release.',
-             'Learning the filing codes in my first days.',
-             'I kept a list of the codes and asked my supervisor when unsure.',
-             'Submitted', NOW(), NOW())
+     SELECT $1::varchar, date_trunc('week', CURRENT_DATE)::date - 7,
+            'Encoded applicant records and helped prepare a training schedule.',
+            'How a government office tracks its documents from receipt to release.',
+            'Learning the filing codes in my first days.',
+            'I kept a list of the codes and asked my supervisor when unsure.',
+            'Submitted', NOW(), NOW()
+     WHERE NOT EXISTS (SELECT 1 FROM journals WHERE student_id = $1)
      ON CONFLICT DO NOTHING`,
     [demoAgencyTrainees[2].id]
   );
 
-  // One document waiting for review, with a real file behind it.
+  // One document waiting for review, with a real file behind it. Never
+  // into a bucket: settings for one in backend/.env could be a real one.
   const trainee = demoAgencyTrainees[0];
   const hasDocument = await client.query(
     `SELECT 1 FROM documents WHERE student_id = $1 AND doc_type = 'Endorsement' LIMIT 1`,
     [trainee.id]
   );
-  if (hasDocument.rows.length === 0) {
+  if (hasDocument.rows.length === 0 && currentRemoteStore()) {
+    console.log("Bucket settings are set, so the demo's pending document was left out (the seed writes files to this computer only).");
+  } else if (hasDocument.rows.length === 0) {
     const fileName = await savePrivateFile(
       { buffer: DEMO_PDF, originalname: "endorsement.pdf", mimetype: "application/pdf", size: DEMO_PDF.length } as Express.Multer.File,
       newStoredFileName("endorsement.pdf")
@@ -424,7 +430,8 @@ async function seedDemoData() {
 
     await client.query("COMMIT");
   } catch (error) {
-    await client.query("ROLLBACK");
+    // The files go even when the rollback itself fails (a dropped connection).
+    await client.query("ROLLBACK").catch(() => undefined);
     for (const fileName of written) await deletePrivateFile(fileName).catch(() => undefined);
     throw error;
   } finally {

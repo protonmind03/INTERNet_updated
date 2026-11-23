@@ -13051,46 +13051,58 @@ test("a plain-text password can no longer sign in; db:hash-legacy-passwords hash
   const path = require("node:path");
   const pool = localTestPool();
   const stamp = Date.now().toString(36);
-  const id = `LEGACY-${stamp}`.toUpperCase();
-  const email = `legacy.${stamp}@demo.invalid`;
-  const plain = `LegacyPlain${stamp}9`;
+  // The second starts like a bcrypt hash without being one: it is plain text too.
+  const accounts = [`LegacyPlain${stamp}9`, `$2y-not-a-hash-${stamp}9`].map((plain, n) => ({
+    id: `LEGACY-${stamp}-${n}`.toUpperCase(),
+    email: `legacy${n}.${stamp}@demo.invalid`,
+    plain,
+  }));
   const run = (...args) =>
     execFileSync(process.execPath, [path.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), path.join(__dirname, "../src/scripts/hash-legacy-passwords.ts"), ...args], {
       cwd: path.join(__dirname, ".."),
       env: process.env,
       encoding: "utf8",
     });
-  const signIn = () =>
+  const signIn = (account) =>
     jsonRequest("/api/login/student", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password: plain }),
+      body: JSON.stringify({ email: account.email, password: account.plain }),
     });
-  const stored = async () => (await pool.query(`SELECT password FROM students WHERE student_id = $1`, [id])).rows[0].password;
-  await pool.query(
-    `INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Legacy Trainee', TRUE)`,
-    [id, email, plain]
-  );
+  const stored = async (account) => (await pool.query(`SELECT password FROM students WHERE student_id = $1`, [account.id])).rows[0].password;
+  const printsOnlyCounts = (output) => {
+    for (const account of accounts) {
+      for (const secret of [account.plain, account.email, account.id]) assert.ok(!output.includes(secret), "only counts are printed");
+    }
+  };
+  for (const account of accounts) {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, $3, 'Legacy Trainee', TRUE)`,
+      [account.id, account.email, account.plain]
+    );
+  }
   try {
-    assert.equal((await signIn()).response.status, 401, "a stored plain-text value never matches");
+    for (const account of accounts) {
+      assert.equal((await signIn(account)).response.status, 401, "a stored plain-text value never matches");
+    }
 
     const dry = run();
     assert.match(dry, /students: \d+ plain-text passwords/);
-    assert.doesNotMatch(dry, new RegExp(`${plain}|${email}|${id}`), "only counts are printed");
-    assert.equal(await stored(), plain, "a dry run writes nothing");
+    printsOnlyCounts(dry);
+    for (const account of accounts) assert.equal(await stored(account), account.plain, "a dry run writes nothing");
 
     const written = run("--confirm");
     assert.match(written, /students: \d+ of \d+ plain-text passwords hashed/);
-    assert.doesNotMatch(written, new RegExp(`${plain}|${email}|${id}`), "only counts are printed");
-    const hash = await stored();
-    assert.match(hash, /^\$2[aby]\$12\$/, "hashed with the server's 12 rounds");
-
-    const after = await signIn();
-    assert.equal(after.response.status, 200, JSON.stringify(after.body));
-    assert.equal(typeof after.body.token, "string");
+    printsOnlyCounts(written);
+    for (const account of accounts) {
+      assert.match(await stored(account), /^\$2[aby]\$12\$/, "hashed with the server's 12 rounds");
+      const after = await signIn(account);
+      assert.equal(after.response.status, 200, JSON.stringify(after.body));
+      assert.equal(typeof after.body.token, "string");
+    }
     assert.match(run(), /Nothing to do|students: 0 plain-text passwords/);
   } finally {
-    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1::varchar[])`, [accounts.map((account) => account.id)]);
     await pool.end();
   }
 });
@@ -13177,6 +13189,13 @@ test("required hours by program: seeded for BPA, BSIT and BSBA; a new or importe
     assert.equal(await hoursOf(sid(4)), 180, "no program: 180, as before");
     assert.equal((await create(5, { program: "Not A Listed Program" })).response.status, 201);
     assert.equal(await hoursOf(sid(5)), 180, "a program only as text: 180");
+    for (const bad of [0.4, 1.5, "  12a", true]) {
+      assert.equal((await create(`bad-${String(bad).length}`, { program_id: made.program, required_hours: bad })).response.status, 400, `${bad} hours are refused`);
+    }
+    assert.equal((await create(12, { program_id: made.program, required_hours: "   " })).response.status, 201, "blank hours are empty hours");
+    assert.equal(await hoursOf(sid(12)), 333);
+    assert.equal((await send("PUT", `/api/coordinator/students/${encodeURIComponent(sid(2))}`, { required_hours: 2.5 })).response.status, 400, "an edit takes whole hours too");
+    assert.equal((await send("PUT", `/api/coordinator/programs/${made.program}`, { required_hours: true })).response.status, 400, "true is not hours");
 
     const rows = [
       { student_id: sid(6), name: "Imported Six", email: `${sid(6).toLowerCase()}@demo.invalid`, program: `BSH${stamp}` },
@@ -13184,6 +13203,7 @@ test("required hours by program: seeded for BPA, BSIT and BSBA; a new or importe
       { student_id: sid(8), name: "Imported Eight", email: `${sid(8).toLowerCase()}@demo.invalid`, required_hours: "" },
       { student_id: sid(9), name: "Imported Nine", email: `${sid(9).toLowerCase()}@demo.invalid`, program: "BSIT" },
       { student_id: sid(10), name: "Imported Ten", email: `${sid(10).toLowerCase()}@demo.invalid`, program: `BSH${stamp}`, required_hours: "0" },
+      { student_id: sid(13), name: "Imported Thirteen", email: `${sid(13).toLowerCase()}@demo.invalid`, program: `BSH${stamp}`, required_hours: "0.4" },
     ];
     const dry = await send("POST", "/api/coordinator/students/import", { students: rows, dry_run: true });
     assert.equal(dry.response.status, 200, JSON.stringify(dry.body));
@@ -13191,6 +13211,7 @@ test("required hours by program: seeded for BPA, BSIT and BSBA; a new or importe
     assert.equal(imported.response.status, 201, JSON.stringify(imported.body));
     const status = Object.fromEntries(imported.body.results.map((row) => [row.student_id, row.status]));
     assert.equal(status[sid(10)], "error", "0 hours are still refused");
+    assert.equal(status[sid(13)], "error", "0.4 hours are refused, not rounded to 0");
     assert.equal(await hoursOf(sid(6)), 333, "import without hours: the program's");
     assert.equal(await hoursOf(sid(7)), 250, "import with hours: those");
     assert.equal(await hoursOf(sid(8)), 180, "import with no program: 180");
@@ -13246,11 +13267,13 @@ test("the demo seed adds PSU Lingayen agencies and fictional trainees, all @demo
     )).rows;
     for (const wanted of ["Verified", "Pending", "Rejected"]) assert.ok(states.some((row) => row.status === wanted), `a ${wanted} day`);
     assert.ok(states.some((row) => row.open), "a day with no time-out");
-    assert.equal((await pool.query(`SELECT 1 FROM documents WHERE student_id LIKE 'DEMO-STU-01%' AND status = 'Pending'`)).rows.length, 1);
-    assert.equal((await pool.query(`SELECT 1 FROM journals WHERE student_id LIKE 'DEMO-STU-01%' AND status = 'Submitted'`)).rows.length, 1);
+    assert.ok((await pool.query(`SELECT 1 FROM documents WHERE student_id LIKE 'DEMO-STU-01%' AND status = 'Pending'`)).rows.length >= 1, "a document waiting");
+    assert.ok((await pool.query(`SELECT 1 FROM journals WHERE student_id LIKE 'DEMO-STU-01%' AND status = 'Submitted'`)).rows.length >= 1, "a weekly report waiting");
 
     // The demo accounts the other tests use are as they were.
-    assert.equal((await pool.query(`SELECT 1 FROM students WHERE supervisor_id = 'DEMO-SUP-0001'`)).rows.length, 2);
+    // (Other journeys add interns to the demo supervisor, so their number is not checked here.)
+    assert.equal((await pool.query(`SELECT 1 FROM students WHERE student_id LIKE 'DEMO-STU-01%' AND supervisor_id = 'DEMO-SUP-0001'`)).rows.length, 0, "no new trainee goes to the demo supervisor");
+    assert.equal((await pool.query(`SELECT 1 FROM students WHERE student_id IN ('DEMO-STU-0001', 'DEMO-STU-0002') AND supervisor_id = 'DEMO-SUP-0001'`)).rows.length, 2);
     const agencySupervisor = await login("supervisor", "demo-sup-0105@demo.invalid", "SupervisorDemo123!");
     assert.equal(agencySupervisor.supervisor.supervisor_id, "DEMO-SUP-0105");
   } finally {

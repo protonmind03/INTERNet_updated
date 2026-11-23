@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-261 routes in 17 files; 52 services in use.
+261 routes in 17 files; 53 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -72,6 +72,7 @@ flowchart LR
     services_offlineActions["offlineActions.ts"]
     services_offlineAttestation["offlineAttestation.ts"]
     services_passkeys["passkeys.ts"]
+    services_passwordHash["passwordHash.ts"]
     services_performance["performance.ts"]
     services_phTime["phTime.ts"]
     services_photoPurge["photoPurge.ts"]
@@ -207,6 +208,7 @@ flowchart LR
   server --> services_notificationPreferences
   server --> services_offlineActions
   server --> services_passkeys
+  server --> services_passwordHash
   server --> services_phTime
   server --> services_photoPurge
   server --> services_photoRedo
@@ -398,6 +400,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `offlineActions.ts` | `routes/attachments.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
 | `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
+| `passwordHash.ts` | `server.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
 | `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/supervisorDigest.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
 | `photoPurge.ts` | `routes/console.ts`, `server.ts` |

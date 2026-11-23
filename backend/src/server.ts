@@ -23,6 +23,7 @@ import { runPhotoPurgeIfDue } from "./services/photoPurge";
 import { runUploadsPackIfDue } from "./services/backups";
 import { stripImageMetadata } from "./services/imageMetadata";
 import { requireCorsOrigins } from "./services/corsOrigins";
+import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
 import {
   publishNotification,
@@ -72,7 +73,7 @@ import { registerTimeRecordRoutes } from "./routes/timeRecord";
 import { markActed, notificationKind, type NotificationKind } from "./services/notificationKinds";
 import { registerPasskeyRoutes } from "./routes/passkeys";
 import { recordStepVerification, verifyStep, type PasskeyStep } from "./services/passkeys";
-import { loadCatalogue, requiredHoursFor, resolvePlacement } from "./services/academics";
+import { loadCatalogue, requiredHoursFor, requiredHoursProblem, resolvePlacement, wholeHours } from "./services/academics";
 import {
   bindFilters,
   filterConditions,
@@ -744,7 +745,7 @@ app.post("/api/auth/password-reset/confirm", async (req, res) => {
   }
 });
 
-const BCRYPT_ROUNDS = 12;
+// BCRYPT_ROUNDS and BCRYPT_HASH: services/passwordHash.ts.
 const PASSWORD_POLICY_MESSAGE =
   "Use 12–128 characters with at least one uppercase letter, one lowercase letter, and one number.";
 
@@ -879,7 +880,7 @@ async function verifyPassword(
 ): Promise<boolean> {
   // Only a bcrypt hash can match. A plain-text value left from before
   // passwords were hashed never does (npm run db:hash-legacy-passwords).
-  if (typeof stored !== "string" || !stored.startsWith("$2")) return false;
+  if (typeof stored !== "string" || !BCRYPT_HASH.test(stored)) return false;
   return bcrypt.compare(plain, stored);
 }
 
@@ -6416,16 +6417,6 @@ async function supervisorProblem(
   return "That supervisor's account is deactivated. Choose an active supervisor.";
 }
 
-/** Why a required-hours value is not acceptable, or null when it is. */
-function requiredHoursProblem(value: unknown): string | null {
-  if (value === undefined || value === null || value === "") return null;
-  const hours = Number(value);
-  if (!Number.isFinite(hours) || hours <= 0 || hours > 5000) {
-    return "Required hours must be a number between 1 and 5000.";
-  }
-  return null;
-}
-
 /** Sends the same notification to every active student and supervisor. */
 async function notifyEveryone(notification: {
   title: string;
@@ -6632,7 +6623,7 @@ app.put(
           placement ? placement.program_text : program || null,
           company || null,
           cleanId(supervisor_id) || null,
-          required_hours ? Math.round(Number(required_hours)) : null,
+          wholeHours(required_hours),
           studentId,
           // Only reassign (or unassign) when the request names a supervisor
           // field; an edit that omits it keeps the current supervisor.

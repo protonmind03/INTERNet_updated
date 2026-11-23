@@ -3,7 +3,7 @@
 Production (`main`) was last updated on 11 October 2026. Going live brings the following:
 
 - Everything built since then: 233 commits.
-- 42 database migrations, numbered 035 to 076.
+- 43 database migrations, numbered 035 to 077.
 - The scheduled backups. These need the new code before they can run.
 
 Do the steps in order. Do not skip ahead.
@@ -16,11 +16,12 @@ Do the steps in order. Do not skip ahead.
 
 **2. Rehearse the migrations on a copy.**
 - Restore the backup into a throwaway local database.
-- Run `npm run db:migrate` against it, with all 42 migrations.
+- Run `npm run db:migrate` against it, with all 43 migrations.
 - Check that the app signs in and the record counts match.
 - Done on this computer only. The copy holds real students' data: never put it in seed data, screenshots or the repository, and drop it afterwards.
 
 **3. Push to the test site.**
+- First, on the test site's database, do step 4's password hashing and its `FRONTEND_URL` check (add `--environment staging` to both `railway` commands). The new version refuses plain-text passwords and will not start without `FRONTEND_URL`, and the test site deploys it as soon as CI passes.
 - Push `ui-redesign`. CI runs first.
 - Then check the test site:
   - sign in as each role;

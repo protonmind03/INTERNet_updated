@@ -239,12 +239,31 @@ export const hoursLeftEmpty = (value: unknown): boolean =>
   value === undefined || value === null || (typeof value === "string" && value.trim() === "");
 
 /**
+ * Hours as given, when they are a whole number from 1 to 5000 (a number,
+ * or digits as text); otherwise null. `true`, "0x1F" or 1.5 are not hours.
+ */
+export function wholeHours(value: unknown): number | null {
+  const hours =
+    typeof value === "number" ? value : typeof value === "string" && /^\s*\d{1,4}\s*$/.test(value) ? Number(value) : NaN;
+  return Number.isInteger(hours) && hours >= 1 && hours <= 5000 ? hours : null;
+}
+
+export const REQUIRED_HOURS_MESSAGE = "Required hours must be a whole number from 1 to 5000.";
+
+/** Why given required hours are not acceptable, or null when they are fine or left empty. */
+export function requiredHoursProblem(value: unknown): string | null {
+  return hoursLeftEmpty(value) || wholeHours(value) !== null ? null : REQUIRED_HOURS_MESSAGE;
+}
+
+/**
  * The required hours a new student is created with (Phase 0.3): the hours
  * given for them, else their program's (migration 077), else 180. The
  * given value is checked by the caller first.
  */
 export function requiredHoursFor(catalogue: Catalogue, given: unknown, programId: number | null): number {
-  if (!hoursLeftEmpty(given)) return Math.round(Number(given));
+  const hours = wholeHours(given);
+  if (hours !== null) return hours;
+  if (!hoursLeftEmpty(given)) throw new Error(REQUIRED_HOURS_MESSAGE);
   const program = programId === null ? undefined : catalogue.programs.find((item) => item.id === programId);
   return program?.required_hours ?? FALLBACK_REQUIRED_HOURS;
 }

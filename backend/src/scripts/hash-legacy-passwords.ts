@@ -1,5 +1,6 @@
 import bcrypt from "bcryptjs";
 import { confirmed as writeConfirmed, connect } from "./fk-shared";
+import { BCRYPT_HASH_SQL, BCRYPT_ROUNDS } from "../services/passwordHash";
 
 // Hashes every password still stored as plain text.
 //
@@ -9,9 +10,10 @@ import { confirmed as writeConfirmed, connect } from "./fk-shared";
 // before passwords were hashed can still sign in with what they know.
 //
 // It looks at students, supervisors and coordinators, finds the rows whose
-// password does not start with "$2" (a bcrypt hash), and stores the bcrypt
-// hash of that value instead, with the same 12 rounds as the server. It
-// prints counts only, never an email, an ID or a password.
+// password is not a whole bcrypt hash (services/passwordHash.ts, the same
+// test the sign-in uses), and stores the bcrypt hash of that value instead,
+// with the server's 12 rounds. It prints counts only, never an email, an ID
+// or a password.
 //
 // Without --confirm it only counts and changes nothing.
 //
@@ -24,9 +26,6 @@ import { confirmed as writeConfirmed, connect } from "./fk-shared";
 //   railway connect Postgres --tunnel-only
 //   railway run --service Postgres npm run db:hash-legacy-passwords <port>
 //   railway run --service Postgres npm run db:hash-legacy-passwords <port> confirm
-
-/** The same rounds as BCRYPT_ROUNDS in server.ts. */
-const BCRYPT_ROUNDS = 12;
 
 const tables = [
   { table: "students", idColumn: "student_id" },
@@ -45,8 +44,9 @@ async function main() {
       const rows = (
         await client.query<{ id: string; password: string | null }>(
           `SELECT ${idColumn}::text AS id, password FROM ${table}
-           WHERE password IS NOT NULL AND password NOT LIKE '$2%'
-           ORDER BY ${idColumn}`
+           WHERE password IS NOT NULL AND password !~ $1
+           ORDER BY ${idColumn}`,
+          [BCRYPT_HASH_SQL]
         )
       ).rows;
       let hashed = 0;
