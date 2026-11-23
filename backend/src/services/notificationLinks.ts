@@ -1,3 +1,4 @@
+import type { AccountRole } from "./accountRoles";
 /*
 |--------------------------------------------------------------------------
 | WHERE A NOTIFICATION LEADS
@@ -17,7 +18,7 @@
 |
 */
 
-export type NotificationRole = "student" | "supervisor" | "coordinator";
+export type NotificationRole = AccountRole;
 
 /** True for a title about a weekly report, which older notifications call the weekly journal. */
 const aboutReport = (title: string) => title.includes("weekly report") || title.includes("journal");
@@ -33,6 +34,7 @@ export const NOTIFICATION_PAGE: Record<NotificationRole, string> = {
   student: "/notifications",
   supervisor: "/supervisor/notifications",
   coordinator: "/coordinator/notifications",
+  director: "/director/notifications",
 };
 
 function studentLink(type: string, title: string): string {
@@ -106,8 +108,11 @@ export function notificationLink(
   if (kind === "announcement") {
     if (role === "student") return "/announcements";
     if (role === "supervisor") return "/supervisor/announcements";
+    if (role === "director") return "/director/announcements";
     return "/coordinator/announcements";
   }
+  // Phase 1.6: the Director's notifications open their own list for now.
+  if (role === "director") return NOTIFICATION_PAGE.director;
   if (role === "student") return withRecord(role, studentLink(kind, words), entity);
   if (role === "supervisor") return withRecord(role, supervisorLink(kind, words), entity);
   return withRecord(role, coordinatorLink(kind, words, entity), entity);
@@ -130,6 +135,7 @@ const RECORD_PAGES: Record<NotificationRole, Record<string, string>> = {
     journal: "/supervisor/dashboard",
   },
   coordinator: { complaint: "/coordinator/complaints" },
+  director: {},
 };
 
 /** Adds the record to a link when the page it leads to can show that record. */

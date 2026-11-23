@@ -1717,6 +1717,8 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/login/student",
   "POST /api/login/supervisor",
   "POST /api/login/coordinator",
+  // Phase 1.6: the OJT Director signs in the same way.
+  "POST /api/login/director",
   "POST /api/auth/password-reset/request",
   "POST /api/auth/password-reset/confirm",
   "GET /api/push/vapid-public-key",
@@ -1725,7 +1727,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -1746,6 +1748,9 @@ function readRoutes() {
       const roleCall = head.match(/requireRole\(([^)]*)\)/);
       if (roleCall) roles = [...roleCall[1].matchAll(/"(\w+)"/g)].map((m) => m[1]);
       else if (/requireCoordinator/.test(head)) roles = ["coordinator"];
+      // Phase 1.6: the Director's guards (server.ts).
+      else if (/requireDirector/.test(head)) roles = ["director"];
+      else if (/requireStaff|requireOffice/.test(head)) roles = ["coordinator", "director"];
       routes.push({
         method: match[1].toUpperCase(),
         path: match[3],
@@ -13563,6 +13568,246 @@ test("deployment gate: off changes nothing; on, an uncleared student is refused 
     await pool.query(`DELETE FROM attendance WHERE student_id = ANY($1::varchar[])`, [sids]);
     await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::varchar[])`, [sids]);
     await pool.query(`DELETE FROM students WHERE student_id = ANY($1::varchar[])`, [sids]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.6: the OJT Director's account, coordinator scopes, and the office's powers
+*/
+
+test("the OJT Director signs in, is locked out after repeated wrong passwords, changes their password, and has routes no one else may use", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const id = `DIR-T-${stamp}`.toUpperCase();
+  const email = `director.${stamp}@demo.invalid`;
+  const password = "DirectorPass123";
+  await pool.query(
+    `INSERT INTO directors (director_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Test Director', FALSE)`,
+    [id, email, await bcrypt.hash(password, 4)]
+  );
+  try {
+    const signIn = (pass, who = email) =>
+      jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: who, password: pass }) });
+    const ok = await signIn(password);
+    assert.equal(ok.response.status, 200, JSON.stringify(ok.body));
+    assert.equal(ok.body.director.director_id, id);
+    assert.equal(Object.hasOwn(ok.body.director, "password"), false, "the stored password is never sent");
+    assert.equal((await signIn("WrongPass12345")).response.status, 401);
+    assert.match((await signIn("WrongPass12345")).body.message, /Invalid director email or password/);
+    // A coordinator's password does not open the Director's door.
+    assert.equal((await signIn(coordinatorPassword, coordinatorEmail)).response.status, 401);
+
+    const token = ok.body.token;
+    // Its own routes, and no one else's.
+    assert.equal((await jsonRequest(`/api/directors/${id}/profile`, { headers: authHeaders(token) })).response.status, 200);
+    assert.equal((await jsonRequest(`/api/notifications/director/${id}`, { headers: authHeaders(token) })).response.status, 200);
+    assert.equal((await jsonRequest("/api/director/overview", { headers: authHeaders(token) })).response.status, 200);
+    const supervisor = await supervisorSession();
+    for (const [who, other] of [["student", studentToken], ["supervisor", supervisor.token], ["coordinator", coordinatorToken]]) {
+      for (const path of ["/api/director/overview", "/api/director/coordinators", `/api/directors/${id}/profile`, `/api/notifications/director/${id}`]) {
+        assert.equal((await jsonRequest(path, { headers: authHeaders(other) })).response.status, 403, `${who}: ${path}`);
+      }
+      assert.equal(
+        (await jsonRequest("/api/director/coordinators/COORD-0001/scopes", jsonBody(other, "PUT", { college_ids: [] }))).response.status,
+        403,
+        `${who} cannot set a scope`
+      );
+    }
+    // The Director cannot use the coordinators' own pages.
+    assert.equal((await jsonRequest("/api/coordinator/students", { headers: authHeaders(token) })).response.status, 403);
+
+    // The overview: the campus and each college.
+    const overview = await jsonRequest("/api/director/overview", { headers: authHeaders(token) });
+    assert.equal(typeof overview.body.campus.interns, "number");
+    assert.ok(Array.isArray(overview.body.colleges) && overview.body.colleges.length > 0);
+    for (const row of overview.body.colleges) assert.equal(row.on_track + row.at_risk, row.interns);
+
+    // Password change: the current one first, then other sessions end.
+    const change = (body, tok = token) => jsonRequest(`/api/directors/${id}/password`, jsonBody(tok, "PUT", body));
+    assert.equal((await change({ current_password: "WrongPass12345", new_password: "NewDirectorPass456" })).response.status, 401);
+    assert.equal((await change({ current_password: password, new_password: "short" })).response.status, 400);
+    const changed = await change({ current_password: password, new_password: "NewDirectorPass456" });
+    assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
+    assert.equal((await jsonRequest(`/api/directors/${id}/profile`, { headers: authHeaders(token) })).response.status, 403, "the old session has ended");
+    assert.equal((await jsonRequest(`/api/directors/${id}/profile`, { headers: authHeaders(changed.body.token) })).response.status, 200);
+    assert.equal((await signIn("NewDirectorPass456")).response.status, 200);
+
+    // Lockout: after five wrong passwords the right one waits too.
+    for (let i = 0; i < 5; i += 1) await signIn("WrongPass12345");
+    assert.equal((await signIn("NewDirectorPass456")).response.status, 429, "locked out");
+  } finally {
+    await pool.query(`DELETE FROM login_attempts`);
+    await pool.query(`DELETE FROM directors WHERE director_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+test("coordinator scopes: a scoped coordinator cannot list, open or decide a student outside their colleges or programs; with no scope they see everyone", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const coordinatorId = `SCOPE-C-${stamp}`.toUpperCase();
+  const directorId = `SCOPE-D-${stamp}`.toUpperCase();
+  const inside = `SCOPE-IN-${stamp}`.toUpperCase();
+  const outside = `SCOPE-OUT-${stamp}`.toUpperCase();
+  const bsit = (await pool.query(`SELECT id, college_id FROM programs WHERE short_code = 'BSIT'`)).rows[0];
+  const bpa = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BPA'`)).rows[0].id;
+  const supervisor = await supervisorSession();
+  const supervisorId = String(supervisor.supervisor.supervisor_id);
+  await pool.query(
+    `INSERT INTO coordinators (coordinator_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Scoped Coordinator', FALSE)`,
+    [coordinatorId, `${coordinatorId.toLowerCase()}@demo.invalid`, await bcrypt.hash("ScopedCoord123", 4)]
+  );
+  await pool.query(
+    `INSERT INTO directors (director_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Scope Director', FALSE)`,
+    [directorId, `${directorId.toLowerCase()}@demo.invalid`, await bcrypt.hash("ScopeDirector123", 4)]
+  );
+  for (const [sid, program] of [[inside, bsit.id], [outside, bpa]]) {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, supervisor_id, program_id) VALUES ($1, $2, 'x', $3, TRUE, $4, $5)`,
+      [sid, `${sid.toLowerCase()}@demo.invalid`, sid === inside ? "Scope Inside" : "Scope Outside", supervisorId, program]
+    );
+  }
+  const logs = {};
+  for (const sid of [inside, outside]) {
+    logs[sid] = (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 30, NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days' + INTERVAL '8 hours', 8, 'Pending') RETURNING id`,
+      [sid]
+    )).rows[0].id;
+  }
+  try {
+    const coordinator = (await jsonRequest("/api/login/coordinator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `${coordinatorId.toLowerCase()}@demo.invalid`, password: "ScopedCoord123" }) })).body.token;
+    const director = (await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `${directorId.toLowerCase()}@demo.invalid`, password: "ScopeDirector123" }) })).body.token;
+    const listed = async () => {
+      const body = (await jsonRequest(`/api/coordinator/students?q=SCOPE-`, { headers: authHeaders(coordinator) })).body;
+      return (body.students ?? body).map((row) => row.student_id);
+    };
+
+    // No scope: every student, as before.
+    assert.ok((await listed()).includes(outside), "with no scope, every student");
+
+    // The Director gives the coordinator one college (BSIT's).
+    const scoped = await jsonRequest(`/api/director/coordinators/${coordinatorId}/scopes`, jsonBody(director, "PUT", { college_ids: [bsit.college_id] }));
+    assert.equal(scoped.response.status, 200, JSON.stringify(scoped.body));
+    assert.equal((await jsonRequest(`/api/director/coordinators/${coordinatorId}/scopes`, jsonBody(director, "PUT", { college_ids: [999999999] }))).response.status, 400);
+    const coordinators = (await jsonRequest("/api/director/coordinators", { headers: authHeaders(director) })).body.coordinators;
+    assert.deepEqual(coordinators.find((row) => row.coordinator_id === coordinatorId).college_ids, [bsit.college_id]);
+
+    // Lists: students, documents, the clearance board, the report behind the exports.
+    const now = await listed();
+    assert.ok(now.includes(inside), "a student of the college is listed");
+    assert.ok(!now.includes(outside), "a student outside it is not");
+    const board = (await jsonRequest("/api/coordinator/clearance", { headers: authHeaders(coordinator) })).body.students.map((row) => row.student_id);
+    assert.ok(board.includes(inside) && !board.includes(outside), "the clearance board too");
+    const report = await jsonRequest("/api/coordinator/report", { headers: authHeaders(coordinator) });
+    assert.equal(report.response.status, 200, JSON.stringify(report.body).slice(0, 200));
+    assert.ok(!JSON.stringify(report.body).includes(outside), "the report behind the exports too");
+    const documents = await jsonRequest("/api/coordinator/documents", { headers: authHeaders(coordinator) });
+    assert.ok(!documents.body.students.some((row) => row.student_id === outside), "the documents page too");
+
+    // Opening a record: the same 404 as a student who does not exist.
+    const overview = (sid) => jsonRequest(`/api/coordinator/students/${sid}/overview`, { headers: authHeaders(coordinator) });
+    assert.equal((await overview(inside)).response.status, 200);
+    const hidden = await overview(outside);
+    const missing = await overview("NOBODY-AT-ALL-0000");
+    assert.equal(hidden.response.status, 404);
+    assert.deepEqual(hidden.body, missing.body, "outside the scope reads as not there");
+
+    // Deciding: a log of a student outside is not found either; one inside is decided.
+    const decide = (logId) => jsonRequest(`/api/attendance/${logId}/status`, jsonBody(coordinator, "PATCH", { status: "Verified" }));
+    assert.equal((await decide(logs[outside])).response.status, 404, "a log outside the scope");
+    assert.equal((await jsonRequest(`/api/coordinator/students/${outside}/clearance`, jsonBody(coordinator, "POST", { override_reason: "Testing a scoped coordinator." }))).response.status, 404);
+    const bulk = await jsonRequest("/api/coordinator/clearance/bulk", jsonBody(coordinator, "POST", { student_ids: [outside] }));
+    assert.equal(bulk.body.results[0].status, "missing", "bulk clearing skips a student outside");
+
+    // The unscoped coordinator still sees everyone.
+    const everyone = (await jsonRequest(`/api/coordinator/students?q=SCOPE-`, { headers: authHeaders(coordinatorToken) })).body;
+    assert.ok((everyone.students ?? everyone).some((row) => row.student_id === outside));
+
+    // The scope change is audited with the old and the new value.
+    let audit;
+    for (let i = 0; i < 20 && !audit; i += 1) {
+      audit = (await pool.query(`SELECT details FROM audit_log WHERE action = 'coordinator.scope' AND entity_id = $1 ORDER BY id DESC LIMIT 1`, [coordinatorId])).rows[0];
+      if (!audit) await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.deepEqual(audit.details.college_ids, [bsit.college_id]);
+    assert.deepEqual(audit.details.old_college_ids, []);
+  } finally {
+    await pool.query(`DELETE FROM attendance WHERE student_id = ANY($1::varchar[])`, [[inside, outside]]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::varchar[])`, [[inside, outside]]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1::varchar[])`, [[inside, outside]]);
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [coordinatorId]);
+    await pool.query(`DELETE FROM directors WHERE director_id = $1`, [directorId]);
+    await pool.end();
+  }
+});
+
+test("until an OJT Director exists the coordinators keep the office's powers; once one does, programs, the rules and coordinator accounts are the Director's", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const directorId = `OFFICE-D-${stamp}`.toUpperCase();
+  const program = (await pool.query(`SELECT id, required_hours FROM programs WHERE short_code = 'BSCS'`)).rows[0];
+  const office = async () => (await jsonRequest("/api/coordinator/office", { headers: authHeaders(coordinatorToken) })).body.director_exists;
+  try {
+    // No Director: the coordinator edits a program, as before.
+    assert.equal(await office(), false, "no Director yet: the coordinator's Home shows the banner");
+    assert.equal((await jsonRequest(`/api/coordinator/programs/${program.id}`, jsonBody(coordinatorToken, "PUT", { required_hours: 300 }))).response.status, 200);
+
+    await pool.query(
+      `INSERT INTO directors (director_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Office Director', FALSE)`,
+      [directorId, `${directorId.toLowerCase()}@demo.invalid`, await bcrypt.hash("OfficeDirector123", 4)]
+    );
+    const director = (await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `${directorId.toLowerCase()}@demo.invalid`, password: "OfficeDirector123" }) })).body.token;
+    assert.equal(await office(), true);
+
+    // Now the coordinator is refused, with the reason; the Director is not.
+    const asCoordinator = await jsonRequest(`/api/coordinator/programs/${program.id}`, jsonBody(coordinatorToken, "PUT", { required_hours: 320 }));
+    assert.equal(asCoordinator.response.status, 403);
+    assert.equal(asCoordinator.body.code, "DIRECTOR_MANAGES");
+    assert.equal((await jsonRequest(`/api/coordinator/programs/${program.id}`, jsonBody(director, "PUT", { required_hours: 320 }))).response.status, 200);
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/deployment_gate_enabled", jsonBody(coordinatorToken, "PUT", { value: false }))).response.status, 403);
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/deployment_gate_enabled", jsonBody(director, "PUT", { value: false }))).response.status, 200);
+    assert.equal((await jsonRequest("/api/coordinator/coordinators", jsonBody(coordinatorToken, "POST", { coordinator_id: `X-${stamp}`, name: "Nobody", email: `x.${stamp}@demo.invalid`, password: "TempPass12345" }))).response.status, 403);
+    assert.equal((await jsonRequest("/api/coordinator/coordinators/COORD-0001/status", jsonBody(coordinatorToken, "PATCH", { is_active: true }))).response.status, 403);
+    assert.equal((await jsonRequest("/api/coordinator/coordinators/DEMO-COORD-0001/reset-password", jsonBody(coordinatorToken, "POST", { password: "TempPass12345" }))).response.status, 403);
+    // Blocks and students stay with the coordinators.
+    assert.equal((await jsonRequest("/api/coordinator/academics", { headers: authHeaders(coordinatorToken) })).response.status, 200);
+    assert.equal((await jsonRequest("/api/coordinator/academics", { headers: authHeaders(director) })).response.status, 200);
+
+    // A deactivated Director gives the powers back.
+    await pool.query(`UPDATE directors SET is_active = FALSE WHERE director_id = $1`, [directorId]);
+    assert.equal(await office(), false);
+    assert.equal((await jsonRequest(`/api/coordinator/programs/${program.id}`, jsonBody(coordinatorToken, "PUT", { required_hours: program.required_hours }))).response.status, 200);
+  } finally {
+    await pool.query(`UPDATE programs SET required_hours = $2 WHERE id = $1`, [program.id, program.required_hours]);
+    await pool.query(`DELETE FROM directors WHERE director_id = $1`, [directorId]);
+    await pool.end();
+  }
+});
+
+test("director:create makes a Director account that must change its password, with a temporary password shown once", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const email = `made.${Date.now().toString(36)}@demo.invalid`;
+  try {
+    const printed = runBackendScript("create-director.ts", "--email", email, "--name", "Made By Script");
+    const password = /Temporary password[^:]*: (\S+)/.exec(printed)?.[1];
+    assert.ok(password, "the temporary password is printed");
+    const row = (await pool.query(`SELECT must_change_password, is_active, password FROM directors WHERE email = $1`, [email])).rows[0];
+    assert.equal(row.must_change_password, true);
+    assert.equal(row.is_active, true);
+    assert.match(row.password, /^\$2[aby]\$12\$/, "stored hashed");
+    const signIn = await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+    assert.equal(signIn.response.status, 200);
+    assert.throws(() => runBackendScript("create-director.ts", "--email", email, "--name", "Twice"), "the same email cannot be used twice");
+  } finally {
+    await pool.query(`DELETE FROM directors WHERE email = $1`, [email]);
     await pool.end();
   }
 });

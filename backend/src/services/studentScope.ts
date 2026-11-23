@@ -28,7 +28,15 @@
 | any query, whatever parameters it already has. The column names are
 | fixed here; nothing from the request is ever written into the SQL.
 |
+| The coordinator's scope (Phase 1.6). A coordinator given colleges or
+| programs by the OJT Director sees only those students. When one is
+| signed in, readStudentFilters adds their scope (services/
+| coordinatorScope.ts) as one more filter, so every list built here is
+| narrowed without the route knowing. Nobody else has a scope.
+|
 */
+
+import { currentScope, programInScope, type CoordinatorScope } from "./coordinatorScope";
 
 export type StudentFilters = {
   /** A term's id as text, or "none". */
@@ -39,6 +47,8 @@ export type StudentFilters = {
   company?: number;
   /** A supervisor's id, or "none". */
   supervisor?: string;
+  /** The signed-in coordinator's scope (Phase 1.6); never from the request. */
+  scope?: CoordinatorScope;
 };
 
 const WHOLE = /^[0-9]{1,9}$/;
@@ -79,6 +89,8 @@ export function readStudentFilters(
     if (supervisor.length > 80) return { problem: "That is not a supervisor." };
     filters.supervisor = supervisor;
   }
+  const scope = currentScope();
+  if (scope) filters.scope = scope;
   return { filters };
 }
 
@@ -108,6 +120,7 @@ export function filterConditions(filters: StudentFilters, alias = "s"): string {
   } else if (filters.supervisor !== undefined) {
     parts.push(`TRIM(${column("supervisor_id")}::text) = TRIM(:f_supervisor)`);
   }
+  if (filters.scope) parts.push(programInScope(column("program_id"), ":f_scope_colleges", ":f_scope_programs"));
   return parts.map((part) => ` AND ${part}`).join("");
 }
 
@@ -137,12 +150,15 @@ export function bindFilters(
     block: typeof filters.block === "number" ? filters.block : null,
     company: filters.company ?? null,
     supervisor: filters.supervisor ?? null,
+    scope_colleges: filters.scope?.colleges ?? [],
+    scope_programs: filters.scope?.programs ?? [],
   };
-  const text = sql.replace(/:f_(term|college|program|block|company|supervisor)\b/g, (_marker, name: string) => {
+  const cast = (name: string) => (name === "supervisor" ? "::text" : name.startsWith("scope_") ? "::int[]" : "::int");
+  const text = sql.replace(/:f_(term|college|program|block|company|supervisor|scope_colleges|scope_programs)\b/g, (_marker, name: string) => {
     let placeholder = placed.get(name);
     if (!placeholder) {
       values.push(valueOf[name]);
-      placeholder = `$${values.length}${name === "supervisor" ? "::text" : "::int"}`;
+      placeholder = `$${values.length}${cast(name)}`;
       placed.set(name, placeholder);
     }
     return placeholder;

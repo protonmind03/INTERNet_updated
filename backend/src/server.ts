@@ -23,7 +23,10 @@ import { runPhotoPurgeIfDue } from "./services/photoPurge";
 import { runUploadsPackIfDue } from "./services/backups";
 import { stripImageMetadata } from "./services/imageMetadata";
 import { requireCorsOrigins } from "./services/corsOrigins";
+import { NOTIFICATION_COLUMN, type AccountRole } from "./services/accountRoles";
+import { loadCoordinatorScope, outsideScope, scopeCondition, withScope } from "./services/coordinatorScope";
 import { registerClearanceRoutes } from "./routes/clearance";
+import { registerDirectorRoutes } from "./routes/director";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
@@ -301,9 +304,10 @@ function isWebPushConfigured(): boolean {
 // The page a tapped push notification opens, by recipient and subject, so
 // the tap lands on the thing the notification is about.
 const pushTargets: Record<
-  "coordinator" | "student" | "supervisor",
+  AccountRole,
   { fallback: string; byType: Record<string, string> }
 > = {
+  director: { fallback: "/director/notifications", byType: {} },
   student: {
     fallback: "/notifications",
     byType: {
@@ -333,7 +337,7 @@ const pushTargets: Record<
 };
 
 async function sendWebPush(
-  recipient: { role: "coordinator" | "student" | "supervisor"; id: string },
+  recipient: { role: AccountRole; id: string },
   notification: {
     title: string;
     message: string;
@@ -502,7 +506,7 @@ async function listQuery(
  */
 async function notificationList(
   req: express.Request,
-  column: "student_id" | "supervisor_id" | "coordinator_id",
+  column: "student_id" | "supervisor_id" | "coordinator_id" | "director_id",
   accountId: string,
   cap: string
 ) {
@@ -542,6 +546,7 @@ const accountTables = {
   student: { table: "students", idColumn: "student_id" },
   supervisor: { table: "supervisors", idColumn: "supervisor_id" },
   coordinator: { table: "coordinators", idColumn: "coordinator_id" },
+  director: { table: "directors", idColumn: "director_id" },
 } as const;
 
 const genericResetMessage =
@@ -771,7 +776,7 @@ function passwordPolicyError(password: unknown): string | null {
 // only, so local demo accounts and the API tests keep working unchanged.
 const ENFORCE_PASSWORD_CHANGE = process.env.NODE_ENV === "production";
 const PASSWORD_CHANGE_PATH =
-  /^\/api\/(students|supervisors|coordinators)\/[^/]+\/password\/?$/;
+  /^\/api\/(students|supervisors|coordinators|directors)\/[^/]+\/password\/?$/;
 
 function passwordChangeBlocks(
   req: express.Request,
@@ -1054,7 +1059,8 @@ function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
 
 type AuthedRequest = express.Request & {
   auth?: {
-    role: "coordinator" | "supervisor" | "student";
+    // Phase 1.6: the OJT Director's portal (/director).
+    role: "coordinator" | "supervisor" | "student" | "director";
     id: string;
   };
 };
@@ -1065,12 +1071,13 @@ function isAuthRole(value: unknown): value is AuthRole {
   return (
     value === "coordinator" ||
     value === "student" ||
-    value === "supervisor"
+    value === "supervisor" ||
+    value === "director"
   );
 }
 
 function signToken(
-  role: "coordinator" | "supervisor" | "student",
+  role: AuthRole,
   id: string,
   authVersion = 0
 ): string {
@@ -1166,7 +1173,26 @@ async function requireCoordinator(
     id: payload.id,
   };
 
-  next();
+  return enterCoordinatorScope(req, res, next);
+}
+
+/**
+ * Phase 1.6: a coordinator with colleges or programs given by the Director
+ * sees only those students (services/coordinatorScope.ts). A record outside
+ * them is "not found", as a missing one is; the rest of the request runs
+ * with the scope, which the shared student filters add to every list.
+ */
+async function enterCoordinatorScope(req: AuthedRequest, res: express.Response, next: express.NextFunction) {
+  try {
+    const scope = await loadCoordinatorScope(pool, String(req.auth?.id));
+    if (await outsideScope(pool, scope, req)) {
+      return res.status(404).json({ message: "Student not found." });
+    }
+    return withScope(scope, () => next());
+  } catch (error) {
+    console.error("COORDINATOR SCOPE ERROR:", error);
+    return res.status(500).json({ message: "Failed to validate coordinator access." });
+  }
 }
 
 function requireRole(
@@ -1216,6 +1242,7 @@ function requireRole(
       student: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM students WHERE student_id = $1`,
       supervisor: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM supervisors WHERE supervisor_id = $1`,
       coordinator: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM coordinators WHERE coordinator_id = $1`,
+      director: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM directors WHERE director_id = $1`,
     };
     try {
       const account = await pool.query<{
@@ -1249,9 +1276,38 @@ function requireRole(
     }
 
     req.auth = { role: tokenRole, id: payload.id };
+    if (tokenRole === "coordinator") return enterCoordinatorScope(req, res, next);
     return next();
   };
 }
+
+/*
+| Phase 1.6. The coordinators and the OJT Director share some pages' data
+| (requireStaff). The office's own decisions (managing coordinators, the
+| programs and their hours, the OJT rules) are the Director's once an
+| active Director account exists; until then the coordinators keep them,
+| as before (requireOffice).
+*/
+const staffRoles = requireRole(["coordinator", "director"]);
+
+const requireStaff: express.RequestHandler = staffRoles;
+
+const requireOffice: express.RequestHandler = (req, res, next) => {
+  staffRoles(req, res, async (error?: unknown) => {
+    if (error) return next(error);
+    try {
+      const auth = (req as AuthedRequest).auth;
+      if (auth?.role === "director" || !(await hasActiveDirector())) return next();
+      return res.status(403).json({
+        code: "DIRECTOR_MANAGES",
+        message: "The OJT Director manages this now. Ask them to change it.",
+      });
+    } catch (checkError) {
+      console.error("OFFICE CHECK ERROR:", checkError);
+      return res.status(500).json({ message: "Failed to check who may change this." });
+    }
+  });
+};
 
 /**
  * Writes one notification row. Pass exactly one of studentId,
@@ -1266,6 +1322,8 @@ async function createNotification(options: {
   studentId?: string | null;
   supervisorId?: string | null;
   coordinatorId?: string | null;
+  /** Phase 1.6: the OJT Director (migration 080). */
+  directorId?: string | null;
   title: string;
   message: string;
   type?: string;
@@ -1276,7 +1334,7 @@ async function createNotification(options: {
   actionRequired?: boolean;
 }) {
   const recipients: {
-    role: "coordinator" | "student" | "supervisor";
+    role: AccountRole;
     id: string;
   }[] = [];
   if (options.studentId) {
@@ -1287,6 +1345,9 @@ async function createNotification(options: {
   }
   if (options.coordinatorId) {
     recipients.push({ role: "coordinator", id: options.coordinatorId });
+  }
+  if (options.directorId) {
+    recipients.push({ role: "director", id: options.directorId });
   }
 
   const recipient = recipients[0];
@@ -1323,8 +1384,8 @@ async function createNotification(options: {
     `
     INSERT INTO notifications
     (student_id, supervisor_id, coordinator_id, title, message, type, is_read,
-     link, entity_type, entity_id, kind, action_required)
-    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, $10, $11)
+     link, entity_type, entity_id, kind, action_required, director_id)
+    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, $10, $11, $12)
     RETURNING id, title, message, type, created_at, link, entity_type, entity_id, kind, action_required, acted_at
     `,
     [
@@ -1339,6 +1400,7 @@ async function createNotification(options: {
       entity ? String(entity.id).slice(0, 80) : null,
       options.kind ?? rule.kind,
       options.actionRequired ?? rule.actionRequired,
+      options.directorId || null,
     ]
   );
   const payload = result.rows[0];
@@ -1469,7 +1531,7 @@ async function notifyCoordinators(notification: {
 
 app.get(
   "/api/events",
-  requireRole(["coordinator", "student", "supervisor"]),
+  requireRole(["coordinator", "student", "supervisor", "director"]),
   (request, response) => {
     const auth = (request as AuthedRequest).auth;
     if (!auth) {
@@ -1509,7 +1571,7 @@ app.get(
 
 app.post(
   "/api/logout",
-  requireRole(["coordinator", "student", "supervisor"]),
+  requireRole(["coordinator", "student", "supervisor", "director"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth;
     const token = (request.headers.authorization || "").slice(7);
@@ -1557,7 +1619,7 @@ app.get("/api/push/vapid-public-key", (_request, response) => {
 
 app.post(
   "/api/push/subscriptions",
-  requireRole(["coordinator", "student", "supervisor"]),
+  requireRole(["coordinator", "student", "supervisor", "director"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth;
     const subscription = request.body?.subscription;
@@ -1605,7 +1667,7 @@ app.post(
 const testPushAllowed = createRateLimiter(3, 60_000);
 app.post(
   "/api/push/test",
-  requireRole(["coordinator", "student", "supervisor"]),
+  requireRole(["coordinator", "student", "supervisor", "director"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth!;
     if (!isWebPushConfigured()) {
@@ -1652,7 +1714,7 @@ app.post(
 
 app.delete(
   "/api/push/subscriptions",
-  requireRole(["coordinator", "student", "supervisor"]),
+  requireRole(["coordinator", "student", "supervisor", "director"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth;
     const endpoint = request.body?.endpoint;
@@ -5867,11 +5929,7 @@ app.put(
       if (!auth) {
         return res.status(401).json({ message: "Authentication is required." });
       }
-      const recipientColumn = {
-        student: "student_id",
-        supervisor: "supervisor_id",
-        coordinator: "coordinator_id",
-      }[auth.role];
+      const recipientColumn = NOTIFICATION_COLUMN[auth.role];
 
       const result =
         await pool.query(
@@ -5999,11 +6057,7 @@ app.put(
     if (!auth) {
       return res.status(401).json({ message: "Authentication is required." });
     }
-    const recipientColumn = {
-      student: "student_id",
-      supervisor: "supervisor_id",
-      coordinator: "coordinator_id",
-    }[auth.role];
+    const recipientColumn = NOTIFICATION_COLUMN[auth.role];
 
     try {
       const result = await pool.query(
@@ -6163,80 +6217,73 @@ app.get(
 |--------------------------------------------------------------------------
 */
 
-app.post("/api/login/coordinator", loginGuard("coordinator"), async (req, res) => {
-  try {
-    const { email, password } = req.body;
+/**
+ * The staff sign-in (coordinator, and since Phase 1.6 the OJT Director): one
+ * code path for each, with the same throttling and lockout (loginGuard),
+ * the bcrypt check, the deactivated-account refusal, the hash upgrade and
+ * the first-login password change. The answer names the account by role,
+ * as the coordinator's always has ({ coordinator } / { director }).
+ */
+function staffLogin(role: "coordinator" | "director", words: string): express.RequestHandler {
+  const { table, idColumn } = accountTables[role];
+  return async (req, res) => {
+    try {
+      const { email, password } = req.body;
 
-    if (!email || !password) {
-      return res.status(400).json({
-        message: "Email and password are required.",
+      if (!email || !password) {
+        return res.status(400).json({
+          message: "Email and password are required.",
+        });
+      }
+
+      const result = await pool.query(
+        `
+        SELECT id, ${idColumn}, email, password, name, department, is_active,
+               auth_version, must_change_password
+        FROM ${table}
+        WHERE LOWER(email) = LOWER(TRIM($1))
+        `,
+        [email]
+      );
+
+      const account = result.rows[0];
+      if (!account || !(await verifyPassword(password, account.password))) {
+        return res.status(401).json({
+          message: `Invalid ${words} email or password.`,
+        });
+      }
+
+      if (account.is_active === false) {
+        return res.status(403).json({
+          message: `This ${words} account has been deactivated.`,
+        });
+      }
+
+      await strengthenPasswordHash(role, String(account[idColumn]), password, account.password);
+      delete account.password;
+      account.must_change_password =
+        ENFORCE_PASSWORD_CHANGE && account.must_change_password === true;
+
+      return res.json({
+        message: "Login successful!",
+        [role]: account,
+        must_change_password: account.must_change_password,
+        token: signToken(role, String(account[idColumn]), Number(account.auth_version)),
+      });
+    } catch (error) {
+      console.error(`${role.toUpperCase()} LOGIN ERROR:`, error);
+
+      return res.status(500).json({
+        message: `${words[0].toUpperCase()}${words.slice(1)} login failed.`,
+        error: error instanceof Error ? error.message : String(error),
       });
     }
+  };
+}
 
-    const result = await pool.query(
-      `
-      SELECT id, coordinator_id, email, password, name, department, is_active,
-             auth_version, must_change_password
-      FROM coordinators
-      WHERE LOWER(email) = LOWER(TRIM($1))
-      `,
-      [email]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(401).json({
-        message: "Invalid coordinator email or password.",
-      });
-    }
-
-    const coordinator = result.rows[0];
-
-    const passwordOk = await verifyPassword(
-      password,
-      coordinator.password
-    );
-
-    if (!passwordOk) {
-      return res.status(401).json({
-        message: "Invalid coordinator email or password.",
-      });
-    }
-
-    if (coordinator.is_active === false) {
-      return res.status(403).json({
-        message: "This coordinator account has been deactivated.",
-      });
-    }
-
-    await strengthenPasswordHash(
-      "coordinator",
-      String(coordinator.coordinator_id),
-      password,
-      coordinator.password
-    );
-    delete coordinator.password;
-    coordinator.must_change_password =
-      ENFORCE_PASSWORD_CHANGE && coordinator.must_change_password === true;
-
-    return res.json({
-      message: "Login successful!",
-      coordinator,
-      must_change_password: coordinator.must_change_password,
-      token: signToken(
-        "coordinator",
-        String(coordinator.coordinator_id),
-        Number(coordinator.auth_version)
-      ),
-    });
-  } catch (error) {
-    console.error("COORDINATOR LOGIN ERROR:", error);
-
-    return res.status(500).json({
-      message: "Coordinator login failed.",
-      error: error instanceof Error ? error.message : String(error),
-    });
-  }
-});
+app.post("/api/login/coordinator", loginGuard("coordinator"), staffLogin("coordinator", "coordinator"));
+// Phase 1.6: the OJT Director's portal.
+app.post("/api/login/director", loginGuard("director"), staffLogin("director", "director"));
 
 /*
 |--------------------------------------------------------------------------
@@ -6818,18 +6865,21 @@ app.get(
 
     try {
       const pattern = `%${query}%`;
+      // Phase 1.6: a scoped coordinator finds only their students and their concerns.
+      const studentsInScope = scopeCondition("student_id", 1);
+      const concernsInScope = scopeCondition("concerning.student_id", 1);
       const [students, supervisors, complaints] = await Promise.all([
         pool.query(
           `SELECT student_id, name, company, program
            FROM students
-           WHERE name ILIKE $1
+           WHERE (name ILIKE $1
              OR email ILIKE $1
              OR student_id::text ILIKE $1
              OR company ILIKE $1
-             OR program ILIKE $1
+             OR program ILIKE $1)${studentsInScope.sql}
            ORDER BY name ASC
            LIMIT 5`,
-          [pattern]
+          [pattern, ...studentsInScope.values]
         ),
         pool.query(
           `SELECT supervisor_id, name, company, department
@@ -6846,17 +6896,18 @@ app.get(
         pool.query(
           `SELECT id, category, description, reported_student_name,
                   company_name, status, created_at
-           FROM complaints
-           WHERE category ILIKE $1
+           FROM complaints c
+           WHERE (category ILIKE $1
              OR description ILIKE $1
              OR student_id::text ILIKE $1
              OR reported_student_name ILIKE $1
              OR company_name ILIKE $1
              OR supervisor_name ILIKE $1
-             OR created_at::text ILIKE $1
+             OR created_at::text ILIKE $1)
+             AND (${concernsInScope.sql ? `EXISTS (SELECT 1 FROM (SELECT COALESCE(c.student_id, c.reported_student_id) AS student_id) concerning WHERE TRUE${concernsInScope.sql})` : "TRUE"})
            ORDER BY created_at DESC
            LIMIT 5`,
-          [pattern]
+          [pattern, ...concernsInScope.values]
         ),
       ]);
       const destination = `?q=${encodeURIComponent(query)}`;
@@ -7495,6 +7546,8 @@ app.get(
     try {
       const query = typeof req.query.q === "string" ? req.query.q.trim() : "";
       if (query.length > 100) return res.status(400).json({ message: "Search query must be 100 characters or fewer." });
+      // Phase 1.6: a scoped coordinator counts only their students' concerns.
+      const inScope = scopeCondition("concerning.student_id", 1);
       const result = await pool.query<{ status: string; count: number }>(
         `
         SELECT c.status, COUNT(*)::int AS count
@@ -7511,9 +7564,10 @@ app.get(
             OR COALESCE(c.supervisor_name, '') ILIKE $1
             OR COALESCE(s.name, sup.name, '') ILIKE $1
             OR c.created_at::text ILIKE $1)
+          AND (${inScope.sql ? `EXISTS (SELECT 1 FROM (SELECT COALESCE(c.student_id, c.reported_student_id) AS student_id) concerning WHERE TRUE${inScope.sql})` : "TRUE"})
         GROUP BY c.status
         `,
-        [query ? `%${query}%` : null]
+        [query ? `%${query}%` : null, ...inScope.values]
       );
       const counts: Record<string, number> = { all: 0, Pending: 0, "In Review": 0, Resolved: 0, Dismissed: 0 };
       for (const row of result.rows) {
@@ -7542,6 +7596,8 @@ app.get(
         });
       }
 
+      // Phase 1.6: a scoped coordinator sees only their students' concerns.
+      const inScope = scopeCondition("concerning.student_id", 2);
       const result = await listQuery(req, { order: "created_at DESC, id DESC", date: "created_at" },
         `
         SELECT
@@ -7566,9 +7622,10 @@ app.get(
             OR COALESCE(c.supervisor_name, '') ILIKE $2
             OR COALESCE(s.name, sup.name, '') ILIKE $2
             OR c.created_at::text ILIKE $2)
+          AND (${inScope.sql ? `EXISTS (SELECT 1 FROM (SELECT COALESCE(c.student_id, c.reported_student_id) AS student_id) concerning WHERE TRUE${inScope.sql})` : "TRUE"})
         ORDER BY c.created_at DESC
         `,
-        [status || null, query ? `%${query}%` : null]
+        [status || null, query ? `%${query}%` : null, ...inScope.values]
       );
 
       return res.json({ complaints: result.rows, ...result.page });
@@ -9080,6 +9137,98 @@ app.put(
   }
 );
 
+/*
+| Phase 1.6: the OJT Director's own account and notifications.
+*/
+
+/** True once an active OJT Director account exists. Until then the coordinators keep the office's powers. */
+async function hasActiveDirector(): Promise<boolean> {
+  const found = await pool.query(`SELECT 1 FROM directors WHERE is_active = TRUE LIMIT 1`);
+  return found.rows.length > 0;
+}
+
+app.get(
+  "/api/notifications/director/:directorId",
+  requireRole("director"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      if (!auth || !sameId(auth.id, req.params.directorId)) {
+        return res.status(403).json({ message: "You can only view your own notifications." });
+      }
+      return res.json(await notificationList(req, "director_id", auth.id, "LIMIT 100"));
+    } catch (error) {
+      console.error("GET DIRECTOR NOTIFICATIONS ERROR:", error);
+      return res.status(500).json({ message: "Failed to get notifications." });
+    }
+  }
+);
+
+app.get(
+  "/api/directors/:directorId/profile",
+  requireRole("director"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || !sameId(auth.id, req.params.directorId)) {
+      return res.status(403).json({ message: "You can only view your own profile." });
+    }
+    try {
+      const result = await pool.query(
+        `SELECT director_id, email, name, department, is_active, position, office_hours, mobile_number, show_mobile, office_location
+         FROM directors WHERE director_id = $1`,
+        [auth.id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Account not found." });
+      return res.json({ director: result.rows[0] });
+    } catch (error) {
+      console.error("GET DIRECTOR PROFILE ERROR:", error);
+      return res.status(500).json({ message: "Failed to load profile." });
+    }
+  }
+);
+
+app.put(
+  "/api/directors/:directorId/profile",
+  requireRole("director"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || !sameId(auth.id, req.params.directorId)) {
+      return res.status(403).json({ message: "You can only change your own profile." });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (name.length < 2 || name.length > 150) return res.status(400).json({ message: "Enter your full name." });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 150) {
+      return res.status(400).json({ message: "Enter a valid email address." });
+    }
+    try {
+      const result = await pool.query(
+        `UPDATE directors SET name = $2, email = $3 WHERE director_id = $1
+         RETURNING director_id, email, name, department, is_active`,
+        [auth.id, name, email]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Account not found." });
+      return res.json({ message: "Profile saved.", director: result.rows[0] });
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({ message: "Another OJT Director account already uses that email." });
+      }
+      console.error("UPDATE DIRECTOR PROFILE ERROR:", error);
+      return res.status(500).json({ message: "Failed to save your profile." });
+    }
+  }
+);
+
+// For the coordinator's Home: whether an OJT Director account exists yet (the banner when not).
+app.get("/api/coordinator/office", requireCoordinator, async (_req, res) => {
+  try {
+    return res.json({ director_exists: await hasActiveDirector() });
+  } catch (error) {
+    console.error("GET OFFICE ERROR:", error);
+    return res.status(500).json({ message: "Failed to load the OJT office." });
+  }
+});
+
 app.get(
   "/api/coordinators/:coordinatorId/profile",
   requireRole("coordinator"),
@@ -9212,6 +9361,26 @@ app.put(
         message: "Failed to update password.",
         error: error instanceof Error ? error.message : String(error),
       });
+    }
+  }
+);
+
+// Phase 1.6: the OJT Director changes their own password the same way.
+app.put(
+  "/api/directors/:directorId/password",
+  requireRole("director"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const accountId = String(req.params.directorId);
+    if (!auth || !sameId(auth.id, accountId)) {
+      return res.status(403).json({ message: "You can only change your own password." });
+    }
+    try {
+      const outcome = await changeOwnPassword("director", accountId, req.body?.current_password, req.body?.new_password);
+      return res.status(outcome.status).json(outcome.body);
+    } catch (error) {
+      console.error("UPDATE DIRECTOR PASSWORD ERROR:", error);
+      return res.status(500).json({ message: "Failed to update password." });
     }
   }
 );
@@ -10336,6 +10505,13 @@ app.get(
     const storedPath = `/uploads/${filename}`;
 
     try {
+      // Phase 1.6: a scoped coordinator opens only their own students' files (values $4, $5).
+      const scopeForUploads = scopeCondition("concerning.student_id", 3);
+      const uploadScopeValues = scopeForUploads.values;
+      const uploadScope = (studentColumn: string) =>
+        scopeForUploads.sql
+          ? ` AND EXISTS (SELECT 1 FROM (SELECT ${studentColumn} AS student_id) concerning WHERE TRUE${scopeForUploads.sql})`
+          : "";
       const result = await pool.query(
         `
         SELECT
@@ -10345,7 +10521,7 @@ app.get(
               FROM attendance a
               WHERE a.image_url = $2
                 AND (
-                  $1 = 'coordinator'
+                  ($1 = 'coordinator'${uploadScope("a.student_id")})
                   OR
                   ($1 = 'student' AND a.student_id = $3)
                   OR (
@@ -10364,7 +10540,7 @@ app.get(
               FROM tasks t
               WHERE (t.submission_file = $2 OR t.attachment_file = $2)
                 AND (
-                  $1 = 'coordinator'
+                  ($1 = 'coordinator'${uploadScope("t.student_id")})
                   OR
                   ($1 = 'student' AND t.student_id = $3 AND ${released("t.")})
                   OR (
@@ -10381,7 +10557,7 @@ app.get(
               FROM complaints c
               WHERE c.evidence_url = $2
                 AND (
-                  $1 = 'coordinator'
+                  ($1 = 'coordinator'${uploadScope("COALESCE(c.student_id, c.reported_student_id)")})
                   OR
                   ($1 = 'student' AND c.student_id = $3)
                   OR ($1 = 'supervisor' AND c.filed_by_supervisor_id = $3)
@@ -10389,7 +10565,7 @@ app.get(
             )
           ) AS authorized
         `,
-        [auth.role, storedPath, auth.id]
+        [auth.role, storedPath, auth.id, ...uploadScopeValues]
       );
 
       if (!result.rows[0]?.authorized) {
@@ -10459,14 +10635,16 @@ registerConsoleRoutes(app, {
   pushConfigured: isWebPushConfigured,
   createRateLimiter,
 });
-registerAcademicRoutes(app, { pool, requireCoordinator });
+registerAcademicRoutes(app, { pool, requireCoordinator, requireStaff, requireOffice });
 registerInstitutionRoutes(app, { pool, requireCoordinator });
 registerPasskeyRoutes(app, { pool, requireRole });
 registerSupervisorDeskRoutes(app, { pool, requireRole, requireCoordinator, createNotification, notifyCoordinators });
 registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 // Phase 1.2: the clearance board, the deployment gate's setting, and the student's own readiness.
-registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
+registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
+// Phase 1.6: the OJT Director's own routes.
+registerDirectorRoutes(app, { pool, requireDirector: requireRole("director") });
 // Revisions, November 2026: the trainee's feedback form, progress reports and narrative drafts.
 registerTraineeRecordRoutes(app, { pool, requireRole, notifyCoordinators });
 
@@ -10474,6 +10652,8 @@ registerExtensionRoutes(app, {
   pool,
   requireRole,
   requireCoordinator,
+  requireStaff,
+  requireOffice,
   createNotification,
   notifyCoordinators,
   hashPassword,

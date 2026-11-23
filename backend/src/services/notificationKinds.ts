@@ -1,3 +1,4 @@
+import type { AccountRole } from "./accountRoles";
 /*
 |--------------------------------------------------------------------------
 | WHETHER A NOTIFICATION ASKS FOR SOMETHING
@@ -62,7 +63,7 @@ export const STUDENT_ACTS: Array<[RegExp, NonNullable<KindRule["act"]>]> = [
 
 /** The kind of a notification about to be written. */
 export function notificationKind(
-  role: "student" | "supervisor" | "coordinator",
+  role: AccountRole,
   type: string | undefined,
   title: string,
   link: string | null | undefined

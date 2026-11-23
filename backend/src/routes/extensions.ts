@@ -16,6 +16,7 @@ import { staleDecision } from "../services/versions";
 import { uploadQuota } from "../services/uploadQuota";
 import { sameId, sqlSameId } from "../services/ids";
 import { markActed } from "../services/notificationKinds";
+import { scopeCondition } from "../services/coordinatorScope";
 
 /*
 |--------------------------------------------------------------------------
@@ -58,6 +59,9 @@ export type ExtensionDependencies = {
   pool: Pool;
   requireRole: (roles: Role | Role[]) => express.RequestHandler;
   requireCoordinator: express.RequestHandler;
+  /** Phase 1.6: coordinators and the OJT Director; the office's decisions (server.ts). */
+  requireStaff: express.RequestHandler;
+  requireOffice: express.RequestHandler;
   createNotification: (notification: NotificationInput) => Promise<void>;
   notifyCoordinators: (notification: {
     title: string;
@@ -145,6 +149,8 @@ export function registerExtensionRoutes(
     pool,
     requireRole,
     requireCoordinator,
+    requireStaff,
+    requireOffice,
     createNotification,
     notifyCoordinators,
     hashPassword,
@@ -348,6 +354,7 @@ export function registerExtensionRoutes(
 
   app.get("/api/coordinator/absences", requireCoordinator, async (_req, res) => {
     try {
+      const inScope = scopeCondition("a.student_id", 0); // Phase 1.6
       const result = await pool.query(
         `
         SELECT ${ABSENCE_COLUMNS}, s.name AS student_name, s.company,
@@ -355,9 +362,11 @@ export function registerExtensionRoutes(
         FROM absences a
         INNER JOIN students s ON s.student_id = a.student_id
         LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
+        WHERE TRUE${inScope.sql}
         ORDER BY a.date DESC
         LIMIT 500
-        `
+        `,
+        inScope.values
       );
       return res.json({ absences: result.rows });
     } catch (error) {
@@ -1607,10 +1616,22 @@ export function registerExtensionRoutes(
 
   app.post(
     "/api/coordinator/:kind/:id/reset-password",
-    requireCoordinator,
+    requireStaff,
     async (req, res, next) => {
       const target = resettable[req.params.kind as keyof typeof resettable];
       if (!target) return next();
+      // Phase 1.6: the OJT Director resets coordinators only; the coordinators
+      // reset students and supervisors, and each other until a Director exists.
+      const actor = (req as AuthedRequest).auth?.role as string | undefined;
+      if (actor === "director" && target.role !== "coordinator") {
+        return res.status(403).json({ message: "Students' and supervisors' passwords are reset by their OJT coordinator." });
+      }
+      if (actor === "coordinator" && target.role === "coordinator") {
+        const director = await pool.query(`SELECT 1 FROM directors WHERE is_active = TRUE LIMIT 1`);
+        if (director.rows.length > 0) {
+          return res.status(403).json({ code: "DIRECTOR_MANAGES", message: "The OJT Director manages this now. Ask them to change it." });
+        }
+      }
       // Your own password is changed on your Profile, with the current one.
       if (target.role === "coordinator" && sameId(req.params.id, (req as AuthedRequest).auth?.id)) {
         return res.status(409).json({
@@ -3929,7 +3950,7 @@ export function registerExtensionRoutes(
     }
   });
 
-  app.post("/api/coordinator/coordinators", requireCoordinator, async (req, res) => {
+  app.post("/api/coordinator/coordinators", requireOffice, async (req, res) => {
     try {
       const id = text(req.body?.coordinator_id);
       const name = text(req.body?.name);
@@ -3981,7 +4002,7 @@ export function registerExtensionRoutes(
     }
   });
 
-  app.patch("/api/coordinator/coordinators/:id/status", requireCoordinator, async (req, res) => {
+  app.patch("/api/coordinator/coordinators/:id/status", requireOffice, async (req, res) => {
     const client = await pool.connect();
     try {
       const auth = (req as AuthedRequest).auth!;
@@ -4214,7 +4235,9 @@ export function registerExtensionRoutes(
 
   app.get("/api/coordinator/alerts", requireCoordinator, async (_req, res) => {
     try {
-      return res.json({ alerts: await coordinatorAlerts(pool) });
+      // Phase 1.6: no filters but the coordinator's scope, if they have one.
+      const read = readStudentFilters({});
+      return res.json({ alerts: await coordinatorAlerts(pool, new Date(), "filters" in read ? read.filters : {}) });
     } catch (error) {
       console.error("GET ALERTS ERROR:", error);
       return res.status(500).json({ message: "Failed to load the alerts." });

@@ -105,6 +105,28 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
   },
+  // Phase 1.6: the OJT Director.
+  {
+    method: "PUT",
+    path: "/api/director/coordinators/:coordinatorId/scopes",
+    action: "coordinator.scope",
+    entityType: "coordinator",
+    entityId: param("coordinatorId"),
+    from: (source) => ({
+      old_college_ids: nested(source.result.old, "college_ids"),
+      old_program_ids: nested(source.result.old, "program_ids"),
+      college_ids: nested(source.result.value, "college_ids"),
+      program_ids: nested(source.result.value, "program_ids"),
+    }),
+  },
+  {
+    method: "PUT",
+    path: "/api/directors/:directorId/profile",
+    action: "account.profile",
+    entityType: "director",
+    entityId: param("directorId"),
+    keep: ["name"],
+  },
   // Phase 1.2: eligibility, clearance for deployment, and the OJT rules.
   {
     method: "PUT",

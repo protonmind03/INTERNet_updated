@@ -6,6 +6,7 @@ import {
   studentReadiness,
   type Readiness,
 } from "../services/deploymentClearance";
+import { currentScope, studentInScope } from "../services/coordinatorScope";
 import { sameId } from "../services/ids";
 import { changeOjtSetting, isOjtSettingKey, ojtSetting, readOjtSettings } from "../services/ojtSettings";
 import { bindFilters, filterConditions, readStudentFilters } from "../services/studentScope";
@@ -21,8 +22,9 @@ import { bindFilters, filterConditions, readStudentFilters } from "../services/s
 | reason of at least 10 characters. Every decision is audited.
 |
 | The OJT rules (services/ojtSettings.ts) are changed here too, with the
-| old and the new value in the audit log. Until an OJT Director account
-| exists (Phase 1.6) the coordinators keep this power.
+| old and the new value in the audit log: by the OJT Director, or by the
+| coordinators until a Director account exists (Phase 1.6). The Director
+| reads the board too; clearing stays with the coordinators.
 |
 | The student reads their own readiness for the Today card.
 |
@@ -35,6 +37,9 @@ type Dependencies = {
   pool: Pool;
   requireRole: (roles: Role | Role[]) => express.RequestHandler;
   requireCoordinator: express.RequestHandler;
+  /** Phase 1.6: coordinators and the OJT Director read; the office decides (server.ts). */
+  requireStaff: express.RequestHandler;
+  requireOffice: express.RequestHandler;
   createNotification: (options: { studentId?: string | null; title: string; message: string; type?: string; link?: string }) => Promise<unknown>;
 };
 
@@ -45,7 +50,7 @@ const cleanText = (value: unknown, max: number): string | null =>
   typeof value === "string" && value.trim() ? value.trim().slice(0, max) : null;
 
 export function registerClearanceRoutes(app: express.Express, deps: Dependencies): void {
-  const { pool, requireRole, requireCoordinator, createNotification } = deps;
+  const { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification } = deps;
 
   /** Clears one student; the caller has checked they exist and the reason, if any. */
   async function clear(studentId: string, coordinatorId: string, overrideReason: string | null) {
@@ -67,7 +72,7 @@ export function registerClearanceRoutes(app: express.Express, deps: Dependencies
   }
 
   // The board: every active student in the filters, with their readiness.
-  app.get("/api/coordinator/clearance", requireCoordinator, async (req, res) => {
+  app.get("/api/coordinator/clearance", requireStaff, async (req, res) => {
     try {
       const read = readStudentFilters(req.query as Record<string, unknown>);
       if ("problem" in read) return res.status(400).json({ message: read.problem });
@@ -186,8 +191,10 @@ export function registerClearanceRoutes(app: express.Express, deps: Dependencies
       }
       const auth = (req as Authed).auth!;
       const results: { student_id: string; status: "cleared" | "already" | "not_ready" | "missing"; missing?: string[] }[] = [];
+      const scope = currentScope();
       for (const id of [...new Set(ids as string[])]) {
-        const readiness = await studentReadiness(pool, id);
+        // Phase 1.6: outside a scoped coordinator's students is the same as not there.
+        const readiness = scope && !(await studentInScope(pool, scope, id)) ? null : await studentReadiness(pool, id);
         if (!readiness) results.push({ student_id: id, status: "missing" });
         else if (readiness.cleared) results.push({ student_id: id, status: "already" });
         else if (!readiness.ready) results.push({ student_id: id, status: "not_ready", missing: readiness.missing });
@@ -206,7 +213,7 @@ export function registerClearanceRoutes(app: express.Express, deps: Dependencies
   });
 
   // The OJT rules. Read by every portal that shows one; changed by the coordinator until a Director exists (1.6).
-  app.get("/api/coordinator/ojt-settings", requireCoordinator, async (_req, res) => {
+  app.get("/api/coordinator/ojt-settings", requireStaff, async (_req, res) => {
     try {
       return res.json({ settings: await readOjtSettings(pool) });
     } catch (error) {
@@ -215,7 +222,7 @@ export function registerClearanceRoutes(app: express.Express, deps: Dependencies
     }
   });
 
-  app.put("/api/coordinator/ojt-settings/:key", requireCoordinator, async (req, res) => {
+  app.put("/api/coordinator/ojt-settings/:key", requireOffice, async (req, res) => {
     try {
       const key = String(req.params.key);
       if (!isOjtSettingKey(key)) return res.status(404).json({ message: "There is no such rule." });

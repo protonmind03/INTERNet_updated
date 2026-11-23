@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-270 routes in 18 files; 55 services in use.
+279 routes in 19 files; 57 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -21,7 +21,7 @@ flowchart LR
   doors --> pwa
   apps --> doors
   subgraph api["backend, the Express API"]
-    server["server.ts<br/>97 routes: /api/coordinator, /api/attendance, /api/notifications"]
+    server["server.ts<br/>103 routes: /api/coordinator, /api/attendance, /api/notifications"]
     routes_academics["routes/academics.ts<br/>11 routes: /api/coordinator"]
     routes_accountDetails["routes/accountDetails.ts<br/>7 routes: /api/coordinator, /api/me"]
     routes_appeals["routes/appeals.ts<br/>4 routes: /api/appeals, /api/coordinator"]
@@ -29,6 +29,7 @@ flowchart LR
     routes_clearance["routes/clearance.ts<br/>8 routes: /api/coordinator, /api/students"]
     routes_console["routes/console.ts<br/>9 routes: /api/coordinator"]
     routes_deliverables["routes/deliverables.ts<br/>2 routes: /api/coordinator, /api/students"]
+    routes_director["routes/director.ts<br/>3 routes: /api/director"]
     routes_extensions["routes/extensions.ts<br/>71 routes: /api/coordinator, /api/absences, /api/students"]
     routes_institution["routes/institution.ts<br/>2 routes: /api/coordinator"]
     routes_messages["routes/messages.ts<br/>5 routes: /api/messages"]
@@ -42,6 +43,7 @@ flowchart LR
   end
   subgraph services["backend/src/services"]
     services_academics["academics.ts"]
+    services_accountRoles["accountRoles.ts"]
     services_analyticsRange["analyticsRange.ts"]
     services_audit["audit.ts"]
     services_autoCount["autoCount.ts"]
@@ -49,6 +51,7 @@ flowchart LR
     services_clientErrors["clientErrors.ts"]
     services_coordinatorActions["coordinatorActions.ts"]
     services_coordinatorHome["coordinatorHome.ts"]
+    services_coordinatorScope["coordinatorScope.ts"]
     services_corsOrigins["corsOrigins.ts"]
     services_dayRules["dayRules.ts"]
     services_deadlineReminders["deadlineReminders.ts"]
@@ -112,15 +115,19 @@ flowchart LR
   pwa -->|"HTTPS JSON and the /api/events stream"| api
   routes_academics --> services_academics
   routes_academics --> services_psuMarks
+  routes_accountDetails --> services_coordinatorScope
   routes_accountDetails --> services_kpiDefinitions
+  routes_appeals --> services_coordinatorScope
   routes_appeals --> services_liveness
   routes_appeals --> services_photoRedo
   routes_appeals --> services_versions
+  routes_attachments --> services_coordinatorScope
   routes_attachments --> services_ids
   routes_attachments --> services_imageMetadata
   routes_attachments --> services_offlineActions
   routes_attachments --> services_privateFileStore
   routes_attachments --> services_uploadQuota
+  routes_clearance --> services_coordinatorScope
   routes_clearance --> services_deploymentClearance
   routes_clearance --> services_ids
   routes_clearance --> services_ojtSettings
@@ -140,6 +147,7 @@ flowchart LR
   routes_deliverables --> services_deliverables
   routes_deliverables --> services_ids
   routes_extensions --> services_academics
+  routes_extensions --> services_coordinatorScope
   routes_extensions --> services_deliverables
   routes_extensions --> services_evaluationGrade
   routes_extensions --> services_ids
@@ -196,11 +204,13 @@ flowchart LR
   routes_traineeRecord --> services_traineeRecord
   scripts_backup_cron --> services_backups
   server --> services_academics
+  server --> services_accountRoles
   server --> services_analyticsRange
   server --> services_audit
   server --> services_autoCount
   server --> services_backups
   server --> services_clientErrors
+  server --> services_coordinatorScope
   server --> services_corsOrigins
   server --> services_dayRules
   server --> services_deadlineReminders
@@ -277,7 +287,11 @@ flowchart LR
   services_kpis --> services_phTime
   services_kpis --> services_schedulePattern
   services_kpis --> services_studentScope
+  services_liveNotifications --> services_accountRoles
   services_mailer --> services_emailBudget
+  services_notificationKinds --> services_accountRoles
+  services_notificationLinks --> services_accountRoles
+  services_notificationPreferences --> services_accountRoles
   services_performance --> services_deliverables
   services_performance --> services_insights
   services_performance --> services_schedulePattern
@@ -288,6 +302,7 @@ flowchart LR
   services_projection --> services_insights
   services_projection --> services_phTime
   services_projection --> services_studentScope
+  services_studentScope --> services_coordinatorScope
   services_supervisorDigest --> services_loopLock
   services_supervisorDigest --> services_phTime
   services_timeOutReminders --> services_loopLock
@@ -300,6 +315,7 @@ flowchart LR
   routes_clearance -.-> ext_postgres
   routes_console -.-> ext_postgres
   routes_deliverables -.-> ext_postgres
+  routes_director -.-> ext_postgres
   routes_extensions -.-> ext_postgres
   routes_institution -.-> ext_postgres
   routes_messages -.-> ext_postgres
@@ -320,6 +336,7 @@ flowchart LR
   services_backups -.-> ext_postgres
   services_coordinatorActions -.-> ext_postgres
   services_coordinatorHome -.-> ext_postgres
+  services_coordinatorScope -.-> ext_postgres
   services_dayRules -.-> ext_postgres
   services_deadlineReminders -.-> ext_postgres
   services_deliverables -.-> ext_postgres
@@ -354,7 +371,7 @@ flowchart LR
 
 | File | Routes | Address families (most routes first) |
 |---|---|---|
-| `server.ts` | 97 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/students`, `/api/supervisor`, `/api/tasks`, `/api/complaints` |
+| `server.ts` | 103 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/students`, `/api/supervisor`, `/api/tasks`, `/api/complaints` |
 | `routes/academics.ts` | 11 | `/api/coordinator` |
 | `routes/accountDetails.ts` | 7 | `/api/coordinator`, `/api/me` |
 | `routes/appeals.ts` | 4 | `/api/appeals`, `/api/coordinator` |
@@ -362,6 +379,7 @@ flowchart LR
 | `routes/clearance.ts` | 8 | `/api/coordinator`, `/api/students` |
 | `routes/console.ts` | 9 | `/api/coordinator` |
 | `routes/deliverables.ts` | 2 | `/api/coordinator`, `/api/students` |
+| `routes/director.ts` | 3 | `/api/director` |
 | `routes/extensions.ts` | 71 | `/api/coordinator`, `/api/absences`, `/api/students`, `/api/journals`, `/api/dtr-certifications`, `/api/tasks`, `/api/complaints`, `/api/evaluations` |
 | `routes/institution.ts` | 2 | `/api/coordinator` |
 | `routes/messages.ts` | 5 | `/api/messages` |
@@ -389,6 +407,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | Service | Imported by |
 |---|---|
 | `academics.ts` | `routes/academics.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts` |
+| `accountRoles.ts` | `server.ts`, `services/liveNotifications.ts`, `services/notificationKinds.ts`, `services/notificationLinks.ts`, `services/notificationPreferences.ts` |
 | `analyticsRange.ts` | `server.ts` |
 | `audit.ts` | `server.ts` |
 | `autoCount.ts` | `server.ts` |
@@ -396,6 +415,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `clientErrors.ts` | `server.ts` |
 | `coordinatorActions.ts` | `routes/console.ts` |
 | `coordinatorHome.ts` | `routes/console.ts` |
+| `coordinatorScope.ts` | `routes/accountDetails.ts`, `routes/appeals.ts`, `routes/attachments.ts`, `routes/clearance.ts`, `routes/extensions.ts`, `server.ts`, `services/studentScope.ts` |
 | `corsOrigins.ts` | `server.ts` |
 | `dayRules.ts` | `routes/offlineTimeIn.ts`, `server.ts` |
 | `deadlineReminders.ts` | `server.ts` |

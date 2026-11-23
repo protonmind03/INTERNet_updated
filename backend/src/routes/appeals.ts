@@ -3,6 +3,7 @@ import { staleDecision } from "../services/versions";
 import type { Pool, PoolClient } from "pg";
 import { syncLivenessStrict } from "../services/liveness";
 import { removeMissedRedoAbsence } from "../services/photoRedo";
+import { scopeCondition } from "../services/coordinatorScope";
 
 /*
 |--------------------------------------------------------------------------
@@ -174,6 +175,7 @@ export function registerAppealRoutes(app: express.Express, deps: Dependencies): 
     try {
       const status = String(req.query.status ?? "open");
       if (!["open", "decided", "all"].includes(status)) return res.status(400).json({ message: "Show open, decided or all appeals." });
+      const inScope = scopeCondition("p.student_id", 1); // Phase 1.6
       const result = await pool.query(
         `SELECT p.id, p.kind, p.reason, p.status, p.decision_note, p.created_at, p.decided_at, p.withdrawn_at, p.version,
                 p.attendance_id, p.student_id, s.name AS student_name, sup.name AS supervisor_name,
@@ -185,10 +187,10 @@ export function registerAppealRoutes(app: express.Express, deps: Dependencies): 
          JOIN attendance a ON a.id = p.attendance_id
          JOIN students s ON s.student_id = p.student_id
          LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
-         WHERE ($1 = 'all' OR ($1 = 'open' AND p.status = 'open') OR ($1 = 'decided' AND p.status <> 'open'))
+         WHERE ($1 = 'all' OR ($1 = 'open' AND p.status = 'open') OR ($1 = 'decided' AND p.status <> 'open'))${inScope.sql}
          ORDER BY (p.status = 'open') DESC, p.created_at ASC
          LIMIT 500`,
-        [status]
+        [status, ...inScope.values]
       );
       return res.json({ appeals: result.rows });
     } catch (error) {

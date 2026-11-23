@@ -12,6 +12,7 @@ import { stripImageMetadata } from "../services/imageMetadata";
 import { quotaProblem, recordUpload, uploadUsage } from "../services/uploadQuota";
 import { sameId } from "../services/ids";
 import { offlineMaxAgeHoursFor, CLOCK_SKEW_MS } from "../services/offlineActions";
+import { currentScope, studentInScope } from "../services/coordinatorScope";
 
 /*
 |--------------------------------------------------------------------------
@@ -340,6 +341,11 @@ export function registerAttachmentRoutes(app: express.Express, deps: Dependencie
       }
       const entry = await findEntry(type, ownerId);
       if (!entry || !maySee(type, entry, auth)) return res.json({ attachments: [], can_add: false, max: MAX_PICTURES });
+      // Phase 1.6: a scoped coordinator sees pictures of their students only.
+      const scope = currentScope();
+      if (scope && entry.studentId && !(await studentInScope(pool, scope, String(entry.studentId)))) {
+        return res.json({ attachments: [], can_add: false, max: MAX_PICTURES });
+      }
       const found = await pool.query(
         `SELECT ${LIST_COLUMNS} FROM attachments
          WHERE owner_type = $1 AND owner_id = $2 AND removed_at IS NULL

@@ -147,7 +147,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       }
       const read = readStudentFilters(asQuery);
       if ("problem" in read) return res.status(400).json({ message: read.problem });
-      const filters = Object.fromEntries(Object.entries(read.filters).map(([key, value]) => [key, String(value)]));
+      const filters = Object.fromEntries(Object.entries(read.filters).filter(([key]) => key !== "scope").map(([key, value]) => [key, String(value)]));
       if (Object.keys(filters).length === 0) {
         return res.status(400).json({ message: "Choose at least one filter before saving a view." });
       }

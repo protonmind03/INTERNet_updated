@@ -1,3 +1,4 @@
+import type { AccountRole } from "./accountRoles";
 /*
 |--------------------------------------------------------------------------
 | NOTIFICATION PREFERENCES
@@ -14,7 +15,7 @@
 
 import type { Pool } from "pg";
 
-export type PreferenceRole = "student" | "supervisor" | "coordinator";
+export type PreferenceRole = AccountRole;
 export type Channel = "push" | "email";
 
 type Category = {

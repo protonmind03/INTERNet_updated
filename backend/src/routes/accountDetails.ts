@@ -1,6 +1,7 @@
 import type express from "express";
 import type { Pool } from "pg";
 import { CONCERN_OLD_AFTER_DAYS } from "../services/kpiDefinitions";
+import { scopeCondition } from "../services/coordinatorScope";
 
 /*
 |--------------------------------------------------------------------------
@@ -273,11 +274,13 @@ export function registerAccountDetailRoutes(app: express.Express, deps: Dependen
         [id]
       );
       if (supervisor.rows.length === 0) return res.status(404).json({ message: "Supervisor not found." });
+      // Phase 1.6: a scoped coordinator sees only their own students among the interns.
+      const inScope = scopeCondition("s.student_id", 1);
       const interns = await pool.query(
         `SELECT s.student_id, s.name, s.email, s.program, s.is_active
-         FROM students s WHERE s.supervisor_id = $1
+         FROM students s WHERE s.supervisor_id = $1${inScope.sql}
          ORDER BY s.is_active DESC, s.name`,
-        [id]
+        [id, ...inScope.values]
       );
       return res.json({ supervisor: supervisor.rows[0], interns: interns.rows });
     } catch (error) {
@@ -292,13 +295,19 @@ export function registerAccountDetailRoutes(app: express.Express, deps: Dependen
    */
   app.get("/api/coordinator/resolution/count", requireCoordinator, async (_req, res) => {
     try {
+      // Phase 1.6: a scoped coordinator counts only their students' (one pair of values serves both).
+      const inScope = scopeCondition("concerning.student_id", 1);
+      const scoped = (studentColumn: string) =>
+        inScope.sql
+          ? ` AND EXISTS (SELECT 1 FROM (SELECT ${studentColumn} AS student_id) concerning WHERE TRUE${inScope.sql})`
+          : "";
       const result = await pool.query<{ concerns: number; appeals: number }>(
         `SELECT
-           (SELECT COUNT(*)::int FROM complaints
-            WHERE status NOT IN ('Resolved', 'Dismissed') AND created_at < NOW() - make_interval(days => $1)) AS concerns,
-           (SELECT COUNT(*)::int FROM attendance_appeals
-            WHERE status = 'open' AND created_at < NOW() - make_interval(days => $1)) AS appeals`,
-        [CONCERN_OLD_AFTER_DAYS]
+           (SELECT COUNT(*)::int FROM complaints c
+            WHERE status NOT IN ('Resolved', 'Dismissed') AND created_at < NOW() - make_interval(days => $1)${scoped("COALESCE(c.student_id, c.reported_student_id)")}) AS concerns,
+           (SELECT COUNT(*)::int FROM attendance_appeals p
+            WHERE status = 'open' AND created_at < NOW() - make_interval(days => $1)${scoped("p.student_id")}) AS appeals`,
+        [CONCERN_OLD_AFTER_DAYS, ...inScope.values]
       );
       const { concerns, appeals } = result.rows[0];
       return res.json({ count: concerns + appeals, concerns, appeals, older_than_days: CONCERN_OLD_AFTER_DAYS });

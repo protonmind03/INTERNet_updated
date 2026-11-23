@@ -8,8 +8,11 @@ import { markKey } from "../services/psuMarks";
 | COLLEGES, PROGRAMS, MAJORS AND BLOCKS: THE COORDINATOR'S PAGE
 |--------------------------------------------------------------------------
 |
-| Reading the whole structure, and adding to and changing it. Coordinator
-| only. Nothing is ever deleted: a row that is no longer wanted is made
+| Reading the whole structure, and adding to and changing it. The
+| coordinators and the OJT Director read it. Colleges, programs (with their
+| hours) and majors are changed by the Director, or by the coordinators
+| until a Director account exists (Phase 1.6); blocks stay with the
+| coordinators, who place students in them. Nothing is ever deleted: a row that is no longer wanted is made
 | inactive, which takes it out of the pickers and filters and keeps every
 | student who was linked to it linked.
 |
@@ -17,7 +20,14 @@ import { markKey } from "../services/psuMarks";
 |
 */
 
-type Dependencies = { pool: Pool; requireCoordinator: express.RequestHandler };
+type Dependencies = {
+  pool: Pool;
+  requireCoordinator: express.RequestHandler;
+  /** Phase 1.6: coordinators and the OJT Director. */
+  requireStaff: express.RequestHandler;
+  /** Phase 1.6: the Director, or the coordinators until a Director account exists. */
+  requireOffice: express.RequestHandler;
+};
 
 const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
 const has = (body: unknown, field: string) =>
@@ -50,11 +60,11 @@ const markValue = (body: unknown, kind: "college" | "org") =>
   markKey(((body ?? {}) as Record<string, unknown>).mark_key ?? null, kind) as string | null;
 
 export function registerAcademicRoutes(app: express.Express, deps: Dependencies): void {
-  const { pool, requireCoordinator } = deps;
+  const { pool, requireCoordinator, requireStaff, requireOffice } = deps;
 
   // Everything, inactive rows included, with how many active students each
   // program and block has. The pickers and the filter bar read this too.
-  app.get("/api/coordinator/academics", requireCoordinator, async (_req, res) => {
+  app.get("/api/coordinator/academics", requireStaff, async (_req, res) => {
     try {
       const [catalogue, programCounts, blockCounts, without] = await Promise.all([
         loadCatalogue(pool),
@@ -92,7 +102,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
   | Colleges
   */
 
-  app.post("/api/coordinator/colleges", requireCoordinator, async (req, res) => {
+  app.post("/api/coordinator/colleges", requireOffice, async (req, res) => {
     const name = text(req.body?.name);
     const shortName = text(req.body?.short_name);
     if (name.length < 2 || name.length > 150) {
@@ -115,7 +125,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     }
   });
 
-  app.put("/api/coordinator/colleges/:id", requireCoordinator, async (req, res) => {
+  app.put("/api/coordinator/colleges/:id", requireOffice, async (req, res) => {
     const collegeId = id(req.params.id);
     if (collegeId === null) return res.status(404).json({ message: "College not found." });
     const name = text(req.body?.name);
@@ -190,7 +200,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
       : "There is already a program with that name.";
   };
 
-  app.post("/api/coordinator/programs", requireCoordinator, async (req, res) => {
+  app.post("/api/coordinator/programs", requireOffice, async (req, res) => {
     const problem = programProblem(req.body, true);
     if (problem) return res.status(400).json({ message: problem });
     try {
@@ -213,7 +223,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     }
   });
 
-  app.put("/api/coordinator/programs/:id", requireCoordinator, async (req, res) => {
+  app.put("/api/coordinator/programs/:id", requireOffice, async (req, res) => {
     const programId = id(req.params.id);
     if (programId === null) return res.status(404).json({ message: "Program not found." });
     const problem = programProblem(req.body, false);
@@ -260,7 +270,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
   | Majors and specializations
   */
 
-  app.post("/api/coordinator/majors", requireCoordinator, async (req, res) => {
+  app.post("/api/coordinator/majors", requireOffice, async (req, res) => {
     const name = text(req.body?.name);
     const programId = optionalId(req.body?.program_id);
     if (programId === "bad" || programId === null) return res.status(400).json({ message: "Choose the major's program." });
@@ -283,7 +293,7 @@ export function registerAcademicRoutes(app: express.Express, deps: Dependencies)
     }
   });
 
-  app.put("/api/coordinator/majors/:id", requireCoordinator, async (req, res) => {
+  app.put("/api/coordinator/majors/:id", requireOffice, async (req, res) => {
     const majorId = id(req.params.id);
     if (majorId === null) return res.status(404).json({ message: "Major not found." });
     const name = text(req.body?.name);

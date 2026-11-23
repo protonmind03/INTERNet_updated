@@ -1,8 +1,9 @@
+import { NOTIFICATION_COLUMN, type AccountRole } from "./accountRoles";
 import type { Response } from "express";
 import type { Pool, PoolClient } from "pg";
 
 type Recipient = {
-  role: "coordinator" | "student" | "supervisor";
+  role: AccountRole;
   id: string;
 };
 
@@ -64,11 +65,7 @@ export function registerNotificationStream(
 export const CATCH_UP_LIMIT = 50;
 export const CATCH_UP_HOURS = 24;
 
-const RECIPIENT_COLUMN: Record<Recipient["role"], string> = {
-  student: "student_id",
-  supervisor: "supervisor_id",
-  coordinator: "coordinator_id",
-};
+const RECIPIENT_COLUMN = NOTIFICATION_COLUMN;
 
 /** The id a reconnecting browser last saw, or null (a first connection). */
 export function readAfter(value: unknown): number | null {
