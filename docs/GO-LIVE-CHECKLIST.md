@@ -38,6 +38,7 @@ Do the steps in order. Do not skip ahead.
   - `railway run --service Postgres npm run db:hash-legacy-passwords <port>`: a dry run that counts them;
   - if any count is above 0, run it again with `confirm` at the end.
 - Run it again without `confirm`: every count should be 0. Rehearse it on the step 2 copy first.
+- Check that the production backend has `FRONTEND_URL` set in Railway. The new version will not start in production without it (or `CORS_ORIGINS`).
 
 ## Going live
 

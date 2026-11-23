@@ -22,6 +22,7 @@ import { createProblemKeeper, problemFromBrowser, watchServerErrors } from "./se
 import { runPhotoPurgeIfDue } from "./services/photoPurge";
 import { runUploadsPackIfDue } from "./services/backups";
 import { stripImageMetadata } from "./services/imageMetadata";
+import { requireCorsOrigins } from "./services/corsOrigins";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
 import {
   publishNotification,
@@ -132,24 +133,17 @@ if (process.env.NODE_ENV === "production") {
 */
 
 // In production only the deployed frontend (FRONTEND_URL, plus any extra
-// comma-separated origins in CORS_ORIGINS) may call the API from a browser.
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  ...(process.env.CORS_ORIGINS || "").split(","),
-]
-  .map((origin) => (origin || "").trim().replace(/\/+$/, ""))
-  .filter(Boolean);
+// comma-separated origins in CORS_ORIGINS) may call the API from a browser,
+// and with neither set the server refuses to start (services/corsOrigins.ts).
+// Development allows every origin.
+const allowedOrigins = requireCorsOrigins(process.env);
 
 // Standard security headers. The frontend lives on another origin and
 // downloads files from this API, so cross-origin reads stay allowed here
 // and are restricted by CORS and per-record authorization instead.
 app.use(helmet({ crossOriginResourcePolicy: { policy: "cross-origin" } }));
 
-app.use(
-  process.env.NODE_ENV === "production" && allowedOrigins.length > 0
-    ? cors({ origin: allowedOrigins })
-    : cors()
-);
+app.use(allowedOrigins ? cors({ origin: allowedOrigins }) : cors());
 
 // Crash reports from the browser. Registered before the general body parser
 // so it can have a much smaller size limit of its own. See

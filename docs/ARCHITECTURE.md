@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-261 routes in 17 files; 51 services in use.
+261 routes in 17 files; 52 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -48,6 +48,7 @@ flowchart LR
     services_clientErrors["clientErrors.ts"]
     services_coordinatorActions["coordinatorActions.ts"]
     services_coordinatorHome["coordinatorHome.ts"]
+    services_corsOrigins["corsOrigins.ts"]
     services_dayRules["dayRules.ts"]
     services_deadlineReminders["deadlineReminders.ts"]
     services_deliverables["deliverables.ts"]
@@ -188,6 +189,7 @@ flowchart LR
   server --> services_autoCount
   server --> services_backups
   server --> services_clientErrors
+  server --> services_corsOrigins
   server --> services_dayRules
   server --> services_deadlineReminders
   server --> services_deliverables
@@ -372,6 +374,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `clientErrors.ts` | `server.ts` |
 | `coordinatorActions.ts` | `routes/console.ts` |
 | `coordinatorHome.ts` | `routes/console.ts` |
+| `corsOrigins.ts` | `server.ts` |
 | `dayRules.ts` | `routes/offlineTimeIn.ts`, `server.ts` |
 | `deadlineReminders.ts` | `server.ts` |
 | `deliverables.ts` | `routes/deliverables.ts`, `routes/extensions.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |

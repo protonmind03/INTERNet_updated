@@ -13094,3 +13094,36 @@ test("a plain-text password can no longer sign in; db:hash-legacy-passwords hash
     await pool.end();
   }
 });
+
+/*
+| Phase 0.2: CORS fails closed in production
+*/
+
+test("CORS: production allows only FRONTEND_URL and CORS_ORIGINS, and refuses to start with neither; development allows every origin", () => {
+  require("tsx/cjs");
+  const { allowedOriginsFrom, requireCorsOrigins, NO_CORS_ORIGINS_MESSAGE } = require("../src/services/corsOrigins.ts");
+  assert.deepEqual(
+    allowedOriginsFrom({ FRONTEND_URL: " https://app.example.test/ ", CORS_ORIGINS: "https://a.example.test, ,https://b.example.test//" }),
+    ["https://app.example.test", "https://a.example.test", "https://b.example.test"]
+  );
+  assert.deepEqual(requireCorsOrigins({ NODE_ENV: "production", FRONTEND_URL: "https://app.example.test" }), ["https://app.example.test"]);
+  assert.deepEqual(requireCorsOrigins({ NODE_ENV: "production", CORS_ORIGINS: "https://a.example.test" }), ["https://a.example.test"]);
+  assert.throws(() => requireCorsOrigins({ NODE_ENV: "production" }), { message: NO_CORS_ORIGINS_MESSAGE });
+  assert.throws(() => requireCorsOrigins({ NODE_ENV: "production", FRONTEND_URL: " ", CORS_ORIGINS: " , " }), { message: NO_CORS_ORIGINS_MESSAGE });
+  assert.equal(requireCorsOrigins({}), null, "development: every origin, as before");
+  assert.equal(requireCorsOrigins({ NODE_ENV: "development", FRONTEND_URL: "https://app.example.test" }), null);
+});
+
+test("CORS: the server itself will not start in production without FRONTEND_URL or CORS_ORIGINS", () => {
+  const { spawnSync } = require("node:child_process");
+  const path = require("node:path");
+  const run = spawnSync(process.execPath, [path.join(__dirname, "../node_modules/tsx/dist/cli.mjs"), path.join(__dirname, "../src/server.ts")], {
+    cwd: path.join(__dirname, ".."),
+    // Empty values, not missing ones, so backend/.env cannot fill them in.
+    env: { ...process.env, NODE_ENV: "production", FRONTEND_URL: "", CORS_ORIGINS: "", PORT: "0" },
+    encoding: "utf8",
+    timeout: 60_000,
+  });
+  assert.notEqual(run.status, 0, "it exits instead of serving");
+  assert.match(run.stderr, /FRONTEND_URL or CORS_ORIGINS must name the frontend's address/);
+});

@@ -58,6 +58,13 @@ and push this folder. The root `.gitignore` already keeps `.env` files,
    | `FRONTEND_URL` | the Vercel URL from step 3 (fill in after step 3) |
    | `PRIVATE_UPLOAD_DIR` | `/data/private-uploads` |
 
+   With `NODE_ENV=production` the server **will not start** until
+   `FRONTEND_URL` (or `CORS_ORIGINS`) names the site's address: the deploy
+   log says "In production FRONTEND_URL or CORS_ORIGINS must name the
+   frontend's address". On a first setup that is expected until step 3 is
+   done; it then starts at the next deploy. It used to start and allow
+   every origin instead.
+
    Generate the secret with:
    `node -e "console.log(require('crypto').randomBytes(48).toString('base64'))"`
 
@@ -81,7 +88,8 @@ Optional, each can be added later:
   comma-separated, each starting with `https://` and with no trailing
   slash. Needed when the site answers on more than one address (for
   example an old Vercel address kept beside a new one); `FRONTEND_URL` is
-  always allowed and is the address used in password-reset links.
+  always allowed and is the address used in password-reset links. In
+  production at least one of the two must be set.
 - `OFFLINE_MAX_AGE_HOURS_TIME_IN` (default 12), `OFFLINE_MAX_AGE_HOURS_LUNCH`
   (default 12, out for lunch and back from lunch) and
   `OFFLINE_MAX_AGE_HOURS_TIME_OUT` (default 24), each allowed 1 to 72: how old
