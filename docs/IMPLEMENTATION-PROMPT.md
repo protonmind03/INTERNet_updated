@@ -1,8 +1,17 @@
-# Prompt for Claude Code in VSCode
+# INTERNet: implementation prompt for Claude Code (VSCode)
 
-Paste everything below the line into Claude Code, opened at the repository root.
+Version 3, 23 November 2026. It replaces earlier copies of this file.
 
-Run **one phase at a time**: paste the preamble with Phase 0, review the result, then come back for Phase 1, and so on. Each phase is large. If a phase stops part-way, say "continue Phase N from item X".
+**What changed since version 1:**
+- Phase 1 now adds a separate **Director portal** (1.6) and a separate **IT Admin portal** (1.7) with separate duties. Privacy moved to 1.8, and the order of Phase 1 is stated.
+- New section **"Skills to use"**: which Claude Code skills to call, and when.
+- New section **"Design spec for the new portals"**: palette, type, layout and copy rules for the two new portals, fitted to the existing navy/brass/mist redesign.
+- New section **"PWA integration checklist for a new portal"**: every file that knows the list of roles (service worker, manifests, `check:pwa`, `vercel.json`, the offline store, the session purge).
+
+**How to use it:**
+- Open the repository root in VSCode, start Claude Code, and paste everything below the line.
+- Run **one phase at a time**: paste the preamble with Phase 0, review the result, then come back for Phase 1, and so on. Each phase is large.
+- If a phase stops part-way, say "continue Phase N from item X".
 
 ---
 
@@ -18,6 +27,93 @@ You are working on INTERNet, the OJT (internship) PWA for Pangasinan State Unive
 - `docs/OJT-DIRECTOR-READINESS.md`: the gap report this work implements.
 - `docs/GO-LIVE-CHECKLIST.md`.
 - The parts of `DEPLOY.md` you touch.
+
+## Skills to use
+
+Call these with the Skill tool, or type the slash command. If a skill is not installed in this Claude Code, say so once and carry on without it. Never invent a skill's output.
+
+| When | Skill | What to ask it |
+|---|---|---|
+| Before building any page of the Director or IT Admin portal (items 1.6, 1.7), and before any other new screen | `/hallmark` | Run it on the portal's planned pages with the "Design spec for the new portals" below as the brief, and apply what it finds before committing UI. |
+| Same moment, as the design guide | `frontend-design` (`frontend-design:frontend-design`) | Use it to settle each new portal's token plan and layout, and check the result against the spec below. The project's existing system (`src/brand/*`, `brand.css`, the redesign commit) always wins over the skill's defaults. |
+| After each item that adds a route, a role or an upload | `/security-review` | Review the pending changes: auth, role checks, ownership, the admin's separation of duties, restricted documents. |
+| After each phase | `/code-review` (level `high`) | Review the phase's diff for correctness bugs, then fix what it finds. |
+| After each phase | `/simplify` | Clean up duplication, for example the per-role login code and the layout copies. |
+| To see a portal working | `/run` | Launch the API and the PWA and open the new portal at 390 px and 1280 px. Take one screenshot per page for me. |
+
+## Design spec for the new portals
+
+INTERNet already has a visual system:
+- **Palette:** navy, brass and mist. Students and supervisors use surface `#0C1731` and accent `#DBA65D` (see `src/brand/roles.ts` and the commit "Three-colour redesign (navy, brass, mist)"). The coordinator theme still uses the older `NAVY`/`AMBER` constants.
+- **Type:** Bricolage Grotesque for display, Public Sans for text.
+- **Brand:** the PSU seal and college marks are in `public/brand/psu/`.
+
+The new portals **extend** this system; they do not invent a new one. Each portal must be recognisable at a glance, so nobody acts in the wrong portal.
+
+**Director portal: "the campus at a glance"**
+- **Surface:** the same deep navy (`#0C1731`) with brass (`#DBA65D`) as the accent, like the trainee and supervisor portals.
+- **What sets it apart:** the **row of college marks** (`college-*.png`, `@128` sizes).
+  - It is the portal's signature and its main filter: CASL, CBPA, CCS, CHTM, CTE, CIT.
+  - Choosing a mark scopes every page to that college; "All colleges" is the default.
+  - On a phone the row scrolls sideways inside its own container. The page itself never scrolls sideways.
+  - This is the one bold element. Everything around it stays quiet.
+- **Role tag** "OJT Director", portal name "OJT Office".
+- **Campus overview layout:**
+  - A summary line first: "412 of 438 cleared for deployment · 6 agreements end this month".
+  - Then a table by college: interns, cleared, on track, at risk, agreements ending.
+  - Each number opens the filtered list.
+  - No row of big-number tiles. No identical rounded cards. Use the table and a few chips for state (cleared, pending, at risk), in the semantic colours already used for statuses.
+- **Decisions** (term rules, grade release, HTE approval) say exactly what will happen, then confirm with the same verb:
+  - "Release grades for BSIT 4A" leads to "Grades released for BSIT 4A".
+  - Every change shows the old and the new value before it is saved.
+
+**IT Admin portal: "the machine room"**
+- **Surface:** deliberately the **opposite**. A light mist background with navy ink and no brass, so it never looks like an academic portal.
+- **Role tag** "System administrator".
+- **Layout:** dense and functional.
+  - Accounts is a searchable table, one action menu per row.
+  - System status is a list of checks, each with a state chip: OK, Needs attention, Off.
+  - Monospace is allowed only for real technical values: timestamps, IDs, migration numbers.
+- **Every destructive action** (deactivate, end sessions, temporary password) opens a confirmation that names the account and the effect: "End every session of Juan Dela Cruz (coordinator). They will have to sign in again."
+- **A permanent line** on the home page: "This portal cannot open students' records, documents, photos or grades."
+
+**For both portals:**
+- **Copy:**
+  - Sentence case and plain verbs.
+  - No all-caps eyebrows above every heading.
+  - No "→" on buttons.
+  - Errors say what happened and what to do.
+  - Empty states say how to add the first item.
+- **Layout and controls:**
+  - Phone first at 390 px.
+  - 44 px tap targets, visible keyboard focus, reduced motion respected.
+  - Light and dark both designed, if the other portals support dark.
+  - axe clean.
+- **Shared parts:** reuse the shared components (`components/ui.tsx`, `PhoneFilters`, `ScreenHelp`, `Toaster`, `NotificationBell`, `RoleDock`, `RoleShell`) instead of new copies.
+- **Motion:** only for answers to an action (opening, saving). No entrance animations on sections.
+
+## PWA integration checklist for a new portal
+
+Each new role (`director`, `admin`) must be added everywhere the app knows the list of roles. Search for `student|supervisor|coordinator` and `"coordinator"` across `my-pwa/` and check each hit. At least:
+
+1. **Role type and theme.** `src/brand/roles.ts`: the `Role` type, the theme, the loading words in `LoadProcess` if needed.
+2. **Manifest.** `src/brand/useRoleTheme.ts` gets the manifest and title. Add `public/manifest-director.webmanifest` and `manifest-admin.webmanifest`, generated by `scripts/make-role-manifests.mjs`:
+   - `id: "/director/"` and `start_url: "/director/sign-in?source=app"` (the admin likewise);
+   - shortcuts to the portal's main pages;
+   - keep `handle_links: "not-preferred"`.
+3. **Icons and splash images.** `scripts/make-role-icons.mjs` produces `public/icons/{director,admin}-{192,512}.png` and the maskable versions. `scripts/make-startup-images.mjs` produces `public/startup/{director,admin}/`.
+4. **`scripts/check-pwa.mjs`.** Add the two manifests to the list it checks (around line 71).
+5. **`vercel.json`.** Widen the manifest header rule `/manifest-(student|supervisor|coordinator).webmanifest` to include the new roles. Check that the CSP still allows everything the portals load.
+6. **Service worker** (`src/service-worker.ts`):
+   - `/director/*` and `/admin/*` are app routes, so the offline navigation fallback must serve `/app.html` for them. It already does for any path that is not `/` or `/for-*`; keep it that way.
+   - If you add `for-directors.html`, widen the `for-(trainees|supervisors|coordinators)` pattern there and in `vite.config.ts` (the page map, around line 65, and the build inputs, around line 210).
+7. **Offline store.**
+   - `lib/offlineStore.ts` keys rows by `role|id`, so the new roles get their own rows.
+   - Sign-out, an expired session and a forced password change must erase them (`lib/session.ts` around 79–86).
+   - The IT admin portal caches **nothing personal**: only its own account and the maintenance banner.
+8. **Help and the offline table.** `lib/offlineHelp.ts` and the table in `DEVELOPING.md` get a row for each new portal.
+9. **Install and update.** The install prompt (`components/InstallApp.tsx`) and the update toast (`lib/serviceWorker.ts`) must work in the new portals; test this in their e2e specs.
+10. **Push.** Push subscriptions store the role (migration 005's constraint is widened in 083). Notifications for the new roles open their own pages (`services/notificationLinks.ts`).
 
 ## Rules for every item
 
@@ -224,7 +320,7 @@ The OJT Director gets a portal of their own, not extra buttons in the coordinato
   - Make password reset, sign-out, revocation and passkeys work for the new role. Grep for `"coordinator"` in the auth helpers and check each one.
   - Add `requireDirector`.
 - **Portal (front end):**
-  - Add `director` to `Role` in `my-pwa/src/brand/roles.ts`, with its own theme. Use the navy/brass/mist palette from the three-colour redesign commit, distinct from the coordinator's.
+  - Add `director` to `Role` in `my-pwa/src/brand/roles.ts`, with the theme in **"Design spec for the new portals"** (the college-mark row is the signature). Run `/hallmark` and `frontend-design` first (see **"Skills to use"**), and follow the **"PWA integration checklist for a new portal"** step by step.
   - `Door` sign-in at `/director/sign-in`, a `layouts/DirectorLayout.tsx` (side menu on a computer, dock on a phone, as `CoordinatorLayout.tsx` does) and routes under `/director/*` in `App.tsx`.
   - Manifest `manifest-director.webmanifest`, icons and iOS splash images, generated by extending `scripts/make-role-manifests.mjs`, `make-role-icons.mjs` and `make-startup-images.mjs`. Register it in `useRoleTheme.ts`. `npm run check:pwa` must cover it.
   - The landing page gets a "For the OJT office" link, built like the other `for-*.html` pages. Add a `for-directors.html` only if it fits the landing structure in `src/landing/`.
@@ -265,7 +361,7 @@ The university IT/MIS person runs the system. They do **not** see students' reco
   - `POST /api/login/admin` through the same login code path, and `requireAdmin`.
   - The Profile page strongly recommends a passkey.
 - **Portal:**
-  - Role `admin` in `roles.ts`, with a plain neutral theme.
+  - Role `admin` in `roles.ts`, with the light "machine room" theme in **"Design spec for the new portals"**. Run `/hallmark` and `frontend-design` first, and follow the **"PWA integration checklist for a new portal"**.
   - `Door` at `/admin/sign-in`, `layouts/AdminLayout.tsx`, routes under `/admin/*`.
   - Manifest, icons and splash images through the same scripts.
   - No link from the public landing page.
@@ -374,7 +470,10 @@ The university IT/MIS person runs the system. They do **not** see students' reco
 
 ## Finish
 
-When each phase is done, run every check in rule 5 and report the result honestly. Then list:
+When each phase is done:
+1. Run every check in rule 5.
+2. Then run `/code-review` and `/simplify`; for phases that add routes or roles, run `/security-review` too.
+3. Fix what they find, and report the results honestly. Then list:
 - the settings I must decide or set in production;
 - the go-live steps that changed;
 - anything you could not finish, and why.
