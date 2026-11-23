@@ -13673,6 +13673,7 @@ test("coordinator scopes: a scoped coordinator cannot list, open or decide a stu
     );
   }
   const logs = {};
+  const made = { concern: null };
   for (const sid of [inside, outside]) {
     logs[sid] = (await pool.query(
       `INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, CURRENT_DATE - 30, NOW() - INTERVAL '30 days', NOW() - INTERVAL '30 days' + INTERVAL '8 hours', 8, 'Pending') RETURNING id`,
@@ -13724,6 +13725,23 @@ test("coordinator scopes: a scoped coordinator cannot list, open or decide a stu
     const bulk = await jsonRequest("/api/coordinator/clearance/bulk", jsonBody(coordinator, "POST", { student_ids: [outside] }));
     assert.equal(bulk.body.results[0].status, "missing", "bulk clearing skips a student outside");
 
+    // Flagged logs (an unverified log 30 days old is flagged), and a supervisor's concern about an intern outside.
+    const flagged = await jsonRequest("/api/coordinator/discrepancies", { headers: authHeaders(coordinator) });
+    assert.equal(flagged.response.status, 200);
+    assert.ok(!flagged.body.discrepancies.some((row) => row.student_id === outside), "flagged logs of students outside are not listed");
+    assert.ok(flagged.body.discrepancies.some((row) => row.student_id === inside), "theirs are");
+    const outsideOnly = await jsonRequest(`/api/coordinator/discrepancies?student_id=${outside}`, { headers: authHeaders(coordinator) });
+    assert.equal(outsideOnly.body.discrepancies.length, 0, "not even when asked for by id");
+    const concern = (await pool.query(
+      `INSERT INTO complaints (report_type, category, description, filed_by_supervisor_id, reported_student_id)
+       VALUES ('student', 'Attendance', 'Scope check concern.', $1, $2) RETURNING id`,
+      [supervisorId, outside]
+    )).rows[0].id;
+    made.concern = concern;
+    assert.equal((await jsonRequest(`/api/complaints/${concern}/messages`, { headers: authHeaders(coordinator) })).response.status, 404, "a supervisor's concern about a student outside");
+    assert.equal((await jsonRequest(`/api/coordinator/complaints/${concern}/resolve`, jsonBody(coordinator, "PATCH", { status: "In Review" }))).response.status, 404);
+    assert.equal((await jsonRequest(`/api/complaints/${concern}/messages`, { headers: authHeaders(coordinatorToken) })).response.status, 200, "an unscoped coordinator opens it");
+
     // The unscoped coordinator still sees everyone.
     const everyone = (await jsonRequest(`/api/coordinator/students?q=SCOPE-`, { headers: authHeaders(coordinatorToken) })).body;
     assert.ok((everyone.students ?? everyone).some((row) => row.student_id === outside));
@@ -13737,6 +13755,7 @@ test("coordinator scopes: a scoped coordinator cannot list, open or decide a stu
     assert.deepEqual(audit.details.college_ids, [bsit.college_id]);
     assert.deepEqual(audit.details.old_college_ids, []);
   } finally {
+    if (made.concern) await pool.query(`DELETE FROM complaints WHERE id = $1`, [made.concern]);
     await pool.query(`DELETE FROM attendance WHERE student_id = ANY($1::varchar[])`, [[inside, outside]]);
     await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1::varchar[])`, [[inside, outside]]);
     await pool.query(`DELETE FROM students WHERE student_id = ANY($1::varchar[])`, [[inside, outside]]);

@@ -74,13 +74,16 @@ export async function studentInScope(pool: Pool, scope: CoordinatorScope, studen
  * records about one student are here; programme-wide records (terms,
  * holidays, requirements, colleges, announcements) have no student.
  */
+/** A concern's student: its filer, or the intern a supervisor's concern is about (reported_student_id). */
+const CONCERN_STUDENT = "SELECT COALESCE(student_id, reported_student_id) AS student_id FROM complaints WHERE id::text = $1";
+
 const SCOPED_RECORDS: Record<string, { param: string; student: string }> = {
   "/api/attendance/:id/status": { param: "id", student: "SELECT student_id FROM attendance WHERE id::text = $1" },
   "/api/coordinator/attendance/:id/acknowledge": { param: "id", student: "SELECT student_id FROM attendance WHERE id::text = $1" },
   "/api/absences/:id/review": { param: "id", student: "SELECT student_id FROM absences WHERE id::text = $1" },
   "/api/coordinator/appeals/:id": { param: "id", student: "SELECT student_id FROM attendance_appeals WHERE id::text = $1" },
-  "/api/coordinator/complaints/:id/resolve": { param: "id", student: "SELECT student_id FROM complaints WHERE id::text = $1" },
-  "/api/complaints/:id/messages": { param: "id", student: "SELECT student_id FROM complaints WHERE id::text = $1" },
+  "/api/coordinator/complaints/:id/resolve": { param: "id", student: CONCERN_STUDENT },
+  "/api/complaints/:id/messages": { param: "id", student: CONCERN_STUDENT },
   "/api/evaluations/:id": { param: "id", student: "SELECT student_id FROM evaluations WHERE id::text = $1" },
   "/api/attachments/:id/preview": { param: "id", student: "SELECT student_id FROM attachments WHERE id::text = $1" },
   "/api/attachments/:id/file": { param: "id", student: "SELECT student_id FROM attachments WHERE id::text = $1" },

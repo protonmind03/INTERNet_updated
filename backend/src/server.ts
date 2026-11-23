@@ -7160,6 +7160,8 @@ app.get(
         typeof req.query.student_id === "string" && req.query.student_id.trim()
           ? req.query.student_id.trim()
           : null;
+      // Phase 1.6: a scoped coordinator sees only their students' flagged logs.
+      const inScope = scopeCondition("a.student_id", 1);
       const result = await listQuery(req, { order: "date DESC, id DESC", search: ["student_name", "student_id", "company", "supervisor_name"], status: "status", date: "date" },
         `
         SELECT
@@ -7192,11 +7194,11 @@ app.get(
         LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
         WHERE ${flaggedLogCondition("a")}
           AND s.is_active = TRUE
-          AND ($1::text IS NULL OR a.student_id = $1)
+          AND ($1::text IS NULL OR a.student_id = $1)${inScope.sql}
         ORDER BY a.date DESC, a.id DESC
         LIMIT 300
         `,
-        [studentId]
+        [studentId, ...inScope.values]
       );
       return res.json({ discrepancies: result.rows, ...result.page });
     } catch (error) {
