@@ -540,6 +540,8 @@ button.req-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12p
 .rk--all { --rk: var(--color-psu-700); --rk-soft: var(--color-psu-50); --rk-line: var(--color-psu-200); }
 .rk--timein { --rk: #0f766e; --rk-soft: #f0fdfa; --rk-line: #99f6e4; }
 .rk--absence { --rk: #b45309; --rk-soft: #fffbeb; --rk-line: #fcd34d; }
+/* Phase 1.4: overtime requests. */
+.rk--overtime { --rk: #0e7490; --rk-soft: #ecfeff; --rk-line: #67e8f9; }
 .rk--task { --rk: #4338ca; --rk-soft: #eef2ff; --rk-line: #c7d2fe; }
 .rk--document { --rk: #7c3aed; --rk-soft: #f5f3ff; --rk-line: #ddd6fe; }
 .rk--report { --rk: #be123c; --rk-soft: #fff1f2; --rk-line: #fecdd3; }

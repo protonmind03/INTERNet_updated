@@ -42,7 +42,7 @@ html[data-role="supervisor"] .role-dock-label { max-width: none; overflow: clip;
 html[data-role="supervisor"] .role-dock-item--on .role-dock-label { max-width: none; }
 
 /* ---------- Review: one colour for every kind of work ---------- */
-html[data-role="supervisor"] :is(.rk--all, .rk--timein, .rk--absence, .rk--task, .rk--document, .rk--report, .rk--final) { --rk: var(--color-psu-600); --rk-soft: var(--color-psu-50); --rk-line: var(--color-psu-200); }
+html[data-role="supervisor"] :is(.rk--all, .rk--timein, .rk--absence, .rk--overtime, .rk--task, .rk--document, .rk--report, .rk--final) { --rk: var(--color-psu-600); --rk-soft: var(--color-psu-50); --rk-line: var(--color-psu-200); }
 html[data-role="supervisor"] .rk-chip { min-height: 36px; gap: 8px; padding: 0 12px; border-radius: 10px; font-size: 13.5px; }
 html[data-role="supervisor"] .rk-chip-count { height: 20px; min-width: 20px; border-radius: 6px; font-size: 12px; }
 html[data-role="supervisor"] .rk-chip--on { background: var(--color-night); }

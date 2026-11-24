@@ -81,6 +81,7 @@ const KIND_WORD: Record<QueueItem["kind"], string> = {
   document: "Document",
   absence: "Absence",
   journal: "Weekly report",
+  overtime: "Overtime",
 };
 
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -284,6 +285,7 @@ function queueTitle(item: QueueItem): string {
   if (item.kind === "task") return item.entry.title;
   if (item.kind === "absence") return `Absence · ${formatDayDate(item.entry.date)}`;
   if (item.kind === "journal") return `Weekly report · week of ${formatDayDate(item.entry.week_start)}`;
+  if (item.kind === "overtime") return `Overtime · ${formatDayDate(item.entry.work_date)} until ${item.entry.planned_end}`;
   return item.entry.doc_type;
 }
 

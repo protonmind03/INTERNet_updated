@@ -53,7 +53,7 @@ import { useSupervisorWork, type AttendanceEntry, type QueueItem } from "./useSu
 |
 */
 
-type Tab = "all" | "time-ins" | "absences" | "tasks" | "docs" | "reports" | "final";
+type Tab = "all" | "time-ins" | "absences" | "overtime" | "tasks" | "docs" | "reports" | "final";
 
 /** The kinds that can be decided several at a time. */
 type BulkKind = "attendance" | "document" | "absence" | "counting";
@@ -74,6 +74,8 @@ type KindDef = {
 const KINDS: KindDef[] = [
   { tab: "time-ins", kind: "attendance", label: "Time-ins", job: "Verify the day, or reject the photo or the day", icon: "camera", tone: "timein", bulk: "attendance" },
   { tab: "absences", kind: "absence", label: "Absences", job: "Excuse it, or mark it unexcused", icon: "calendar", tone: "absence", bulk: "absence" },
+  // Phase 1.4: approved, the day's hours run to its planned end.
+  { tab: "overtime", kind: "overtime", label: "Overtime", job: "Approve it, or reject it with a note", icon: "clock", tone: "overtime" },
   { tab: "tasks", kind: "task", label: "Tasks", job: "Rate the work, or return it with a note", icon: "tasks", tone: "task" },
   { tab: "docs", kind: "document", label: "Documents", job: "Approve the file, or reject it with a note", icon: "document", tone: "document", bulk: "document" },
   { tab: "reports", kind: "journal", label: "Weekly reports", job: "Mark it reviewed, or return it", icon: "note", tone: "report" },

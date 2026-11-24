@@ -407,6 +407,25 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Overtime and the 8-hour day (Phase 1.4)
+
+- **A day's hours stop at the scheduled end**, unless the supervisor
+  approved overtime for it, then at its approved end; the time-out still
+  ends the day, and the 16-hour limit stays. The rule is one function,
+  `hoursSql` in `services/creditedHours.ts`. **Any new place that works
+  out a log's hours must use it**; totals sum the stored `hours`.
+- The scheduled end is stored on the log at time-in
+  (`attendance.credited_until`, from `judgeTimeIn` in
+  `services/dayRules.ts`), by every time-in path. A log without it (every
+  log from before migration 084, and a day with no schedule) is worked out
+  as before and never capped, so verified hours never move.
+- Overtime requests (`routes/overtime.ts`): the trainee asks before or on
+  the day on the Days page (online only; the reason is kept as a draft);
+  the supervisor decides in Review (the Overtime chip). Approvals per ISO
+  week are limited by the OJT rule `overtime_max_per_week` (2). An
+  approval works out again any finished day that is not verified. Approved
+  overtime shows in the Daily Time Record's remarks.
+
 ## Host Training Establishments (Phase 1.3)
 
 - **A company's kind and status** (migration 083): government, private or

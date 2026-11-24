@@ -117,7 +117,7 @@ export type AttendanceEntry = {
 };
 
 /** The lists a supervisor page can ask for. */
-export type WorkList = "interns" | "attendance" | "tasks" | "documents" | "absences" | "journals";
+export type WorkList = "interns" | "attendance" | "tasks" | "documents" | "absences" | "journals" | "overtime";
 
 const ALL_LISTS: readonly WorkList[] = [
   "interns",
@@ -126,6 +126,7 @@ const ALL_LISTS: readonly WorkList[] = [
   "documents",
   "absences",
   "journals",
+  "overtime",
 ];
 
 export type TaskStatus = "Pending" | "In Progress" | "Submitted" | "Reviewed";
@@ -213,13 +214,32 @@ export type JournalEntry = {
   reviewed_at: string | null;
 };
 
+/** Phase 1.4: an intern's request to work past the scheduled end. */
+export type OvertimeEntry = {
+  id: number;
+  student_id: string;
+  student_name: string;
+  work_date: string;
+  planned_start: string;
+  planned_end: string;
+  reason: string;
+  form_name: string | null;
+  status: "pending" | "approved" | "rejected" | "cancelled";
+  decision_note: string | null;
+  version: number;
+  created_at: string;
+  /** Approved requests in that ISO week, for the limit. */
+  approved_that_week: number;
+};
+
 /** One thing waiting for the supervisor's decision. */
 export type QueueItem =
   | { kind: "attendance"; key: string; waitingSince: string; entry: AttendanceEntry }
   | { kind: "task"; key: string; waitingSince: string; entry: TaskEntry }
   | { kind: "document"; key: string; waitingSince: string; entry: DocumentEntry }
   | { kind: "absence"; key: string; waitingSince: string; entry: AbsenceEntry }
-  | { kind: "journal"; key: string; waitingSince: string; entry: JournalEntry };
+  | { kind: "journal"; key: string; waitingSince: string; entry: JournalEntry }
+  | { kind: "overtime"; key: string; waitingSince: string; entry: OvertimeEntry };
 
 /** `saveAs` names the copy kept for offline reading; without it nothing is kept. */
 async function getJson(path: string, saveAs?: string): Promise<Record<string, unknown>> {
@@ -270,6 +290,8 @@ export function useSupervisorWork(
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [absences, setAbsences] = useState<AbsenceEntry[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [overtime, setOvertime] = useState<OvertimeEntry[]>([]);
+  const [overtimeLimit, setOvertimeLimit] = useState(2);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -296,7 +318,7 @@ export function useSupervisorWork(
           if (data) setInterns((data.interns as Intern[]) || []);
         })
         .catch(() => {});
-      const [internData, attendanceData, taskData, documentData, absenceData, journalData] =
+      const [internData, attendanceData, taskData, documentData, absenceData, journalData, overtimeData] =
         await Promise.all([
           internRequest,
           get("attendance", `/api/supervisor/attendance/${id}`),
@@ -305,6 +327,8 @@ export function useSupervisorWork(
           get("absences", `/api/absences/supervisor`),
           // The newest list: if it cannot be loaded, the rest of the queue still shows.
           get("journals", `/api/journals/supervisor`).catch(() => null),
+          // Phase 1.4: likewise for overtime.
+          get("overtime", `/api/supervisor/overtime`).catch(() => null),
         ]);
       if (internData) setInterns((internData.interns as Intern[]) || []);
       if (attendanceData) setAttendance((attendanceData.attendance as AttendanceEntry[]) || []);
@@ -312,6 +336,10 @@ export function useSupervisorWork(
       if (documentData) setDocuments((documentData.documents as DocumentEntry[]) || []);
       if (absenceData) setAbsences((absenceData.absences as AbsenceEntry[]) || []);
       if (journalData) setJournals((journalData.journals as JournalEntry[]) || []);
+      if (overtimeData) {
+        setOvertime((overtimeData.requests as OvertimeEntry[]) || []);
+        if (typeof overtimeData.limit === "number") setOvertimeLimit(overtimeData.limit);
+      }
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your interns' records."));
@@ -397,12 +425,20 @@ export function useSupervisorWork(
           waitingSince: entry.submitted_at,
           entry,
         })),
+      ...overtime
+        .filter((entry) => entry.status === "pending")
+        .map((entry) => ({
+          kind: "overtime" as const,
+          key: `overtime-${entry.id}`,
+          waitingSince: entry.created_at,
+          entry,
+        })),
     ];
     // Longest wait first.
     return items.sort(
       (a, b) => new Date(a.waitingSince).getTime() - new Date(b.waitingSince).getTime()
     );
-  }, [attendance, tasks, documents, absences, journals]);
+  }, [attendance, tasks, documents, absences, journals, overtime]);
 
   /*
   | Iteration 12: each decision sends the version of the record as this
@@ -671,6 +707,24 @@ export function useSupervisorWork(
     [change, versionOf]
   );
 
+  // Phase 1.4: approve (within the week's limit) or reject with a note, from the version loaded.
+  const decideOvertime = useCallback(
+    (entry: OvertimeEntry, decision: "approve" | "reject", note: string) =>
+      change(async () => {
+        const response = await fetch(
+          `${API_URL}/api/supervisor/overtime/${entry.id}/decision`,
+          withSupervisorAuth({
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ decision, note: note.trim(), expected_version: entry.version }),
+          })
+        );
+        const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+        if (!response.ok) throw new Error(typeof data.message === "string" ? data.message : "The overtime could not be decided.");
+      }),
+    [change]
+  );
+
   const decideJournal = useCallback(
     // "Submitted" withdraws the decision.
     (id: number, status: "Reviewed" | "Returned" | "Submitted", notes: string) =>
@@ -692,6 +746,8 @@ export function useSupervisorWork(
     documents,
     absences,
     journals,
+    overtime,
+    overtimeLimit,
     queue,
     loading,
     error,
@@ -709,6 +765,7 @@ export function useSupervisorWork(
     undoDocument,
     decideAbsence,
     decideJournal,
+    decideOvertime,
   };
 }
 

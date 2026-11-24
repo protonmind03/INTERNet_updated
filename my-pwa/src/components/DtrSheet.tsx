@@ -5,6 +5,7 @@ import { timeColumns } from "../lib/timeColumns";
 import { errorText, toast } from "../lib/toast";
 import { formatPh, phCalendarDate } from "../lib/phTime";
 import type { OfflineRole } from "../lib/offlineStore";
+import { useApprovedOvertime } from "../lib/useApprovedOvertime";
 import { DtrHeader, PrintPreviewFrame, SignatureMark, TraineeDetails } from "./DtrHeader";
 import { useSignatureImage, useTimeRecordHeader } from "../lib/timeRecordHeader";
 
@@ -144,6 +145,8 @@ export default function DtrSheet({
 
   // Read again whenever the logs change, so an attendance change shows in the details at once.
   const header = useTimeRecordHeader(viewer ?? "student", viewer ? person.studentId : undefined, logs);
+  // Phase 1.4: approved overtime goes in the day's remarks.
+  const overtime = useApprovedOvertime(viewer === "supervisor" || viewer === "coordinator" ? viewer : "student", person.studentId);
   const [chosen, setChosen] = useState("");
   const month = chosen || months[0];
 
@@ -155,6 +158,7 @@ export default function DtrSheet({
       absences.map((absence) => [String(absence.date).slice(0, 10), absence.status])
     );
     const holidayOn = new Map(holidays.map((holiday) => [holiday.date, holiday.name]));
+    const overtimeOn = new Map(overtime.map((item) => [item.work_date, item.planned_end]));
     return Array.from({ length: days }, (_, offset) => {
       const day = offset + 1;
       const key = `${month}-${String(day).padStart(2, "0")}`;
@@ -173,9 +177,10 @@ export default function DtrSheet({
         log,
         absence: log && log.status !== "Rejected" ? undefined : absentOn.get(key),
         holiday: holidayOn.get(key),
+        overtimeUntil: overtimeOn.get(key),
       };
     });
-  }, [logs, absences, holidays, month]);
+  }, [logs, absences, holidays, month, overtime]);
 
   const verified = rows.reduce(
     (sum, row) => sum + (row.log?.status === "Verified" ? Number(row.log.hours) || 0 : 0),
@@ -323,6 +328,9 @@ export default function DtrSheet({
                   <td className="py-1.5 pl-2">
                     {row.holiday && (
                       <span className="block text-slate-600">Holiday: {row.holiday}</span>
+                    )}
+                    {row.overtimeUntil && (
+                      <span className="block text-slate-600">Overtime approved until {row.overtimeUntil}</span>
                     )}
                     {(row.log && row.absence === "Unexcused" ? "Rejected, absent (unexcused)" : row.log?.status) ||
                       (row.holiday

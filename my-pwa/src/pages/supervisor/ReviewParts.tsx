@@ -250,6 +250,7 @@ const KIND_LABEL: Record<ReviewItem["kind"], string> = {
   document: "Document",
   absence: "Absence",
   journal: "Weekly report",
+  overtime: "Overtime",
   final: "Final evaluation",
 };
 
@@ -259,6 +260,7 @@ const KIND_ICON: Record<ReviewItem["kind"], IconName> = {
   document: "document",
   absence: "calendar",
   journal: "note",
+  overtime: "clock",
   final: "star",
 };
 
@@ -313,6 +315,8 @@ export function DecisionCard({
     line = formatDayDate(item.entry.date);
   } else if (item.kind === "journal") {
     line = `Week of ${formatDayDate(item.entry.week_start)}`;
+  } else if (item.kind === "overtime") {
+    line = `${formatDayDate(item.entry.work_date)} until ${item.entry.planned_end}`;
   }
   const chips = attendance ? attendanceChips(attendance) : [];
   // The button says which item it opens, so a screen reader hears more than "Review" again and again.

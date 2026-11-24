@@ -15,6 +15,7 @@ import { useAccount } from "../../lib/session";
 import { focusId, recordId, useFocus, useFocusRecord } from "../../lib/useFocusRecord";
 import { usePagination } from "../../lib/usePagination";
 import Absences from "./Absences";
+import Overtime from "./Overtime";
 import { AppealActions } from "./Appeals";
 import { appealableKinds } from "./appealRules";
 import { LateTimeOutDialog, MissedTimeOutNotice, ResubmitDialog } from "./AttendanceCorrections";
@@ -240,6 +241,11 @@ function DailyLogPage() {
             </>
           )}
         </Card>
+
+        {/* Phase 1.4: hours after the scheduled end count only on an approved day. */}
+        <div id="overtime" className="scroll-mt-24">
+          <Overtime studentId={student?.student_id} />
+        </div>
 
         <div id="absences" className="scroll-mt-24">
           <Absences studentId={student?.student_id} />

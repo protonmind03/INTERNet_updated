@@ -6,7 +6,7 @@ import Icon from "../../components/Icon";
 import EntryPictures from "../../components/EntryPictures";
 import { DailyAccomplishments, ReportParts } from "../../components/WeeklyReport";
 import { Button, FormError, FormField, Modal, StarInput, StatusBadge } from "../../components/ui";
-import { downloadProtectedUpload } from "../../lib/api";
+import { API_URL, downloadProtectedUpload, withSupervisorAuth } from "../../lib/api";
 import { formatFileSize } from "../../lib/files";
 import {
   dueLabel,
@@ -22,6 +22,7 @@ import { PH_TIME_ZONE } from "../../lib/phTime";
 import {
   downloadDocument,
   type AbsenceEntry,
+  type OvertimeEntry,
   type AttendanceEntry,
   type DocumentEntry,
   type JournalEntry,
@@ -71,6 +72,9 @@ export default function ReviewDetail({
   }
   if (item.kind === "journal") {
     return <JournalDetail key={item.key} entry={item.entry} {...shared} />;
+  }
+  if (item.kind === "overtime") {
+    return <OvertimeDetail key={item.key} entry={item.entry} {...shared} />;
   }
   return <DocumentDetail key={item.key} entry={item.entry} {...shared} />;
 }
@@ -745,6 +749,67 @@ function AbsenceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Absenc
       />
     </DetailShell>
   );
+}
+
+/*
+|--------------------------------------------------------------------------
+| OVERTIME (Phase 1.4)
+|--------------------------------------------------------------------------
+|
+| Approved, the day's hours count to its planned end instead of the
+| scheduled end. Approvals a week are limited (the OJT rule); the server
+| refuses one over it and says so.
+*/
+
+function OvertimeDetail({ entry, work, onDecided, shortcuts }: DetailProps<OvertimeEntry>) {
+  const limit = work.overtimeLimit;
+  const full = entry.approved_that_week >= limit;
+  return (
+    <DetailShell eyebrow="Overtime" title={entry.student_name} meta={`${formatLongDate(entry.work_date)}, asked ${formatDateTime(entry.created_at)}`}>
+      <p className="text-sm text-slate-700">
+        From {entry.planned_start} until {entry.planned_end}. {entry.approved_that_week} of {limit} approved that week.
+      </p>
+      <Quote label="Intern's reason">{entry.reason}</Quote>
+      {entry.form_name && (
+        <p className="text-sm text-slate-600">
+          Signed form attached: {entry.form_name}.{" "}
+          <button type="button" onClick={() => void openOvertimeForm(entry.id).catch((error) => toast.error(errorText(error, "The form could not be opened.")))} className="font-semibold text-psu-700 hover:underline">
+            Open it
+          </button>
+        </p>
+      )}
+      {full && <p className="text-sm text-amber-800">That week already has {limit} approved, the most allowed. Reject this one, or ask the intern to cancel another.</p>}
+      <Decision
+        key={entry.id}
+        approveLabel="Approve"
+        rejectLabel="Reject"
+        noteLabel="Reason"
+        notePlaceholder="Tell the intern why the overtime is not approved."
+        shortcut={shortcuts}
+        onApprove={async () => {
+          await work.decideOvertime(entry, "approve", "");
+          toast.success(`Overtime approved for ${entry.student_name}.`);
+          onDecided();
+        }}
+        onReject={async (note) => {
+          await work.decideOvertime(entry, "reject", note);
+          toast.success(`Overtime rejected. ${entry.student_name} has been notified.`);
+          onDecided();
+        }}
+      />
+    </DetailShell>
+  );
+}
+
+async function openOvertimeForm(id: number): Promise<void> {
+  const response = await fetch(`${API_URL}/api/overtime/${id}/form`, withSupervisorAuth());
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.message || "The form could not be opened.");
+  }
+  const url = URL.createObjectURL(await response.blob());
+  window.open(url, "_blank", "noopener");
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 /*
