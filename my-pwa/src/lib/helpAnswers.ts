@@ -15,7 +15,7 @@
 |
 */
 
-export type HelpRole = "student" | "supervisor" | "coordinator" | "director";
+export type HelpRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
 export type HelpAnswer = {
   id: string;
@@ -27,7 +27,7 @@ export type HelpAnswer = {
   screens: string[];
 };
 
-export const HELP_ROLE_NAME: Record<HelpRole, string> = { student: "Trainee", supervisor: "Supervisor", coordinator: "Coordinator", director: "OJT Director" };
+export const HELP_ROLE_NAME: Record<HelpRole, string> = { student: "Trainee", supervisor: "Supervisor", coordinator: "Coordinator", director: "OJT Director", admin: "System administrator" };
 
 /** The screens' names, as the help sheet's heading says them. */
 export const SCREEN_NAMES: Record<string, string> = {
@@ -264,6 +264,39 @@ export const HELP_ANSWERS: HelpAnswer[] = [
     question: "What does the deployment gate do?",
     answer: "With it on, a student can time in only once their coordinator has cleared them: eligible, every requirement before deployment approved, and a company assigned.",
     screens: ["/director/rules", "/director/approvals"],
+  },
+  // Phase 1.7: the system administrator.
+  {
+    id: "admin-temporary-password",
+    roles: ["admin"],
+    topic: "Accounts",
+    question: "Why can't I see the temporary password I send?",
+    answer: "It goes to the account's owner by email only, so nobody who runs the system can sign in as someone else. Without email set up on the server it cannot be sent at all.",
+    screens: ["/admin/accounts"],
+  },
+  {
+    id: "admin-unlock",
+    roles: ["admin"],
+    topic: "Accounts",
+    question: "Someone is locked out after too many wrong passwords.",
+    answer: "Find them on Accounts and choose Unlock from their row's menu. They can try their password again at once; if they forgot it, email them a temporary password.",
+    screens: ["/admin/accounts"],
+  },
+  {
+    id: "admin-records",
+    roles: ["admin"],
+    topic: "Accounts",
+    question: "Can I open a student's record?",
+    answer: "No. This portal shows who an account is, never what is in it: no records, documents, photos or grades. Coordinators and the OJT Director see those.",
+    screens: ["/admin/accounts", "/admin/audit"],
+  },
+  {
+    id: "admin-backup",
+    roles: ["admin"],
+    topic: "Backups",
+    question: "How do I know the backups work?",
+    answer: "Backups lists each night's run. A backup is only proven by restoring it: once a month restore one on your own computer and record it on System status.",
+    screens: ["/admin/backups", "/admin/status"],
   },
   {
     id: "flagged-log",

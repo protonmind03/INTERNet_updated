@@ -71,6 +71,19 @@ export const DOOR_COPY: Record<
     welcome: "Welcome back",
     wrong: "That email and password don’t match. Check them or reset your password.",
   },
+  // Phase 1.7: no link to it anywhere on the public pages.
+  admin: {
+    name: "System administrator",
+    article: "the system administrator",
+    appName: "INTERNet System",
+    idLabel: "Administrator email",
+    idPlaceholder: "name@psu.edu.ph",
+    idHelp: "The account made for you on the server",
+    idMode: "email",
+    button: "Sign in to the system",
+    welcome: "Welcome back",
+    wrong: "That email and password don’t match. Check them, or ask another administrator to unlock the account.",
+  },
 };
 
 const LAST_ROLE_KEY = "inb_last_role";

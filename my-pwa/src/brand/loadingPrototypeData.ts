@@ -8,7 +8,7 @@ import type { BrandRole } from "./roles";
 
 /** The three portals: the prototypes are for after sign-in. */
 // The prototypes cover the three original portals.
-export type PortalRole = Exclude<BrandRole, "guest" | "director">;
+export type PortalRole = Exclude<BrandRole, "guest" | "director" | "admin">;
 
 export type Prototype = "p1" | "p2" | "p3";
 /** How long the role's first data takes; "fail" never arrives. */

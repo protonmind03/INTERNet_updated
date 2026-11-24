@@ -13,7 +13,8 @@ import { purgeOfflineData } from "./offlineStore";
 */
 
 // Phase 1.6: the OJT Director.
-export type SessionRole = "student" | "supervisor" | "coordinator" | "director";
+// Phase 1.7: the IT administrator.
+export type SessionRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
 export type StudentAccount = {
   id: number;
@@ -49,13 +50,22 @@ export type DirectorAccount = {
   department: string | null;
 };
 
+export type AdminAccount = {
+  admin_id: string;
+  email: string;
+  name: string;
+  department: string | null;
+};
+
 type AccountFor<R extends SessionRole> = R extends "student"
   ? StudentAccount
   : R extends "supervisor"
     ? SupervisorAccount
     : R extends "director"
       ? DirectorAccount
-      : CoordinatorAccount;
+      : R extends "admin"
+        ? AdminAccount
+        : CoordinatorAccount;
 
 /** The stored account for a role, or null when nobody is signed in. */
 export function readAccount<R extends SessionRole>(role: R): AccountFor<R> | null {

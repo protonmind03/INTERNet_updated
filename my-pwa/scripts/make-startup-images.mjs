@@ -11,7 +11,7 @@
 //
 // Iteration 19: one set per role as well, for the role apps (Iteration 23):
 //
-//   node scripts/make-startup-images.mjs student      (or supervisor, coordinator, director)
+//   node scripts/make-startup-images.mjs student      (or supervisor, coordinator, director, admin)
 //
 // writes public/startup/<role>/: the role's chrome colour (ROLE_PALETTES in
 // src/brand/tokens.ts), the PSU seal in the top third (on a white disc when the chrome is
@@ -200,7 +200,7 @@ const ROLE = process.argv[2];
 const RUN = Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === path.resolve(process.argv[1]);
 
 if (RUN && ROLE) {
-  if (!["student", "supervisor", "coordinator", "director"].includes(ROLE)) throw new Error("The role is student, supervisor, coordinator or director.");
+  if (!["student", "supervisor", "coordinator", "director", "admin"].includes(ROLE)) throw new Error("The role is student, supervisor, coordinator, director or admin.");
   const { readPng: read } = await import("./png.mjs");
   const icon = read(path.join(root, "public", "icon-512.png"));
   const seal = read(path.join(root, "src", "brand", "assets", "psu-seal.png"));

@@ -271,6 +271,29 @@
   --role-side: #0c1731;
   --role-on-side: #f2f6f9;
 }
+/* Phase 1.7: the IT administrator's "machine room": mist and navy ink, no brass (ROLE_PALETTES.admin). */
+[data-role="admin"] {
+  --role-primary: #233564;
+  --role-on-primary: #fbfdfe;
+  --role-accent: #233564;
+  --role-on-accent: #fbfdfe;
+  --role-surface: #eef2f6;
+  --role-ink: #0c1731;
+  --role-chrome: #dce4ee;
+  --role-on-chrome: #0c1731;
+  --role-decor: #6e85ba;
+  --role-hairline: #c3cdd9;
+  --role-dock: #fbfdfe;
+  --role-dock-border: #c3cdd9;
+  --role-dock-ink: #233564;
+  --role-dock-active: #0c1731;
+  --role-on-dock-active: #f2f6f9;
+  --role-side: #dce4ee;
+  --role-on-side: #0c1731;
+  /* The side menu's current mark is navy here, never brass. */
+  --route-line: #445b93;
+  --inb-amber: #445b93;
+}
 /* Phase 1.6: the OJT Director's portal takes the supervisor's night, brass and mist (ROLE_PALETTES.director). */
 [data-role="director"] {
   --role-primary: #233564;
@@ -377,7 +400,7 @@
   --color-psu-900: #08122c;
   --color-psu-950: #03071b;
 }
-[data-role="supervisor"], [data-role="director"] {
+[data-role="supervisor"], [data-role="director"], [data-role="admin"] {
   --color-psu-50: #f1f5fe;
   --color-psu-100: #e3eaf7;
   --color-psu-200: #c9d4ec;
@@ -1184,6 +1207,13 @@
 .role-side-link[aria-current="page"] { background: rgb(255 255 255 / 0.14); color: var(--role-on-side); }
 .role-side-link[aria-current="page"]::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 0 3px 3px 0; background: var(--inb-amber); }
 [data-role="supervisor"] .role-side-link[aria-current="page"]::before { background: #ffffff; }
+.role-side-section { color: color-mix(in srgb, var(--role-on-side) 70%, transparent); }
+/* Phase 1.7: a light side menu (the administrator's): navy tints instead of white ones, a navy mark. */
+.role-side[data-light] .role-side-link:hover, .role-side[data-light] .role-side-head:hover, .role-side[data-light] .role-side-account:hover, .role-side[data-light] .role-side-toggle:hover { background: rgb(12 23 49 / 0.06); }
+.role-side[data-light] .role-side-link[aria-current="page"], .role-side[data-light] .role-side-account[aria-current="page"] { background: rgb(12 23 49 / 0.09); }
+.role-side[data-light] .role-side-foot { border-top-color: rgb(12 23 49 / 0.14); }
+.role-side[data-light] .role-side-avatar, .role-side[data-light] .role-side-count { background: #0c1731; color: #f2f6f9; }
+.role-side[data-light] :focus-visible { outline-color: #233564; }
 .role-side-detail { display: block; font-size: 12px; font-weight: 500; color: color-mix(in srgb, var(--role-on-side) 64%, transparent); }
 .role-side-account { padding: 4px; margin: -4px; }
 .role-side-account:hover { background: rgb(255 255 255 / 0.08); }

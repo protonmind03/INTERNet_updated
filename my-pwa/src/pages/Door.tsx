@@ -46,6 +46,8 @@ const DEV_ACCOUNTS: Record<Role, { identifier: string; password: string }> = {
   coordinator: { identifier: "coordinator.demo@internet.test", password: "CoordinatorDemo123!" },
   // No demo Director: one is made with npm run director:create.
   director: { identifier: "", password: "" },
+  // Nor a demo administrator: one is made with npm run admin:create.
+  admin: { identifier: "", password: "" },
 };
 
 /** Each role's words on its sign-in page. */
@@ -74,6 +76,12 @@ const WORDS: Record<Role, { lead: string; phoneTitle: string; deskLead: string; 
     deskLead: "Every college, its programs, clearances and agreements.",
     help: "Locked out?",
   },
+  admin: {
+    lead: "Sign in to look after accounts, backups and the server.",
+    phoneTitle: "System",
+    deskLead: "Accounts, system status, backups and the audit log. No student records.",
+    help: "Locked out?",
+  },
 };
 
 const CHIP_ICON: Record<Role, string> = {
@@ -81,6 +89,7 @@ const CHIP_ICON: Record<Role, string> = {
   supervisor: "M5 12l4 4L19 6",
   coordinator: "M5 20V11M12 20V5M19 20v-7",
   director: "M3 21h18M5 21V9l7-5 7 5v12M9 21v-6h6v6",
+  admin: "M4 6h16v5H4zM4 13h16v5H4zM8 8.5h.01M8 15.5h.01",
 };
 
 function Glyph({ d, size = 16 }: { d: string; size?: number }) {

@@ -31,7 +31,7 @@ export function passwordPolicyError(password: string): string | null {
  * this device; store it so the current session keeps working.
  */
 export function storeRotatedToken(
-  role: "coordinator" | "student" | "supervisor" | "director",
+  role: "coordinator" | "student" | "supervisor" | "director" | "admin",
   token: unknown
 ): void {
   if (typeof token !== "string" || !token) return;
@@ -40,7 +40,7 @@ export function storeRotatedToken(
 }
 
 export function withRoleAuth(
-  role: "coordinator" | "student" | "supervisor" | "director",
+  role: "coordinator" | "student" | "supervisor" | "director" | "admin",
   options: RequestInit = {}
 ): RequestInit {
   const token = localStorage.getItem(`${role}_token`);
@@ -59,6 +59,11 @@ export function withStudentAuth(options: RequestInit = {}): RequestInit {
 
 export function withSupervisorAuth(options: RequestInit = {}): RequestInit {
   return withRoleAuth("supervisor", options);
+}
+
+/** Phase 1.7: the IT administrator's token. */
+export function withAdminAuth(options: RequestInit = {}): RequestInit {
+  return withRoleAuth("admin", options);
 }
 
 /** Phase 1.6: the OJT Director's token. */

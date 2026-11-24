@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { LaneDash } from "./motifs";
 import { ROLE_THEMES } from "./roles";
+import { ROLE_CHROME_DARK } from "./tokens";
 import type { BrandRole } from "./roles";
 
 type PortalHeaderProps = {
@@ -31,6 +32,9 @@ type PortalHeaderProps = {
 export default function PortalHeader({ role, context, pageTitle, onMenu, right, variant = "mobile", status, titleIsHeading = true }: PortalHeaderProps) {
   const t = ROLE_THEMES[role];
   const shownTitle = pageTitle ?? t.portal;
+  // Phase 1.7: the administrator's header is mist, so its words are the role's ink.
+  const light = role !== "guest" && !ROLE_CHROME_DARK[role];
+  const ink = light ? "text-(--role-on-chrome)" : "text-white";
 
   if (variant === "desktop") {
     return (
@@ -53,7 +57,7 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
             type="button"
             onClick={onMenu}
             aria-label="Open menu"
-            className="-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-white hover:bg-white/10"
+            className={`-ml-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-xl ${ink} ${light ? "hover:bg-black/5" : "hover:bg-white/10"}`}
           >
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
               <path d="M4 6h16M4 12h16M4 18h16" />
@@ -61,10 +65,10 @@ export default function PortalHeader({ role, context, pageTitle, onMenu, right, 
           </button>
         )}
         <div className="min-w-0 flex-1">
-          <p className={`font-display truncate font-extrabold leading-tight text-white ${shownTitle.length > 13 ? "text-[22px]" : "text-[26px]"}`} role={titleIsHeading ? "heading" : undefined} aria-level={titleIsHeading ? 1 : undefined}>
+          <p className={`font-display truncate font-extrabold leading-tight ${ink} ${shownTitle.length > 13 ? "text-[22px]" : "text-[26px]"}`} role={titleIsHeading ? "heading" : undefined} aria-level={titleIsHeading ? 1 : undefined}>
             {shownTitle}
           </p>
-          {context && <p className="mt-0.5 truncate text-[13.5px] font-medium text-white/85">{context}</p>}
+          {context && <p className={`mt-0.5 truncate text-[13.5px] font-medium ${light ? "text-(--role-on-chrome)" : "text-white/85"}`}>{context}</p>}
         </div>
         {status && <span className="shrink-0 rounded-full bg-white/15 px-2.5 py-1 text-[11px] font-semibold text-white">{status}</span>}
         <div className="flex shrink-0 items-center gap-1">{right}</div>

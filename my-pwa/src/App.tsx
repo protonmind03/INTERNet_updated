@@ -28,7 +28,7 @@ import CoordinatorHub, { MovedPage, OwnPage } from "./pages/coordinator/Coordina
 |
 */
 
-type PortalRole = "student" | "supervisor" | "coordinator" | "director";
+type PortalRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 type PageLoader = () => Promise<{ default: ComponentType }>;
 
 const portalPages: Record<PortalRole, PageLoader[]> = {
@@ -36,6 +36,7 @@ const portalPages: Record<PortalRole, PageLoader[]> = {
   supervisor: [],
   coordinator: [],
   director: [],
+  admin: [],
 };
 
 function page(role: PortalRole, load: PageLoader) {
@@ -210,6 +211,16 @@ const DirectorReports = page("director", () => import("./pages/director/Reports"
 const DirectorNotifications = page("director", () => import("./pages/director/Notifications"));
 const DirectorProfile = page("director", () => import("./pages/director/Profile"));
 const DirectorHelp = page("director", () => import("./pages/PortalHelp").then((module) => ({ default: module.DirectorHelp })));
+// Phase 1.7: the system administrator's portal.
+const AdminAccounts = page("admin", () => import("./pages/admin/Accounts"));
+const AdminStatus = page("admin", () => import("./pages/admin/Status"));
+const AdminBackups = page("admin", () => import("./pages/admin/Backups"));
+const AdminWarnings = page("admin", () => import("./pages/admin/Warnings"));
+const AdminNotice = page("admin", () => import("./pages/admin/Notice"));
+const AdminAudit = page("admin", () => import("./pages/admin/Audit"));
+const AdminNotifications = page("admin", () => import("./pages/admin/Notifications"));
+const AdminProfile = page("admin", () => import("./pages/admin/Profile"));
+const AdminHelp = page("admin", () => import("./pages/PortalHelp").then((module) => ({ default: module.AdminHelp })));
 
 // The brand kit preview (and the loading prototypes, Iteration 14) only exists in development
 // builds, or in a build made with VITE_BRAND_PREVIEW=true, so it can be tried on a test site.
@@ -247,6 +258,7 @@ function App() {
         <Route path="/supervisor/sign-in" element={<Door role="supervisor" />} />
         <Route path="/coordinator/sign-in" element={<Door role="coordinator" />} />
         <Route path="/director/sign-in" element={<Door role="director" />} />
+        <Route path="/admin/sign-in" element={<Door role="admin" />} />
         <Route path="/login" element={<ToDoors />} />
         <Route
           path="/forgot-password"
@@ -559,6 +571,17 @@ function App() {
         <Route path="/director/notifications" element={<DirectorNotifications />} />
         <Route path="/director/profile" element={<DirectorProfile />} />
         <Route path="/director/help" element={<DirectorHelp />} />
+        {/* Phase 1.7: the system administrator's portal. No public page links here. */}
+        <Route path="/admin" element={<Navigate to="/admin/accounts" replace />} />
+        <Route path="/admin/accounts" element={<AdminAccounts />} />
+        <Route path="/admin/status" element={<AdminStatus />} />
+        <Route path="/admin/backups" element={<AdminBackups />} />
+        <Route path="/admin/warnings" element={<AdminWarnings />} />
+        <Route path="/admin/notice" element={<AdminNotice />} />
+        <Route path="/admin/audit" element={<AdminAudit />} />
+        <Route path="/admin/notifications" element={<AdminNotifications />} />
+        <Route path="/admin/profile" element={<AdminProfile />} />
+        <Route path="/admin/help" element={<AdminHelp />} />
 
         <Route
           path="/supervisor/help"

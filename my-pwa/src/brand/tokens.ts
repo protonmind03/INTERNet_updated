@@ -103,6 +103,19 @@ export const ROLE_PALETTES = {
     onChrome: "#F2F6F9",
     decor: "#DBA65D",
   },
+  // Phase 1.7: the IT administrator's "machine room": mist and navy ink, no brass.
+  admin: {
+    name: "Machine room",
+    primary: "#233564",
+    onPrimary: "#FBFDFE",
+    accent: "#233564",
+    onAccent: "#FBFDFE",
+    surface: "#EEF2F6",
+    ink: "#0C1731",
+    chrome: "#DCE4EE",
+    onChrome: "#0C1731",
+    decor: "#6E85BA",
+  },
   coordinator: {
     name: "Route map",
     primary: "#4F46E5",
@@ -115,10 +128,10 @@ export const ROLE_PALETTES = {
     onChrome: "#FFFFFF",
     decor: "#B8C2FF",
   },
-} as const satisfies Record<"student" | "supervisor" | "coordinator" | "director", RolePalette>;
+} as const satisfies Record<"student" | "supervisor" | "coordinator" | "director" | "admin", RolePalette>;
 
 /** Whether a role's chrome is dark (the seal then sits on its white disc). Every header is now a flat dark role colour. */
-export const ROLE_CHROME_DARK = { student: true, supervisor: true, coordinator: true, director: true } as const;
+export const ROLE_CHROME_DARK = { student: true, supervisor: true, coordinator: true, director: true, admin: false } as const;
 
 /**
  * The rest of each role's surface: the 1 px hairline that replaces shadows,
@@ -167,6 +180,16 @@ export const ROLE_SURFACES = {
     side: "#0C1731",
     onSide: "#F2F6F9",
   },
+  admin: {
+    hairline: "#C3CDD9",
+    dock: "#FBFDFE",
+    dockBorder: "#C3CDD9",
+    dockInk: "#233564",
+    dockActive: "#0C1731",
+    onDockActive: "#F2F6F9",
+    side: "#DCE4EE",
+    onSide: "#0C1731",
+  },
   coordinator: {
     hairline: "#E3E6F5",
     dock: "#1A237E",
@@ -177,7 +200,7 @@ export const ROLE_SURFACES = {
     side: "#121A5E",
     onSide: "#FFFFFF",
   },
-} as const satisfies Record<"student" | "supervisor" | "coordinator" | "director", RoleSurfaces>;
+} as const satisfies Record<"student" | "supervisor" | "coordinator" | "director" | "admin", RoleSurfaces>;
 
 /**
  * Each role's eleven-step scale. The app's components were written in the
@@ -190,6 +213,7 @@ export const ROLE_SCALES = {
   supervisor: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
   coordinator: ["#EEF2FF", "#E0E7FF", "#C7D2FE", "#A5B4FC", "#818CF8", "#6366F1", "#4F46E5", "#4338CA", "#3730A3", "#312E81", "#1E1B4B"],
   director: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
+  admin: ["#F1F5FE", "#E3EAF7", "#C9D4EC", "#9FB1D8", "#6E85BA", "#445B93", "#233564", "#18274B", "#0F1B39", "#08122C", "#03071B"],
 } as const;
 
 /** The steps of a scale, in order (Tailwind's names). */

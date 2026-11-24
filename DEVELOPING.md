@@ -14,6 +14,7 @@ together.
 | Supervisor | Interns, logs, tasks, documents, absences, weekly reports and schedules as last loaded; message drafts | Nothing: a decision is never kept for later | Every decision; recording an intern's time-in; giving tasks; messages; signing in |
 | Coordinator | Notifications and announcements as last loaded; message drafts | Nothing | Every page's current figures; every decision, change, import and export; signing in |
 | Director | The campus overview, programs and coordinators as last loaded; notifications | Nothing | Every decision and change (rules, a coordinator's colleges, a program's hours); exports; signing in |
+| Administrator | The maintenance notice and their own account; nothing else is kept on the device | Nothing | Every page (accounts, status, backups, warnings, audit log); every account action and the notice; signing in |
 
 The hours are the server's defaults. Each can be changed per deployment:
 `OFFLINE_MAX_AGE_HOURS_TIME_IN`, `OFFLINE_MAX_AGE_HOURS_LUNCH`,
@@ -405,3 +406,34 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
 - **Tests that make a Director deactivate it afterwards**: while one is
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
+
+## The system administrator (Phase 1.7)
+
+- **A fifth portal, `/admin`,** for the IT/MIS person who runs the system.
+  Accounts are in `system_admins` (migration 081); `npm run admin:create
+  email=… name="…"` makes the first one (`deactivate` turns one off), and
+  an administrator can make Director and administrator accounts from
+  Accounts. No public page links to `/admin/sign-in`. The theme is "the
+  machine room": mist and navy ink, no brass (`ROLE_PALETTES.admin`,
+  `ROLE_CHROME_DARK.admin` false, so RoleShell draws a light header and
+  side menu).
+- **Separation of duties, on the server.** `requireAdmin` routes
+  (`routes/admin.ts`) return who an account is, never what is in it. The
+  administrator is on no other route's role list, and the test "the
+  administrator ... is refused every route about students ..." walks the
+  whole sweep: **never add "admin" to a route that returns a student's
+  records, documents, photos, evaluations, grades, journals, reports or
+  messages.** A temporary password is emailed to its owner only
+  (`services/adminAccounts.ts`, which takes the send function so tests
+  pass a mock); without email it is refused and nothing changes.
+- **System pages move to the administrator.** System status, problems,
+  the restore drill and the email and storage tests
+  (`routes/console.ts`, `components/SystemStatusCard.tsx`) answer under
+  `/api/admin/...` and, until an active administrator exists, under
+  `/api/coordinator/...` as before; then the coordinator's System status
+  says only whether something is wrong.
+- **The maintenance notice** (`system_notice`, `GET /api/system-notice`
+  for anyone) shows at the top of every portal (`SystemNoticeBanner` in
+  RoleShell) and is kept in localStorage for offline reading.
+- **Tests that make an administrator deactivate it afterwards**, for the
+  same reason as a Director's (`e2e/tests/admin-portal.spec.ts`).

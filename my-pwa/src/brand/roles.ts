@@ -8,7 +8,8 @@
  */
 
 // Phase 1.6: the OJT Director's portal (/director).
-export type Role = "student" | "supervisor" | "coordinator" | "director";
+// Phase 1.7: the IT administrator's portal (/admin).
+export type Role = "student" | "supervisor" | "coordinator" | "director" | "admin";
 export type BrandRole = Role | "guest";
 
 /** Every data process a page can wait on. Pages pass one of these to <BrandLoader process=…>. */
@@ -218,6 +219,37 @@ export const ROLE_THEMES: Record<BrandRole, RoleTheme> = {
       save: "Saving the change…",
     },
   },
+  admin: {
+    role: "admin",
+    portal: "System",
+    tag: "System administrator",
+    tagline: "Accounts, backups and the server's health.",
+    // Phase 1.7, "the machine room": the opposite of the academic portals.
+    // Mist with navy ink and no brass (ROLE_PALETTES.admin).
+    surface: "light",
+    colors: {
+      surface: "#DCE4EE",
+      surfaceRaised: "#FBFDFE",
+      accent: "#233564",
+      accentText: "#FBFDFE",
+      text: "#0C1731",
+      muted: "#45536B",
+      tagBg: "rgba(35, 53, 100, 0.10)",
+      tagText: "#233564",
+    },
+    launchSteps: [
+      { label: "Accounts", message: "Loading the accounts…" },
+      { label: "Checks", message: "Asking the server how it is…" },
+      { label: "Backups", message: "Reading the last backups…" },
+    ],
+    messages: {
+      dashboard: "Asking the server how it is…",
+      search: "Searching the accounts…",
+      profile: "Loading your profile…",
+      save: "Saving the change…",
+      export: "Preparing the export…",
+    },
+  },
   coordinator: {
     role: "coordinator",
     portal: "Coordinator Portal",
@@ -327,6 +359,7 @@ const ROLE_SUCCESS: Record<BrandRole, Partial<Record<LoadProcess, string>>> = {
     export: "Analytics PDF ready to download.",
   },
   director: { save: "Saved." },
+  admin: { save: "Saved." },
   guest: { signIn: "Welcome back." },
 };
 
@@ -346,7 +379,7 @@ export function errorText(err: unknown, fallback = "That did not work. Please tr
 export function getActiveRole(): BrandRole {
   try {
     const r = localStorage.getItem("active_role");
-    return r === "student" || r === "supervisor" || r === "coordinator" || r === "director" ? r : "guest";
+    return r === "student" || r === "supervisor" || r === "coordinator" || r === "director" || r === "admin" ? r : "guest";
   } catch {
     return "guest";
   }

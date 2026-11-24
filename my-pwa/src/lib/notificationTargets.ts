@@ -21,7 +21,7 @@ import type { IconName } from "../components/Icon";
 |
 */
 
-export type NotificationRole = "student" | "supervisor" | "coordinator" | "director";
+export type NotificationRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
 export type ResolvableNotification = {
   title: string;
@@ -38,6 +38,7 @@ export const NOTIFICATIONS_PAGE: Record<NotificationRole, string> = {
   supervisor: "/supervisor/notifications",
   coordinator: "/coordinator/notifications",
   director: "/director/notifications",
+  admin: "/admin/notifications",
 };
 
 const HOME: Record<NotificationRole, string> = {
@@ -45,6 +46,7 @@ const HOME: Record<NotificationRole, string> = {
   supervisor: "/supervisor/dashboard",
   coordinator: "/coordinator/dashboard",
   director: "/director/overview",
+  admin: "/admin/accounts",
 };
 
 /** The portal a path belongs to. */
@@ -52,6 +54,7 @@ export function portalOf(path: string): NotificationRole {
   if (path === "/supervisor" || path.startsWith("/supervisor/")) return "supervisor";
   if (path === "/coordinator" || path.startsWith("/coordinator/")) return "coordinator";
   if (path === "/director" || path.startsWith("/director/")) return "director";
+  if (path === "/admin" || path.startsWith("/admin/")) return "admin";
   return "student";
 }
 
@@ -61,6 +64,8 @@ const focus = (path: string, kind: string, id: string) => `${path}?focus=${kind}
 export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string) => string>> = {
   // Phase 1.6: the Director's notifications open their own list for now.
   director: {},
+  // Phase 1.7: the administrator's notifications open their own list.
+  admin: {},
   student: {
     attendance: (id) => focus("/daily-log", "attendance", id),
     absence: () => "/daily-log",

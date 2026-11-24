@@ -14,7 +14,7 @@ export default function PasswordForm({
   role,
   accountId,
 }: {
-  role: "student" | "supervisor" | "coordinator" | "director";
+  role: "student" | "supervisor" | "coordinator" | "director" | "admin";
   accountId: string;
 }) {
   const [current, setCurrent] = useState("");

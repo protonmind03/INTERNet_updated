@@ -1089,4 +1089,23 @@ hours, the OJT rules or the coordinator accounts: the Director does. Until
 then the coordinators keep those powers and their Home says no Director
 account exists yet. To turn an account off:
 `railway run --service Postgres npm run director:create <port> email=<email> deactivate`.
-The IT administrator's portal (Phase 1.7) will do both from the web.
+Once an administrator account exists (below), they can do both from Accounts.
+
+## The system administrator's account (run by you, once)
+
+The admin portal (`/admin/sign-in`; no public page links to it) is for
+the university's IT/MIS person. It manages accounts, system status,
+backups, the production warnings, the maintenance notice and the audit
+log, and cannot open students' records, documents, photos or grades.
+
+1. `railway run --service Postgres npm run admin:create <port> email=<their email> name="<their full name>"`
+2. It prints a temporary password once: give it to them. They must set
+   their own at first sign-in.
+
+From that moment the coordinators' System status shows only whether
+something is wrong; the administrator has the details. Temporary passwords
+and new accounts made from Accounts are **emailed** to their owner, so set
+up email first ("Seeing that something is going wrong" and the
+`EMAIL_*`/`SMTP_*` settings); without it those two actions are refused.
+To turn an account off:
+`railway run --service Postgres npm run admin:create <port> email=<email> deactivate`.

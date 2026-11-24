@@ -1,0 +1,91 @@
+{
+  "id": "/admin/",
+  "name": "INTERNet System",
+  "short_name": "System",
+  "description": "Accounts, backups and the server's health for the INTERNet system administrator.",
+  "lang": "en-PH",
+  "dir": "ltr",
+  "start_url": "/admin/sign-in?source=app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#EEF2F6",
+  "theme_color": "#DCE4EE",
+  "categories": [
+    "education",
+    "productivity"
+  ],
+  "handle_links": "not-preferred",
+  "launch_handler": {
+    "client_mode": [
+      "navigate-existing",
+      "auto"
+    ]
+  },
+  "icons": [
+    {
+      "src": "/icons/admin-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/admin-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/admin-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/admin-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Accounts",
+      "short_name": "Accounts",
+      "description": "Find an account, unlock it or end its sessions.",
+      "url": "/admin/accounts",
+      "icons": [
+        {
+          "src": "/icons/admin-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "System status",
+      "short_name": "Status",
+      "description": "The server's checks and what is switched on.",
+      "url": "/admin/status",
+      "icons": [
+        {
+          "src": "/icons/admin-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    },
+    {
+      "name": "Backups",
+      "short_name": "Backups",
+      "description": "The last backups and photo removals.",
+      "url": "/admin/backups",
+      "icons": [
+        {
+          "src": "/icons/admin-192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

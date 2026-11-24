@@ -32,6 +32,7 @@ type FieldSpec = { key: string; label: string; hint?: string; type?: "text" | "t
 const FIELDS: Record<SessionRole, FieldSpec[]> = {
   // Phase 1.6: none yet for the Director.
   director: [],
+  admin: [],
   student: [{ key: "preferred_contact", label: "How you prefer to be reached", type: "contact" }],
   supervisor: [
     { key: "position", label: "Job title", max: 120 },

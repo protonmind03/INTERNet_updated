@@ -13,13 +13,14 @@ import type { ComponentType } from "react";
 |
 */
 
-export type HomeRole = "student" | "supervisor" | "coordinator" | "director";
+export type HomeRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
 export const HOME_PATH: Record<HomeRole, string> = {
   student: "/student/dashboard",
   supervisor: "/supervisor/dashboard",
   coordinator: "/coordinator/dashboard",
   director: "/director/overview",
+  admin: "/admin/accounts",
 };
 
 export const HOME_PAGE: Record<HomeRole, () => Promise<{ default: ComponentType }>> = {
@@ -27,6 +28,7 @@ export const HOME_PAGE: Record<HomeRole, () => Promise<{ default: ComponentType 
   supervisor: () => import("../pages/supervisor/dashboardsp"),
   coordinator: () => import("../pages/coordinator/Dashboard"),
   director: () => import("../pages/director/Overview"),
+  admin: () => import("../pages/admin/Accounts"),
 };
 
 /** Starts fetching a role's first page; a failure is left for the page itself to show. */

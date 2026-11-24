@@ -3,7 +3,7 @@
 //
 //   node scripts/make-role-manifests.mjs
 //
-// public/manifest-{student,supervisor,coordinator,director}.webmanifest, each with its
+// public/manifest-{student,supervisor,coordinator,director,admin}.webmanifest, each with its
 // own id, name, start (the role's door, which opens the portal for someone
 // signed in), colours from ROLE_PALETTES (src/brand/tokens.ts), the role
 // icons (scripts/make-role-icons.mjs) and the role's shortcuts. The scope is
@@ -58,6 +58,17 @@ const APPS = {
       ["Overview", "Overview", "Every college: interns, clearances and agreements.", "/director/overview"],
       ["Approvals", "Approvals", "Clearances given anyway, with their reasons.", "/director/approvals"],
       ["Coordinators", "Coordinators", "The coordinators and the students each looks after.", "/director/coordinators"],
+    ],
+  },
+  // Phase 1.7: the system administrator's portal.
+  admin: {
+    name: "INTERNet System",
+    short_name: "System",
+    description: "Accounts, backups and the server's health for the INTERNet system administrator.",
+    shortcuts: [
+      ["Accounts", "Accounts", "Find an account, unlock it or end its sessions.", "/admin/accounts"],
+      ["System status", "Status", "The server's checks and what is switched on.", "/admin/status"],
+      ["Backups", "Backups", "The last backups and photo removals.", "/admin/backups"],
     ],
   },
 };

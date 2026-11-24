@@ -12,7 +12,7 @@
 */
 
 export type OfflineRow = {
-  role: "Student" | "Supervisor" | "Coordinator" | "Director";
+  role: "Student" | "Supervisor" | "Coordinator" | "Director" | "Administrator";
   /** Works with no connection at all. */
   works: string[];
   /** Kept on the phone and sent by itself once the server can be reached. */
@@ -67,6 +67,13 @@ export const OFFLINE_TABLE: OfflineRow[] = [
     ],
     waits: ["Nothing: a decision is never kept for later"],
     needs: ["Every decision and change: the rules, a coordinator's colleges, a program's hours", "Exports", "Signing in"],
+  },
+  {
+    role: "Administrator",
+    // Phase 1.7: the portal keeps nothing personal on the device.
+    works: ["The maintenance notice and your own account", "Nothing else: the accounts, checks and backups are never kept on the device"],
+    waits: ["Nothing: an account action is never kept for later"],
+    needs: ["Every page: accounts, system status, backups, warnings and the audit log", "Every account action and the notice", "Signing in"],
   },
 ];
 

@@ -35,7 +35,7 @@ import { useSyncExternalStore } from "react";
 |
 */
 
-export type OfflineRole = "student" | "supervisor" | "coordinator" | "director";
+export type OfflineRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
 const DATABASE = "internet-offline";
 const VERSION = 1;
@@ -185,7 +185,7 @@ export async function purgeOrphanedOfflineData(): Promise<void> {
     const db = await open();
     if (!db) return;
     const signedIn = new Set(
-      (["student", "supervisor", "coordinator", "director"] as const)
+      (["student", "supervisor", "coordinator", "director", "admin"] as const)
         .map(currentOwner)
         .filter((owner): owner is string => owner !== null)
     );

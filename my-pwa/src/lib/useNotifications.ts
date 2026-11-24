@@ -4,7 +4,7 @@ import { savedFetch } from "./offlineStore";
 import { toast } from "./toast";
 import { formatPh } from "./phTime";
 
-export type NotificationRole = "student" | "supervisor" | "coordinator" | "director";
+export type NotificationRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
 export const READ_STATE_CHANGED = "internet-notifications-read";
 
