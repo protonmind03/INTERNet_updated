@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Button, Card, ConfirmDialog, ErrorNotice, SkeletonRows, StatusBadge } from "../../components/ui";
+import { Button, Card, ConfirmDialog, ErrorNotice, FormError, FormField, SkeletonRows, StatusBadge } from "../../components/ui";
 import DirectorLayout from "../../layouts/DirectorLayout";
 import { errorText, toast } from "../../lib/toast";
 import { directorRead, directorWrite } from "./request";
@@ -11,9 +11,10 @@ import { directorRead, directorWrite } from "./request";
 | the grade split join this page with their items (1.4, 1.5).
 */
 
-type Settings = { deployment_gate_enabled: boolean };
+type Settings = { deployment_gate_enabled: boolean; grade_split_hte: number };
+type Flag = "deployment_gate_enabled";
 
-const RULES: { key: keyof Settings; name: string; on: string; off: string; turnOn: string; turnOff: string }[] = [
+const RULES: { key: Flag; name: string; on: string; off: string; turnOn: string; turnOff: string }[] = [
   {
     key: "deployment_gate_enabled",
     name: "Deployment gate",
@@ -29,6 +30,10 @@ export default function DirectorRules() {
   const [error, setError] = useState("");
   const [changing, setChanging] = useState<(typeof RULES)[number] | null>(null);
   const [saving, setSaving] = useState(false);
+  // Phase 1.5: the HTE's share of the final grade.
+  const [splitOpen, setSplitOpen] = useState(false);
+  const [splitText, setSplitText] = useState("");
+  const [splitError, setSplitError] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -54,6 +59,26 @@ export default function DirectorRules() {
       await load();
     } catch (saveError) {
       toast.error(errorText(saveError, "The rule could not be changed. Check your connection and try again."));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const nextSplit = Number(splitText);
+  const saveSplit = async () => {
+    if (!Number.isInteger(nextSplit) || nextSplit < 1 || nextSplit > 99) {
+      setSplitError("The HTE's share is a whole number from 1 to 99.");
+      return;
+    }
+    setSaving(true);
+    setSplitError("");
+    try {
+      await directorWrite("/api/coordinator/ojt-settings/grade_split_hte", "PUT", { value: nextSplit });
+      toast.success(`Final grade split changed to HTE ${nextSplit}%, instructor ${100 - nextSplit}%.`);
+      setSplitOpen(false);
+      await load();
+    } catch (saveError) {
+      setSplitError(errorText(saveError, "The split could not be changed. Check your connection and try again."));
     } finally {
       setSaving(false);
     }
@@ -91,6 +116,24 @@ export default function DirectorRules() {
                 </li>
               );
             })}
+            <li className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center">
+              <div className="min-w-0 flex-1">
+                <h2 className="font-semibold text-(--role-ink)">Final grade split</h2>
+                <p className="mt-1 max-w-[65ch] text-sm text-slate-700">
+                  HTE {settings.grade_split_hte}%, instructor {100 - settings.grade_split_hte}%. Grades already released keep the value they were released with.
+                </p>
+              </div>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setSplitText(String(settings.grade_split_hte));
+                  setSplitError("");
+                  setSplitOpen(true);
+                }}
+              >
+                Change the split
+              </Button>
+            </li>
           </ul>
         ) : null}
       </Card>
@@ -104,6 +147,20 @@ export default function DirectorRules() {
         onConfirm={() => void save()}
         onCancel={() => setChanging(null)}
       />
+      <ConfirmDialog
+        open={splitOpen}
+        title="Change the final grade split?"
+        message={settings ? `Now: HTE ${settings.grade_split_hte}%, instructor ${100 - settings.grade_split_hte}%. After: ${Number.isInteger(nextSplit) && nextSplit >= 1 && nextSplit <= 99 ? `HTE ${nextSplit}%, instructor ${100 - nextSplit}%` : "give a whole number from 1 to 99"}. Every grade not yet released is worked out again.` : undefined}
+        confirmLabel="Change the split"
+        busy={saving}
+        onConfirm={() => void saveSplit()}
+        onCancel={() => setSplitOpen(false)}
+      >
+        <FormField label="HTE share, in percent" htmlFor="grade-split">
+          <input id="grade-split" type="number" inputMode="numeric" min={1} max={99} step={1} className="field" value={splitText} onChange={(event) => setSplitText(event.target.value)} />
+        </FormField>
+        <div className="mt-2"><FormError message={splitError} /></div>
+      </ConfirmDialog>
     </DirectorLayout>
   );
 }

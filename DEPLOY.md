@@ -1091,6 +1091,28 @@ account exists yet. To turn an account off:
 `railway run --service Postgres npm run director:create <port> email=<email> deactivate`.
 Once an administrator account exists (below), they can do both from Accounts.
 
+## Before grades are released (Phase 1.5)
+
+The final OJT grade is half the HTE's evaluation and half the
+instructor's (the OJT rule "Final grade split", 50 unless changed on the
+Director's Rules page). Before the first release, confirm with the
+registrar or the OJT office:
+
+- **Rounding.** Every grade is rounded to 2 decimals, half up (89.625 is
+  89.63). If the university rounds otherwise, or turns grades into its
+  1.00 to 5.00 scale, that is a code change (`services/finalGrade.ts`).
+- **The split and the weights.** HTE 50 / instructor 50, and the
+  instructor's four scores (logs, punctuality, preparation, conduct) 25
+  each. A term's weights are set through
+  `PUT /api/coordinator/terms/<id>/grade-weights` (no page yet).
+- **The supervisor's form.** The HTE half uses the weighted
+  FM-AA-INT-13 grade; a form still without weights uses its average on
+  the same scale.
+
+A student sees a final grade only once it is released from the grade
+sheet (Evaluations), and keeps the released value until it is released
+again.
+
 ## The system administrator's account (run by you, once)
 
 The admin portal (`/admin/sign-in`; no public page links to it) is for

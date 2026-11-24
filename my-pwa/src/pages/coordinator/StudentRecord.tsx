@@ -31,6 +31,7 @@ import {
 } from "./studentRecord/model";
 import RecordOverview from "./studentRecord/RecordOverview";
 import UploadUsage from "./UploadUsage";
+import { FinalGradeCard } from "./FinalGrade";
 import TraineeReportsView from "../../components/TraineeReportsView";
 import {
   AttendanceSection,
@@ -415,7 +416,13 @@ export default function StudentRecord() {
               <TraineeReportsView role="coordinator" studentId={data.student.student_id} />
               </div>
             )}
-            {tab === "evaluations" && <EvaluationsSection data={data} perf={perf} final={final.evaluation} />}
+            {tab === "evaluations" && (
+              <div className="space-y-4">
+                {/* Phase 1.5: the final grade's two halves, and whether the student sees it. */}
+                <FinalGradeCard studentId={data.student.student_id} />
+                <EvaluationsSection data={data} perf={perf} final={final.evaluation} />
+              </div>
+            )}
             {tab === "documents" && (
               <>
                 <DocumentsSection data={data} perf={perf} canDecide={canDecide} online={online} onApprove={approve} onReject={setRejecting} />

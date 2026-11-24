@@ -22,6 +22,7 @@ import { useEvaluationForm } from "../../lib/useFinalEvaluation";
 import { usePagination } from "../../lib/usePagination";
 import EvaluationFormEditor from "./EvaluationFormEditor";
 import FilterBar from "./FilterBar";
+import { GradeSheet } from "./FinalGrade";
 import { coordinatorRequest } from "./request";
 import { useStudentFilters } from "./useStudentFilters";
 import { sameId } from "../../lib/ids";
@@ -147,6 +148,8 @@ export default function CoordinatorEvaluations() {
           state={studentFilters}
           note={studentFilters.active ? "Showing only evaluations of the students these choices leave." : undefined}
         />
+        {/* Phase 1.5: HTE, instructor and final for the students the filters leave. */}
+        <GradeSheet query={chosen} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
 
         {evaluationForm.form?.is_sample && (

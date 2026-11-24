@@ -206,14 +206,18 @@ export function registerFinalGradeRoutes(app: express.Express, deps: Dependencie
       const grades = rows.rows.map((row) => gradeOf(row, split));
       const ready = grades.filter((row) => row.state === "final" && (row.released_at === null || row.changed_since_release));
       const auth = (req as Authed).auth!;
+      const done: typeof ready = [];
       for (const row of ready) {
-        await pool.query(
+        // Only as read: a save in between (a new version) leaves it for the next release.
+        const updated = await pool.query(
           `UPDATE instructor_evaluations ie SET released_at = NOW(), released_by = $3, released_grade = $4
            FROM students s
            WHERE s.student_id = ie.student_id AND TRIM(s.student_id::text) = $1
              AND COALESCE(ie.term_id, 0) = COALESCE(s.term_id, 0) AND $2::int IS NOT DISTINCT FROM ie.version`,
           [row.student_id, row.version, auth.id, row.final]
         );
+        if (!updated.rowCount) continue;
+        done.push(row);
         await createNotification({
           studentId: row.student_id,
           title: "Final grade released",
@@ -226,9 +230,9 @@ export function registerFinalGradeRoutes(app: express.Express, deps: Dependencie
       const waiting = grades.filter((row) => row.state !== "final").length;
       const already = grades.length - waiting - ready.length;
       return res.json({
-        message: `Grades released for ${ready.length} ${ready.length === 1 ? "student" : "students"}.`,
-        released: ready.map((row) => ({ student_id: row.student_id, grade: row.final })),
-        left: { waiting, already_released: already, not_found: notFound },
+        message: `Grades released for ${done.length} ${done.length === 1 ? "student" : "students"}.`,
+        released: done.map((row) => ({ student_id: row.student_id, grade: row.final })),
+        left: { waiting, already_released: already, not_found: notFound, changed_meanwhile: ready.length - done.length },
       });
     } catch (error) {
       console.error("RELEASE GRADES ERROR:", error);

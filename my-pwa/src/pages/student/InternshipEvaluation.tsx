@@ -11,6 +11,7 @@ import { formatDate, formatLongDate } from "../../lib/format";
 import { phDateKey, phToday } from "../../lib/phTime";
 import { API_URL, withStudentAuth } from "../../lib/api";
 import { useAccount } from "../../lib/session";
+import { savedFetch } from "../../lib/offlineStore";
 import { useFinalEvaluation } from "../../lib/useFinalEvaluation";
 import { restoreAutosave, saveStateText, useAutosave } from "../../lib/useAutosave";
 import { FEEDBACK_CHOICES, FEEDBACK_CRITERIA, traineeRecord, type FeedbackForm } from "../../lib/traineeRecord";
@@ -44,6 +45,42 @@ import { logDateKey } from "./useAttendance";
 
 type Side = "feedback" | "supervisor";
 
+/*
+| Phase 1.5: the final OJT grade (half the supervisor's evaluation, half
+| the instructor's), shown once the coordinator releases it. Kept for
+| offline reading like the rest of the trainee's records.
+*/
+function ReleasedGrade() {
+  const student = useAccount("student");
+  const studentId = student?.student_id;
+  const [grade, setGrade] = useState<{ grade: number; released_at: string } | null>(null);
+
+  useEffect(() => {
+    if (!studentId) return;
+    let live = true;
+    savedFetch("student", "final-grade", `${API_URL}/api/students/${encodeURIComponent(studentId)}/final-grade`, withStudentAuth())
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: { released: boolean; grade?: number; released_at?: string } | null) => {
+        if (live) setGrade(data?.released && typeof data.grade === "number" && data.released_at ? { grade: data.grade, released_at: data.released_at } : null);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [studentId]);
+
+  if (!grade) return null;
+  return (
+    <Card className="mb-4 flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
+      <div>
+        <h2 className="text-[16px] font-bold text-slate-900">Your final OJT grade</h2>
+        <p className="text-sm text-slate-600">Released {formatDate(grade.released_at)}. Half your supervisor's evaluation, half your instructor's.</p>
+      </div>
+      <p className="font-display text-3xl font-extrabold tabular-nums text-slate-900">{grade.grade.toFixed(2)}</p>
+    </Card>
+  );
+}
+
 export default function InternshipEvaluation() {
   const [params, setParams] = useSearchParams();
   const side: Side = params.get("side") === "supervisor" ? "supervisor" : "feedback";
@@ -55,6 +92,7 @@ export default function InternshipEvaluation() {
   };
   return (
     <div>
+      <ReleasedGrade />
       <SubTabs
         label="Internship evaluation"
         idPrefix="evaluation-side"

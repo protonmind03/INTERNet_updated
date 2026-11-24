@@ -407,6 +407,27 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## The final OJT grade (Phase 1.5)
+
+- **Two halves** (`services/finalGrade.ts`): the HTE's is the
+  supervisor's final evaluation (`final_evaluations.grade`, or an
+  unweighted form's average on the same scale); the instructor's is the
+  coordinator's four scores in `instructor_evaluations` (migration 082),
+  weighed by `terms.grade_weights` (25 each unless set). The OJT rule
+  `grade_split_hte` (50) is the HTE's share. Everything is rounded to 2
+  decimals, half up (`round2`); change it there if the university rounds
+  otherwise, and the tests with it.
+- **Final only with both halves**; otherwise the state says which is
+  missing. A release copies the grade into `released_grade`: the student
+  is shown that, never a grade worked out live, so a later change waits
+  for the next release (`changed_since_release` on the sheet).
+- **The two suggestions** (logs, punctuality) are only where the
+  instructor's form starts; nothing stores them.
+- Routes in `routes/finalGrades.ts`; the UI in
+  `pages/coordinator/FinalGrade.tsx` (grade sheet on Evaluations,
+  breakdown on the student's record) and the student's released grade on
+  the Resolution Center's evaluation tab.
+
 ## The system administrator (Phase 1.7)
 
 - **A fifth portal, `/admin`,** for the IT/MIS person who runs the system.

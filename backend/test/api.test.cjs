@@ -14251,7 +14251,7 @@ test("the instructor's evaluation, the grade sheet, and a grade the student sees
     const released = await jsonRequest("/api/coordinator/grades/release", coordinator("POST", { student_ids: [id, "NO-SUCH-STUDENT"] }));
     assert.equal(released.response.status, 200, JSON.stringify(released.body));
     assert.equal(released.body.message, "Grades released for 1 student.");
-    assert.deepEqual(released.body.left, { waiting: 0, already_released: 0, not_found: 1 });
+    assert.deepEqual(released.body.left, { waiting: 0, already_released: 0, not_found: 1, changed_meanwhile: 0 });
     const seen = await own();
     assert.equal(seen.body.released, true);
     assert.equal(seen.body.grade, 87.5);
