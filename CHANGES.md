@@ -2131,3 +2131,41 @@ backend 283 of 284 (the one failure comes from the untracked
 `seed-showcase.ts`, which CI does not have), lint, route and
 architecture checks clean; frontend build, lint and `check:pwa` (146)
 clean; end-to-end 105 of 105, none skipped.
+
+## 42. Phase 1: the Director demo and the rules (24 November 2026)
+
+From `IMPLEMENTATION-PROMPT.md` (version 3), Phase 1, on `ui-redesign`.
+The prompt's migration numbers 080 to 084 had shifted by the time each item
+was built; the real ones are below.
+
+| Item | What changed | Migration |
+|---|---|---|
+| 1.1 | Requirements pack: restricted health and clearance documents (supervisors never open them; every opening audited), requirements that apply by sex, the student's optional sex and SSS/Pag-IBIG numbers. | 078 |
+| 1.2 | Clearance for deployment: the Clearance board, academic eligibility, "clear anyway" with a reason, and the deployment gate (an OJT rule, off by default) on every time-in path. | 079 |
+| 1.3 | Host Training Establishments: government, private or university; applied, screening, approved or suspended; screenings; the notarized MOA kept privately; agency suggestions from students and coordinators. Slots and approval are enforced where a student is placed (create, edit, import), with the company locked. | 083 |
+| 1.4 | Overtime and the 8-hour day: hours stop at the scheduled end unless overtime is approved (two days a week by default); asked for on Days, decided in Review, shown on the time record. Logs from before keep their hours. | 084 |
+| 1.5 | The final grade: half the HTE's evaluation, half the instructor's four scores (the split and the term's weights are rules), with a grade sheet, CSV and PDF, and a release before the student sees it. Rounded to 2 decimals until the university says otherwise. | 082 |
+| 1.6 | The OJT Director's portal (`/director`): the campus by college, coordinators and the colleges or programs each looks after, programs, rules, reports. Coordinators keep the office's powers until a Director account exists. | 080 |
+| 1.7 | The IT administrator's portal (`/admin`): accounts (unlock, temporary password by email only, end sessions, deactivate), system status, backups, production warnings, a maintenance notice in every portal, the audit log. It cannot open students' records. | 081 |
+| 1.8 | Privacy notice `draft-5` (students agree again); privacy warnings in production for the office and the administrator; signing out keeps what waits to be sent unless the phone is marked as shared; "Prepare for offline" as the last first-open slide. | none |
+
+**Accounts to make before a demo:** `npm run director:create` and
+`npm run admin:create` (each prints a temporary password once).
+
+**To confirm with the university:** how final grades are rounded (or
+turned into 1.00 to 5.00); the grade split and weights; the privacy
+notice's wording, retention and DPO contact.
+
+Reviewed with `/code-review` (high); its fixes are `fa4bf61`. `/simplify`
+was done by hand (`4bca88f`) because its review agents hit the account's
+usage limit; each item had its own security pass, and the phase-wide
+`/security-review` waits for that limit to reset.
+
+**Checked** on the local throwaway database (clock on UTC): backend 306 of
+307 (the failure comes from the untracked `seed-showcase.ts`), lint and
+route checks clean (325 routes); frontend build, lint and `check:pwa`
+(198) clean; end-to-end 121 of 128 passed, 3 skipped. Of the 4 failures,
+3 come from this database's leftover data from repeated runs today (a
+supervisor's interns in two programs; layout shift from 38 time-ins today
+on the first page) and one passed alone. CI's fresh database has none of
+that; not rechecked there yet.

@@ -94,3 +94,16 @@ E2E specs are in `e2e/tests/`. Backend tests are in `backend/test/api.test.cjs`,
 | 0.3 | Required hours by program | Migration 077; `requiredHoursFor` in `services/academics.ts`; `routes/academics.ts`; `Programs.tsx`, `Students.tsx` | backend: "required hours by program …"; `journeys.spec.ts`: "a program's required hours show on Programs …" | Done |
 | 0.4 | Deployment doc matches the nightly photo purge | `DEPLOY.md`, "Privacy notice and photo retention"; go-live checklist | Read against `services/photoPurge.ts` | Done (manual) |
 | 0.5 | Demo data that looks like PSU Lingayen | `scripts/seed-demo.ts`; `DEVELOPING.md` | backend: "the demo seed adds PSU Lingayen agencies …" | Done |
+
+## 5. IMPLEMENTATION-PROMPT.md, Phase 1 (24 November 2026)
+
+| # | Asked for | Where it is | Checked by | Status |
+|---|---|---|---|---|
+| 1.1 | Requirements pack, restricted documents, optional personal details | Migration 078; `services/deliverables.ts`; `PersonalDetails.tsx` | backend: the requirements-pack tests; `requirements-pack.spec.ts` | Done |
+| 1.2 | Clearance for deployment and the deployment gate | Migration 079; `routes/clearance.ts`; `services/deploymentClearance.ts`; `Clearance.tsx` | backend: clearance tests; `clearance.spec.ts` | Done |
+| 1.3 | HTE type, status, screening, MOA, slots, requests | Migration 083; `routes/htes.ts`; `services/placement.ts`; `pages/coordinator/Hte.tsx`; `CompanyPicker`; `SuggestAgency.tsx` | backend: "slots are enforced when students race…", "a private company is approved only after…", "a student suggests an agency…"; `hte.spec.ts` | Done |
+| 1.4 | Overtime and the 8-hour day | Migration 084; `routes/overtime.ts`; `services/creditedHours.ts`; `Overtime.tsx`; Review's Overtime chip; `DtrSheet` | backend: the overtime and credited-hours tests; `overtime.spec.ts` | Done (crediting applies to logs made after the migration) |
+| 1.5 | Instructor evaluation and the 50/50 final grade | Migration 082; `services/finalGrade.ts`; `routes/finalGrades.ts`; `pages/coordinator/FinalGrade.tsx` | backend: the final-grade tests; `final-grade.spec.ts` | Done (rounding to confirm; term weights have no page yet) |
+| 1.6 | Director portal and coordinator scopes | Migration 080; `routes/director.ts`; `services/coordinatorScope.ts`; `pages/director/*` | backend: the Director and scope tests; `director-portal.spec.ts` | Done (HTE approval and grade release have no Director page yet) |
+| 1.7 | IT administrator portal with separate duties | Migration 081; `routes/admin.ts`; `services/adminAccounts.ts`; `pages/admin/*` | backend: the admin tests, including the 403 loop; `admin-portal.spec.ts` | Done (no passkeys for staff yet) |
+| 1.8 | Privacy notice, production warnings, queued photo, shared-phone sign-out, Prepare for offline | `services/privacy.ts`; `privacyWarnings`; `offlineQueue.ts`; `StudentLayout.tsx`; `PrepareOffline.tsx` | backend: the notice and warnings tests; `offline-first.spec.ts`, `precache.spec.ts` | Done (notice wording waits for the university) |
