@@ -29,6 +29,8 @@ import { registerClearanceRoutes } from "./routes/clearance";
 import { registerDirectorRoutes } from "./routes/director";
 import { registerAdminRoutes } from "./routes/admin";
 import { registerFinalGradeRoutes } from "./routes/finalGrades";
+import { PlacementError, withPlacement } from "./services/placement";
+import { registerHteRoutes } from "./routes/htes";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
@@ -6569,7 +6571,8 @@ app.post(
       const hashed = await hashPassword(password);
 
       // The coordinator chose this password, so the student must replace it.
-      const result = await pool.query(
+      // Phase 1.3: placed only at an approved company with a free slot (services/placement.ts).
+      const created = await withPlacement(pool, typeof company === "string" ? company : null, null, async (db) => (await db.query(
         `
         INSERT INTO students
           (student_id, email, password, name, program, company, supervisor_id, required_hours, is_active, coordinator_id, must_change_password,
@@ -6593,7 +6596,7 @@ app.post(
           placement.major_id,
           placement.block_id,
         ]
-      );
+      )).rows[0]);
 
       await createNotification({
         studentId: String(student_id),
@@ -6608,9 +6611,10 @@ app.post(
 
       return res.status(201).json({
         message: "Student account created.",
-        student: result.rows[0],
+        student: created,
       });
     } catch (error: any) {
+      if (error instanceof PlacementError) return res.status(409).json({ code: error.code, message: error.message });
       console.error("CREATE STUDENT ERROR:", error);
 
       if (error?.code === "23505") {
@@ -6679,7 +6683,7 @@ app.put(
         return res.status(400).json({ message: placement.problem });
       }
 
-      const result = await pool.query(
+      const updated = await withPlacement(pool, sent("company") ? (typeof company === "string" ? company : null) : undefined, String(studentId), async (db) => (await db.query(
         `
         UPDATE students SET
           name = COALESCE($1, name),
@@ -6714,11 +6718,12 @@ app.put(
           placement?.major_id ?? null,
           placement?.block_id ?? null,
         ]
-      );
+      )).rows[0] ?? null);
 
-      if (result.rows.length === 0) {
+      if (!updated) {
         return res.status(404).json({ message: "Student not found." });
       }
+      const result = { rows: [updated] };
 
       const previousHours = Number(before.rows[0]?.required_hours);
       const currentHours = Number(result.rows[0].required_hours);
@@ -6750,6 +6755,7 @@ app.put(
         student: result.rows[0],
       });
     } catch (error) {
+      if (error instanceof PlacementError) return res.status(409).json({ code: error.code, message: error.message });
       if ((error as { code?: string }).code === "23505") {
         return res.status(409).json({
           message: "That email address is already used by another student.",
@@ -10753,6 +10759,8 @@ registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNoti
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 // Phase 1.2: the clearance board, the deployment gate's setting, and the student's own readiness.
 registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
+// Phase 1.3: HTE status, screenings, the MOA file and agency requests.
+registerHteRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification, notifyCoordinators });
 // Phase 1.5: the instructor's evaluation, the grade sheet and the final grade's release.
 registerFinalGradeRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
 // Phase 1.6: the OJT Director's own routes.

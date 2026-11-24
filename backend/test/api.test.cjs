@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -14346,6 +14346,202 @@ test("the instructor's suggestions count what was due and what was handed in, on
     await pool.query(`DELETE FROM daily_reports WHERE student_id = $1`, [id]);
     await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [id]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.3: Host Training Establishments
+*/
+
+async function hteCompany(pool, stamp, fields) {
+  const made = await jsonRequest("/api/coordinator/company-records", jsonBody(coordinatorToken, "POST", { name: `Made Up HTE ${stamp}`, ...fields }));
+  assert.equal(made.response.status, 201, JSON.stringify(made.body));
+  return made.body.company;
+}
+
+const hteStudent = (stamp, n, company) => ({
+  student_id: `HTE-${stamp}-${n}`.toUpperCase(),
+  email: `hte.${stamp}.${n}@demo.invalid`,
+  password: "HtePass12345",
+  name: `Made Up HTE Trainee ${n}`,
+  company,
+});
+
+async function cleanHte(pool, stamp) {
+  await pool.query(`DELETE FROM notifications WHERE student_id ILIKE $1`, [`HTE-${stamp}-%`]);
+  await pool.query(`DELETE FROM students WHERE student_id ILIKE $1`, [`HTE-${stamp}-%`]);
+  await pool.query(`DELETE FROM company_requests WHERE company_name ILIKE $1`, [`%${stamp}%`]);
+  await pool.query(`DELETE FROM companies WHERE name ILIKE $1`, [`%${stamp}%`]);
+}
+
+test("slots are enforced when students race for the last one, on create, edit and import", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  try {
+    const company = await hteCompany(pool, stamp, { slots: 1 });
+    assert.equal(company.status, "approved", "a new company is approved unless it says otherwise");
+    assert.equal(company.hte_type, "government");
+    const create = (n) => jsonRequest("/api/coordinator/students", jsonBody(coordinatorToken, "POST", hteStudent(stamp, n, company.name)));
+    // Two at once for one slot: one is placed, the other refused.
+    const [first, second] = await Promise.all([create(1), create(2)]);
+    const statuses = [first.response.status, second.response.status].sort();
+    assert.deepEqual(statuses, [201, 409], JSON.stringify([first.body, second.body]));
+    const refused = first.response.status === 409 ? first : second;
+    assert.equal(refused.body.code, "NO_SLOTS");
+    assert.match(refused.body.message, /no free slots/);
+    const placed = await pool.query(`SELECT COUNT(*)::int AS n FROM students WHERE company_id = $1 AND is_active = TRUE`, [company.id]);
+    assert.equal(placed.rows[0].n, 1, "nothing half-saved for the refused one");
+
+    // A student with no company moved into the full one: refused, and kept as they were.
+    const free = await jsonRequest("/api/coordinator/students", jsonBody(coordinatorToken, "POST", hteStudent(stamp, 3, null)));
+    assert.equal(free.response.status, 201);
+    const moved = await jsonRequest(`/api/coordinator/students/${free.body.student.student_id}`, jsonBody(coordinatorToken, "PUT", { company: company.name }));
+    assert.equal(moved.response.status, 409);
+    assert.equal(moved.body.code, "NO_SLOTS");
+    assert.equal((await pool.query(`SELECT company FROM students WHERE student_id = $1`, [free.body.student.student_id])).rows[0].company, null);
+    // An edit that leaves the company alone is not refused, even at a full company.
+    const winner = first.response.status === 201 ? first.body.student : second.body.student;
+    assert.equal((await jsonRequest(`/api/coordinator/students/${winner.student_id}`, jsonBody(coordinatorToken, "PUT", { name: "Made Up HTE Renamed", company: company.name }))).response.status, 200);
+
+    // Import: the row that would overfill is reported, the others are made.
+    const roomy = await hteCompany(pool, `${stamp}b`, { slots: null });
+    const imported = await jsonRequest("/api/coordinator/students/import", jsonBody(coordinatorToken, "POST", {
+      students: [
+        { ...hteStudent(stamp, 4, company.name), password: undefined },
+        { ...hteStudent(stamp, 5, roomy.name), password: undefined },
+      ],
+    }));
+    assert.equal(imported.response.status, 201, JSON.stringify(imported.body));
+    const rows = imported.body.results;
+    assert.equal(rows[0].status, "error");
+    assert.match(rows[0].message, /no free slots/);
+    assert.equal(rows[1].status, "created", "no slots set: no limit");
+  } finally {
+    await cleanHte(pool, stamp);
+    await pool.end();
+  }
+});
+
+test("a private company is approved only after a passed screening, and only approved companies take students", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  try {
+    const company = await hteCompany(pool, stamp, { hte_type: "private", slots: 5 });
+    // Put it back to screening, from the version read.
+    const status = (body) => jsonRequest(`/api/coordinator/company-records/${company.id}/hte-status`, jsonBody(coordinatorToken, "PUT", body));
+    assert.equal((await status({ status: "screening", expected_version: 99 })).body.code, "STALE");
+    const toScreening = await status({ status: "screening", expected_version: company.version });
+    assert.equal(toScreening.response.status, 200, JSON.stringify(toScreening.body));
+    assert.equal(toScreening.body.old, "approved");
+    let version = toScreening.body.version;
+
+    // Not approved: a student cannot be placed there.
+    const placed = await jsonRequest("/api/coordinator/students", jsonBody(coordinatorToken, "POST", hteStudent(stamp, 1, company.name)));
+    assert.equal(placed.response.status, 409);
+    assert.equal(placed.body.code, "COMPANY_NOT_APPROVED");
+
+    // Approving needs a screening that passed.
+    const approve = () => status({ status: "approved", expected_version: version });
+    assert.equal((await approve()).body.code, "SCREENING_REQUIRED");
+    const screen = (decision, notes) =>
+      jsonRequest(`/api/coordinator/company-records/${company.id}/screenings`, jsonBody(coordinatorToken, "POST", {
+        screened_on: "2026-11-20", standing: 4, work_environment: 4, space_capacity: 3, safety: 5, safety_note: "Fire exits marked.", decision, notes,
+      }));
+    assert.equal((await screen("conditional")).response.status, 400, "conditions must be said");
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.id}/screenings`, jsonBody(coordinatorToken, "POST", { screened_on: "2026-11-20", standing: 6 }))).response.status, 400);
+    const failed = await screen("fail", "Too little space for interns.");
+    assert.equal(failed.response.status, 201);
+    assert.equal((await approve()).body.code, "SCREENING_REQUIRED", "a failed screening is not enough");
+    // Edited to a pass, from its version.
+    const edit = (expected) =>
+      jsonRequest(`/api/coordinator/company-screenings/${failed.body.screening.id}`, jsonBody(coordinatorToken, "PUT", {
+        screened_on: "2026-11-21", standing: 4, work_environment: 4, space_capacity: 4, safety: 5, decision: "pass", expected_version: expected,
+      }));
+    assert.equal((await edit(5)).body.code, "STALE");
+    assert.equal((await edit(1)).response.status, 200);
+    const listed = await jsonRequest(`/api/coordinator/company-records/${company.id}/screenings`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(listed.body.screenings[0].decision, "pass");
+    const approved = await approve();
+    assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+    version = approved.body.version;
+    assert.equal((await jsonRequest("/api/coordinator/students", jsonBody(coordinatorToken, "POST", hteStudent(stamp, 2, company.name)))).response.status, 201);
+    // Suspended: no new placement.
+    assert.equal((await status({ status: "suspended", expected_version: version })).response.status, 200);
+    assert.equal((await jsonRequest("/api/coordinator/students", jsonBody(coordinatorToken, "POST", hteStudent(stamp, 3, company.name)))).body.code, "COMPANY_NOT_APPROVED");
+
+    // The MOA: a PDF kept privately, opened by coordinators only, and its notarization.
+    const form = new FormData();
+    form.set("file", new Blob([sampleFiles.pdf], { type: "application/pdf" }), "moa.pdf");
+    const upload = await fetch(new URL(`/api/coordinator/company-records/${company.id}/moa`, apiBaseUrl), { method: "POST", headers: authHeaders(coordinatorToken), body: form });
+    assert.equal(upload.status, 201, await upload.clone().text());
+    const opened = await fetch(new URL(`/api/coordinator/company-records/${company.id}/moa`, apiBaseUrl), { headers: authHeaders(coordinatorToken) });
+    assert.equal(opened.status, 200);
+    assert.match(Buffer.from(await opened.arrayBuffer()).toString("latin1"), /^%PDF/);
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.id}/moa`, { headers: authHeaders(studentToken) })).response.status, 403);
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.id}/moa-notarized`, jsonBody(coordinatorToken, "PUT", { notarized: true }))).response.status, 400);
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.id}/moa-notarized`, jsonBody(coordinatorToken, "PUT", { notarized: true, notarized_on: "2026-11-18" }))).response.status, 200);
+    const record = (await jsonRequest(`/api/coordinator/company-records/${company.id}/page`, { headers: authHeaders(coordinatorToken) })).body.company;
+    assert.deepEqual([record.moa_notarized, record.moa_notarized_on, record.moa_file, record.status], [true, "2026-11-18", "moa.pdf", "suspended"]);
+    // The screening is removed; the audit log has every step.
+    assert.equal((await jsonRequest(`/api/coordinator/company-screenings/${failed.body.screening.id}`, { method: "DELETE", headers: authHeaders(coordinatorToken) })).response.status, 200);
+    const actions = (await pool.query(`SELECT action FROM audit_log WHERE entity_id = $1 AND entity_type = 'company'`, [String(company.id)])).rows.map((row) => row.action);
+    for (const action of ["company.status", "company.screening", "company.screening_edit", "company.moa_upload", "company.moa_view", "company.moa_notarized"]) {
+      assert.ok(actions.includes(action), `${action} in ${actions.join(", ")}`);
+    }
+    // A supervisor or student cannot change any of it.
+    const supervisor = await supervisorSession();
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.id}/hte-status`, jsonBody(supervisor.token, "PUT", { status: "approved", expected_version: 1 }))).response.status, 403);
+  } finally {
+    await pool.query(`DELETE FROM company_screenings WHERE company_id IN (SELECT id FROM companies WHERE name ILIKE $1)`, [`%${stamp}%`]);
+    await cleanHte(pool, stamp);
+    await pool.end();
+  }
+});
+
+test("a student suggests an agency; approving it makes the company, in screening", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  try {
+    const suggest = (token, body) => jsonRequest("/api/company-requests", jsonBody(token, "POST", body));
+    assert.equal((await suggest(studentToken, { company_name: `Agency ${stamp}`, reason: "short" })).response.status, 400);
+    const sent = await suggest(studentToken, { company_name: `Made Up Agency ${stamp}`, reason: "They took two interns from our block last year.", contact: "Made Up Contact" });
+    assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+    assert.equal(sent.body.request.status, "submitted");
+    assert.equal(sent.body.request.hte_type, "private");
+    const mine = await jsonRequest(`/api/students/${student.student_id}/company-requests`, { headers: authHeaders(studentToken) });
+    assert.ok(mine.body.requests.some((row) => row.id === sent.body.request.id));
+    const supervisor = await supervisorSession();
+    assert.equal((await suggest(supervisor.token, { company_name: "x y", reason: "A supervisor cannot do this." })).response.status, 403);
+
+    const listed = await jsonRequest("/api/coordinator/company-requests", { headers: authHeaders(coordinatorToken) });
+    const row = listed.body.requests.find((item) => item.id === sent.body.request.id);
+    assert.ok(row);
+    assert.ok(row.requested_by_name, "who suggested it is named");
+    const decide = (body) => jsonRequest(`/api/coordinator/company-requests/${row.id}/decision`, jsonBody(coordinatorToken, "PUT", body));
+    assert.equal((await decide({ decision: "approve", expected_version: 7 })).body.code, "STALE");
+    assert.equal((await decide({ decision: "reject", expected_version: 1 })).response.status, 400, "a rejection needs a note");
+    const screening = await decide({ decision: "screening", expected_version: 1 });
+    assert.equal(screening.body.request.status, "screening");
+    const approved = await decide({ decision: "approve", expected_version: 2 });
+    assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+    const company = (await pool.query(`SELECT status, hte_type FROM companies WHERE id = $1`, [approved.body.company_id])).rows[0];
+    assert.deepEqual(company, { status: "screening", hte_type: "private" });
+    assert.equal((await decide({ decision: "reject", note: "Too late.", expected_version: 3 })).response.status, 409, "already decided");
+    const told = await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Your agency suggestion was accepted'`, [student.student_id]);
+    assert.ok(told.rows.length >= 1);
+
+    // A coordinator records one too; a second one with a recorded name cannot be approved.
+    const coordinatorRequest = await suggest(coordinatorToken, { company_name: `Made Up Agency ${stamp}`, hte_type: "university", reason: "The campus library takes interns every term." });
+    assert.equal(coordinatorRequest.response.status, 201);
+    const twice = await jsonRequest(`/api/coordinator/company-requests/${coordinatorRequest.body.request.id}/decision`, jsonBody(coordinatorToken, "PUT", { decision: "approve", expected_version: 1 }));
+    assert.equal(twice.body.code, "COMPANY_EXISTS");
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1 AND title LIKE 'Your agency suggestion%'`, [student.student_id]);
+    await cleanHte(pool, stamp);
     await pool.end();
   }
 });

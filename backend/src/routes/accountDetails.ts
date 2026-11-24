@@ -236,6 +236,8 @@ export function registerAccountDetailRoutes(app: express.Express, deps: Dependen
         `SELECT c.id, c.name, c.address, c.contact_person, c.contact_email, c.contact_phone,
                 TO_CHAR(c.moa_start, 'YYYY-MM-DD') AS moa_start, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
                 c.slots, c.industry, c.website, c.hr_contact, c.is_active,
+                c.hte_type, c.status, c.version, c.moa_notarized, TO_CHAR(c.moa_notarized_on, 'YYYY-MM-DD') AS moa_notarized_on,
+                c.moa_document_name AS moa_file,
                 (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id AND s.is_active = TRUE) AS students
          FROM companies c WHERE c.id = $1`,
         [id]

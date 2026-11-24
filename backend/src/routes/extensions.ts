@@ -15,6 +15,7 @@ import { keptProjectionsFor, projectionsChanged } from "../services/projection";
 import { staleDecision } from "../services/versions";
 import { uploadQuota } from "../services/uploadQuota";
 import { sameId, sqlSameId } from "../services/ids";
+import { PlacementError, withPlacement } from "../services/placement";
 import { markActed } from "../services/notificationKinds";
 import { scopeCondition } from "../services/coordinatorScope";
 
@@ -999,7 +1000,10 @@ export function registerExtensionRoutes(
       }
 
       try {
-        await pool.query(
+        // Phase 1.3: each row is placed only at an approved company with a free slot.
+        const hashed = await hashPassword(password);
+        await withPlacement(pool, text(entry.company) || null, null, async (db) => {
+        await db.query(
           `
           INSERT INTO students
             (student_id, email, password, name, program, company, supervisor_id,
@@ -1010,7 +1014,7 @@ export function registerExtensionRoutes(
           [
             studentId,
             email,
-            await hashPassword(password),
+            hashed,
             name,
             placement.program_text,
             text(entry.company) || null,
@@ -1022,6 +1026,8 @@ export function registerExtensionRoutes(
             placement.block_id,
           ]
         );
+        return { student_id: studentId };
+        });
         results.push({
           row: index + 1,
           student_id: studentId,
@@ -1049,7 +1055,9 @@ export function registerExtensionRoutes(
           }
         });
       } catch (error) {
-        if ((error as { code?: string }).code === "23505") {
+        if (error instanceof PlacementError) {
+          fail(error.message);
+        } else if ((error as { code?: string }).code === "23505") {
           fail("A student with that ID or email already exists.");
         } else {
           console.error("IMPORT STUDENT ERROR:", error);
@@ -1762,6 +1770,7 @@ export function registerExtensionRoutes(
     industry?: string | null;
     website?: string | null;
     hr_contact?: string | null;
+    hte_type?: string;
   };
 
   /** Reads and checks a company from a request; returns the reason it is refused, if it is. */
@@ -1792,6 +1801,11 @@ export function registerExtensionRoutes(
     if (website && !/^https?:\/\/[^\s/$.?#][^\s]*$/i.test(website)) {
       return { problem: "Write the website as a full address, starting with https://." };
     }
+    // Phase 1.3: government, private or university (migration 083). Left out: unchanged, or government when new.
+    const hteType = given("hte_type") ? input.hte_type : undefined;
+    if (hteType !== undefined && !["government", "private", "university"].includes(hteType as string)) {
+      return { problem: "The kind of company is government, private or university." };
+    }
     let slots: number | null = null;
     if (input.slots !== undefined && input.slots !== null && input.slots !== "") {
       slots = Number(input.slots);
@@ -1812,6 +1826,7 @@ export function registerExtensionRoutes(
         industry: given("industry") ? optional(input.industry, 120) : undefined,
         website,
         hr_contact: given("hr_contact") ? optional(input.hr_contact, 150) : undefined,
+        hte_type: hteType as string | undefined,
       },
     };
   }
@@ -1820,7 +1835,9 @@ export function registerExtensionRoutes(
     c.id, c.name, c.address, c.contact_person, c.contact_email, c.contact_phone,
     TO_CHAR(c.moa_start, 'YYYY-MM-DD') AS moa_start,
     TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
-    c.slots, c.industry, c.website, c.hr_contact, c.is_active, c.created_at, c.updated_at
+    c.slots, c.industry, c.website, c.hr_contact, c.is_active, c.created_at, c.updated_at,
+    c.hte_type, c.status, c.version, c.moa_notarized, TO_CHAR(c.moa_notarized_on, 'YYYY-MM-DD') AS moa_notarized_on,
+    c.moa_document_name AS moa_file
   `;
 
   app.get("/api/coordinator/company-records", requireCoordinator, async (_req, res) => {
@@ -1898,14 +1915,15 @@ export function registerExtensionRoutes(
         `
         INSERT INTO companies
           (name, address, contact_person, contact_email, contact_phone, moa_start, moa_expiry, slots,
-           industry, website, hr_contact)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+           industry, website, hr_contact, hte_type)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
         RETURNING id
         `,
         [
           company.name, company.address, company.contact_person, company.contact_email,
           company.contact_phone, company.moa_start, company.moa_expiry, company.slots,
           company.industry ?? null, company.website ?? null, company.hr_contact ?? null,
+          company.hte_type ?? "government",
         ]
       );
       // Accounts that already carry this name become its people.
@@ -1961,6 +1979,7 @@ export function registerExtensionRoutes(
           industry = CASE WHEN $10::boolean THEN $11 ELSE industry END,
           website = CASE WHEN $12::boolean THEN $13 ELSE website END,
           hr_contact = CASE WHEN $14::boolean THEN $15 ELSE hr_contact END,
+          hte_type = COALESCE($16, hte_type),
           updated_at = NOW()
         WHERE id = $1
         `,
@@ -1970,6 +1989,7 @@ export function registerExtensionRoutes(
           company.industry !== undefined, company.industry ?? null,
           company.website !== undefined, company.website ?? null,
           company.hr_contact !== undefined, company.hr_contact ?? null,
+          company.hte_type ?? null,
         ]
       );
       // A renamed company takes its people with it: the name typed on each of
