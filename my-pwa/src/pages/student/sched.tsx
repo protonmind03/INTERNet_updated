@@ -31,6 +31,7 @@ import { deliverablesForCalendar, useDeliverables } from "./useDeliverables";
 import ScheduleProgress from "./ScheduleProgress";
 import { formatPh } from "../../lib/phTime";
 import { patternWeek } from "../../lib/schedulePattern";
+import SuggestAgency from "./SuggestAgency";
 import { weeklyShiftHours, type ShiftPattern } from "../../lib/studentCalendar";
 
 /**
@@ -504,6 +505,8 @@ export default function OjtSchedule() {
                   )}
                 </div>
               )}
+              {/* Phase 1.3: an agency the trainee knows, for the coordinator to decide. */}
+              <div className="mt-4"><SuggestAgency /></div>
             </Card>
           </div>
         </div>

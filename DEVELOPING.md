@@ -407,6 +407,25 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Host Training Establishments (Phase 1.3)
+
+- **A company's kind and status** (migration 083): government, private or
+  university; applied, screening, approved or suspended. Existing
+  companies stayed approved. The office changes the status
+  (`routes/htes.ts`, from `expected_version`); a private company needs a
+  screening that passed (or passed with conditions) first.
+- **Placing a student goes through `withPlacement`**
+  (`services/placement.ts`): it locks the company's row, writes, and
+  refuses `409 NO_SLOTS` or `COMPANY_NOT_APPROVED` when the student is
+  newly at a full, unapproved or inactive company. Slots are counted per
+  term; NULL is no limit. **Any new route that writes a student's company
+  must use it.** A name with no company record is still accepted.
+- The MOA's signed copy is in the private file store (coordinators only);
+  screenings and agency requests are in `company_screenings` and
+  `company_requests`. The UI is `pages/coordinator/Hte.tsx` (company
+  page, chips, suggestions), `CompanyPicker`'s `forStudents`, and the
+  trainee's `SuggestAgency` on the schedule page.
+
 ## The final OJT grade (Phase 1.5)
 
 - **Two halves** (`services/finalGrade.ts`): the HTE's is the

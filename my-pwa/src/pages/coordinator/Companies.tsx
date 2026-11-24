@@ -21,6 +21,8 @@ import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import { forgetCompanyNames } from "./companyNames";
 import { coordinatorRequest } from "./request";
+import { CompanyRequests, HteChips } from "./Hte";
+import type { HteStatus, HteType } from "../../lib/hte";
 
 /*
 |--------------------------------------------------------------------------
@@ -54,7 +56,23 @@ type Company = {
   /** Missing when the answer comes from a server older than site visits. */
   visits?: number;
   last_visit?: string | null;
+  /** Phase 1.3 (migration 083). */
+  hte_type?: HteType;
+  status?: HteStatus;
+  version?: number;
+  moa_notarized?: boolean;
+  moa_notarized_on?: string | null;
+  moa_file?: string | null;
 };
+
+/** The agreement filter (Phase 1.3). */
+type MoaFilter = "" | "missing" | "not_notarized" | "expiring";
+const MOA_FILTERS: { value: MoaFilter; label: string }[] = [
+  { value: "", label: "Any agreement" },
+  { value: "missing", label: "MOA missing" },
+  { value: "not_notarized", label: "MOA not notarized" },
+  { value: "expiring", label: "MOA expiring or expired" },
+];
 
 type Unlinked = { name: string; people: number };
 type Scope = "active" | "expiring" | "inactive";
@@ -86,6 +104,7 @@ export default function CoordinatorCompanies() {
   const [error, setError] = useState("");
   const [scope, setScope] = useState<Scope>("active");
   const [query, setQuery] = useState("");
+  const [moaFilter, setMoaFilter] = useState<MoaFilter>("");
   // The company being edited, a name to start a new one from, or nothing.
   const [editing, setEditing] = useState<Company | { name: string } | null>(null);
 
@@ -118,12 +137,16 @@ export default function CoordinatorCompanies() {
             : scope === "expiring"
               ? needsRenewal(company)
               : company.is_active) &&
+          (moaFilter === "" ||
+            (moaFilter === "missing" && !company.moa_file) ||
+            (moaFilter === "not_notarized" && !company.moa_notarized) ||
+            (moaFilter === "expiring" && needsRenewal(company))) &&
           (!text ||
             [company.name, company.contact_person, company.contact_email, company.address]
               .filter(Boolean)
               .some((value) => String(value).toLowerCase().includes(text)))
       ),
-    [companies, scope, text]
+    [companies, scope, text, moaFilter]
   );
   const pager = usePagination(visible, 20);
 
@@ -180,6 +203,13 @@ export default function CoordinatorCompanies() {
     >
       <div className="space-y-6">
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+        {/* Phase 1.3: agencies suggested by students and coordinators. */}
+        <CompanyRequests
+          onCompanyMade={() => {
+            forgetCompanyNames();
+            void load();
+          }}
+        />
 
         {!loading && unlinked.length > 0 && (
           <Card>
@@ -220,6 +250,14 @@ export default function CoordinatorCompanies() {
               placeholder="Search by company or contact"
               className="w-full sm:w-80"
             />
+            <label className="block w-full sm:w-64">
+              <span className="sr-only">Agreement</span>
+              <select className="field" value={moaFilter} onChange={(event) => setMoaFilter(event.target.value as MoaFilter)}>
+                {MOA_FILTERS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
             <div className="w-full">
               <SummaryTiles
                 label="Which companies"
@@ -260,6 +298,7 @@ export default function CoordinatorCompanies() {
                         {company.contact_person || "No contact"} · {places(company)}
                         {company.last_visit ? ` · visited ${formatDate(company.last_visit)}` : ""}
                       </p>
+                      <div className="mt-1.5"><HteChips company={company} /></div>
                       <p className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-slate-600">
                         <StatusBadge status={agreement(company).label} tone={agreement(company).tone} />
                         {company.moa_expiry && <span>until {formatDate(company.moa_expiry)}</span>}
@@ -292,6 +331,7 @@ export default function CoordinatorCompanies() {
                             {company.name}
                           </Link>
                           <p className="text-xs text-slate-500">{company.address || "No address"}</p>
+                          <div className="mt-1"><HteChips company={company} /></div>
                         </td>
                         <td className="px-3 py-3 text-slate-700">
                           <p>{company.contact_person || "—"}</p>
@@ -365,6 +405,7 @@ function CompanyDialog({
     industry: existing?.industry || "",
     website: existing?.website || "",
     hr_contact: existing?.hr_contact || "",
+    hte_type: existing?.hte_type || "government",
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -509,6 +550,13 @@ function CompanyDialog({
             onChange={(event) => set("contact_email")(event.target.value)}
             className="field"
           />
+        </FormField>
+        <FormField label="Kind of company" htmlFor="company-hte-type">
+          <select id="company-hte-type" value={form.hte_type} onChange={(event) => set("hte_type")(event.target.value)} className="field">
+            <option value="government">Government</option>
+            <option value="private">Private (screened before it is approved)</option>
+            <option value="university">University</option>
+          </select>
         </FormField>
         <div className="grid gap-4 sm:grid-cols-3">
           <FormField label="Agreement starts" htmlFor="company-moa-start" optional>

@@ -1,26 +1,24 @@
 import { coordinatorRequest } from "./request";
 
 /*
- * The names of the recorded, active companies, for the company field on the
- * student and supervisor forms. Asked for once and kept; the Companies page
- * calls forgetCompanyNames() after any change so the forms ask again.
+ * The recorded companies, for the company field on the student and
+ * supervisor forms. Asked for once and kept; the Companies page calls
+ * forgetCompanyNames() after any change so the forms ask again.
+ * Phase 1.3: with each company's status and slots, so the student form can
+ * leave out the ones that cannot take a student.
  */
 
-type CompanyName = { name: string; is_active: boolean };
+export type CompanyChoice = { name: string; is_active: boolean; status?: string; slots: number | null; active_students?: number };
 
-let cached: string[] | null = null;
+let cached: CompanyChoice[] | null = null;
 
-export function knownCompanyNames(): string[] | null {
+export function knownCompanies(): CompanyChoice[] | null {
   return cached;
 }
 
-export async function loadCompanyNames(): Promise<string[]> {
-  const data = await coordinatorRequest<{ companies: CompanyName[] }>(
-    "/api/coordinator/company-records"
-  );
-  cached = (data.companies || [])
-    .filter((company) => company.is_active)
-    .map((company) => company.name);
+export async function loadCompanies(): Promise<CompanyChoice[]> {
+  const data = await coordinatorRequest<{ companies: CompanyChoice[] }>("/api/coordinator/company-records");
+  cached = (data.companies || []).filter((company) => company.is_active);
   return cached;
 }
 

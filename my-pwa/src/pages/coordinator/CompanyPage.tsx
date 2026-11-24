@@ -6,6 +6,7 @@ import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { formatDate } from "../../lib/format";
 import { errorText } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import { HteSection, type HteCompany } from "./Hte";
 
 /*
 |--------------------------------------------------------------------------
@@ -34,7 +35,7 @@ type Company = {
   hr_contact: string | null;
   is_active: boolean;
   students: number;
-};
+} & HteCompany;
 type Supervisor = { supervisor_id: string; name: string; email: string; department: string | null; position: string | null; is_active: boolean; interns: number };
 type Visit = { id: number; visit_date: string; visited_by_name: string; findings: string; follow_up: string | null };
 
@@ -120,6 +121,9 @@ export default function CompanyPage() {
                 list.
               </p>
             </Card>
+
+            {/* Phase 1.3: approval, the MOA and screenings. */}
+            <HteSection company={company} onChanged={() => void load()} />
 
             <Card>
               <CardHeader icon="users" title="Supervisors" description="Who supervises interns here, and how many each has." />

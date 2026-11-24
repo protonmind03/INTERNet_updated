@@ -878,7 +878,7 @@ function StudentDialog({
           </select>
         </FormField>
         <FormField label="Company" htmlFor="student-company" optional>
-          <CompanyPicker id="student-company" value={form.company} onChange={set("company")} />
+          <CompanyPicker id="student-company" value={form.company} onChange={set("company")} forStudents current={existing?.company ?? null} />
         </FormField>
         <FormField
           label="Required hours"
