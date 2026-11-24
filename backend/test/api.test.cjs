@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts", "routes/hardCopies.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts", "routes/hardCopies.ts", "routes/completionDecision.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -15263,6 +15263,70 @@ test("hard copies: recorded for a document and a final evaluation, with a scan, 
     await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM documents WHERE student_id = ANY($1)`, [[sid, other]]);
     await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [[sid, other]]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 2.5: the coordinator approves or returns a completion request
+*/
+
+test("completion: approved once, or returned with a note so the student can ask again", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const bcrypt = require("bcryptjs");
+  const stamp = Date.now().toString(36);
+  const sid = `CMP-${stamp}`.toUpperCase();
+  const email = `${sid.toLowerCase()}@demo.invalid`;
+  await pool.query(
+    `INSERT INTO students (student_id, email, password, name, is_active, must_change_password, completion_requested_at) VALUES ($1, $2, $3, 'Made Up Finisher', TRUE, FALSE, NULL)`,
+    [sid, email, await bcrypt.hash("FinishPass12345", 4)]
+  );
+  const supervisor = await supervisorSession();
+  const approve = (token = coordinatorToken) => jsonRequest(`/api/coordinator/students/${sid}/completion/approve`, jsonBody(token, "POST", {}));
+  const giveBack = (note, token = coordinatorToken) => jsonRequest(`/api/coordinator/students/${sid}/completion/return`, jsonBody(token, "POST", { note }));
+  try {
+    // Nothing asked yet: nothing to decide.
+    assert.equal((await approve()).response.status, 409);
+    assert.equal((await giveBack("Fix the attendance logs first.")).response.status, 409);
+    assert.equal((await jsonRequest(`/api/coordinator/students/NOBODY-${stamp}/completion/approve`, jsonBody(coordinatorToken, "POST", {}))).response.status, 404);
+
+    await pool.query(`UPDATE students SET completion_requested_at = NOW() WHERE student_id = $1`, [sid]);
+    assert.equal((await approve(supervisor.token)).response.status, 403);
+    assert.equal((await giveBack("short")).response.status, 400);
+
+    // Returned: the request is cleared, the note kept, and the student told.
+    const returned = await giveBack("Upload the signed endorsement letter again.");
+    assert.equal(returned.response.status, 200, JSON.stringify(returned.body));
+    const trainee = await login("student", email, "FinishPass12345");
+    const after = await jsonRequest(`/api/students/${sid}/completion`, { headers: authHeaders(trainee.token) });
+    assert.equal(after.body.requested_at, null);
+    assert.equal(after.body.return_note, "Upload the signed endorsement letter again.");
+    assert.ok(after.body.returned_at);
+    assert.equal((await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Your completion review was returned'`, [sid])).rows.length, 1);
+
+    // Asked again, then approved once.
+    await pool.query(`UPDATE students SET completion_requested_at = NOW() WHERE student_id = $1`, [sid]);
+    const approved = await approve();
+    assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+    assert.equal((await approve()).response.status, 409, "only once");
+    const done = await jsonRequest(`/api/students/${sid}/completion`, { headers: authHeaders(trainee.token) });
+    assert.ok(done.body.approved_at);
+    assert.ok(done.body.approved_by);
+    assert.equal(done.body.return_note, null, "an approval clears the old note");
+    assert.equal((await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Your OJT completion is approved'`, [sid])).rows.length, 1);
+    const record = await jsonRequest(`/api/coordinator/students/${sid}/overview`, { headers: authHeaders(coordinatorToken) });
+    assert.ok(record.body.student.completion_approved_at, JSON.stringify(Object.keys(record.body)));
+
+    // An approval can still be returned, which takes it back.
+    assert.equal((await giveBack("The final evaluation was entered for the wrong term.")).response.status, 200);
+    assert.equal((await pool.query(`SELECT completion_approved_at FROM students WHERE student_id = $1`, [sid])).rows[0].completion_approved_at, null);
+
+    const actions = (await pool.query(`SELECT action FROM audit_log WHERE entity_id = $1 AND action LIKE 'completion.%'`, [sid])).rows.map((row) => row.action);
+    for (const action of ["completion.approve", "completion.return"]) assert.ok(actions.includes(action), `${action} is audited`);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.end();
   }
 });

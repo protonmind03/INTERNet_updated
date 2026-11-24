@@ -1504,6 +1504,7 @@ export function registerExtensionRoutes(
           SELECT s.student_id, s.name, s.email, s.program, s.company, s.required_hours,
                  COALESCE(s.schedule_weeks, 1)::int AS schedule_weeks, TO_CHAR(s.schedule_anchor, 'YYYY-MM-DD') AS schedule_anchor,
                  s.is_active, s.completed_at, s.completion_requested_at, s.supervisor_id,
+                 s.completion_approved_at, s.completion_approved_by_name, s.completion_returned_at, s.completion_return_note,
                  s.phone, s.emergency_contact_name, s.emergency_contact_phone,
                  sup.name AS supervisor_name,
                  COALESCE(sup.is_active, FALSE) AS supervisor_active,
@@ -3245,10 +3246,18 @@ export function registerExtensionRoutes(
 
   app.post(
     "/api/students/:studentId/completion/request",
+      // Phase 2.5: the coordinator's decision on the request.
+      const decision = await pool.query<{ approved_at: string | null; approved_by: string | null; returned_at: string | null; return_note: string | null }>(
+        `SELECT completion_approved_at AS approved_at, completion_approved_by_name AS approved_by,
+                completion_returned_at AS returned_at, completion_return_note AS return_note
+         FROM students WHERE student_id = $1`,
+        [auth.id]
+      );
     requireRole("student"),
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
+        ...decision.rows[0],
         if (!sameId(auth.id, req.params.studentId)) {
           return res.status(403).json({ message: "You can only ask for your own review." });
         }

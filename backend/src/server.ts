@@ -37,6 +37,7 @@ import { registerGeofenceRoutes } from "./routes/geofence";
 import { registerCompanyChoiceRoutes } from "./routes/companyChoices";
 import { registerMonitoringPlanRoutes } from "./routes/monitoringPlan";
 import { registerHardCopyRoutes } from "./routes/hardCopies";
+import { registerCompletionDecisionRoutes } from "./routes/completionDecision";
 import { judgeGeo } from "./services/geofence";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
@@ -10782,6 +10783,8 @@ registerCompanyChoiceRoutes(app, { pool, requireRole, requireCoordinator, create
 registerMonitoringPlanRoutes(app, { pool, requireCoordinator });
 // Phase 2.4: hard copies received, with an optional transmittal scan.
 registerHardCopyRoutes(app, { pool, requireCoordinator, upload, savePrivateFile, deletePrivateFile, readPrivateFile });
+// Phase 2.5: the coordinator approves or returns a completion request.
+registerCompletionDecisionRoutes(app, { pool, requireCoordinator, createNotification });
 // Phase 1.4: overtime requests and their approval.
 registerOvertimeRoutes(app, { pool, requireRole, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification });
 // Phase 1.3: HTE status, screenings, the MOA file and agency requests.

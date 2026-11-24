@@ -32,6 +32,9 @@ export type Student = {
   completed_at: string | null;
   /** When the student asked for a completion review, if they have. */
   completion_requested_at?: string | null;
+  /** Phase 2.5: the coordinator's decision. */
+  completion_approved_at?: string | null;
+  completion_approved_by_name?: string | null;
   supervisor_name: string | null;
   supervisor_active: boolean;
   hours_rendered: number;
@@ -643,7 +646,7 @@ export function attentionItems(
       action: { kind: "open", tab: "attendance", label: "View", logFilter: "rejected" },
     });
   }
-  if (data.student.completion_requested_at) {
+  if (data.student.completion_requested_at && !data.student.completion_approved_at) {
     out.push({
       key: "completion", owner: "you", tone: "good", icon: "cap", topic: "Completion", title: "Asked for a completion review",
       text: "Check the time record and the final evaluation.", since: phDateKey(data.student.completion_requested_at),

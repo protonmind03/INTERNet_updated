@@ -32,6 +32,7 @@ import {
 import RecordOverview from "./studentRecord/RecordOverview";
 import UploadUsage from "./UploadUsage";
 import HardCopies from "./HardCopies";
+import CompletionDecision from "./CompletionDecision";
 import { FinalGradeCard } from "./FinalGrade";
 import TraineeReportsView from "../../components/TraineeReportsView";
 import {
@@ -264,7 +265,11 @@ export default function StudentRecord() {
                 <span className="flex flex-wrap gap-1.5 group-data-[fit=tight]/rim:md:hidden">
                   <StatusBadge status={student.is_active ? "Active" : "Deactivated"} tone={student.is_active ? "good" : "neutral"} />
                   {student.completed_at && <StatusBadge status={`Hours completed ${formatDate(student.completed_at)}`} tone="good" />}
-                  {student.completion_requested_at && <StatusBadge status={`Asked for completion review ${formatDate(student.completion_requested_at)}`} tone="info" />}
+                  {student.completion_approved_at ? (
+                    <StatusBadge status={`Completion approved ${formatDate(student.completion_approved_at)}`} tone="good" />
+                  ) : (
+                    student.completion_requested_at && <StatusBadge status={`Asked for completion review ${formatDate(student.completion_requested_at)}`} tone="info" />
+                  )}
                 </span>
               </div>
               <p className="truncate text-[12.5px] text-slate-600">{subtitle}</p>
@@ -375,6 +380,8 @@ export default function StudentRecord() {
               </p>
             )}
 
+            {/* Phase 2.5: approve or return the student's completion review. */}
+            {tab === "overview" && <div className="mb-4 empty:hidden"><CompletionDecision student={data.student} onDecided={() => void load(true)} /></div>}
             {tab === "overview" && (
               <RecordOverview
                 data={data}

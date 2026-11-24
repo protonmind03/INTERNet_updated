@@ -979,6 +979,22 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.visit, "company_id"),
     from: (source) => ({ visit_date: nested(source.result.visit, "visit_date") }),
   },
+  // Phase 2.5: a completion request, approved or returned.
+  {
+    method: "POST",
+    path: "/api/coordinator/students/:studentId/completion/approve",
+    action: "completion.approve",
+    entityType: "student",
+    entityId: param("studentId"),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/students/:studentId/completion/return",
+    action: "completion.return",
+    entityType: "student",
+    entityId: param("studentId"),
+    keep: ["note"],
+  },
   // Phase 2.4: hard copies received.
   {
     method: "PUT",

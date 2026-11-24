@@ -407,6 +407,20 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Completion approved or returned (Phase 2.5)
+
+- **The coordinator decides a completion request** (migration 089,
+  `routes/completionDecision.ts`) from the "Completion review" card on the
+  record's overview. Approving sets `completion_approved_at/by`; returning
+  needs a note, clears the request (and any approval) so the student can
+  ask again, and the student sees the note on their checklist. Both notify
+  the student and are audited.
+- **No completion certificate** is generated (decided 25 November 2026);
+  the agency's own certificate upload is unchanged.
+- `e2e/tests/completion-decision.spec.ts` marks its made-up trainee as
+  having asked straight in the database, so it needs `DATABASE_PUBLIC_URL`
+  like `director-portal.spec.ts`.
+
 ## Hard copies and the transmittal letter (Phase 2.4)
 
 - **`hard_copies`** (migration 088): one row per document or final
