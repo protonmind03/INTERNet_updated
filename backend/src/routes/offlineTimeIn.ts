@@ -505,17 +505,18 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
           created = await pool.query(
             `INSERT INTO attendance
                (student_id, date, time_in, note, status, image_url, capture_method, recorded_offline, offline_time_in_request, clock_skew_seconds,
-                session, credited_from, late_minutes, scheduled_start)
+                session, credited_from, late_minutes, scheduled_start, credited_until)
              VALUES
                ($1,
                 ${phSql.date("$2::timestamptz")},
                 ${phSql.wallTime("$2::timestamptz")},
                 $3, 'Pending', NULL, NULL, TRUE, $4, $5,
-                $6, ${phSql.wallTime("$7::timestamptz")}, $8, $9::time)
+                $6, ${phSql.wallTime("$7::timestamptz")}, $8, $9::time, ${phSql.wallTime("$10::timestamptz")})
              RETURNING ${LOG_COLUMNS}, TO_CHAR(time_in, 'HH12:MI AM') AS at`,
             [
               auth.id, stamp.occurredAt.toISOString(), rawNote || null, stamp.requestId, readClockSkew(req.body),
               verdict.session, verdict.creditedFrom.toISOString(), verdict.lateMinutes, verdict.scheduledStart,
+              verdict.creditedUntil?.toISOString() ?? null,
             ]
           );
         } else {
@@ -543,13 +544,13 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
             `INSERT INTO attendance
                (student_id, date, time_in, note, status, image_url, capture_method, liveness_checks,
                 recorded_offline, offline_time_in_request, clock_skew_seconds, offline_attestation,
-                session, credited_from, late_minutes, scheduled_start)
+                session, credited_from, late_minutes, scheduled_start, credited_until)
              VALUES
                ($1,
                 ${phSql.date("$2::timestamptz")},
                 ${phSql.wallTime("$2::timestamptz")},
                 $3, 'Pending', $4, 'liveness', $5::jsonb, TRUE, $6, $7, $8::jsonb,
-                $9, ${phSql.wallTime("$10::timestamptz")}, $11, $12::time)
+                $9, ${phSql.wallTime("$10::timestamptz")}, $11, $12::time, ${phSql.wallTime("$13::timestamptz")})
              RETURNING ${LOG_COLUMNS}, TO_CHAR(time_in, 'HH12:MI AM') AS at`,
             [
               auth.id,
@@ -564,6 +565,7 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
               verdict.creditedFrom.toISOString(),
               verdict.lateMinutes,
               verdict.scheduledStart,
+              verdict.creditedUntil?.toISOString() ?? null,
             ]
           );
           await client.query(`UPDATE offline_vouchers SET attendance_id = $2 WHERE jti = $1`, [checked.voucher.jti, created.rows[0].id]);

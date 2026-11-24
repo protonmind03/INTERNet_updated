@@ -69,6 +69,8 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
   student: {
     attendance: (id) => focus("/daily-log", "attendance", id),
     absence: () => "/daily-log",
+    // Phase 1.4: an overtime request, decided.
+    overtime: () => "/daily-log",
     task: (id) => focus("/task", "task", id),
     document: () => "/documents",
     journal: () => "/journal?view=weekly",
@@ -83,6 +85,7 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
     attendance: (id) => focus("/supervisor/attendance", "attendance", id),
     // Waiting in the queue; once decided, the queue sends it on to Attendance.
     absence: (id) => focus("/supervisor/dashboard", "absence", id),
+    overtime: (id) => focus("/supervisor/dashboard", "overtime", id),
     task: (id) => focus("/supervisor/dashboard", "task", id),
     document: (id) => focus("/supervisor/documents", "document", id),
     journal: (id) => focus("/supervisor/journals", "journal", id),
@@ -95,6 +98,7 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
   coordinator: {
     attendance: () => "/coordinator/monitoring",
     absence: () => "/coordinator/monitoring",
+    overtime: () => "/coordinator/monitoring",
     task: () => "/coordinator/monitoring",
     document: () => "/coordinator/documents",
     journal: () => "/coordinator/monitoring",
@@ -109,6 +113,7 @@ export const ENTITY_ROUTES: Record<NotificationRole, Record<string, (id: string)
 const ENTITY_ICON: Record<string, IconName> = {
   attendance: "clock",
   absence: "calendar",
+  overtime: "clock",
   task: "tasks",
   document: "document",
   journal: "note",

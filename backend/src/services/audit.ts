@@ -108,6 +108,24 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
   },
+  // Phase 1.4: overtime, asked for and decided.
+  {
+    method: "POST",
+    path: "/api/students/:studentId/overtime",
+    action: "overtime.request",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ work_date: nested(source.result.request, "work_date"), planned_end: nested(source.result.request, "planned_end") }),
+  },
+  {
+    method: "PUT",
+    path: "/api/supervisor/overtime/:id/decision",
+    action: (source) => (source.body.decision === "approve" ? "overtime.approve" : "overtime.rejected"),
+    entityType: "student",
+    entityId: (source) => nested(source.result.request, "student_id"),
+    keep: ["note"],
+    from: (source) => ({ request: source.params.id, work_date: nested(source.result.request, "work_date"), planned_end: nested(source.result.request, "planned_end") }),
+  },
   // Phase 1.3: Host Training Establishments.
   {
     method: "PUT",

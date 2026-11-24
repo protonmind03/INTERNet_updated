@@ -182,6 +182,8 @@ export type TimeInVerdict =
       session: Session;
       /** When hours start to count. */
       creditedFrom: Date;
+      /** Phase 1.4: when they stop, unless overtime is approved (the scheduled end); null on a day with no rules. */
+      creditedUntil: Date | null;
       /** 0 on time; null on a day with no rules. */
       lateMinutes: number | null;
       /** "HH:MM" the time-in was measured against; null on a day with no rules. */
@@ -213,7 +215,7 @@ export function judgeTimeIn(
   recordedAt: Date = at
 ): TimeInVerdict {
   if (plan.kind === "unscheduled" || plan.kind === "holiday" || !plan.shiftStart || !plan.opensAt) {
-    return { ok: true, session: "full", creditedFrom: recordedAt, lateMinutes: null, scheduledStart: null };
+    return { ok: true, session: "full", creditedFrom: recordedAt, creditedUntil: null, lateMinutes: null, scheduledStart: null };
   }
 
   let session: Session = plan.kind;
@@ -244,6 +246,7 @@ export function judgeTimeIn(
     ok: true,
     session,
     creditedFrom: recordedAt.getTime() > start.getTime() ? recordedAt : start,
+    creditedUntil: plan.shiftEnd ? phMoment(plan.date, plan.shiftEnd) : null,
     lateMinutes: late,
     scheduledStart: startTime,
   };

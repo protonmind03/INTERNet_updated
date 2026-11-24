@@ -89,6 +89,8 @@ const SCOPED_RECORDS: Record<string, { param: string; student: string }> = {
   "/api/attachments/:id/file": { param: "id", student: "SELECT student_id FROM attachments WHERE id::text = $1" },
   "/api/documents/:documentId/review": { param: "documentId", student: "SELECT student_id FROM documents WHERE id::text = $1" },
   "/api/documents/:documentId/file": { param: "documentId", student: "SELECT student_id FROM documents WHERE id::text = $1" },
+  // Phase 1.4: an overtime request's signed form.
+  "/api/overtime/:id/form": { param: "id", student: "SELECT student_id FROM overtime_requests WHERE id::text = $1" },
 };
 
 /** Routes that name a person by kind and id: only a student is scoped. */

@@ -31,6 +31,8 @@ import { registerAdminRoutes } from "./routes/admin";
 import { registerFinalGradeRoutes } from "./routes/finalGrades";
 import { PlacementError, withPlacement } from "./services/placement";
 import { registerHteRoutes } from "./routes/htes";
+import { hoursSql } from "./services/creditedHours";
+import { registerOvertimeRoutes } from "./routes/overtime";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
@@ -2801,7 +2803,8 @@ app.post(
             session,
             credited_from,
             late_minutes,
-            scheduled_start
+            scheduled_start,
+            credited_until
           )
           VALUES
           (
@@ -2820,7 +2823,8 @@ app.post(
             $7,
             $8::timestamptz,
             $9,
-            $10::time
+            $10::time,
+            $11::timestamptz
           )
           RETURNING
             id,
@@ -2851,6 +2855,7 @@ app.post(
             verdict.creditedFrom,
             verdict.lateMinutes,
             verdict.scheduledStart,
+            verdict.creditedUntil,
           ]
         );
         result.rows[0].day = planForApp(dayPlan);
@@ -3404,27 +3409,14 @@ app.put(
               ELSE break_end_time
             END,
 
-            -- Rendered hours exclude the recorded break.
-            hours = GREATEST(
-              ROUND(
-                (
-                  (
-                    EXTRACT(EPOCH FROM (COALESCE($4::timestamptz, NOW()) - COALESCE(credited_from, time_in)))
-                    - CASE
-                        WHEN break_time IS NOT NULL
-                        THEN EXTRACT(
-                          EPOCH FROM (
-                            COALESCE(break_end_time, COALESCE($4::timestamptz, NOW())) - break_time
-                          )
-                        )
-                        ELSE 0
-                      END
-                  ) / 3600.0
-                )::numeric,
-                2
-              ),
-              0
-            ),
+            -- Rendered hours exclude the recorded break, and stop at the
+            -- scheduled end unless overtime was approved (services/creditedHours.ts).
+            hours = ${hoursSql({
+              alias: "attendance",
+              start: "COALESCE(attendance.credited_from, attendance.time_in)",
+              end: "COALESCE($4::timestamptz, NOW())",
+              breakSeconds: "CASE WHEN attendance.break_time IS NOT NULL THEN EXTRACT(EPOCH FROM (COALESCE(attendance.break_end_time, COALESCE($4::timestamptz, NOW())) - attendance.break_time)) ELSE 0 END",
+            })},
 
             -- A time-in the supervisor recorded in person was approved by them
             -- on the spot, so the finished day needs no second review.
@@ -3740,25 +3732,14 @@ app.put(
             WHEN break_time IS NOT NULL THEN COALESCE(break_end_time, $3::timestamp)
             ELSE break_end_time
           END,
-          -- Rendered hours exclude the recorded break.
-          hours = GREATEST(
-            ROUND(
-              (
-                (
-                  EXTRACT(EPOCH FROM ($3::timestamp - COALESCE(credited_from, time_in)))
-                  - CASE
-                      WHEN break_time IS NOT NULL
-                      THEN EXTRACT(
-                        EPOCH FROM (COALESCE(break_end_time, $3::timestamp) - break_time)
-                      )
-                      ELSE 0
-                    END
-                ) / 3600.0
-              )::numeric,
-              2
-            ),
-            0
-          ),
+          -- Rendered hours exclude the recorded break, and stop at the
+          -- scheduled end unless overtime was approved (services/creditedHours.ts).
+          hours = ${hoursSql({
+            alias: "attendance",
+            start: "COALESCE(attendance.credited_from, attendance.time_in)",
+            end: "$3::timestamp",
+            breakSeconds: "CASE WHEN attendance.break_time IS NOT NULL THEN EXTRACT(EPOCH FROM (COALESCE(attendance.break_end_time, $3::timestamp) - attendance.break_time)) ELSE 0 END",
+          })},
           status = 'Pending',
           correction_note = $4,
           corrected_at = NOW()
@@ -4412,15 +4393,16 @@ app.post(
         INSERT INTO attendance
           (student_id, date, time_in, note, status, image_url,
            capture_method, recorded_by, capture_reason,
-           session, credited_from, late_minutes, scheduled_start)
+           session, credited_from, late_minutes, scheduled_start, credited_until)
         VALUES
           ($1, $6::date, $7::timestamptz, $2, 'Pending', $3, 'supervisor', $4, $5,
-           $8, $9::timestamptz, $10, $11::time)
+           $8, $9::timestamptz, $10, $11::time, $12::timestamptz)
         RETURNING ${ATTENDANCE_COLUMNS}, ${DAY_RULE_COLUMNS}
         `,
         [
           studentId, note, `/uploads/${uploadedFileName}`, auth?.id, reason,
           recordPlan.date, recordedAt, credited.session, credited.creditedFrom, credited.lateMinutes, credited.scheduledStart,
+          credited.creditedUntil,
         ]
       );
 
@@ -4851,18 +4833,12 @@ app.patch(
             END,
             lunch_late_minutes = CASE WHEN a.session IS NULL THEN a.lunch_late_minutes ELSE $10::int END,
             -- Rendered hours exclude the break; an open log has none yet.
-            hours = CASE WHEN $5::time IS NULL THEN NULL ELSE GREATEST(
-              ROUND(
-                (
-                  (
-                    EXTRACT(EPOCH FROM ($5::time - CASE WHEN a.session IS NULL THEN $2::time ELSE GREATEST($2::time, COALESCE(a.scheduled_start, $2::time)) END))
-                    - COALESCE(EXTRACT(EPOCH FROM ($4::time - $3::time)), 0)
-                  ) / 3600.0
-                )::numeric,
-                2
-              ),
-              0
-            ) END,
+            hours = CASE WHEN $5::time IS NULL THEN NULL ELSE ${hoursSql({
+              alias: "a",
+              start: "(a.date + CASE WHEN a.session IS NULL THEN $2::time ELSE GREATEST($2::time, COALESCE(a.scheduled_start, $2::time)) END)",
+              end: "(a.date + $5::time)",
+              breakSeconds: "COALESCE(EXTRACT(EPOCH FROM ($4::time - $3::time)), 0)",
+            })} END,
             time_corrected_at = NOW(),
             time_corrected_by = $6,
             time_correction_reason = $7,
@@ -10759,6 +10735,8 @@ registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNoti
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 // Phase 1.2: the clearance board, the deployment gate's setting, and the student's own readiness.
 registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
+// Phase 1.4: overtime requests and their approval.
+registerOvertimeRoutes(app, { pool, requireRole, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification });
 // Phase 1.3: HTE status, screenings, the MOA file and agency requests.
 registerHteRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification, notifyCoordinators });
 // Phase 1.5: the instructor's evaluation, the grade sheet and the final grade's release.

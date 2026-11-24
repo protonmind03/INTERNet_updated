@@ -46,6 +46,8 @@ export const OJT_SETTINGS = {
   deployment_gate_enabled: flag("Deployment gate", false),
   // Phase 1.5: the HTE's share of the final grade, in percent; the instructor has the rest.
   grade_split_hte: whole("HTE share of the final grade", 50, 1, 99),
+  // Phase 1.4: how many overtime requests a supervisor may approve for one trainee in an ISO week.
+  overtime_max_per_week: whole("Overtime days a week", 2, 0, 7),
 } satisfies Record<string, Setting<unknown>>;
 
 export type OjtSettingKey = keyof typeof OJT_SETTINGS;

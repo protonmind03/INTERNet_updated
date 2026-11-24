@@ -1,4 +1,5 @@
 import type express from "express";
+import { hoursSql } from "../services/creditedHours";
 import { staleDecision } from "../services/versions";
 import type { Pool, PoolClient } from "pg";
 import { syncLivenessStrict } from "../services/liveness";
@@ -266,11 +267,12 @@ export function registerAppealRoutes(app: express.Express, deps: Dependencies): 
                  -- of the time-in and its scheduled start (services/dayRules.ts).
                  credited_from = CASE WHEN a.session IS NULL THEN NULL
                    ELSE a.date + GREATEST(($2::jsonb->>'time_in')::time, COALESCE(a.scheduled_start, ($2::jsonb->>'time_in')::time)) END,
-                 hours = CASE WHEN $2::jsonb->>'time_out' IS NULL THEN NULL ELSE GREATEST(ROUND((
-                   (EXTRACT(EPOCH FROM (($2::jsonb->>'time_out')::time - CASE WHEN a.session IS NULL THEN ($2::jsonb->>'time_in')::time
-                      ELSE GREATEST(($2::jsonb->>'time_in')::time, COALESCE(a.scheduled_start, ($2::jsonb->>'time_in')::time)) END))
-                    - COALESCE(EXTRACT(EPOCH FROM (($2::jsonb->>'break_end_time')::time - ($2::jsonb->>'break_time')::time)), 0)
-                   ) / 3600.0)::numeric, 2), 0) END,
+                 hours = CASE WHEN $2::jsonb->>'time_out' IS NULL THEN NULL ELSE ${hoursSql({
+                   alias: "a",
+                   start: "(a.date + CASE WHEN a.session IS NULL THEN ($2::jsonb->>'time_in')::time ELSE GREATEST(($2::jsonb->>'time_in')::time, COALESCE(a.scheduled_start, ($2::jsonb->>'time_in')::time)) END)",
+                   end: "(a.date + ($2::jsonb->>'time_out')::time)",
+                   breakSeconds: "COALESCE(EXTRACT(EPOCH FROM (($2::jsonb->>'break_end_time')::time - ($2::jsonb->>'break_time')::time)), 0)",
+                 })} END,
                  time_corrected_at = NOW(),
                  time_corrected_by = $3,
                  time_correction_reason = $4,

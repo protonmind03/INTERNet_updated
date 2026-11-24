@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -14542,6 +14542,179 @@ test("a student suggests an agency; approving it makes the company, in screening
   } finally {
     await pool.query(`DELETE FROM notifications WHERE student_id = $1 AND title LIKE 'Your agency suggestion%'`, [student.student_id]);
     await cleanHte(pool, stamp);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.4: overtime and the 8-hour day
+*/
+
+test("the day's verdict says where credit stops: the scheduled end, or nowhere on a day with no rules", () => {
+  require("tsx/cjs");
+  const { planDay, judgeTimeIn } = require("../src/services/dayRules.ts");
+  const plan = planDay("2026-11-23", { start: "08:00", end: "17:00" }, null);
+  const verdict = judgeTimeIn(plan, new Date("2026-11-23T00:05:00Z"));
+  assert.equal(verdict.ok, true);
+  assert.equal(verdict.creditedUntil.toISOString(), "2026-11-23T09:00:00.000Z", "17:00 in the Philippines");
+  const free = judgeTimeIn(planDay("2026-11-22", null, null), new Date("2026-11-22T00:05:00Z"));
+  assert.equal(free.creditedUntil, null);
+});
+
+/** Monday (YYYY-MM-DD) of the ISO week `weeks` from now, in the Philippines. */
+function mondayIn(weeks) {
+  const today = new Date(Date.now() + 8 * 3_600_000);
+  const day = (today.getUTCDay() + 6) % 7;
+  return new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), today.getUTCDate() - day + weeks * 7)).toISOString().slice(0, 10);
+}
+const addDays = (date, n) => new Date(Date.parse(`${date}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
+
+test("overtime: asked for before the day, approved within the week's limit, with the right checks", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const ask = (body) => jsonRequest(`/api/students/${student.student_id}/overtime`, jsonBody(studentToken, "POST", body));
+  const monday = mondayIn(5);
+  // The demo trainee's supervisor decides; set it so for the test, and back after.
+  const before = (await pool.query(`SELECT supervisor_id FROM students WHERE student_id = $1`, [student.student_id])).rows[0].supervisor_id;
+  try {
+    await pool.query(`UPDATE students SET supervisor_id = $2 WHERE student_id = $1`, [student.student_id, supervisor.supervisor.supervisor_id]);
+
+    assert.equal((await ask({ work_date: "2020-01-06", planned_start: "17:00", planned_end: "19:00", reason: "Inventory count." })).response.status, 400, "not after the day");
+    assert.equal((await ask({ work_date: monday, planned_start: "19:00", planned_end: "17:00", reason: "Inventory count." })).response.status, 400);
+    assert.equal((await ask({ work_date: monday, planned_start: "17:00", planned_end: "19:00", reason: "x" })).response.status, 400);
+    const made = [];
+    for (const offset of [0, 1, 2]) {
+      const sent = await ask({ work_date: addDays(monday, offset), planned_start: "17:00", planned_end: "19:00", reason: "Year-end inventory count." });
+      assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+      made.push(sent.body.request);
+    }
+    assert.equal((await ask({ work_date: monday, planned_start: "17:00", planned_end: "20:00", reason: "Again the same day." })).body.code, "ONE_A_DAY");
+    const nextWeek = await ask({ work_date: addDays(monday, 7), planned_start: "17:00", planned_end: "18:30", reason: "The audit continues." });
+    assert.equal(nextWeek.response.status, 201);
+
+    const decide = (request, body, token = supervisor.token) => jsonRequest(`/api/supervisor/overtime/${request.id}/decision`, jsonBody(token, "PUT", body));
+    assert.equal((await decide(made[0], { decision: "approve" })).body.code, "STALE", "the version is needed");
+    assert.equal((await decide(made[0], { decision: "reject", expected_version: 1 })).response.status, 400, "a rejection needs a note");
+    assert.equal((await decide(made[0], { decision: "approve", expected_version: 1 })).response.status, 200);
+    assert.equal((await decide(made[1], { decision: "approve", expected_version: 1 })).response.status, 200);
+    const third = await decide(made[2], { decision: "approve", expected_version: 1 });
+    assert.equal(third.response.status, 409, "the third in one week is over the limit of 2");
+    assert.equal(third.body.code, "OVERTIME_LIMIT");
+    assert.equal((await decide(nextWeek.body.request, { decision: "approve", expected_version: 1 })).response.status, 200, "the next week has its own limit");
+    assert.equal((await decide(made[2], { decision: "reject", note: "Two is enough this week.", expected_version: 1 })).response.status, 200);
+    assert.equal((await decide(made[2], { decision: "approve", expected_version: 2 })).response.status, 409, "decided already");
+
+    // The limit is an OJT rule: at 3 the third could have been approved.
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/overtime_max_per_week", jsonBody(coordinatorToken, "PUT", { value: 8 }))).response.status, 400);
+
+    // The trainee's view: this week's count and their requests; a cancel before the day.
+    const mine = await jsonRequest(`/api/students/${student.student_id}/overtime`, { headers: authHeaders(studentToken) });
+    assert.equal(mine.body.week.limit, 2);
+    assert.ok(mine.body.requests.some((row) => row.id === made[0].id && row.status === "approved"));
+    assert.equal((await jsonRequest(`/api/students/${student.student_id}/overtime/${made[0].id}/cancel`, { method: "POST", headers: authHeaders(studentToken) })).response.status, 200);
+    const approved = await jsonRequest(`/api/overtime/student/${student.student_id}/approved`, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(approved.body.overtime.map((row) => row.work_date), [addDays(monday, 1), addDays(monday, 7)]);
+    // Someone else's.
+    assert.equal((await jsonRequest(`/api/students/${student.student_id}/overtime`, { headers: authHeaders(supervisor.token) })).response.status, 403);
+    const audit = (await pool.query(`SELECT action FROM audit_log WHERE action LIKE 'overtime.%' AND entity_id = $1`, [String(student.student_id).trim()])).rows.map((row) => row.action);
+    for (const action of ["overtime.request", "overtime.approve", "overtime.rejected"]) assert.ok(audit.includes(action), action);
+  } finally {
+    await pool.query(`DELETE FROM overtime_requests WHERE student_id = $1 AND work_date >= $2::date`, [student.student_id, monday]);
+    await pool.query(`UPDATE students SET supervisor_id = $2 WHERE student_id = $1`, [student.student_id, before]);
+    await pool.end();
+  }
+});
+
+test("credited hours stop at the scheduled end, run to an approved overtime end, and logs from before stay as they were", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { storedLogHoursSql } = require("../src/services/creditedHours.ts");
+  const pool = localTestPool();
+  const id = `OT-${Date.now().toString(36)}`.toUpperCase();
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Made Up Overtime Trainee', TRUE)`, [id, `${id.toLowerCase()}@demo.invalid`]);
+  const day = "2026-10-14";
+  // 08:00 to 19:00 with lunch 12:00 to 13:00: 10 hours on the clock.
+  const log = async (date, creditedUntil, status = "Pending") =>
+    (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, break_time, break_end_time, time_out, status, credited_from, credited_until)
+       VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + TIME '12:00', $2::date + TIME '13:00', $2::date + TIME '19:00', $3,
+               $2::date + TIME '08:00', $4::timestamp) RETURNING id`,
+      [id, date, status, creditedUntil]
+    )).rows[0].id;
+  const hoursOf = async (logId) => Number((await pool.query(`SELECT ${storedLogHoursSql("a")} AS h FROM attendance a WHERE a.id = $1`, [logId])).rows[0].h);
+  try {
+    const capped = await log(day, `${day} 17:00`);
+    assert.equal(await hoursOf(capped), 8, "stops at the scheduled 17:00");
+    const old = await log("2026-10-13", null);
+    assert.equal(await hoursOf(old), 10, "a log from before migration 084 counts as it always did");
+
+    // Approved overtime until 18:30 that day: credit runs to it.
+    await pool.query(
+      `INSERT INTO overtime_requests (student_id, work_date, planned_start, planned_end, reason, status) VALUES ($1, $2, '17:00', '18:30', 'Inventory count.', 'approved')`,
+      [id, day]
+    );
+    assert.equal(await hoursOf(capped), 9.5);
+    // Overtime past the time-out does not add hours: the time-out still ends the day.
+    await pool.query(`UPDATE overtime_requests SET planned_end = '21:00' WHERE student_id = $1`, [id]);
+    assert.equal(await hoursOf(capped), 10);
+    // Pending or rejected overtime does not count.
+    await pool.query(`UPDATE overtime_requests SET status = 'pending' WHERE student_id = $1`, [id]);
+    assert.equal(await hoursOf(capped), 8);
+  } finally {
+    await pool.query(`DELETE FROM overtime_requests WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+test("approving overtime works out a finished day again, but never a verified one or one from before", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const supervisor = await supervisorSession();
+  const bcrypt = require("bcryptjs");
+  const id = `OTA-${Date.now().toString(36)}`.toUpperCase();
+  const email = `${id.toLowerCase()}@demo.invalid`;
+  await pool.query(
+    `INSERT INTO students (student_id, email, password, name, is_active, must_change_password, supervisor_id) VALUES ($1, $2, $3, 'Made Up Overtime Intern', TRUE, FALSE, $4)`,
+    [id, email, await bcrypt.hash("OvertimePass123", 4), supervisor.supervisor.supervisor_id]
+  );
+  try {
+    const trainee = await login("student", email, "OvertimePass123");
+    // Today: a finished pending day, capped at 17:00 (8 h of 10 on the clock).
+    const today = (await pool.query(`SELECT CURRENT_DATE::text AS d`)).rows[0].d;
+    const made = (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, break_time, break_end_time, time_out, status, credited_from, credited_until, hours)
+       VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + TIME '12:00', $2::date + TIME '13:00', $2::date + TIME '19:00', 'Pending',
+               $2::date + TIME '08:00', $2::date + TIME '17:00', 8) RETURNING id`,
+      [id, today]
+    )).rows[0].id;
+    const asked = await jsonRequest(`/api/students/${id}/overtime`, jsonBody(trainee.token, "POST", { work_date: today, planned_start: "17:00", planned_end: "19:00", reason: "Stayed for the delivery." }));
+    assert.equal(asked.response.status, 201, JSON.stringify(asked.body));
+    // The supervisor's list has it, waiting, with the week's count; no form was attached.
+    const listed = await jsonRequest("/api/supervisor/overtime", { headers: authHeaders(supervisor.token) });
+    const row = listed.body.requests.find((item) => item.id === asked.body.request.id);
+    assert.deepEqual([row.status, row.student_name, row.approved_that_week, listed.body.limit], ["pending", "Made Up Overtime Intern", 0, 2]);
+    assert.equal((await jsonRequest(`/api/overtime/${asked.body.request.id}/form`, { headers: authHeaders(supervisor.token) })).response.status, 404);
+    assert.equal((await jsonRequest(`/api/overtime/${asked.body.request.id}/form`, { headers: authHeaders(studentToken) })).response.status, 404, "another trainee is told nothing");
+    const approved = await jsonRequest(`/api/supervisor/overtime/${asked.body.request.id}/decision`, jsonBody(supervisor.token, "PUT", { decision: "approve", expected_version: 1 }));
+    assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+    assert.equal(Number((await pool.query(`SELECT hours FROM attendance WHERE id = $1`, [made])).rows[0].hours), 10, "the day now counts to 19:00");
+
+    // Verified, then the overtime taken back and given again: the verified hours stay.
+    await pool.query(`UPDATE attendance SET status = 'Verified', hours = 10 WHERE id = $1`, [made]);
+    await pool.query(`UPDATE overtime_requests SET status = 'cancelled' WHERE student_id = $1`, [id]);
+    const again = await jsonRequest(`/api/students/${id}/overtime`, jsonBody(trainee.token, "POST", { work_date: today, planned_start: "17:00", planned_end: "18:00", reason: "Stayed again for the delivery." }));
+    await jsonRequest(`/api/supervisor/overtime/${again.body.request.id}/decision`, jsonBody(supervisor.token, "PUT", { decision: "approve", expected_version: 1 }));
+    assert.equal(Number((await pool.query(`SELECT hours FROM attendance WHERE id = $1`, [made])).rows[0].hours), 10, "a verified day is never worked out again");
+    // Another supervisor cannot decide it.
+    assert.equal((await jsonRequest(`/api/supervisor/overtime/${again.body.request.id}/decision`, jsonBody(coordinatorToken, "PUT", { decision: "reject", note: "No." }))).response.status, 403);
+  } finally {
+    await pool.query(`DELETE FROM overtime_requests WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
     await pool.end();
   }
 });
