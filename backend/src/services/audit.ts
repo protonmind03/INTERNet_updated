@@ -979,6 +979,31 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.visit, "company_id"),
     from: (source) => ({ visit_date: nested(source.result.visit, "visit_date") }),
   },
+  // Phase 2.3: the monitoring plan.
+  {
+    method: "POST",
+    path: "/api/coordinator/monitoring-plan",
+    action: "check_in.plan",
+    entityType: "company",
+    entityId: (source) => source.body.company_id,
+    keep: ["kind", "planned_on", "student_id"],
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/monitoring-plan/:id",
+    action: "check_in.change",
+    entityType: "check_in",
+    entityId: param("id"),
+    keep: ["kind", "planned_on"],
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/monitoring-plan/:id/done",
+    action: "check_in.done",
+    entityType: "check_in",
+    entityId: param("id"),
+    keep: ["done_on"],
+  },
   // Coordinator accounts
   {
     method: "POST",

@@ -407,6 +407,22 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## The monitoring plan (Phase 2.3)
+
+- **Planned check-ins live in `site_visits`** (migration 087) with
+  `status = 'planned'`, a `kind` (visit, call, message check-in), a
+  `planned_on` day and, optionally, the `student_id` it is about. They
+  have no `visit_date` or findings until marked done, so every reader of
+  the visit log filters `status = 'done'`.
+- **Routes** in `routes/monitoringPlan.ts`; a planned one is removed with
+  the visit DELETE. A check-in about a student outside a scoped
+  coordinator's students is not shown or accepted.
+- **The reminder** (`remindPlannedCheckIns`) runs in the deadline-reminder
+  loop: the planner is notified the day before, once (`reminded_at`;
+  moving the day clears it).
+- **The PDF** for the OJT office is made in the browser with
+  `buildAnalyticsPdf` (Export the plan, on Monitoring).
+
 ## Agency choices and assignment (Phase 2.2)
 
 - **A window per term** (`terms.choice_opens_at`, `choice_closes_at`,

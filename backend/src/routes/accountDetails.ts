@@ -255,7 +255,7 @@ export function registerAccountDetailRoutes(app: express.Express, deps: Dependen
         ),
         pool.query(
           `SELECT id, TO_CHAR(visit_date, 'YYYY-MM-DD') AS visit_date, visited_by_name, findings, follow_up
-           FROM site_visits WHERE company_id = $1 ORDER BY visit_date DESC, id DESC`,
+           FROM site_visits WHERE company_id = $1 AND status = 'done' ORDER BY visit_date DESC, id DESC`,
           [id]
         ),
       ]);

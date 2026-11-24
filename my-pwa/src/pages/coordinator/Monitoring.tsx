@@ -33,6 +33,7 @@ import { notifyDataChanged } from "../../lib/navCounts";
 import { errorText, toast } from "../../lib/toast";
 import { usePagination } from "../../lib/usePagination";
 import AbsenceList from "./AbsenceList";
+import MonitoringPlan from "./MonitoringPlan";
 import { coordinatorRequest } from "./request";
 import FilterBar from "./FilterBar";
 import ProjectionLine from "../../components/ProjectionLine";
@@ -250,6 +251,8 @@ export default function CoordinatorMonitoring() {
       <div className="space-y-6">
         <FilterBar state={studentFilters} />
         {error && <ErrorNotice message={error} onRetry={() => void load()} />}
+        {/* Phase 2.3: planned visits, calls and message check-ins. */}
+        {scope !== "attention" && <MonitoringPlan />}
 
         <Card>
           <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 p-4 sm:p-5">

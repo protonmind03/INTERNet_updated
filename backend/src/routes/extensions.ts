@@ -1852,9 +1852,9 @@ export function registerExtensionRoutes(
                  (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id) AS students,
                  (SELECT COUNT(*)::int FROM supervisors p
                    WHERE p.company_id = c.id AND p.is_active = TRUE) AS supervisors,
-                 (SELECT COUNT(*)::int FROM site_visits v WHERE v.company_id = c.id) AS visits,
+                 (SELECT COUNT(*)::int FROM site_visits v WHERE v.company_id = c.id AND v.status = 'done') AS visits,
                  (SELECT TO_CHAR(MAX(v.visit_date), 'YYYY-MM-DD') FROM site_visits v
-                   WHERE v.company_id = c.id) AS last_visit
+                   WHERE v.company_id = c.id AND v.status = 'done') AS last_visit
           FROM companies c
           ORDER BY c.is_active DESC, LOWER(c.name)
           `
@@ -4144,7 +4144,7 @@ export function registerExtensionRoutes(
       }
       const result = await pool.query(
         `SELECT ${VISIT_COLUMNS} FROM ${VISIT_FROM}
-         WHERE ($1::int IS NULL OR v.company_id = $1::int)
+         WHERE ($1::int IS NULL OR v.company_id = $1::int) AND v.status = 'done'
          ORDER BY v.visit_date DESC, v.id DESC LIMIT 500`,
         [company === undefined ? null : Number(company)]
       );
@@ -4193,7 +4193,7 @@ export function registerExtensionRoutes(
       }
       const updated = await pool.query(
         `UPDATE site_visits SET company_id = $2, visit_date = $3, findings = $4, follow_up = $5, updated_at = NOW()
-         WHERE id = $1 RETURNING id`,
+         WHERE id = $1 AND status = 'done' RETURNING id`,
         [Number(req.params.id), read.visit.companyId, read.visit.date, read.visit.findings, read.visit.followUp]
       );
       if (updated.rows.length === 0) return res.status(404).json({ message: "Visit not found." });

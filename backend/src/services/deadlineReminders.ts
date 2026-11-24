@@ -8,10 +8,13 @@ import { createWeeklyItems, sendDeliverableReminders } from "./deliverables";
 import { phSql } from "./phTime";
 import { closeMissedRedos, remindRedoDeadlines } from "./photoRedo";
 import { LOOP_LOCKS, withLoopLock } from "./loopLock";
+import { remindPlannedCheckIns } from "./monitoringPlan";
 
 type NotificationWriter = (notification: {
   studentId?: string;
   supervisorId?: string;
+  coordinatorId?: string;
+  link?: string;
   title: string;
   message: string;
   type: string;
@@ -60,6 +63,12 @@ export function startDeadlineReminderScheduler(
         await sendDeliverableReminders(pool, createNotification);
       } catch (error) {
         console.error("DELIVERABLE LOOP ERROR:", error);
+      }
+      // Phase 2.3: tomorrow's planned check-ins, to whoever planned them, once each.
+      try {
+        await remindPlannedCheckIns(pool, createNotification);
+      } catch (error) {
+        console.error("CHECK-IN REMINDER LOOP ERROR:", error);
       }
       // A task the intern cannot see yet gets no deadline reminder.
       await pool.query(

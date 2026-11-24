@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -15088,6 +15088,107 @@ test("agency choices: the window, what may be chosen, ranking, a full company, a
     await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [[sid, otherId]]);
     await pool.query(`DELETE FROM companies WHERE id = ANY($1)`, [Object.values(ids)]);
     await pool.query(`DELETE FROM terms WHERE id = $1`, [termId]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 2.3: the monitoring plan
+*/
+
+test("the monitoring plan: weeks run Monday to Sunday in Philippine dates", () => {
+  require("tsx/cjs");
+  const { weekOf } = require("../src/services/monitoringPlan.ts");
+  assert.deepEqual(weekOf("2026-11-25"), { start: "2026-11-23", end: "2026-11-29" });
+  assert.deepEqual(weekOf("2026-11-29"), { start: "2026-11-23", end: "2026-11-29" });
+  assert.deepEqual(weekOf("2026-11-30"), { start: "2026-11-30", end: "2026-12-06" });
+});
+
+test("the monitoring plan: planning, overdue and this week, the reminder, moving, marking done", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { remindPlannedCheckIns } = require("../src/services/monitoringPlan.ts");
+  const { phToday } = require("../src/services/phTime.ts");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const sid = `MON-${stamp}`.toUpperCase();
+  const companyName = `Made Up Monitored Office ${stamp}`;
+  const today = phToday();
+  const day = (offset) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86_400_000).toISOString().slice(0, 10);
+  const companyId = (await pool.query(`INSERT INTO companies (name, status, slots) VALUES ($1, 'approved', 5) RETURNING id`, [companyName])).rows[0].id;
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, company) VALUES ($1, $2, 'x', 'Made Up Monitored', TRUE, $3)`, [sid, `${sid.toLowerCase()}@demo.invalid`, companyName]);
+  const supervisor = await supervisorSession();
+  const plan = (body, token = coordinatorToken) => jsonRequest("/api/coordinator/monitoring-plan", jsonBody(token, "POST", { company_id: companyId, ...body }));
+  try {
+    // Checked: who, what kind, when, and that the student is placed there.
+    assert.equal((await plan({ kind: "call", planned_on: day(1) }, supervisor.token)).response.status, 403);
+    assert.equal((await plan({ kind: "lunch", planned_on: day(1) })).response.status, 400);
+    assert.match((await plan({ kind: "call", planned_on: day(-1) })).body.message, /today or later/);
+    assert.equal((await plan({ kind: "call", planned_on: day(1), student_id: "NOT-PLACED-HERE" })).response.status, 400);
+
+    const tomorrow = await plan({ kind: "visit", planned_on: day(1), note: "See the new desk area." });
+    assert.equal(tomorrow.response.status, 201, JSON.stringify(tomorrow.body));
+    const aboutStudent = await plan({ kind: "message", planned_on: today, student_id: sid });
+    assert.equal(aboutStudent.response.status, 201, JSON.stringify(aboutStudent.body));
+    assert.equal(aboutStudent.body.plan.student, "Made Up Monitored");
+    const later = await plan({ kind: "call", planned_on: day(30) });
+    // One already late (planned before today, as if made then).
+    const late = (await pool.query(
+      `INSERT INTO site_visits (company_id, kind, status, planned_on, visited_by, visited_by_name) VALUES ($1, 'call', 'planned', $2, 'test', 'Test') RETURNING id`,
+      [companyId, day(-2)]
+    )).rows[0].id;
+
+    const board = await jsonRequest("/api/coordinator/monitoring-plan", { headers: authHeaders(coordinatorToken) });
+    assert.equal(board.response.status, 200, JSON.stringify(board.body));
+    const ids = (list) => list.map((row) => row.id);
+    assert.ok(ids(board.body.overdue).includes(late));
+    assert.ok(ids(board.body.this_week).includes(aboutStudent.body.plan.id));
+    assert.ok(ids(board.body.later).includes(later.body.plan.id));
+    assert.ok(board.body.companies.find((row) => row.id === companyId).students.some((row) => row.student_id === sid));
+    // The visit log shows only visits made.
+    const log = await jsonRequest(`/api/coordinator/site-visits?company_id=${companyId}`, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(log.body.visits, []);
+
+    // The reminder: the day before, once.
+    const sent = [];
+    const writer = async (note) => sent.push(note);
+    assert.ok((await remindPlannedCheckIns(pool, writer, today)) >= 1);
+    const mine = sent.find((note) => note.message.includes(companyName));
+    assert.ok(mine, "the planner is reminded");
+    assert.equal(mine.title, "Check-in tomorrow");
+    assert.ok(mine.coordinatorId);
+    sent.length = 0;
+    await remindPlannedCheckIns(pool, writer, today);
+    assert.equal(sent.some((note) => note.message.includes(companyName)), false, "only once");
+
+    // Moving it to another day asks for a new reminder.
+    const id = tomorrow.body.plan.id;
+    const moved = await jsonRequest(`/api/coordinator/monitoring-plan/${id}`, jsonBody(coordinatorToken, "PUT", { kind: "call", planned_on: day(2) }));
+    assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+    assert.equal((await pool.query(`SELECT reminded_at FROM site_visits WHERE id = $1`, [id])).rows[0].reminded_at, null);
+
+    // Marking done: findings, a day that has come; then it is in the log and no longer planned.
+    const done = (body) => jsonRequest(`/api/coordinator/monitoring-plan/${id}/done`, jsonBody(coordinatorToken, "POST", body));
+    assert.equal((await done({ findings: "short" })).response.status, 400);
+    assert.equal((await done({ findings: "All fine at the desk area.", done_on: day(3) })).response.status, 400);
+    const marked = await done({ findings: "All fine at the desk area.", follow_up: "Call next month." });
+    assert.equal(marked.response.status, 200, JSON.stringify(marked.body));
+    assert.equal((await done({ findings: "All fine at the desk area." })).response.status, 404, "only once");
+    const logged = await jsonRequest(`/api/coordinator/site-visits?company_id=${companyId}`, { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(logged.body.visits.map((row) => row.id), [id]);
+    assert.equal((await jsonRequest(`/api/coordinator/monitoring-plan/${id}`, jsonBody(coordinatorToken, "PUT", { kind: "call", planned_on: day(2) }))).response.status, 404);
+    // A done row is not edited as a plan, and a plan is not edited as a visit.
+    assert.equal((await jsonRequest(`/api/coordinator/site-visits/${late}`, jsonBody(coordinatorToken, "PUT", { company_id: companyId, visit_date: today, findings: "Edited as a visit." }))).response.status, 404);
+
+    // A planned one is removed like a visit.
+    assert.equal((await jsonRequest(`/api/coordinator/site-visits/${later.body.plan.id}`, { method: "DELETE", headers: authHeaders(coordinatorToken) })).response.status, 200);
+
+    const actions = (await pool.query(`SELECT action FROM audit_log WHERE action LIKE 'check_in.%' AND created_at > NOW() - INTERVAL '10 minutes'`)).rows.map((row) => row.action);
+    for (const action of ["check_in.plan", "check_in.change", "check_in.done"]) assert.ok(actions.includes(action), `${action} is audited`);
+  } finally {
+    await pool.query(`DELETE FROM site_visits WHERE company_id = $1`, [companyId]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
     await pool.end();
   }
 });

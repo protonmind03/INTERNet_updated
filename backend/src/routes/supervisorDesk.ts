@@ -113,7 +113,7 @@ export function registerSupervisorDeskRoutes(app: express.Express, deps: Depende
         `SELECT TO_CHAR(v.visit_date, 'YYYY-MM-DD') AS visit_date, v.follow_up, c.name AS company
          FROM supervisors sup
          JOIN companies c ON c.id = sup.company_id
-         JOIN site_visits v ON v.company_id = c.id
+         JOIN site_visits v ON v.company_id = c.id AND v.status = 'done'
          WHERE sup.supervisor_id = $1
          ORDER BY v.visit_date DESC, v.id DESC
          LIMIT 1`,
