@@ -979,6 +979,24 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.visit, "company_id"),
     from: (source) => ({ visit_date: nested(source.result.visit, "visit_date") }),
   },
+  // Phase 2.6: a program's OJT semesters, and carrying students into the next term.
+  {
+    method: "PUT",
+    path: "/api/coordinator/programs/:id/ojt-semesters",
+    action: "program.ojt_semesters",
+    entityType: "program",
+    entityId: param("id"),
+    keep: ["semesters"],
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/terms/:id/carry-over",
+    action: "term.carry_over",
+    entityType: "term",
+    entityId: param("id"),
+    keep: ["to_term_id"],
+    from: (source) => ({ moved: Array.isArray(source.result.moved) ? source.result.moved.length : 0 }),
+  },
   // Phase 2.5: a completion request, approved or returned.
   {
     method: "POST",
@@ -1094,7 +1112,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "term.create",
     entityType: "term",
     entityId: (source) => nested(source.result.term, "id"),
-    keep: ["name", "start_date", "end_date"],
+    keep: ["name", "start_date", "end_date", "semester", "academic_year"],
   },
   {
     method: "PUT",
@@ -1102,7 +1120,7 @@ export const AUDIT_RULES: Rule[] = [
     action: "term.edit",
     entityType: "term",
     entityId: param("id"),
-    keep: ["name", "start_date", "end_date"],
+    keep: ["name", "start_date", "end_date", "semester", "academic_year"],
   },
   {
     method: "POST",

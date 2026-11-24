@@ -142,6 +142,8 @@ export const AUDIT_ACTIONS: Record<string, string> = {
   "company.geofence": "Set a company's location for the time-in check",
   "company.programs": "Set the programs a company takes",
   "company.assign": "Assigned a student to a company",
+  "program.ojt_semesters": "Set the semesters a program's OJT runs in",
+  "term.carry_over": "Carried students over into the next term",
   "completion.approve": "Approved a student's completion",
   "completion.return": "Returned a completion review",
   "hard_copy.record": "Recorded a hard copy received",

@@ -2065,7 +2065,10 @@ export function registerExtensionRoutes(
   |
   */
 
-  function readTerm(body: unknown): { term: { name: string; start: string; end: string } } | { problem: string } {
+  /** Phase 2.6: the semester and academic year, when the form sends them (undefined: not sent, keep them). */
+  type TermSemester = { given: boolean; semester: string | null; academicYear: string | null };
+
+  function readTerm(body: unknown): { term: { name: string; start: string; end: string } & TermSemester } | { problem: string } {
     const input = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
     const name = text(input.name);
     const start = text(input.start_date);
@@ -2079,14 +2082,21 @@ export function registerExtensionRoutes(
       }
     }
     if (end < start) return { problem: "The term cannot end before it starts." };
-    return { term: { name, start, end } };
+    const given = "semester" in input || "academic_year" in input;
+    const semester = text(input.semester) || null;
+    const academicYear = text(input.academic_year) || null;
+    if (semester && !["first", "second", "midyear"].includes(semester)) return { problem: "Choose the first semester, the second, or midyear." };
+    if (academicYear && !(/^\d{4}-\d{4}$/.test(academicYear) && Number(academicYear.slice(5)) === Number(academicYear.slice(0, 4)) + 1)) {
+      return { problem: "Write the academic year as 2026-2027." };
+    }
+    return { term: { name, start, end, given, semester, academicYear } };
   }
 
   const TERM_COLUMNS = `
     t.id, t.name,
     TO_CHAR(t.start_date, 'YYYY-MM-DD') AS start_date,
     TO_CHAR(t.end_date, 'YYYY-MM-DD') AS end_date,
-    t.is_closed, t.closed_at,
+    t.is_closed, t.closed_at, t.semester, t.academic_year,
     (SELECT COUNT(*)::int FROM students s WHERE s.term_id = t.id) AS students,
     (SELECT COUNT(*)::int FROM students s WHERE s.term_id = t.id AND s.is_active = TRUE) AS active_students,
     JSONB_ARRAY_LENGTH(t.closed_student_ids) AS deactivated_on_close
@@ -2122,8 +2132,8 @@ export function registerExtensionRoutes(
         return res.status(409).json({ message: "There is already a term with that name." });
       }
       const saved = await pool.query<{ id: number }>(
-        `INSERT INTO terms (name, start_date, end_date) VALUES ($1, $2, $3) RETURNING id`,
-        [read.term.name, read.term.start, read.term.end]
+        `INSERT INTO terms (name, start_date, end_date, semester, academic_year) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+        [read.term.name, read.term.start, read.term.end, read.term.semester, read.term.academicYear]
       );
       const result = await pool.query(`SELECT ${TERM_COLUMNS} FROM terms t WHERE t.id = $1`, [
         saved.rows[0].id,
@@ -2149,8 +2159,11 @@ export function registerExtensionRoutes(
         return res.status(409).json({ message: "There is already a term with that name." });
       }
       const updated = await pool.query(
-        `UPDATE terms SET name = $2, start_date = $3, end_date = $4 WHERE id = $1 RETURNING id`,
-        [id, read.term.name, read.term.start, read.term.end]
+        `UPDATE terms SET name = $2, start_date = $3, end_date = $4,
+                semester = CASE WHEN $5::boolean THEN $6 ELSE semester END,
+                academic_year = CASE WHEN $5::boolean THEN $7 ELSE academic_year END
+         WHERE id = $1 RETURNING id`,
+        [id, read.term.name, read.term.start, read.term.end, read.term.given, read.term.semester, read.term.academicYear]
       );
       if (updated.rows.length === 0) return res.status(404).json({ message: "Term not found." });
       const result = await pool.query(`SELECT ${TERM_COLUMNS} FROM terms t WHERE t.id = $1`, [id]);
@@ -3233,10 +3246,18 @@ export function registerExtensionRoutes(
       }
       const checklist = await completionChecklist(auth.id);
       if (!checklist) return res.status(404).json({ message: "Student not found." });
+      // Phase 2.5: the coordinator's decision on the request.
+      const decision = await pool.query<{ approved_at: string | null; approved_by: string | null; returned_at: string | null; return_note: string | null }>(
+        `SELECT completion_approved_at AS approved_at, completion_approved_by_name AS approved_by,
+                completion_returned_at AS returned_at, completion_return_note AS return_note
+         FROM students WHERE student_id = $1`,
+        [auth.id]
+      );
       return res.json({
         items: checklist.items,
         ready: checklist.ready,
         requested_at: checklist.requested_at,
+        ...decision.rows[0],
       });
     } catch (error) {
       console.error("COMPLETION CHECKLIST ERROR:", error);
@@ -3246,18 +3267,10 @@ export function registerExtensionRoutes(
 
   app.post(
     "/api/students/:studentId/completion/request",
-      // Phase 2.5: the coordinator's decision on the request.
-      const decision = await pool.query<{ approved_at: string | null; approved_by: string | null; returned_at: string | null; return_note: string | null }>(
-        `SELECT completion_approved_at AS approved_at, completion_approved_by_name AS approved_by,
-                completion_returned_at AS returned_at, completion_return_note AS return_note
-         FROM students WHERE student_id = $1`,
-        [auth.id]
-      );
     requireRole("student"),
     async (req, res) => {
       try {
         const auth = (req as AuthedRequest).auth!;
-        ...decision.rows[0],
         if (!sameId(auth.id, req.params.studentId)) {
           return res.status(403).json({ message: "You can only ask for your own review." });
         }

@@ -19,6 +19,8 @@ import { formatDate, phDateKey } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import TermSetup from "./TermSetup";
+import TermSemester from "./TermSemester";
+import { SEMESTER_LABELS, type Semester } from "../../lib/semesters";
 
 /*
 |--------------------------------------------------------------------------
@@ -41,6 +43,9 @@ type Term = {
   students: number;
   active_students: number;
   deactivated_on_close: number;
+  /** Phase 2.6. */
+  semester?: Semester | null;
+  academic_year?: string | null;
 };
 
 /** Days after its start for which a term still shows its setup checklist. */
@@ -180,7 +185,11 @@ export default function CoordinatorTerms() {
                     </p>
                     <p className="mt-0.5 text-sm text-slate-600">
                       {formatDate(term.start_date)} to {formatDate(term.end_date)}
+                      {term.semester ? `, ${SEMESTER_LABELS[term.semester]}` : ""}
+                      {term.academic_year ? ` ${term.academic_year}` : ""}
                     </p>
+                    {/* Phase 2.6: students in another semester's programs, and carrying over. */}
+                    {!term.is_closed && term.semester && <TermSemester term={{ id: term.id, semester: term.semester }} terms={terms} onMoved={() => void load()} />}
                     <p className="tabular mt-1 text-xs text-slate-500">
                       <Link
                         to={`/coordinator/students?term=${term.id}`}
@@ -257,6 +266,8 @@ function TermDialog({
   const [name, setName] = useState(term?.name || "");
   const [start, setStart] = useState(term?.start_date || "");
   const [end, setEnd] = useState(term?.end_date || "");
+  const [semester, setSemester] = useState<string>(term?.semester || "");
+  const [academicYear, setAcademicYear] = useState(term?.academic_year || "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -270,7 +281,7 @@ function TermDialog({
     try {
       const data = await coordinatorRequest<{ message: string }>(
         term ? `/api/coordinator/terms/${term.id}` : "/api/coordinator/terms",
-        { method: term ? "PUT" : "POST", body: { name, start_date: start, end_date: end } }
+        { method: term ? "PUT" : "POST", body: { name, start_date: start, end_date: end, semester: semester || null, academic_year: academicYear.trim() || null } }
       );
       toast.success(data.message);
       onSaved();
@@ -333,6 +344,19 @@ function TermDialog({
               onChange={(event) => setEnd(event.target.value)}
               className="field"
             />
+          </FormField>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <FormField label="Semester" htmlFor="term-semester" optional>
+            <select id="term-semester" value={semester} onChange={(event) => setSemester(event.target.value)} className="field min-h-11">
+              <option value="">Not set</option>
+              {(Object.keys(SEMESTER_LABELS) as Semester[]).map((key) => (
+                <option key={key} value={key}>{SEMESTER_LABELS[key]}</option>
+              ))}
+            </select>
+          </FormField>
+          <FormField label="Academic year" htmlFor="term-year" optional hint="Such as 2026-2027.">
+            <input id="term-year" type="text" inputMode="numeric" maxLength={9} value={academicYear} onChange={(event) => setAcademicYear(event.target.value)} className="field" />
           </FormField>
         </div>
         <FormError message={error} />

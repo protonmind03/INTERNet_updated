@@ -407,6 +407,21 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Semesters and OJT over two terms (Phase 2.6)
+
+- **A term's semester and academic year** (migration 090) are set in the
+  term dialog; an edit that does not send them keeps them.
+- **A program's OJT semesters** (`program_terms`, part 1 and optionally
+  part 2) are set on Programs (`routes/semesters.ts`).
+- **On Terms**, an open term with a semester names its students whose
+  program's OJT is in another semester, and those whose OJT continues into
+  the next semester, with "Carry them over" into an open term of that
+  semester. Do it before closing the first term: closing deactivates the
+  students still in it.
+- **Hours carry over by themselves**: a student's hours are the sum of
+  their verified logs, whatever the term, so moving them keeps everything.
+  A scoped coordinator sees and moves only their own students.
+
 ## Completion approved or returned (Phase 2.5)
 
 - **The coordinator decides a completion request** (migration 089,

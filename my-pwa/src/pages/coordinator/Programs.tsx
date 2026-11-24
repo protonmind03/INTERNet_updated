@@ -20,6 +20,8 @@ import {
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
+import ProgramSemesters from "./ProgramSemesters";
+import type { Semester } from "../../lib/semesters";
 import BlockScheduleDialog from "./BlockScheduleDialog";
 import { refreshFilterOptions } from "./useStudentFilters";
 import { sameId } from "../../lib/ids";
@@ -94,6 +96,8 @@ const plural = (count: number, one: string, many = `${one}s`) => `${count} ${cou
 export default function CoordinatorPrograms() {
   const [data, setData] = useState<Academics | null>(null);
   const [terms, setTerms] = useState<Term[]>([]);
+  // Phase 2.6: each program's OJT semesters, in order.
+  const [semesters, setSemesters] = useState<Record<string, Semester[]>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [editing, setEditing] = useState<Editing | null>(null);
@@ -106,12 +110,14 @@ export default function CoordinatorPrograms() {
 
   const load = useCallback(async () => {
     try {
-      const [academics, termList] = await Promise.all([
+      const [academics, termList, ojtSemesters] = await Promise.all([
         coordinatorRequest<Academics>("/api/coordinator/academics"),
         coordinatorRequest<{ terms: Term[] }>("/api/coordinator/terms").catch(() => ({ terms: [] })),
+        coordinatorRequest<{ semesters: Record<string, Semester[]> }>("/api/coordinator/program-semesters").catch(() => ({ semesters: {} })),
       ]);
       setData(academics);
       setTerms(termList.terms || []);
+      setSemesters(ojtSemesters.semesters || {});
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load the programs."));
@@ -270,6 +276,14 @@ export default function CoordinatorPrograms() {
                               <span className="tabular text-xs text-slate-600">
                                 {program.required_hours ?? FALLBACK_REQUIRED_HOURS} h required
                               </span>
+                              <ProgramSemesters
+                                programId={program.id}
+                                programName={program.name}
+                                value={semesters[String(program.id)] ?? []}
+                                onChange={(chosen) =>
+                                  void save("PUT", `/api/coordinator/programs/${program.id}/ojt-semesters`, { semesters: chosen }, "The OJT semesters could not be saved.")
+                                }
+                              />
                               <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
                                 <input
                                   type="checkbox"

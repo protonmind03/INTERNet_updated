@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts", "routes/hardCopies.ts", "routes/completionDecision.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts", "routes/hardCopies.ts", "routes/completionDecision.ts", "routes/semesters.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -15327,6 +15327,85 @@ test("completion: approved once, or returned with a note so the student can ask 
   } finally {
     await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 2.6: semesters, and programs whose OJT spans two terms
+*/
+
+test("semesters: a term's semester and year, a program's OJT semesters, the warning, and carrying over with the hours", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const supervisor = await supervisorSession();
+  const college = (await pool.query(`SELECT id FROM colleges ORDER BY id LIMIT 1`)).rows[0].id;
+  const program = (code, name) => pool.query(`INSERT INTO programs (college_id, name, short_code) VALUES ($1, $2, $3) RETURNING id`, [college, name, code]).then((r) => r.rows[0].id);
+  const twoTerm = await program(`TT${stamp}`.slice(0, 12), `Made Up Two Term ${stamp}`);
+  const secondOnly = await program(`SO${stamp}`.slice(0, 12), `Made Up Second Only ${stamp}`);
+  const ids = { a: `SEA-${stamp}`.toUpperCase(), b: `SEB-${stamp}`.toUpperCase() };
+  const terms = [];
+  const makeTerm = async (body) => {
+    const made = await jsonRequest("/api/coordinator/terms", jsonBody(coordinatorToken, "POST", body));
+    if (made.response.status === 201) terms.push(made.body.term.id);
+    return made;
+  };
+  try {
+    // The term's semester and academic year: checked, kept, and left alone by an edit that does not send them.
+    assert.equal((await makeTerm({ name: `Bad sem ${stamp}`, start_date: "2099-08-01", end_date: "2099-12-15", semester: "third" })).response.status, 400);
+    assert.equal((await makeTerm({ name: `Bad year ${stamp}`, start_date: "2099-08-01", end_date: "2099-12-15", academic_year: "2099-2101" })).response.status, 400);
+    const first = await makeTerm({ name: `First ${stamp}`, start_date: "2099-08-01", end_date: "2099-12-15", semester: "first", academic_year: "2099-2100" });
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    assert.deepEqual([first.body.term.semester, first.body.term.academic_year], ["first", "2099-2100"]);
+    const second = await makeTerm({ name: `Second ${stamp}`, start_date: "2100-01-10", end_date: "2100-05-20", semester: "second", academic_year: "2099-2100" });
+    const firstId = first.body.term.id;
+    const edited = await jsonRequest(`/api/coordinator/terms/${firstId}`, jsonBody(coordinatorToken, "PUT", { name: `First ${stamp}`, start_date: "2099-08-02", end_date: "2099-12-15" }));
+    assert.equal(edited.response.status, 200, JSON.stringify(edited.body));
+    assert.equal(edited.body.term.semester, "first", "an edit without the fields keeps them");
+
+    // A program's OJT semesters: checked, in order.
+    const setSemesters = (id, semesters, token = coordinatorToken) => jsonRequest(`/api/coordinator/programs/${id}/ojt-semesters`, jsonBody(token, "PUT", { semesters }));
+    assert.equal((await setSemesters(twoTerm, ["first"], supervisor.token)).response.status, 403);
+    assert.equal((await setSemesters(twoTerm, ["first", "first"])).response.status, 400);
+    assert.equal((await setSemesters(twoTerm, ["first", "second", "midyear"])).response.status, 400);
+    assert.equal((await setSemesters(twoTerm, ["first", "second"])).response.status, 200);
+    assert.equal((await setSemesters(secondOnly, ["second"])).response.status, 200);
+    const listed = await jsonRequest("/api/coordinator/program-semesters", { headers: authHeaders(coordinatorToken) });
+    assert.deepEqual(listed.body.semesters[twoTerm], ["first", "second"]);
+
+    // Two students in the first-semester term: one continues, one is in the wrong semester.
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, program_id, term_id) VALUES
+         ($1, $2, 'x', 'Made Up Continuer', TRUE, $3, $5), ($4, $6, 'x', 'Made Up Misplaced', TRUE, $7, $5)`,
+      [ids.a, `${ids.a.toLowerCase()}@demo.invalid`, twoTerm, ids.b, firstId, `${ids.b.toLowerCase()}@demo.invalid`, secondOnly]
+    );
+    await pool.query(`INSERT INTO attendance (student_id, date, time_in, time_out, hours, status) VALUES ($1, '2099-09-01', '2099-09-01 08:00', '2099-09-01 17:00', 8, 'Verified')`, [ids.a]);
+    const check = await jsonRequest(`/api/coordinator/terms/${firstId}/semester-check`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(check.response.status, 200, JSON.stringify(check.body));
+    assert.deepEqual(check.body.elsewhere.map((row) => row.student_id), [ids.b]);
+    assert.deepEqual(check.body.elsewhere[0].program_semesters, ["second"]);
+    assert.deepEqual(check.body.continuing.map((row) => [row.student_id, row.next_semester]), [[ids.a, "second"]]);
+
+    // Carrying over: the continuing student moves, with their hours; the other stays.
+    const carry = (body, token = coordinatorToken) => jsonRequest(`/api/coordinator/terms/${firstId}/carry-over`, jsonBody(token, "POST", body));
+    assert.equal((await carry({ to_term_id: second.body.term.id }, supervisor.token)).response.status, 403);
+    assert.equal((await carry({ to_term_id: firstId })).response.status, 400);
+    const moved = await carry({ to_term_id: second.body.term.id });
+    assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+    assert.deepEqual(moved.body.moved, [ids.a]);
+    const after = (await pool.query(`SELECT student_id, term_id FROM students WHERE student_id = ANY($1) ORDER BY student_id`, [[ids.a, ids.b]])).rows;
+    assert.deepEqual(after.map((row) => Number(row.term_id)), [second.body.term.id, firstId]);
+    const hours = (await pool.query(`SELECT COALESCE(SUM(hours), 0)::float AS h FROM attendance WHERE student_id = $1 AND status = 'Verified'`, [ids.a])).rows[0].h;
+    assert.equal(hours, 8, "the hours come with them");
+
+    const actions = (await pool.query(`SELECT action FROM audit_log WHERE action IN ('program.ojt_semesters', 'term.carry_over') AND created_at > NOW() - INTERVAL '10 minutes'`)).rows.map((row) => row.action);
+    for (const action of ["program.ojt_semesters", "term.carry_over"]) assert.ok(actions.includes(action), `${action} is audited`);
+  } finally {
+    await pool.query(`DELETE FROM attendance WHERE student_id = ANY($1)`, [Object.values(ids)]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [Object.values(ids)]);
+    await pool.query(`DELETE FROM programs WHERE id = ANY($1)`, [[twoTerm, secondOnly]]);
+    await pool.query(`DELETE FROM terms WHERE id = ANY($1)`, [terms]);
     await pool.end();
   }
 });
