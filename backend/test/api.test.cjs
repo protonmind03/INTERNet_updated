@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -12046,10 +12046,10 @@ test("the trainee's signature: saved, replaced, read by their supervisor and a c
     assert.equal(exported.body.signatures.length, 2);
     assert.ok(!("file_path" in exported.body.signatures[0]));
     // The privacy notice says so; its version waits for the university's text (D8).
-    // Phase 1.8 added sections and moved it to draft-5, so students agree again.
+    // Phase 1.8 added sections (draft-5), and Phase 2.1 the location check as it works (draft-6), so students agree again.
     const { PRIVACY_NOTICE } = require("../src/services/privacy.ts");
     assert.match(JSON.stringify(PRIVACY_NOTICE.sections), /image of your handwriting/);
-    assert.equal(PRIVACY_NOTICE.version, "draft-5");
+    assert.equal(PRIVACY_NOTICE.version, "draft-6");
   } finally {
     await f.pool.query(`DELETE FROM dtr_certifications WHERE student_id = $1`, [f.sid]);
     await f.pool.query(`DELETE FROM student_signatures WHERE student_id = $1`, [f.sid]);
@@ -14880,4 +14880,99 @@ test("a new or reactivated Director or administrator account is told to the rest
     await pool.query(`DELETE FROM directors WHERE director_id = ANY($1::text[])`, [Object.values(ids)]);
     await pool.end();
   }
+});
+
+/*
+| Phase 2.1: the geofence at time-in, by distance only
+*/
+
+test("the geofence: distance only, inside, outside, denied, no point, and off", async (t) => {
+  require("tsx/cjs");
+  const geo = require("../src/services/geofence.ts");
+  // A point in Lingayen, and one about 1.1 km east of it.
+  const capitol = { latitude: 16.020833, longitude: 120.231944 };
+  const near = geo.distanceMeters(capitol, { latitude: 16.021, longitude: 120.232 });
+  assert.ok(near > 10 && near < 30, `${near}`);
+  const far = geo.distanceMeters(capitol, { latitude: 16.020833, longitude: 120.242222 });
+  assert.ok(far > 1000 && far < 1200, `${far}`);
+  assert.equal(geo.roundTo10(1099.4), 1100);
+  assert.deepEqual(geo.readFence({ latitude: "16.020833", longitude: 120.231944 }), { latitude: 16.020833, longitude: 120.231944, radius_m: 200 });
+  assert.match(geo.readFence({ latitude: 91, longitude: 0 }).problem, /not a place on Earth/);
+  assert.match(geo.readFence({ latitude: 16 }).problem, /both/);
+  assert.match(geo.readFence({ latitude: 16, longitude: 120, radius_m: 5 }).problem, /20 to 5000/);
+  assert.deepEqual(geo.readFence({ latitude: null, longitude: null }), { latitude: null, longitude: null, radius_m: 200 });
+
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const sid = `GEO-${stamp}`.toUpperCase();
+  const companyName = `Made Up Capitol ${stamp}`;
+  const company = await jsonRequest("/api/coordinator/company-records", jsonBody(coordinatorToken, "POST", { name: companyName }));
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, company) VALUES ($1, $2, 'x', 'Made Up Geo Trainee', TRUE, $3)`, [sid, `${sid.toLowerCase()}@demo.invalid`, companyName]);
+  const setMode = (value) => pool.query(`INSERT INTO ojt_settings (key, value, updated_by) VALUES ('geofence_mode', $1, 'test') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`, [value]);
+  try {
+    // Off: nothing asked, nothing kept.
+    await setMode("off");
+    assert.equal(await geo.judgeGeo(pool, sid, { latitude: capitol.latitude, longitude: capitol.longitude }, "online"), null);
+
+    // Record: a company with no point says so and asks for no review.
+    await setMode("record");
+    assert.deepEqual(await geo.judgeGeo(pool, sid, { latitude: 16, longitude: 120 }, "online"), { status: "no_fence", distance_m: null, source: "server", needs_review: false });
+    // The coordinator sets the point; a supervisor cannot.
+    const supervisor = await supervisorSession();
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.body.company.id}/geofence`, jsonBody(supervisor.token, "PUT", { latitude: 1, longitude: 1 }))).response.status, 403);
+    const set = await jsonRequest(`/api/coordinator/company-records/${company.body.company.id}/geofence`, jsonBody(coordinatorToken, "PUT", { ...capitol, radius_m: 200 }));
+    assert.equal(set.response.status, 200, JSON.stringify(set.body));
+    assert.equal((await jsonRequest(`/api/coordinator/company-records/${company.body.company.id}/geofence`, jsonBody(coordinatorToken, "PUT", { latitude: 200, longitude: 1 }))).response.status, 400);
+
+    const inside = await geo.judgeGeo(pool, sid, { latitude: "16.021", longitude: "120.232" }, "online");
+    assert.deepEqual([inside.status, inside.distance_m, inside.needs_review], ["inside", 20, false]);
+    const outside = await geo.judgeGeo(pool, sid, { latitude: 16.020833, longitude: 120.242222 }, "online");
+    assert.deepEqual([outside.status, outside.distance_m % 10, outside.needs_review], ["outside", 0, false], "record mode keeps it and asks for no review");
+    assert.deepEqual(await geo.judgeGeo(pool, sid, { location: "denied" }, "online"), { status: "denied", distance_m: null, source: "server", needs_review: false });
+
+    // Review outside: outside, denied and no fix wait for the supervisor; inside does not.
+    await setMode("review_outside");
+    assert.equal((await geo.judgeGeo(pool, sid, { latitude: 16.020833, longitude: 120.242222 }, "online")).needs_review, true);
+    assert.equal((await geo.judgeGeo(pool, sid, { location: "denied" }, "online")).needs_review, true);
+    assert.equal((await geo.judgeGeo(pool, sid, {}, "online")).status, "unavailable");
+    assert.equal((await geo.judgeGeo(pool, sid, { latitude: 16.021, longitude: 120.232 }, "online")).needs_review, false);
+    // Offline: the phone's distance, kept as the phone's, rounded.
+    assert.deepEqual(await geo.judgeGeo(pool, sid, { geo_status: "outside", geo_distance_m: "1234" }, "offline"), { status: "outside", distance_m: 1230, source: "phone", needs_review: true });
+
+    // The student's own fence: the rule and the point, for the phone.
+    const bcrypt = require("bcryptjs");
+    await pool.query(`UPDATE students SET password = $2, must_change_password = FALSE WHERE student_id = $1`, [sid, await bcrypt.hash("GeoPass12345", 4)]);
+    const trainee = await login("student", `${sid.toLowerCase()}@demo.invalid`, "GeoPass12345");
+    const mine = await jsonRequest(`/api/students/${sid}/geofence`, { headers: authHeaders(trainee.token) });
+    assert.deepEqual(mine.body, { mode: "review_outside", fence: { ...capitol, radius_m: 200 } });
+    assert.equal((await jsonRequest(`/api/students/${sid}/geofence`, { headers: authHeaders(studentToken) })).response.status, 403);
+
+    // Through the offline time-in: only the distance is kept, and the day waits for the supervisor.
+    const sent = await jsonRequest("/api/attendance/offline-time-in", jsonBody(trainee.token, "POST", {
+      occurred_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      client_request_id: `geo-${stamp}`,
+      geo_status: "outside",
+      geo_distance_m: 1234,
+      latitude: 16.02,
+      longitude: 120.24,
+    }));
+    assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+    const kept = (await pool.query(`SELECT * FROM attendance WHERE id = $1`, [sent.body.attendance.id])).rows[0];
+    assert.deepEqual([kept.geo_status, kept.geo_distance_m, kept.geo_source, kept.geo_needs_review], ["outside", 1230, "phone", true]);
+    assert.equal(Object.keys(kept).some((key) => /^(latitude|longitude|lat|lng|coordinates?)$/i.test(key)), false, "no coordinates are kept on the log");
+  } finally {
+    await pool.query(`INSERT INTO ojt_settings (key, value, updated_by) VALUES ('geofence_mode', 'off', 'test') ON CONFLICT (key) DO UPDATE SET value = 'off'`);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM companies WHERE name = $1`, [companyName]);
+    await pool.end();
+  }
+});
+
+test("a day outside the area with the rule on review_outside does not count by itself", () => {
+  require("tsx/cjs");
+  const { cleanLogSql } = require("../src/services/autoCount.ts");
+  assert.match(cleanLogSql("a", "FALSE", 16), /COALESCE\(a\.geo_needs_review, FALSE\) = FALSE/);
 });

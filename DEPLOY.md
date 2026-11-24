@@ -1117,6 +1117,15 @@ A student sees a final grade only once it is released from the grade
 sheet (Evaluations), and keeps the released value until it is released
 again.
 
+## The location check at time-in (Phase 2.1)
+
+Off by default. Before turning it on (Director, Rules, "Location check at
+time-in"): set each company's location and radius on its page, and make
+sure students have agreed to privacy notice draft-6 (it describes the
+check). Only the distance from the company is kept, never a position.
+`vercel.json` now allows geolocation for the site itself; the next
+frontend deploy carries it.
+
 ## The system administrator's account (run by you, once)
 
 The admin portal (`/admin/sign-in`; no public page links to it) is for

@@ -1837,7 +1837,8 @@ export function registerExtensionRoutes(
     TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
     c.slots, c.industry, c.website, c.hr_contact, c.is_active, c.created_at, c.updated_at,
     c.hte_type, c.status, c.version, c.moa_notarized, TO_CHAR(c.moa_notarized_on, 'YYYY-MM-DD') AS moa_notarized_on,
-    c.moa_document_name AS moa_file
+    c.moa_document_name AS moa_file,
+    c.latitude::float AS latitude, c.longitude::float AS longitude, c.radius_m
   `;
 
   app.get("/api/coordinator/company-records", requireCoordinator, async (_req, res) => {

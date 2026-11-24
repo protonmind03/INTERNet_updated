@@ -33,6 +33,8 @@ import { PlacementError, withPlacement } from "./services/placement";
 import { registerHteRoutes } from "./routes/htes";
 import { hoursSql } from "./services/creditedHours";
 import { registerOvertimeRoutes } from "./routes/overtime";
+import { registerGeofenceRoutes } from "./routes/geofence";
+import { judgeGeo } from "./services/geofence";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
@@ -2574,6 +2576,10 @@ const DAY_RULE_COLUMNS = `
   session,
   credited_from,
   late_minutes,
+  geo_status,
+  geo_distance_m,
+  geo_source,
+  geo_needs_review,
   TO_CHAR(scheduled_start, 'HH24:MI') AS scheduled_start,
   lunch_late_minutes
 `;
@@ -2635,6 +2641,8 @@ app.post(
       // Phase 1.2: with the deployment gate on, only a student cleared for deployment times in.
       const notCleared = await deploymentBlock(pool, auth.id);
       if (notCleared) return res.status(403).json(notCleared);
+      // Phase 2.1: where the time-in was made, when the location check is on. Only the distance is kept.
+      const geo = await judgeGeo(pool, auth.id, req.body, "online");
       if (!["image/jpeg", "image/jpg", "image/png"].includes(req.file.mimetype)) {
         return res.status(400).json({
           message: "Attendance photo must be a JPG or PNG image.",
@@ -2810,7 +2818,11 @@ app.post(
             credited_from,
             late_minutes,
             scheduled_start,
-            credited_until
+            credited_until,
+            geo_status,
+            geo_distance_m,
+            geo_source,
+            geo_needs_review
           )
           VALUES
           (
@@ -2830,7 +2842,11 @@ app.post(
             $8::timestamptz,
             $9,
             $10::time,
-            $11::timestamptz
+            $11::timestamptz,
+            $12,
+            $13,
+            $14,
+            COALESCE($15::boolean, FALSE)
           )
           RETURNING
             id,
@@ -2862,6 +2878,10 @@ app.post(
             verdict.lateMinutes,
             verdict.scheduledStart,
             verdict.creditedUntil,
+            geo?.status ?? null,
+            geo?.distance_m ?? null,
+            geo?.source ?? null,
+            geo?.needs_review ?? false,
           ]
         );
         result.rows[0].day = planForApp(dayPlan);
@@ -4226,6 +4246,10 @@ app.get(
             a.recorded_offline,
             -- PSU redesign: "12 min late" on the Review cards (Iteration 18's day rules).
             a.late_minutes,
+            a.geo_status,
+            a.geo_distance_m,
+            a.geo_source,
+            a.geo_needs_review,
             -- Iteration 22: how each later step was made (passkey, not confirmed).
             a.step_verifications,
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,
@@ -10744,6 +10768,8 @@ registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNoti
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 // Phase 1.2: the clearance board, the deployment gate's setting, and the student's own readiness.
 registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
+// Phase 2.1: a company's point for the geofence, and the student's fence.
+registerGeofenceRoutes(app, { pool, requireRole, requireCoordinator });
 // Phase 1.4: overtime requests and their approval.
 registerOvertimeRoutes(app, { pool, requireRole, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification });
 // Phase 1.3: HTE status, screenings, the MOA file and agency requests.

@@ -1,4 +1,5 @@
 import { keepOfflineChallenges, rememberHasPasskey } from "./passkeys";
+import { readGeofence } from "./geofence";
 import type { Prompt } from "./liveness/engine";
 import { faceTrackerKept, precacheFaceTracker } from "./liveness/trackerFiles";
 import { API_URL, withStudentAuth } from "./api";
@@ -79,6 +80,8 @@ export function prepareOfflineTimeIn(studentId: string, force = false): Promise<
   preparing ??= (async () => {
     // The face-tracking files first: without them nothing else is of use.
     void precacheFaceTracker();
+    // Phase 2.1: the company's point, so an offline time-in can work out its distance.
+    void readGeofence(studentId);
     const install = await deviceInstall();
     if (!install) return;
     for (let attempt = 0; attempt < 2; attempt += 1) {

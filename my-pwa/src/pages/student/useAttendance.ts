@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { onlineGeoFields } from "../../lib/geofence";
 import type { LivenessReport } from "../../components/LivenessCamera";
 import type { Prompt } from "../../lib/liveness/engine";
 import { API_URL, withStudentAuth } from "../../lib/api";
@@ -344,6 +345,8 @@ export function useAttendance(studentId: string | undefined) {
       form.append("liveness_ticket", check.ticket);
       form.append("liveness_report", JSON.stringify(check.report));
       form.append("image", image);
+      // Phase 2.1: the location, once, when the OJT office has the check on (only the distance is kept).
+      for (const [key, value] of Object.entries(await onlineGeoFields(studentId))) form.append(key, value);
       await run(
         () =>
           fetch(

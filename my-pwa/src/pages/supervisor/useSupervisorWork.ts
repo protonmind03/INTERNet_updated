@@ -46,6 +46,11 @@ export type Intern = {
 import type { StepVerifications } from "../../components/StepMarks";
 
 export type AttendanceEntry = {
+  /** Phase 2.1: where the time-in was made, as a distance from the company only. */
+  geo_status?: "inside" | "outside" | "denied" | "unavailable" | "no_fence" | null;
+  geo_distance_m?: number | null;
+  geo_source?: "server" | "phone" | null;
+  geo_needs_review?: boolean;
   /** Iteration 22: how each later step was made. */
   step_verifications?: StepVerifications | null;
   id: number;

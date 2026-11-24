@@ -7,6 +7,7 @@ import { formatDate } from "../../lib/format";
 import { errorText } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import { HteSection, type HteCompany } from "./Hte";
+import CompanyLocation from "./CompanyLocation";
 
 /*
 |--------------------------------------------------------------------------
@@ -35,6 +36,10 @@ type Company = {
   hr_contact: string | null;
   is_active: boolean;
   students: number;
+  /** Phase 2.1: the point and radius for the location check. */
+  latitude?: number | null;
+  longitude?: number | null;
+  radius_m?: number;
 } & HteCompany;
 type Supervisor = { supervisor_id: string; name: string; email: string; department: string | null; position: string | null; is_active: boolean; interns: number };
 type Visit = { id: number; visit_date: string; visited_by_name: string; findings: string; follow_up: string | null };
@@ -124,6 +129,8 @@ export default function CompanyPage() {
 
             {/* Phase 1.3: approval, the MOA and screenings. */}
             <HteSection company={company} onChanged={() => void load()} />
+            {/* Phase 2.1: where the company is, for the location check at time-in. */}
+            <CompanyLocation company={company} onSaved={() => void load()} />
 
             <Card>
               <CardHeader icon="users" title="Supervisors" description="Who supervises interns here, and how many each has." />

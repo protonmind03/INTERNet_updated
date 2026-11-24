@@ -278,6 +278,18 @@ function attendanceChips(entry: AttendanceEntry): Array<{ text: string; tone: "i
     chips.push({ text: "Recorded by you", tone: "neutral" });
   }
   if (entry.photo_redo_status === "required") chips.push({ text: "Retake asked", tone: "info" });
+  // Phase 2.1: the location check, as a distance from the company only.
+  const phone = entry.geo_source === "phone" ? " (phone)" : "";
+  if (entry.geo_status === "outside") {
+    const distance = entry.geo_distance_m ?? 0;
+    chips.push({ text: `Outside the area, ${distance >= 1000 ? `${(distance / 1000).toFixed(1)} km` : `${distance} m`}${phone}`, tone: "bad" });
+  } else if (entry.geo_status === "inside") {
+    chips.push({ text: `Inside the area${phone}`, tone: "neutral" });
+  } else if (entry.geo_status === "denied") {
+    chips.push({ text: "Location not shared", tone: "info" });
+  } else if (entry.geo_status === "unavailable") {
+    chips.push({ text: "No location", tone: "info" });
+  }
   return chips;
 }
 

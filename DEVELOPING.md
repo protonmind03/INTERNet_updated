@@ -407,6 +407,22 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## The location check at time-in (Phase 2.1)
+
+- **Off unless the OJT rule `geofence_mode` says `record` or
+  `review_outside`** (the Director's Rules). A company's point and radius
+  are set on its page (pasted coordinates, or the phone's location there).
+- **Only the distance is kept** (`attendance.geo_distance_m`, to 10 m, and
+  `geo_status`); the server works it out from the phone's fix and drops
+  the fix (`services/geofence.ts`). An offline time-in sends the distance
+  the phone worked out from the point kept on it (`lib/geofence.ts`),
+  marked `geo_source = phone`.
+- **Never refused.** With `review_outside`, outside, denied or no fix sets
+  `geo_needs_review`, which keeps the day out of the automatic count
+  (`cleanLogSql`); the supervisor sees a chip in Review.
+- The site's `Permissions-Policy` allows geolocation for itself
+  (`vercel.json`).
+
 ## Privacy and offline hygiene (Phase 1.8)
 
 - **The privacy notice** (`services/privacy.ts`) is `draft-5`: it now

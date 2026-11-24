@@ -108,6 +108,16 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
   },
+  // Phase 2.1: a company's point for the location check (the point is the company's, not a person's).
+  {
+    method: "PUT",
+    path: "/api/coordinator/company-records/:id/geofence",
+    action: "company.geofence",
+    entityType: "company",
+    entityId: param("id"),
+    keep: ["radius_m"],
+    from: (source) => ({ located: nested(source.result.fence, "latitude") !== null }),
+  },
   // Phase 1.4: overtime, asked for and decided.
   {
     method: "POST",

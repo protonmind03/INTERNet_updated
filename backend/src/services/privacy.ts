@@ -25,9 +25,10 @@ export type PrivacyNotice = {
 
 export const PRIVACY_NOTICE: PrivacyNotice = {
   // draft-5 (Phase 1.8): health and clearance documents, the optional
-  // personal details, and the location check planned for Phase 2. A new
-  // version asks every student to agree again.
-  version: "draft-5",
+  // personal details, and the location check planned for Phase 2.
+  // draft-6 (Phase 2.1): the location check as it works. A new version asks
+  // every student to agree again.
+  version: "draft-6",
   placeholder: true,
   title: "Privacy notice",
   sections: [
@@ -64,7 +65,7 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
     {
       heading: "Where you are when you time in",
       body:
-        "[NOT YET IN USE; PLANNED FOR THE PILOT.] INTERNet may check that a time-in is made at your company's location. If it does, only the result is kept (inside the company's area or not, and how far), not a record of where you go, and only your supervisor and the OJT coordinator see it. You will be told before it starts.",
+        "When the OJT office turns the location check on, your phone asks for its location once, when you time in, and only then. It is used to work out how far you were from your company's location, and then dropped: only that distance (to the nearest 10 metres) and whether it is inside your company's area are kept, never where you were. With no connection, your phone works the distance out itself and sends only that. You may say no; your time-in is still recorded, and your supervisor confirms the day. A time-in is never refused for where it was made. Your supervisor, the OJT coordinator and the OJT Director see the result.",
     },
     {
       heading: "Who can see it",

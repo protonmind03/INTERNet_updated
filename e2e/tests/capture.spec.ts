@@ -228,3 +228,76 @@ test.describe("a time-in with no connection", () => {
     }
   });
 });
+
+
+/*
+| Phase 2.1: the location check at time-in. The company has a point; the
+| phone is about 1.1 km away; the rule is review_outside. The time-in is
+| recorded (never refused), only the distance is kept, and the supervisor
+| sees "Outside the area" on the day, which waits for them.
+*/
+test.describe("the location check at time-in", () => {
+  test("a time-in away from the company is recorded with its distance only and waits for the supervisor", async ({ page, context, browser }) => {
+    const coordinator = await apiSession("coordinator");
+    const supervisor = await apiSession("supervisor");
+    const stamp = Date.now();
+    const companyName = `Made Up Geo Office ${stamp}`;
+    const madeCompany = await api<{ company: { id: number } }>(coordinator.token, "POST", "/api/coordinator/company-records", { name: companyName });
+    expect(madeCompany.status).toBe(201);
+    expect((await api(coordinator.token, "PUT", `/api/coordinator/company-records/${madeCompany.body.company.id}/geofence`, { latitude: 16.020833, longitude: 120.231944, radius_m: 200 })).status).toBe(200);
+    const id = `GEO-${stamp}`;
+    const email = `${id.toLowerCase()}@camera.test`;
+    const made = await api(coordinator.token, "POST", "/api/coordinator/students", {
+      student_id: id, email, password: "GeoStart123!", name: "Geo Check", supervisor_id: supervisor.id, company: companyName,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const first = await (await fetch(`${API}/api/login/student`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "GeoStart123!" }) })).json();
+    expect((await api(first.token, "PUT", `/api/students/${id}/password`, { current_password: "GeoStart123!", new_password: "GeoCheck4567!" })).status).toBe(200);
+    const signedIn = await (await fetch(`${API}/api/login/student`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "GeoCheck4567!" }) })).json();
+    const token = String(signedIn.token);
+    const privacy = await api<{ notice: { version: string } }>(token, "GET", `/api/students/${id}/privacy`);
+    expect((await api(token, "POST", `/api/students/${id}/privacy/consent`, { version: privacy.body.notice.version })).status).toBe(200);
+    const rule = await api(coordinator.token, "PUT", "/api/coordinator/ojt-settings/geofence_mode", { value: "review_outside" });
+    expect(rule.status, JSON.stringify(rule.body)).toBe(200);
+
+    try {
+      // About 1.1 km east of the company's point.
+      await context.grantPermissions(["camera", "geolocation"]);
+      await context.setGeolocation({ latitude: 16.020833, longitude: 120.242222 });
+      await page.route(/\/assets\/vision_bundle-[^/]+\.js$/, (route) => route.fulfill({ contentType: "application/javascript", body: FAKE_FACE_TRACKER }));
+      await signIn(page, "student", { ...ACCOUNTS.student, email, password: "GeoCheck4567!" });
+      await page.goto("/student/dashboard");
+      await page.getByRole("button", { name: "Time in", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Time in" });
+      const shutter = dialog.getByRole("button", { name: "Take photo" });
+      await expect(shutter).toBeVisible({ timeout: 30_000 });
+      await page.evaluate(() => {
+        (globalThis as { __fakeFaceHold?: boolean }).__fakeFaceHold = true;
+      });
+      await expect(shutter).toBeEnabled({ timeout: 10_000 });
+      await shutter.click();
+      await dialog.getByRole("button", { name: "Confirm time-in" }).click();
+      await expect(dialog).toBeHidden({ timeout: 20_000 });
+
+      // Recorded, with the distance only.
+      const logs = await api<{ attendance: { date: string; geo_status?: string; geo_distance_m?: number; geo_source?: string; geo_needs_review?: boolean }[] }>(token, "GET", `/api/attendance/${id}`);
+      const log = logs.body.attendance.find((entry) => entry.date === today());
+      expect(log?.geo_status).toBe("outside");
+      expect(log?.geo_source).toBe("server");
+      expect(log?.geo_needs_review).toBe(true);
+      expect((log?.geo_distance_m ?? 0) % 10).toBe(0);
+      expect(log?.geo_distance_m).toBeGreaterThan(1000);
+
+      // The supervisor sees it on the day, in Review.
+      const supervisorPage = await (await browser.newContext()).newPage();
+      await signIn(supervisorPage, "supervisor");
+      await supervisorPage.goto("/supervisor/dashboard");
+      await expect(supervisorPage.getByText(/Outside the area, 1\.\d km/).first()).toBeVisible({ timeout: 20_000 });
+      await supervisorPage.context().close();
+    } finally {
+      await api(coordinator.token, "PUT", "/api/coordinator/ojt-settings/geofence_mode", { value: "off" });
+      await api(coordinator.token, "PATCH", `/api/coordinator/students/${id}/status`, { is_active: false });
+      await api(coordinator.token, "PATCH", `/api/coordinator/company-records/${madeCompany.body.company.id}/status`, { is_active: false });
+    }
+  });
+});

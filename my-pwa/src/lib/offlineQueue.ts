@@ -1,4 +1,5 @@
 import { API_URL, withStudentAuth } from "./api";
+import { offlineGeoFields } from "./geofence";
 import { fitForQueue, MAX_PICTURES, pictureForm, type PictureDraft } from "./attachments";
 import { notifyDataChanged } from "./navCounts";
 import { dequeue, enqueue, queued, requeue } from "./offlineStore";
@@ -130,7 +131,9 @@ export async function queueTimeIn(
   attested?: { photo: Blob; takenAt: string; fields: Record<string, string> }
 ): Promise<QueuedStep | null> {
   if ((await waitingSteps()).some((step) => step.path === "time-in")) return null;
-  const extra = { ...(note.trim() ? { note: note.trim() } : {}), ...(attested?.fields ?? {}) };
+  // Phase 2.1: the distance from the company, worked out on this phone (never the fix).
+  const geo = await offlineGeoFields().catch(() => ({}));
+  const extra = { ...(note.trim() ? { note: note.trim() } : {}), ...(attested?.fields ?? {}), ...geo };
   return queueStep(LOCAL_LOG_ID, "time-in", Object.keys(extra).length > 0 ? extra : undefined, attested);
 }
 

@@ -41,6 +41,14 @@ const whole = (label: string, fallback: number, min: number, max: number): Setti
   },
 });
 
+/** One of a fixed list of words. */
+const choice = <T extends string>(label: string, fallback: T, values: readonly T[]): Setting<T> => ({
+  label,
+  fallback,
+  read: (value) => (typeof value === "string" && (values as readonly string[]).includes(value) ? (value as T) : null),
+  parse: (text) => ((values as readonly string[]).includes(text) ? (text as T) : fallback),
+});
+
 export const OJT_SETTINGS = {
   // Phase 1.2: time-in only once cleared for deployment. Off until the OJT office turns it on.
   deployment_gate_enabled: flag("Deployment gate", false),
@@ -48,6 +56,8 @@ export const OJT_SETTINGS = {
   grade_split_hte: whole("HTE share of the final grade", 50, 1, 99),
   // Phase 1.4: how many overtime requests a supervisor may approve for one trainee in an ISO week.
   overtime_max_per_week: whole("Overtime days a week", 2, 0, 7),
+  // Phase 2.1: the geofence at time-in (services/geofence.ts). Off until the office turns it on.
+  geofence_mode: choice("Location check at time-in", "off", ["off", "record", "review_outside"] as const),
 } satisfies Record<string, Setting<unknown>>;
 
 export type OjtSettingKey = keyof typeof OJT_SETTINGS;

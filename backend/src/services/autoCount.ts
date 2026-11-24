@@ -51,6 +51,8 @@ export function cleanLogSql(log: string, strict: string, maxShiftHours: number):
     AND COALESCE(${log}.hours, 0) > 0
     AND COALESCE(${log}.hours, 0) <= ${Number(maxShiftHours)}
     AND COALESCE(${strict}, FALSE) = FALSE
+    -- Phase 2.1: outside the company's area, or no location, with the rule on review_outside.
+    AND COALESCE(${log}.geo_needs_review, FALSE) = FALSE
   )`;
 }
 
