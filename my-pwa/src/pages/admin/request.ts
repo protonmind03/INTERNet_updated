@@ -1,4 +1,5 @@
 import { API_URL, withAdminAuth } from "../../lib/api";
+import { saveFile } from "../../lib/saveFile";
 
 /*
 | The administrator's calls (Phase 1.7). Nothing here goes through
@@ -34,19 +35,6 @@ export async function adminRequest<T = Record<string, unknown>>(
 }
 
 /** A file the server builds (the audit log as CSV), saved through the administrator's session. */
-export async function adminDownload(path: string, fallbackName: string): Promise<void> {
-  const response = await fetch(`${API_URL}${path}`, withAdminAuth());
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(typeof data.message === "string" && data.message ? data.message : "The file could not be made.");
-  }
-  const name = /filename="?([^";]+)"?/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackName;
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+export function adminDownload(path: string, fallbackName: string): Promise<void> {
+  return saveFile(`${API_URL}${path}`, withAdminAuth(), fallbackName);
 }

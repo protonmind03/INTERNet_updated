@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, CardHeader, ConfirmDialog, EmptyState, ErrorNotice, FormError, FormField, SkeletonRows, StatusBadge } from "../../components/ui";
 import { API_URL, withCoordinatorAuth } from "../../lib/api";
 import { formatDate } from "../../lib/format";
+import { saveFile } from "../../lib/saveFile";
 import { HTE_STATUS_TONE, HTE_STATUS_WORDS, HTE_TYPE_WORDS, type HteStatus, type HteType } from "../../lib/hte";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
@@ -71,20 +72,8 @@ const STATUS_EFFECT: Record<HteStatus, string> = {
   suspended: "No new student can be placed there. Students already there stay.",
 };
 
-async function saveMoaFile(companyId: number) {
-  const response = await fetch(`${API_URL}/api/coordinator/company-records/${companyId}/moa`, withCoordinatorAuth());
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.message || "The agreement could not be opened.");
-  }
-  const name = /filename="?([^";]+)"?/.exec(response.headers.get("Content-Disposition") ?? "")?.[1] ?? "agreement";
-  const url = URL.createObjectURL(await response.blob());
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
+const saveMoaFile = (companyId: number) =>
+  saveFile(`${API_URL}/api/coordinator/company-records/${companyId}/moa`, withCoordinatorAuth(), "agreement");
 
 /** On a company's page: its status, its MOA and its screenings. */
 export function HteSection({ company, onChanged }: { company: HteCompany; onChanged: () => void }) {

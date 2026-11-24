@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import Icon from "../../components/Icon";
-import SystemStatusCard from "../../components/SystemStatusCard";
+import SystemStatusCard, { type Status } from "../../components/SystemStatusCard";
 import { coordinatorRequest } from "./request";
 
 /*
@@ -11,11 +11,16 @@ import { coordinatorRequest } from "./request";
 */
 export default function SystemStatus() {
   const [managed, setManaged] = useState<{ something_wrong: boolean } | null | undefined>(undefined);
+  // Without an administrator, the full status, handed to the card so it is not read twice.
+  const [status, setStatus] = useState<Status | undefined>(undefined);
 
   useEffect(() => {
     const controller = new AbortController();
-    coordinatorRequest<{ managed_by_admin?: boolean; something_wrong?: boolean }>("/api/coordinator/system-status", { signal: controller.signal })
-      .then((data) => setManaged(data.managed_by_admin ? { something_wrong: data.something_wrong === true } : null))
+    coordinatorRequest<Status & { managed_by_admin?: boolean; something_wrong?: boolean }>("/api/coordinator/system-status", { signal: controller.signal })
+      .then((data) => {
+        if (!data.managed_by_admin) setStatus(data);
+        setManaged(data.managed_by_admin ? { something_wrong: data.something_wrong === true } : null);
+      })
       .catch(() => {
         if (!controller.signal.aborted) setManaged(null);
       });
@@ -23,7 +28,7 @@ export default function SystemStatus() {
   }, []);
 
   if (managed === undefined) return null;
-  if (managed === null) return <SystemStatusCard request={coordinatorRequest} base="/api/coordinator" />;
+  if (managed === null) return <SystemStatusCard request={coordinatorRequest} base="/api/coordinator" initial={status} />;
   return managed.something_wrong ? (
     <p role="status" className="flex gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900 ring-1 ring-inset ring-amber-200">
       <Icon name="info" size={16} className="mt-0.5 shrink-0" />

@@ -6702,13 +6702,12 @@ app.put(
       if (!updated) {
         return res.status(404).json({ message: "Student not found." });
       }
-      const result = { rows: [updated] };
 
       const previousHours = Number(before.rows[0]?.required_hours);
-      const currentHours = Number(result.rows[0].required_hours);
+      const currentHours = Number(updated.required_hours);
       if (previousHours !== currentHours) {
         await createNotification({
-          studentId: String(result.rows[0].student_id),
+          studentId: String(updated.student_id),
           title: "Required hours changed",
           message: `Your required OJT hours were changed from ${previousHours} to ${currentHours} by the OJT coordinator.`,
           type: "info",
@@ -6716,22 +6715,22 @@ app.put(
       }
 
       const previousSupervisor = before.rows[0]?.supervisor_id ?? null;
-      const currentSupervisor = result.rows[0].supervisor_id ?? null;
+      const currentSupervisor = updated.supervisor_id ?? null;
       if (cleanId(previousSupervisor) !== cleanId(currentSupervisor)) {
         await notifySupervisorAssignment(
-          String(result.rows[0].student_id),
-          result.rows[0].name,
+          String(updated.student_id),
+          updated.name,
           previousSupervisor,
           currentSupervisor
         );
       }
 
       // Changing the requirement can complete, or un-complete, the student.
-      await syncCompletion(String(result.rows[0].student_id));
+      await syncCompletion(String(updated.student_id));
 
       return res.json({
         message: "Student updated.",
-        student: result.rows[0],
+        student: updated,
       });
     } catch (error) {
       if (error instanceof PlacementError) return res.status(409).json({ code: error.code, message: error.message });

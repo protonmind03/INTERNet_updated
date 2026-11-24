@@ -7,7 +7,7 @@ import { PH_TIME_ZONE, phStamp } from "../lib/phTime";
 /** The portal's own call: the coordinator's (until an administrator exists) or the administrator's. */
 export type StatusRequest = <T>(path: string, options?: { method?: string; body?: unknown; signal?: AbortSignal }) => Promise<T>;
 
-type Status = {
+export type Status = {
   email: {
     on: boolean;
     through: "provider" | "smtp" | null;
@@ -70,8 +70,17 @@ const when = new Intl.DateTimeFormat("en-PH", {
  * routes (/api/admin or /api/coordinator); each check's chip is OK, Needs
  * attention or Off.
  */
-export default function SystemStatusCard({ request, base }: { request: StatusRequest; base: "/api/admin" | "/api/coordinator" }) {
-  const [status, setStatus] = useState<Status | null>(null);
+export default function SystemStatusCard({
+  request,
+  base,
+  initial,
+}: {
+  request: StatusRequest;
+  base: "/api/admin" | "/api/coordinator";
+  /** The status already read by the page, so it is not asked for twice. */
+  initial?: Status;
+}) {
+  const [status, setStatus] = useState<Status | null>(initial ?? null);
   const [failed, setFailed] = useState(false);
   const [sending, setSending] = useState(false);
   const [checking, setChecking] = useState(false);
@@ -94,6 +103,8 @@ export default function SystemStatusCard({ request, base }: { request: StatusReq
 
   const [reload, setReload] = useState(0);
   useEffect(() => {
+    // The page handed over the first reading; a recorded drill reads it again.
+    if (reload === 0 && initial) return;
     const controller = new AbortController();
     request<Status>(`${base}/system-status`, { signal: controller.signal })
       .then(setStatus)
@@ -102,7 +113,7 @@ export default function SystemStatusCard({ request, base }: { request: StatusReq
         if (!controller.signal.aborted) setFailed(true);
       });
     return () => controller.abort();
-  }, [reload, request, base]);
+  }, [reload, request, base, initial]);
 
   const recordDrill = async () => {
     if (drillText.trim().length < 5) {
