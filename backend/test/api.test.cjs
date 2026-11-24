@@ -1719,6 +1719,9 @@ const PUBLIC_ROUTES = new Set([
   "POST /api/login/coordinator",
   // Phase 1.6: the OJT Director signs in the same way.
   "POST /api/login/director",
+  // Phase 1.7: the IT administrator too, and the maintenance notice every portal reads.
+  "POST /api/login/admin",
+  "GET /api/system-notice",
   "POST /api/auth/password-reset/request",
   "POST /api/auth/password-reset/confirm",
   "GET /api/push/vapid-public-key",
@@ -1727,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -1751,6 +1754,8 @@ function readRoutes() {
       // Phase 1.6: the Director's guards (server.ts).
       else if (/requireDirector/.test(head)) roles = ["director"];
       else if (/requireStaff|requireOffice/.test(head)) roles = ["coordinator", "director"];
+      // Phase 1.7: the IT administrator's.
+      else if (/requireAdmin/.test(head)) roles = ["admin"];
       routes.push({
         method: match[1].toUpperCase(),
         path: match[3],
@@ -2465,7 +2470,7 @@ test("the audit rules name each action and keep only the listed facts", () => {
   assert.equal(entry("PATCH", status, { params: { id: "1" }, body: {} }), null, "no status, no entry");
 });
 
-test("the audit log is coordinator-only, read-only and paged", async () => {
+test("the audit log is for the office and the administrator only (never a student or supervisor), read-only and paged", async () => {
   const path = "/api/coordinator/audit";
   assert.equal((await jsonRequest(path)).response.status, 401);
   assert.equal((await jsonRequest(path, { headers: authHeaders(studentToken) })).response.status, 403);
@@ -2501,7 +2506,7 @@ test("the audit log is coordinator-only, read-only and paged", async () => {
   assert.equal(none.body.total, 0);
   assert.equal((await jsonRequest(`${path}?from=31-12-2026`, { headers })).response.status, 400);
   assert.equal((await jsonRequest(`${path}?from=2026-10-09&to=2026-10-01`, { headers })).response.status, 400);
-  assert.equal((await jsonRequest(`${path}?actor_role=admin`, { headers })).response.status, 400);
+  assert.equal((await jsonRequest(`${path}?actor_role=visitor`, { headers })).response.status, 400);
   const onlyAttendance = await jsonRequest(`${path}?action=attendance&limit=200`, { headers });
   assert.ok(onlyAttendance.body.entries.every((row) => row.action.startsWith("attendance.")));
 
@@ -5548,7 +5553,7 @@ test("audit filters: a day is the day in the Philippines, a person is found by n
   const headers = authHeaders(coordinatorToken);
   const list = (query) => jsonRequest(`/api/coordinator/audit?${query}`, { headers });
   // Refused before anything is read.
-  for (const query of ["entity_type=Not%20A%20Kind", "from=2026-13-40", "actor_role=admin", "from=2026-03-11&to=2026-03-10"]) {
+  for (const query of ["entity_type=Not%20A%20Kind", "from=2026-13-40", "actor_role=visitor", "from=2026-03-11&to=2026-03-10"]) {
     assert.equal((await list(query)).response.status, 400, query);
     assert.equal((await jsonRequest(`/api/coordinator/audit/export?${query}`, { headers })).response.status, 400, query);
   }
@@ -13831,6 +13836,328 @@ test("director:create makes a Director account that must change its password, wi
     assert.equal(refused.response.status, 403, "a deactivated Director cannot sign in");
   } finally {
     await pool.query(`DELETE FROM directors WHERE email = $1`, [email]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.7: the IT administrator's portal, and the duties kept apart
+*/
+
+/** An administrator account for one test, signed in. Removed by its cleanup. */
+async function adminSession(pool, stamp) {
+  const bcrypt = require("bcryptjs");
+  const id = `ADM-T-${stamp}`.toUpperCase();
+  const email = `admin.${stamp}@demo.invalid`;
+  const password = "AdminPass12345";
+  await pool.query(
+    `INSERT INTO system_admins (admin_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Test Administrator', FALSE)`,
+    [id, email, await bcrypt.hash(password, 4)]
+  );
+  const signIn = await jsonRequest("/api/login/admin", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  assert.equal(signIn.response.status, 200, JSON.stringify(signIn.body));
+  return { id, email, password, token: signIn.body.token, body: signIn.body };
+}
+
+/** A coordinator made for one test, signed in. */
+async function throwawayCoordinator(pool, stamp) {
+  const bcrypt = require("bcryptjs");
+  const id = `CO-T-${stamp}`.toUpperCase();
+  const email = `co.${stamp}@demo.invalid`;
+  const password = "CoordPass12345";
+  await pool.query(
+    `INSERT INTO coordinators (coordinator_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Made Up Coordinator', FALSE)`,
+    [id, email, await bcrypt.hash(password, 4)]
+  );
+  const signIn = await login("coordinator", email, password);
+  return { id, email, password, token: signIn.token };
+}
+
+const attemptKey = (role, identifier) =>
+  require("node:crypto").createHash("sha256").update(`${role}:${String(identifier).trim().toLowerCase()}`).digest("hex");
+
+test("admin:create makes an administrator account that must change its password, with a temporary password shown once", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const email = `made.admin.${Date.now().toString(36)}@demo.invalid`;
+  try {
+    const printed = runBackendScript("create-admin.ts", "--email", email, "--name", "Made By Script");
+    const password = /Temporary password[^:]*: (\S+)/.exec(printed)?.[1];
+    assert.ok(password, "the temporary password is printed");
+    const row = (await pool.query(`SELECT must_change_password, is_active, password, admin_id FROM system_admins WHERE email = $1`, [email])).rows[0];
+    assert.equal(row.must_change_password, true);
+    assert.equal(row.is_active, true);
+    assert.match(row.admin_id, /^ADM-\d{4}$/);
+    assert.match(row.password, /^\$2[aby]\$12\$/, "stored hashed");
+    const signIn = await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+    assert.equal(signIn.response.status, 200);
+    assert.throws(() => runBackendScript("create-admin.ts", "--email", email, "--name", "Twice"), "the same email cannot be used twice");
+    runBackendScript("create-admin.ts", "--email", email, "--deactivate");
+    assert.equal((await pool.query(`SELECT is_active FROM system_admins WHERE email = $1`, [email])).rows[0].is_active, false);
+    const refused = await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
+    assert.equal(refused.response.status, 403, "a deactivated administrator cannot sign in");
+  } finally {
+    await pool.query(`DELETE FROM system_admins WHERE email = $1`, [email]);
+    await pool.end();
+  }
+});
+
+test("the administrator signs in, has their own pages, and is refused every route about students, documents, attendance, photos, evaluations, grades, journals, reports and messages", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const admin = await adminSession(pool, stamp);
+  try {
+    assert.equal(admin.body.admin.admin_id, admin.id);
+    assert.equal(Object.hasOwn(admin.body.admin, "password"), false, "the stored password is never sent");
+    const wrong = await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: admin.email, password: "WrongPass12345" }) });
+    assert.equal(wrong.response.status, 401);
+    // A coordinator's password does not open the administrator's door.
+    assert.equal((await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: coordinatorEmail, password: coordinatorPassword }) })).response.status, 401);
+
+    const as = (path) => jsonRequest(path, { headers: authHeaders(admin.token) });
+    assert.equal((await as(`/api/admins/${admin.id}/profile`)).response.status, 200);
+    assert.equal((await as(`/api/notifications/admin/${admin.id}`)).response.status, 200);
+    const saved = await jsonRequest(`/api/admins/${admin.id}/profile`, jsonBody(admin.token, "PUT", { name: "Test Administrator Two", email: admin.email }));
+    assert.equal(saved.response.status, 200);
+    assert.equal(saved.body.admin.name, "Test Administrator Two");
+
+    // The separation of duties: every route someone else may use refuses the administrator.
+    const notForAdmin = sweepRoutes.filter((route) => route.roles && !route.roles.includes("admin"));
+    assert.ok(notForAdmin.length > 200, `only ${notForAdmin.length} routes were checked`);
+    const groups = /students|documents|attendance|attachments|photos|evaluations|grades|journals|reports|messages|complaints|tasks|uploads/;
+    assert.ok(notForAdmin.filter((route) => groups.test(route.path)).length > 50, "the record routes are among them");
+    for (const route of notForAdmin) {
+      assert.equal(await sweepStatus(route, admin.token), 403, `${route.key} (${route.where}) should refuse the administrator`);
+    }
+    // And the administrator's routes say nothing personal: accounts are who, never what is in them.
+    const found = await as(`/api/admin/accounts?q=${encodeURIComponent(student.student_id)}`);
+    assert.equal(found.response.status, 200);
+    const row = found.body.accounts.find((account) => account.role === "student" && account.id === String(student.student_id).trim());
+    assert.ok(row, "a student can be found by ID");
+    assert.deepEqual(Object.keys(row).sort(), ["email", "id", "is_active", "locked", "must_change_password", "name", "role"]);
+    assert.equal((await as("/api/admin/accounts?role=nobody")).response.status, 400);
+
+    // Password change, as every account.
+    const change = (body, tok = admin.token) => jsonRequest(`/api/admins/${admin.id}/password`, jsonBody(tok, "PUT", body));
+    assert.equal((await change({ current_password: "WrongPass12345", new_password: "NewAdminPass456" })).response.status, 401);
+    const changed = await change({ current_password: admin.password, new_password: "NewAdminPass456" });
+    assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
+    assert.equal((await as(`/api/admins/${admin.id}/profile`)).response.status, 403, "the old session has ended");
+  } finally {
+    await pool.query(`DELETE FROM system_admins WHERE admin_id = $1`, [admin.id]);
+    await pool.end();
+  }
+});
+
+test("the administrator unlocks a login, ends sessions, deactivates and reactivates, and makes Director and administrator accounts; each is in the audit log", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const admin = await adminSession(pool, stamp);
+  const coordinator = await throwawayCoordinator(pool, stamp);
+  const act = (role, id, action) => jsonRequest(`/api/admin/accounts/${role}/${encodeURIComponent(id)}`, jsonBody(admin.token, "POST", { action }));
+  try {
+    // A locked login is shown as locked and lifted.
+    await pool.query(
+      `INSERT INTO login_attempts (key_hash, window_start, failures, locked_until) VALUES ($1, NOW(), 9, NOW() + INTERVAL '15 minutes')
+       ON CONFLICT (key_hash) DO UPDATE SET locked_until = EXCLUDED.locked_until`,
+      [attemptKey("coordinator", coordinator.email)]
+    );
+    const search = async () =>
+      (await jsonRequest(`/api/admin/accounts?q=${encodeURIComponent(coordinator.email)}&role=coordinator`, { headers: authHeaders(admin.token) })).body.accounts[0];
+    assert.equal((await search()).locked, true);
+    const unlocked = await act("coordinator", coordinator.id, "unlock");
+    assert.equal(unlocked.response.status, 200, JSON.stringify(unlocked.body));
+    assert.match(unlocked.body.message, /can sign in again/);
+    assert.equal((await search()).locked, false);
+
+    // Ending the sessions: the old token is refused.
+    assert.equal((await jsonRequest("/api/coordinator/students", { headers: authHeaders(coordinator.token) })).response.status, 200);
+    const ended = await act("coordinator", coordinator.id, "end_sessions");
+    assert.equal(ended.response.status, 200);
+    assert.match(ended.body.message, /They will have to sign in again/);
+    assert.equal((await jsonRequest("/api/coordinator/students", { headers: authHeaders(coordinator.token) })).response.status, 401);
+
+    // Deactivate, then reactivate.
+    assert.equal((await act("coordinator", coordinator.id, "deactivate")).response.status, 200);
+    assert.equal((await search()).is_active, false);
+    assert.equal((await jsonRequest("/api/login/coordinator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: coordinator.email, password: coordinator.password }) })).response.status, 403);
+    assert.equal((await act("coordinator", coordinator.id, "reactivate")).response.status, 200);
+    assert.equal((await search()).is_active, true);
+
+    // Refusals: an unknown action or kind, the administrator's own account, the last administrator.
+    assert.equal((await act("coordinator", coordinator.id, "delete")).response.status, 400);
+    assert.equal((await act("nobody", coordinator.id, "unlock")).response.status, 404);
+    assert.equal((await act("coordinator", "NO-SUCH-ONE", "unlock")).response.status, 404);
+    assert.equal((await act("admin", admin.id, "deactivate")).response.status, 409);
+    // Email is not set up on the test server: a temporary password cannot reach anyone, so none is set.
+    const before = (await pool.query(`SELECT password FROM coordinators WHERE coordinator_id = $1`, [coordinator.id])).rows[0].password;
+    const temporary = await act("coordinator", coordinator.id, "temporary_password");
+    assert.equal(temporary.response.status, 503);
+    assert.equal(temporary.body.code, "EMAIL_OFF");
+    assert.equal((await pool.query(`SELECT password FROM coordinators WHERE coordinator_id = $1`, [coordinator.id])).rows[0].password, before);
+    const made = await jsonRequest("/api/admin/accounts", jsonBody(admin.token, "POST", { kind: "director", email: `new.dir.${stamp}@demo.invalid`, name: "New Director" }));
+    assert.equal(made.response.status, 503, "a new account needs email for its temporary password");
+    assert.equal((await jsonRequest("/api/admin/accounts", jsonBody(admin.token, "POST", { kind: "student", email: "x@demo.invalid", name: "Student" }))).response.status, 400, "students are made by coordinators");
+
+    // Each change is in the audit log, as the administrator's, and the Director's Audit can read it.
+    const logged = (
+      await pool.query(`SELECT action FROM audit_log WHERE actor_role = 'admin' AND actor_id = $1 ORDER BY id`, [admin.id])
+    ).rows.map((entry) => entry.action);
+    for (const action of ["account.unlock", "account.end_sessions", "account.deactivate", "account.activate"]) {
+      assert.ok(logged.includes(action), `${action} is logged (${logged.join(", ")})`);
+    }
+    const audit = await jsonRequest(`/api/coordinator/audit?actor_role=admin&person=${encodeURIComponent(admin.id)}`, { headers: authHeaders(admin.token) });
+    assert.equal(audit.response.status, 200);
+    assert.ok(audit.body.entries.some((entry) => entry.action === "account.unlock" && entry.actor_name === "Test Administrator"));
+    const exported = await fetch(new URL(`/api/coordinator/audit/export?actor_role=admin`, apiBaseUrl), { headers: authHeaders(admin.token) });
+    assert.equal(exported.status, 200);
+    assert.match(await exported.text(), /account\.unlock/);
+  } finally {
+    await pool.query(`DELETE FROM login_attempts WHERE key_hash = $1`, [attemptKey("coordinator", coordinator.email)]);
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [coordinator.id]);
+    await pool.query(`DELETE FROM system_admins WHERE admin_id = $1`, [admin.id]);
+    await pool.end();
+  }
+});
+
+test("a temporary password goes to its owner by email only, and the old password stops working; when the email fails nothing changes", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { actOnAccount, createAccount } = require("../src/services/adminAccounts.ts");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const coordinator = await throwawayCoordinator(pool, stamp);
+  const sent = [];
+  const closed = [];
+  const deps = (send) => ({
+    pool,
+    loginAttemptKey: attemptKey,
+    send,
+    emailConfigured: () => true,
+    closeStreams: (account) => closed.push(account),
+    siteAddress: () => "https://internet.example.invalid",
+  });
+  const newDirectorEmail = `dir.mail.${stamp}@demo.invalid`;
+  try {
+    // A failed email keeps the old password.
+    await assert.rejects(
+      actOnAccount(deps(async () => { throw new Error("the mail service is down"); }), { id: "ADM-0000" }, "coordinator", coordinator.id, "temporary_password"),
+      /mail service is down/
+    );
+    assert.ok((await login("coordinator", coordinator.email, coordinator.password)).token, "the old password still works");
+    await pool.query(
+      `INSERT INTO login_attempts (key_hash, window_start, failures, locked_until) VALUES ($1, NOW(), 9, NOW() + INTERVAL '15 minutes')`,
+      [attemptKey("coordinator", coordinator.id)]
+    );
+
+    const done = await actOnAccount(deps(async (email) => { sent.push(email); }), { id: "ADM-0000" }, "coordinator", coordinator.id, "temporary_password");
+    assert.match(done.message, /emailed to Made Up Coordinator/);
+    assert.equal(Object.hasOwn(done, "password"), false, "the administrator is never told the password");
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].to, coordinator.email, "it goes to the owner");
+    assert.equal(sent[0].kind, "account");
+    const password = /^ {4}(\S+)$/m.exec(sent[0].text)?.[1];
+    assert.ok(password, "the email holds the password");
+    assert.match(sent[0].text, /https:\/\/internet\.example\.invalid/);
+    const row = (await pool.query(`SELECT must_change_password FROM coordinators WHERE coordinator_id = $1`, [coordinator.id])).rows[0];
+    assert.equal(row.must_change_password, true);
+    assert.equal((await pool.query(`SELECT 1 FROM login_attempts WHERE key_hash = $1`, [attemptKey("coordinator", coordinator.id)])).rows.length, 0, "the lockout is lifted");
+    assert.deepEqual(closed.at(-1), { role: "coordinator", id: coordinator.id });
+    const oldPassword = await jsonRequest("/api/login/coordinator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: coordinator.email, password: coordinator.password }) });
+    assert.equal(oldPassword.response.status, 401, "the old password no longer works");
+    const newPassword = await jsonRequest("/api/login/coordinator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: coordinator.email, password }) });
+    assert.equal(newPassword.response.status, 200);
+    assert.equal((await jsonRequest("/api/coordinator/students", { headers: authHeaders(coordinator.token) })).response.status, 401, "the old session has ended");
+
+    // A new Director: made, and its password emailed to it.
+    const made = await createAccount(deps(async (email) => { sent.push(email); }), "director", newDirectorEmail, "Mailed Director");
+    assert.match(made.account.id, /^DIR-\d{4}$/);
+    assert.equal(sent.at(-1).to, newDirectorEmail);
+    const directorPassword = /^ {4}(\S+)$/m.exec(sent.at(-1).text)?.[1];
+    const director = await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: newDirectorEmail, password: directorPassword }) });
+    assert.equal(director.response.status, 200);
+    assert.equal((await pool.query(`SELECT must_change_password FROM directors WHERE email = $1`, [newDirectorEmail])).rows[0].must_change_password, true);
+    await assert.rejects(createAccount(deps(async () => undefined), "director", newDirectorEmail, "Twice"), /already has that email/);
+  } finally {
+    await pool.query(`DELETE FROM directors WHERE email = $1`, [newDirectorEmail]);
+    await pool.query(`DELETE FROM login_attempts WHERE key_hash = $1`, [attemptKey("coordinator", coordinator.id)]);
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [coordinator.id]);
+    await pool.end();
+  }
+});
+
+test("the administrator's system pages: status, health, backups, warnings and the maintenance notice; coordinators then hear only whether something is wrong", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const before = (await jsonRequest("/api/coordinator/system-status", { headers: authHeaders(coordinatorToken) })).body;
+  assert.equal(typeof before.email.on, "boolean", "without an administrator the coordinator sees the full card");
+  const admin = await adminSession(pool, stamp);
+  const as = (path) => jsonRequest(path, { headers: authHeaders(admin.token) });
+  try {
+    const status = await as("/api/admin/system-status");
+    assert.equal(status.response.status, 200);
+    assert.equal(typeof status.body.email.on, "boolean");
+    assert.ok(status.body.backups.database);
+    assert.equal(JSON.stringify(status.body).includes(process.env.JWT_SECRET), false, "no setting's value is sent");
+
+    const health = await as("/api/admin/health");
+    assert.equal(health.response.status, 200);
+    assert.equal(health.body.database.ok, true);
+    assert.match(health.body.migrations.latest, /^\d{3}_.+\.sql$/);
+    assert.deepEqual(health.body.migrations.waiting, []);
+    for (const row of health.body.uploads.by_kind) assert.deepEqual(Object.keys(row).sort(), ["bytes", "files", "kind", "role"], "totals, never whose");
+
+    assert.equal((await as("/api/admin/problems")).response.status, 200);
+    const backups = await as("/api/admin/backups");
+    assert.equal(backups.response.status, 200);
+    assert.ok(Array.isArray(backups.body.runs) && Array.isArray(backups.body.photo_purges));
+    const pack = await jsonRequest("/api/admin/backups/uploads", { method: "POST", headers: authHeaders(admin.token) });
+    assert.equal(pack.response.status, 409, "backups are not set up on the test server");
+    const drill = await jsonRequest("/api/admin/backups/restore-drill", jsonBody(admin.token, "POST", { detail: "Restored a made-up backup for the test." }));
+    assert.equal(drill.response.status, 201);
+    assert.equal((await jsonRequest("/api/admin/storage-test", { method: "POST", headers: authHeaders(admin.token) })).response.status, 200);
+    assert.equal((await jsonRequest("/api/admin/email-test", { method: "POST", headers: authHeaders(admin.token) })).response.status, 503);
+
+    const warnings = (await as("/api/admin/warnings")).body.warnings;
+    assert.deepEqual(warnings.map((warning) => warning.key), ["cors", "consent", "photo_retention", "privacy_notice", "push", "backups"]);
+    for (const warning of warnings) assert.equal(typeof warning.ok, "boolean");
+
+    // The maintenance notice: set, read by anyone, taken down.
+    const notice = (message) => jsonRequest("/api/admin/notice", jsonBody(admin.token, "PUT", { message }));
+    assert.equal((await notice("ab")).response.status, 400);
+    assert.equal((await notice("x".repeat(301))).response.status, 400);
+    assert.equal((await jsonRequest("/api/admin/notice", jsonBody(coordinatorToken, "PUT", { message: "Not yours." }))).response.status, 403);
+    const up = await notice("  INTERNet is down for upkeep on Saturday, 8 to 10 pm.  ");
+    assert.equal(up.response.status, 200);
+    const read = await jsonRequest("/api/system-notice");
+    assert.equal(read.response.status, 200);
+    assert.equal(read.body.notice.message, "INTERNet is down for upkeep on Saturday, 8 to 10 pm.");
+    const down = await notice(null);
+    assert.equal(down.body.old, "INTERNet is down for upkeep on Saturday, 8 to 10 pm.");
+    assert.equal((await jsonRequest("/api/system-notice")).body.notice, null);
+    const logged = (await pool.query(`SELECT action, details FROM audit_log WHERE actor_role = 'admin' AND actor_id = $1 AND action = 'system.notice' ORDER BY id`, [admin.id])).rows;
+    assert.equal(logged.length, 2);
+
+    // With an administrator, the coordinator's card is one line and the rest is the administrator's.
+    const after = await jsonRequest("/api/coordinator/system-status", { headers: authHeaders(coordinatorToken) });
+    assert.equal(after.response.status, 200);
+    assert.equal(after.body.managed_by_admin, true);
+    assert.equal(typeof after.body.something_wrong, "boolean");
+    assert.equal(Object.hasOwn(after.body, "email"), false);
+    const problems = await jsonRequest("/api/coordinator/problems", { headers: authHeaders(coordinatorToken) });
+    assert.equal(problems.response.status, 403);
+    assert.equal(problems.body.code, "ADMIN_MANAGES");
+  } finally {
+    await pool.query(`UPDATE system_notice SET message = NULL WHERE id = 1`);
+    await pool.query(`DELETE FROM backup_runs WHERE recorded_by = $1`, [admin.id]);
+    await pool.query(`DELETE FROM system_admins WHERE admin_id = $1`, [admin.id]);
     await pool.end();
   }
 });

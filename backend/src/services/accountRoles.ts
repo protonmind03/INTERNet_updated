@@ -2,13 +2,14 @@
 // Each kind's notifications are the rows whose NOTIFICATION_COLUMN holds
 // its id (migrations 002 and 080).
 
-export type AccountRole = "student" | "supervisor" | "coordinator" | "director";
+export type AccountRole = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
-export const ACCOUNT_ROLES: readonly AccountRole[] = ["student", "supervisor", "coordinator", "director"];
+export const ACCOUNT_ROLES: readonly AccountRole[] = ["student", "supervisor", "coordinator", "director", "admin"];
 
 export const NOTIFICATION_COLUMN: Record<AccountRole, string> = {
   student: "student_id",
   supervisor: "supervisor_id",
   coordinator: "coordinator_id",
   director: "director_id",
+  admin: "admin_id",
 };

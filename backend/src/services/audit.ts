@@ -105,6 +105,63 @@ export const AUDIT_RULES: Rule[] = [
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
   },
+  // Phase 1.7: the IT administrator. Every action is logged; a temporary
+  // password never is (it is not in the request, and the answer only says it went).
+  {
+    method: "POST",
+    path: "/api/admin/accounts/:role/:id",
+    action: (source) => {
+      const done: Record<string, string> = {
+        unlock: "account.unlock",
+        end_sessions: "account.end_sessions",
+        deactivate: "account.deactivate",
+        reactivate: "account.activate",
+        temporary_password: "account.temporary_password",
+      };
+      return done[String(source.body.action)] ?? null;
+    },
+    entityType: (source) => String(source.params.role),
+    entityId: param("id"),
+  },
+  {
+    method: "POST",
+    path: "/api/admin/accounts",
+    action: "account.create",
+    entityType: (source) => String(nested(source.result.account, "role") ?? source.body.kind),
+    entityId: (source) => nested(source.result.account, "id"),
+    keep: ["kind"],
+  },
+  {
+    method: "PUT",
+    path: "/api/admin/notice",
+    action: "system.notice",
+    entityType: "system_notice",
+    entityId: () => "1",
+    from: (source) => ({ old: source.result.old, message: nested(source.result.notice, "message") }),
+  },
+  {
+    method: "POST",
+    path: "/api/admin/backups/uploads",
+    action: "backup.uploads_now",
+    entityType: "backup",
+    entityId: () => null,
+  },
+  {
+    method: "POST",
+    path: "/api/admin/backups/restore-drill",
+    action: "backup.restore_drill",
+    entityType: "backup",
+    entityId: (source) => nested(source.result.drill, "id"),
+    keep: ["detail"],
+  },
+  {
+    method: "PUT",
+    path: "/api/admins/:adminId/profile",
+    action: "account.profile",
+    entityType: "admin",
+    entityId: param("adminId"),
+    keep: ["name"],
+  },
   // Phase 1.6: the OJT Director.
   {
     method: "PUT",

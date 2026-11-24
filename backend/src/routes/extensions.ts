@@ -2351,7 +2351,7 @@ export function registerExtensionRoutes(
     if (from && to && from > to) {
       return { problem: "The start date must not be after the end date." };
     }
-    if (actorRole && !["student", "supervisor", "coordinator"].includes(actorRole)) {
+    if (actorRole && !["student", "supervisor", "coordinator", "director", "admin"].includes(actorRole)) {
       return { problem: "That is not a kind of account." };
     }
     if (entityType && !/^[a-z_]+$/.test(entityType)) {
@@ -2381,10 +2381,10 @@ export function registerExtensionRoutes(
           AND ($5 = ''
             OR a.actor_id ILIKE '%' || $5 || '%'
             OR a.entity_id ILIKE '%' || $5 || '%'
-            OR COALESCE(st.name, sup.name, co.name, '') ILIKE '%' || $5 || '%')
+            OR COALESCE(st.name, sup.name, co.name, dir.name, adm.name, '') ILIKE '%' || $5 || '%')
           AND ($6 = ''
             OR a.actor_id ILIKE '%' || $6 || '%'
-            OR COALESCE(st.name, sup.name, co.name, '') ILIKE '%' || $6 || '%')
+            OR COALESCE(st.name, sup.name, co.name, dir.name, adm.name, '') ILIKE '%' || $6 || '%')
           AND ($7 = '' OR a.entity_type = $7)
           AND ($8 = '' OR a.entity_id = $8)
           ${
@@ -2405,6 +2405,8 @@ export function registerExtensionRoutes(
         LEFT JOIN students st ON a.actor_role = 'student' AND st.student_id::text = a.actor_id
         LEFT JOIN supervisors sup ON a.actor_role = 'supervisor' AND sup.supervisor_id::text = a.actor_id
         LEFT JOIN coordinators co ON a.actor_role = 'coordinator' AND co.coordinator_id::text = a.actor_id
+        LEFT JOIN directors dir ON a.actor_role = 'director' AND dir.director_id = a.actor_id
+        LEFT JOIN system_admins adm ON a.actor_role = 'admin' AND adm.admin_id = a.actor_id
       `,
       values: bound.values,
       summary,
@@ -2423,7 +2425,7 @@ export function registerExtensionRoutes(
 
   // The filtered entries as a file. Taking a copy out is itself written to
   // the log (services/audit.ts), with the filters used and how many rows.
-  app.get("/api/coordinator/audit/export", requireCoordinator, async (req, res) => {
+  app.get("/api/coordinator/audit/export", requireRole(["coordinator", "director", "admin"]), async (req, res) => {
     try {
       const filters = auditFilters(req.query as Record<string, unknown>);
       if ("problem" in filters) return res.status(400).json({ message: filters.problem });
@@ -2432,7 +2434,7 @@ export function registerExtensionRoutes(
         pool.query(
           `
           SELECT TO_CHAR(${phSql.wallTime("a.created_at")}, 'YYYY-MM-DD HH24:MI:SS') AS at,
-                 a.actor_role, a.actor_id, COALESCE(st.name, sup.name, co.name, '') AS actor_name,
+                 a.actor_role, a.actor_id, COALESCE(st.name, sup.name, co.name, dir.name, adm.name, '') AS actor_name,
                  a.action, a.entity_type, a.entity_id, a.details
           ${filters.joins} ${filters.where}
           ORDER BY a.created_at DESC, a.id DESC
@@ -2470,7 +2472,7 @@ export function registerExtensionRoutes(
     }
   });
 
-  app.get("/api/coordinator/audit", requireCoordinator, async (req, res) => {
+  app.get("/api/coordinator/audit", requireRole(["coordinator", "director", "admin"]), async (req, res) => {
     try {
       const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? ""), 10) || 50, 1), 200);
       const offset = Math.max(Number.parseInt(String(req.query.offset ?? ""), 10) || 0, 0);
@@ -2482,7 +2484,7 @@ export function registerExtensionRoutes(
         pool.query(
           `
           SELECT a.id, a.actor_role, a.actor_id,
-                 COALESCE(st.name, sup.name, co.name) AS actor_name,
+                 COALESCE(st.name, sup.name, co.name, dir.name, adm.name) AS actor_name,
                  a.action, a.entity_type, a.entity_id, a.details, a.created_at
           ${joins} ${filters}
           ORDER BY a.created_at DESC, a.id DESC

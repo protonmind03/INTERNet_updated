@@ -35,6 +35,7 @@ export const NOTIFICATION_PAGE: Record<NotificationRole, string> = {
   supervisor: "/supervisor/notifications",
   coordinator: "/coordinator/notifications",
   director: "/director/notifications",
+  admin: "/admin/notifications",
 };
 
 function studentLink(type: string, title: string): string {
@@ -105,6 +106,8 @@ export function notificationLink(
   const words = title.toLowerCase();
   // An announcement opens the page that lists them. The coordinator, who
   // sends them, has that list on their own Announcements page.
+  // Phase 1.7: the administrator gets no announcements and has one list.
+  if (role === "admin") return NOTIFICATION_PAGE.admin;
   if (kind === "announcement") {
     if (role === "student") return "/announcements";
     if (role === "supervisor") return "/supervisor/announcements";
@@ -136,6 +139,7 @@ const RECORD_PAGES: Record<NotificationRole, Record<string, string>> = {
   },
   coordinator: { complaint: "/coordinator/complaints" },
   director: {},
+  admin: {},
 };
 
 /** Adds the record to a link when the page it leads to can show that record. */

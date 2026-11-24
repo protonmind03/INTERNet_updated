@@ -27,6 +27,7 @@ import { NOTIFICATION_COLUMN, type AccountRole } from "./services/accountRoles";
 import { loadCoordinatorScope, outsideScope, scopeCondition, withScope } from "./services/coordinatorScope";
 import { registerClearanceRoutes } from "./routes/clearance";
 import { registerDirectorRoutes } from "./routes/director";
+import { registerAdminRoutes } from "./routes/admin";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
@@ -308,6 +309,7 @@ const pushTargets: Record<
   { fallback: string; byType: Record<string, string> }
 > = {
   director: { fallback: "/director/notifications", byType: {} },
+  admin: { fallback: "/admin/notifications", byType: {} },
   student: {
     fallback: "/notifications",
     byType: {
@@ -506,7 +508,7 @@ async function listQuery(
  */
 async function notificationList(
   req: express.Request,
-  column: "student_id" | "supervisor_id" | "coordinator_id" | "director_id",
+  column: "student_id" | "supervisor_id" | "coordinator_id" | "director_id" | "admin_id",
   accountId: string,
   cap: string
 ) {
@@ -547,6 +549,7 @@ const accountTables = {
   supervisor: { table: "supervisors", idColumn: "supervisor_id" },
   coordinator: { table: "coordinators", idColumn: "coordinator_id" },
   director: { table: "directors", idColumn: "director_id" },
+  admin: { table: "system_admins", idColumn: "admin_id" },
 } as const;
 
 const genericResetMessage =
@@ -776,7 +779,7 @@ function passwordPolicyError(password: unknown): string | null {
 // only, so local demo accounts and the API tests keep working unchanged.
 const ENFORCE_PASSWORD_CHANGE = process.env.NODE_ENV === "production";
 const PASSWORD_CHANGE_PATH =
-  /^\/api\/(students|supervisors|coordinators|directors)\/[^/]+\/password\/?$/;
+  /^\/api\/(students|supervisors|coordinators|directors|admins)\/[^/]+\/password\/?$/;
 
 function passwordChangeBlocks(
   req: express.Request,
@@ -1060,7 +1063,8 @@ function loginGuard(role: keyof typeof accountTables): express.RequestHandler {
 type AuthedRequest = express.Request & {
   auth?: {
     // Phase 1.6: the OJT Director's portal (/director).
-    role: "coordinator" | "supervisor" | "student" | "director";
+    // Phase 1.7: the IT administrator's portal (/admin).
+    role: "coordinator" | "supervisor" | "student" | "director" | "admin";
     id: string;
   };
 };
@@ -1072,7 +1076,8 @@ function isAuthRole(value: unknown): value is AuthRole {
     value === "coordinator" ||
     value === "student" ||
     value === "supervisor" ||
-    value === "director"
+    value === "director" ||
+    value === "admin"
   );
 }
 
@@ -1243,6 +1248,7 @@ function requireRole(
       supervisor: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM supervisors WHERE supervisor_id = $1`,
       coordinator: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM coordinators WHERE coordinator_id = $1`,
       director: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM directors WHERE director_id = $1`,
+      admin: `SELECT is_active, auth_version, must_change_password, ${REVOKED_TOKEN_SQL} AS revoked FROM system_admins WHERE admin_id = $1`,
     };
     try {
       const account = await pool.query<{
@@ -1291,6 +1297,9 @@ function requireRole(
 const staffRoles = requireRole(["coordinator", "director"]);
 
 const requireStaff: express.RequestHandler = staffRoles;
+
+// Phase 1.7: the IT administrator (routes/admin.ts, and the system pages in routes/console.ts).
+const requireAdmin = requireRole("admin");
 
 const requireOffice: express.RequestHandler = (req, res, next) => {
   staffRoles(req, res, async (error?: unknown) => {
@@ -1531,7 +1540,7 @@ async function notifyCoordinators(notification: {
 
 app.get(
   "/api/events",
-  requireRole(["coordinator", "student", "supervisor", "director"]),
+  requireRole(["coordinator", "student", "supervisor", "director", "admin"]),
   (request, response) => {
     const auth = (request as AuthedRequest).auth;
     if (!auth) {
@@ -1571,7 +1580,7 @@ app.get(
 
 app.post(
   "/api/logout",
-  requireRole(["coordinator", "student", "supervisor", "director"]),
+  requireRole(["coordinator", "student", "supervisor", "director", "admin"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth;
     const token = (request.headers.authorization || "").slice(7);
@@ -1619,7 +1628,7 @@ app.get("/api/push/vapid-public-key", (_request, response) => {
 
 app.post(
   "/api/push/subscriptions",
-  requireRole(["coordinator", "student", "supervisor", "director"]),
+  requireRole(["coordinator", "student", "supervisor", "director", "admin"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth;
     const subscription = request.body?.subscription;
@@ -1667,7 +1676,7 @@ app.post(
 const testPushAllowed = createRateLimiter(3, 60_000);
 app.post(
   "/api/push/test",
-  requireRole(["coordinator", "student", "supervisor", "director"]),
+  requireRole(["coordinator", "student", "supervisor", "director", "admin"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth!;
     if (!isWebPushConfigured()) {
@@ -1714,7 +1723,7 @@ app.post(
 
 app.delete(
   "/api/push/subscriptions",
-  requireRole(["coordinator", "student", "supervisor", "director"]),
+  requireRole(["coordinator", "student", "supervisor", "director", "admin"]),
   async (request, response) => {
     const auth = (request as AuthedRequest).auth;
     const endpoint = request.body?.endpoint;
@@ -5919,7 +5928,7 @@ app.get(
 
 app.put(
   "/api/notifications/:id/read",
-  requireRole(["student", "supervisor", "coordinator", "director"]),
+  requireRole(["student", "supervisor", "coordinator", "director", "admin"]),
   async (req, res) => {
     try {
       const auth = (req as AuthedRequest).auth;
@@ -6051,7 +6060,7 @@ app.put(
 // Marks every notification of the signed-in account as read, for any role.
 app.put(
   "/api/notifications/read-all",
-  requireRole(["student", "supervisor", "coordinator", "director"]),
+  requireRole(["student", "supervisor", "coordinator", "director", "admin"]),
   async (req, res) => {
     const auth = (req as AuthedRequest).auth;
     if (!auth) {
@@ -6224,7 +6233,7 @@ app.get(
  * the first-login password change. The answer names the account by role,
  * as the coordinator's always has ({ coordinator } / { director }).
  */
-function staffLogin(role: "coordinator" | "director", words: string): express.RequestHandler {
+function staffLogin(role: "coordinator" | "director" | "admin", words: string): express.RequestHandler {
   const { table, idColumn } = accountTables[role];
   return async (req, res) => {
     try {
@@ -6284,6 +6293,8 @@ function staffLogin(role: "coordinator" | "director", words: string): express.Re
 app.post("/api/login/coordinator", loginGuard("coordinator"), staffLogin("coordinator", "coordinator"));
 // Phase 1.6: the OJT Director's portal.
 app.post("/api/login/director", loginGuard("director"), staffLogin("director", "director"));
+// Phase 1.7: the IT administrator's portal.
+app.post("/api/login/admin", loginGuard("admin"), staffLogin("admin", "administrator"));
 
 /*
 |--------------------------------------------------------------------------
@@ -9386,6 +9397,99 @@ app.put(
     }
   }
 );
+/*
+| Phase 1.7: the IT administrator's own account, notifications and password,
+| the way the Director's work.
+*/
+app.get(
+  "/api/notifications/admin/:adminId",
+  requireRole("admin"),
+  async (req, res) => {
+    try {
+      const auth = (req as AuthedRequest).auth;
+      if (!auth || !sameId(auth.id, req.params.adminId)) {
+        return res.status(403).json({ message: "You can only view your own notifications." });
+      }
+      return res.json(await notificationList(req, "admin_id", auth.id, "LIMIT 100"));
+    } catch (error) {
+      console.error("GET ADMIN NOTIFICATIONS ERROR:", error);
+      return res.status(500).json({ message: "Failed to get notifications." });
+    }
+  }
+);
+
+app.get(
+  "/api/admins/:adminId/profile",
+  requireRole("admin"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || !sameId(auth.id, req.params.adminId)) {
+      return res.status(403).json({ message: "You can only view your own profile." });
+    }
+    try {
+      const result = await pool.query(
+        `SELECT admin_id, email, name, department, is_active FROM system_admins WHERE admin_id = $1`,
+        [auth.id]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Account not found." });
+      return res.json({ admin: result.rows[0] });
+    } catch (error) {
+      console.error("GET ADMIN PROFILE ERROR:", error);
+      return res.status(500).json({ message: "Failed to load profile." });
+    }
+  }
+);
+
+app.put(
+  "/api/admins/:adminId/profile",
+  requireRole("admin"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    if (!auth || !sameId(auth.id, req.params.adminId)) {
+      return res.status(403).json({ message: "You can only change your own profile." });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (name.length < 2 || name.length > 150) return res.status(400).json({ message: "Enter your full name." });
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 150) {
+      return res.status(400).json({ message: "Enter a valid email address." });
+    }
+    try {
+      const result = await pool.query(
+        `UPDATE system_admins SET name = $2, email = $3 WHERE admin_id = $1
+         RETURNING admin_id, email, name, department, is_active`,
+        [auth.id, name, email]
+      );
+      if (result.rows.length === 0) return res.status(404).json({ message: "Account not found." });
+      return res.json({ message: "Profile saved.", admin: result.rows[0] });
+    } catch (error) {
+      if ((error as { code?: string }).code === "23505") {
+        return res.status(409).json({ message: "Another administrator account already uses that email." });
+      }
+      console.error("UPDATE ADMIN PROFILE ERROR:", error);
+      return res.status(500).json({ message: "Failed to save your profile." });
+    }
+  }
+);
+
+app.put(
+  "/api/admins/:adminId/password",
+  requireRole("admin"),
+  async (req, res) => {
+    const auth = (req as AuthedRequest).auth;
+    const accountId = String(req.params.adminId);
+    if (!auth || !sameId(auth.id, accountId)) {
+      return res.status(403).json({ message: "You can only change your own password." });
+    }
+    try {
+      const outcome = await changeOwnPassword("admin", accountId, req.body?.current_password, req.body?.new_password);
+      return res.status(outcome.status).json(outcome.body);
+    } catch (error) {
+      console.error("UPDATE ADMIN PASSWORD ERROR:", error);
+      return res.status(500).json({ message: "Failed to update password." });
+    }
+  }
+);
 
 /*
 |--------------------------------------------------------------------------
@@ -10635,6 +10739,7 @@ registerAttachmentRoutes(app, { pool, requireRole });
 registerConsoleRoutes(app, {
   pool,
   requireCoordinator,
+  requireAdmin,
   flaggedLogCondition,
   pushConfigured: isWebPushConfigured,
   createRateLimiter,
@@ -10649,6 +10754,17 @@ registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
 // Phase 1.6: the OJT Director's own routes.
 registerDirectorRoutes(app, { pool, requireDirector: requireRole("director") });
+// Phase 1.7: the IT administrator's own routes. A temporary password goes to its owner by email only.
+registerAdminRoutes(app, {
+  pool,
+  requireAdmin,
+  pushConfigured: isWebPushConfigured,
+  loginAttemptKey,
+  send: (email) => sendEmail(email),
+  emailConfigured: () => isEmailConfigured(),
+  closeStreams: (account) => closeNotificationStreams(account),
+  siteAddress: () => (process.env.FRONTEND_URL || "").trim().replace(/\/+$/, "") || null,
+});
 // Revisions, November 2026: the trainee's feedback form, progress reports and narrative drafts.
 registerTraineeRecordRoutes(app, { pool, requireRole, notifyCoordinators });
 

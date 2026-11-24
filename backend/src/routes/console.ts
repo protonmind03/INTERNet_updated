@@ -5,13 +5,11 @@ import { coordinatorHome } from "../services/coordinatorHome";
 import { coordinatorKpis } from "../services/kpis";
 import { readStudentFilters } from "../services/studentScope";
 import { emailRoute, sendEmail } from "../services/mailer";
-import { EmailLimitError, accountReserve, emailDailyLimit, emailsSentToday } from "../services/emailBudget";
-import { PRIVACY_NOTICE, consentRequired, photoRetentionDays } from "../services/privacy";
+import { EmailLimitError } from "../services/emailBudget";
 import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
 import { recentProblems } from "../services/problems";
-import { PURGE_TIME, lastPhotoPurge } from "../services/photoPurge";
 import { uploadUsage } from "../services/uploadQuota";
-import { backupStatus } from "../services/backups";
+import { systemStatus, somethingWrong } from "../services/systemStatus";
 
 /*
 |--------------------------------------------------------------------------
@@ -30,6 +28,8 @@ import { backupStatus } from "../services/backups";
 type Dependencies = {
   pool: Pool;
   requireCoordinator: express.RequestHandler;
+  /** Phase 1.7: the IT administrator, who has the system pages once their account exists. */
+  requireAdmin: express.RequestHandler;
   /** The server's rule for a flagged attendance log, as SQL on an alias. */
   flaggedLogCondition: (alias: string) => string;
   /** Whether the push keys are set. */
@@ -38,52 +38,60 @@ type Dependencies = {
 };
 
 export function registerConsoleRoutes(app: express.Express, deps: Dependencies): void {
-  const { pool, requireCoordinator, flaggedLogCondition } = deps;
+  const { pool, requireCoordinator, requireAdmin, flaggedLogCondition } = deps;
 
   /*
-  | What is switched on
+  | What is switched on, the problems, the restore drill and the two tests
   |
-  | The parts of the system that depend on a setting of the host: email,
-  | push, where files are kept, the privacy switches. A coordinator sees
-  | which are on, so nobody has to read the host's settings page to know
-  | why a reset email did not arrive. It says on or off and how; it never
-  | carries a key, an address or any other value of a setting.
+  | Phase 1.7: these belong to the IT administrator (/api/admin/...). Until
+  | an active administrator account exists, the coordinators keep them
+  | (/api/coordinator/...), as before. After that a coordinator's System
+  | status says only whether something is wrong, and the rest answers 403.
   */
-  app.get("/api/coordinator/system-status", requireCoordinator, async (_req, res) => {
+  const adminExists = async () =>
+    (await pool.query(`SELECT 1 FROM system_admins WHERE is_active = TRUE LIMIT 1`)).rows.length > 0;
+
+  /** Coordinators, while no administrator exists. */
+  const requireCoordinatorUntilAdmin: express.RequestHandler = (req, res, next) => {
+    requireCoordinator(req, res, async (error?: unknown) => {
+      if (error) return next(error);
+      try {
+        if (!(await adminExists())) return next();
+        return res.status(403).json({
+          code: "ADMIN_MANAGES",
+          message: "The system administrator looks after this now.",
+        });
+      } catch (checkError) {
+        console.error("SYSTEM DESK CHECK ERROR:", checkError);
+        return res.status(500).json({ message: "Failed to check who looks after the system." });
+      }
+    });
+  };
+
+  const readStatus: express.RequestHandler = async (_req, res) => {
     try {
-      const route = emailRoute();
-      const limit = route ? emailDailyLimit() : null;
-      return res.json({
-        email: {
-          on: route !== null,
-          through: route === "api" ? "provider" : route === "smtp" ? "smtp" : null,
-          // A reset link is built from the site's address.
-          reset_links: route !== null && Boolean(process.env.FRONTEND_URL),
-          daily_limit: limit,
-          kept_for_password_resets: limit === null ? null : accountReserve(limit),
-          sent_today: limit === null ? null : await emailsSentToday(pool),
-        },
-        push: { on: deps.pushConfigured() },
-        files: { kept_in: fileStoreKind() === "disk" ? "the server's own disk" : "object storage" },
-        privacy: {
-          consent_asked: consentRequired(),
-          notice_is_placeholder: PRIVACY_NOTICE.placeholder,
-          photo_retention_days: photoRetentionDays(),
-          photo_purge_time: PURGE_TIME,
-          last_photo_purge: await lastPhotoPurge(pool),
-        },
-        // Iteration 15: the last backups and restore drill (backup_runs, migration 064).
-        backups: await backupStatus(pool),
-      });
+      return res.json(await systemStatus(pool, deps.pushConfigured()));
+    } catch (error) {
+      console.error("SYSTEM STATUS ERROR:", error);
+      return res.status(500).json({ message: "Failed to read what is switched on." });
+    }
+  };
+
+  app.get("/api/coordinator/system-status", requireCoordinator, async (req, res, next) => {
+    try {
+      if (!(await adminExists())) return readStatus(req, res, next);
+      // The administrator has the details; the coordinator hears only whether to worry.
+      return res.json({ managed_by_admin: true, something_wrong: await somethingWrong(pool) });
     } catch (error) {
       console.error("SYSTEM STATUS ERROR:", error);
       return res.status(500).json({ message: "Failed to read what is switched on." });
     }
   });
+  app.get("/api/admin/system-status", requireAdmin, readStatus);
 
   // A restore drill done by a person (DEPLOY.md, "Restore drill"), recorded so the
   // status card stops asking for one until next month. What was restored, in a line.
-  app.post("/api/coordinator/backups/restore-drill", requireCoordinator, async (req, res) => {
+  const recordDrill: express.RequestHandler = async (req, res) => {
     try {
       const auth = (req as express.Request & { auth?: { id: string } }).auth!;
       const detail = typeof req.body?.detail === "string" ? req.body.detail.trim() : "";
@@ -103,7 +111,9 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
       console.error("RECORD RESTORE DRILL ERROR:", error);
       return res.status(500).json({ message: "Failed to record the restore drill." });
     }
-  });
+  };
+  app.post("/api/coordinator/backups/restore-drill", requireCoordinatorUntilAdmin, recordDrill);
+  app.post("/api/admin/backups/restore-drill", requireAdmin, recordDrill);
 
   // How much of their room for uploads a student has used (services/uploadQuota.ts).
   app.get("/api/coordinator/students/:studentId/upload-usage", requireCoordinator, async (req, res) => {
@@ -119,7 +129,7 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
 
   // The faults the system noticed in itself over the last week: what kind,
   // how often, when. No message text and nothing about who (services/problems.ts).
-  app.get("/api/coordinator/problems", requireCoordinator, async (_req, res) => {
+  const listProblems: express.RequestHandler = async (_req, res) => {
     try {
       const problems = await recentProblems(pool, 7, 20);
       return res.json({ days: 7, problems });
@@ -127,14 +137,16 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
       console.error("LIST PROBLEMS ERROR:", error);
       return res.status(500).json({ message: "Failed to load the problems the system has noticed." });
     }
-  });
+  };
+  app.get("/api/coordinator/problems", requireCoordinatorUntilAdmin, listProblems);
+  app.get("/api/admin/problems", requireAdmin, listProblems);
 
   // Writes a small file where uploads are kept, reads it back and removes
   // it: the proof that the storage settings work, without uploading a real file.
   const storageCheckAllowed = deps.createRateLimiter(3, 60_000);
-  app.post("/api/coordinator/storage-test", requireCoordinator, async (req, res) => {
-    const auth = (req as express.Request & { auth?: { id: string } }).auth!;
-    if (!storageCheckAllowed(auth.id)) {
+  const checkStorage: express.RequestHandler = async (req, res) => {
+    const auth = (req as express.Request & { auth?: { role: string; id: string } }).auth!;
+    if (!storageCheckAllowed(`${auth.role}:${auth.id}`)) {
       return res.status(429).json({ message: "Wait a minute before checking again." });
     }
     const where = fileStoreKind() === "disk" ? "the server's own disk" : "object storage";
@@ -148,21 +160,25 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
         message: `A test file could not be kept in ${where}. The reason is in the server's log, on the line starting STORAGE CHECK ERROR.`,
       });
     }
-  });
+  };
+  app.post("/api/coordinator/storage-test", requireCoordinatorUntilAdmin, checkStorage);
+  app.post("/api/admin/storage-test", requireAdmin, checkStorage);
 
-  // One email to the coordinator's own address, to see that email arrives.
+  // One email to the signed-in person's own address, to see that email arrives.
   const testEmailAllowed = deps.createRateLimiter(3, 10 * 60_000);
-  app.post("/api/coordinator/email-test", requireCoordinator, async (req, res) => {
-    const auth = (req as express.Request & { auth?: { id: string } }).auth!;
+  const sendTestEmail: express.RequestHandler = async (req, res) => {
+    const auth = (req as express.Request & { auth?: { role: string; id: string } }).auth!;
     if (emailRoute() === null) {
       return res.status(503).json({ message: "Email is not set up on the server, so no test can be sent." });
     }
-    if (!testEmailAllowed(auth.id)) {
+    if (!testEmailAllowed(`${auth.role}:${auth.id}`)) {
       return res.status(429).json({ message: "Wait ten minutes before sending another test email." });
     }
     try {
       const account = await pool.query<{ email: string; name: string }>(
-        `SELECT email, name FROM coordinators WHERE coordinator_id = $1`,
+        auth.role === "admin"
+          ? `SELECT email, name FROM system_admins WHERE admin_id = $1`
+          : `SELECT email, name FROM coordinators WHERE coordinator_id = $1`,
         [auth.id]
       );
       const to = account.rows[0]?.email;
@@ -182,7 +198,9 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
         message: "The email service refused the test. The reason is in the server's log, on the line starting TEST EMAIL ERROR.",
       });
     }
-  });
+  };
+  app.post("/api/coordinator/email-test", requireCoordinatorUntilAdmin, sendTestEmail);
+  app.post("/api/admin/email-test", requireAdmin, sendTestEmail);
 
   app.get("/api/coordinator/actions", requireCoordinator, async (req, res) => {
     try {
