@@ -435,6 +435,8 @@ export default function CoordinatorDocuments() {
                   {requirements.map((name) => (
                     <option key={name}>{name}</option>
                   ))}
+                  {/* A requirement no longer asked for still has its submissions, and its link still filters to them. */}
+                  {docType && !requirements.includes(docType) && <option>{docType}</option>}
                 </select>
               </label>
               <label className="inline-flex h-10 items-center gap-2 text-sm text-slate-800">
