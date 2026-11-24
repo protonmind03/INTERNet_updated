@@ -30,9 +30,22 @@ const flag = (label: string, fallback: boolean): Setting<boolean> => ({
   parse: (text) => text === "true",
 });
 
+/** A whole number from min to max. */
+const whole = (label: string, fallback: number, min: number, max: number): Setting<number> => ({
+  label,
+  fallback,
+  read: (value) => (typeof value === "number" && Number.isInteger(value) && value >= min && value <= max ? value : null),
+  parse: (text) => {
+    const value = Number(text);
+    return Number.isInteger(value) && value >= min && value <= max ? value : fallback;
+  },
+});
+
 export const OJT_SETTINGS = {
   // Phase 1.2: time-in only once cleared for deployment. Off until the OJT office turns it on.
   deployment_gate_enabled: flag("Deployment gate", false),
+  // Phase 1.5: the HTE's share of the final grade, in percent; the instructor has the rest.
+  grade_split_hte: whole("HTE share of the final grade", 50, 1, 99),
 } satisfies Record<string, Setting<unknown>>;
 
 export type OjtSettingKey = keyof typeof OJT_SETTINGS;

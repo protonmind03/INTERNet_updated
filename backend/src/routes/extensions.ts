@@ -39,6 +39,8 @@ import { scopeCondition } from "../services/coordinatorScope";
 */
 
 type Role = "student" | "supervisor" | "coordinator";
+// Who a route may let in: Phase 1.6 and 1.7 add the OJT Director and the administrator.
+type GuardRole = Role | "director" | "admin";
 
 type AuthedRequest = express.Request & { auth?: { role: Role; id: string } };
 
@@ -57,7 +59,7 @@ type NotificationInput = {
 
 export type ExtensionDependencies = {
   pool: Pool;
-  requireRole: (roles: Role | Role[]) => express.RequestHandler;
+  requireRole: (roles: GuardRole | GuardRole[]) => express.RequestHandler;
   requireCoordinator: express.RequestHandler;
   /** Phase 1.6: coordinators and the OJT Director; the office's decisions (server.ts). */
   requireStaff: express.RequestHandler;

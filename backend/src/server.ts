@@ -28,6 +28,7 @@ import { loadCoordinatorScope, outsideScope, scopeCondition, withScope } from ".
 import { registerClearanceRoutes } from "./routes/clearance";
 import { registerDirectorRoutes } from "./routes/director";
 import { registerAdminRoutes } from "./routes/admin";
+import { registerFinalGradeRoutes } from "./routes/finalGrades";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
 import { recordUpload, uploadQuota } from "./services/uploadQuota";
@@ -10752,6 +10753,8 @@ registerProgrammeRoutes(app, { pool, requireRole, requireCoordinator, createNoti
 registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 // Phase 1.2: the clearance board, the deployment gate's setting, and the student's own readiness.
 registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
+// Phase 1.5: the instructor's evaluation, the grade sheet and the final grade's release.
+registerFinalGradeRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
 // Phase 1.6: the OJT Director's own routes.
 registerDirectorRoutes(app, { pool, requireDirector: requireRole("director") });
 // Phase 1.7: the IT administrator's own routes. A temporary password goes to its owner by email only.

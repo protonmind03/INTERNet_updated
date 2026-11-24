@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -14158,6 +14158,194 @@ test("the administrator's system pages: status, health, backups, warnings and th
     await pool.query(`UPDATE system_notice SET message = NULL WHERE id = 1`);
     await pool.query(`DELETE FROM backup_runs WHERE recorded_by = $1`, [admin.id]);
     await pool.query(`DELETE FROM system_admins WHERE admin_id = $1`, [admin.id]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 1.5: the instructor's evaluation and the 50/50 final grade
+*/
+
+test("the final grade: weights, the split, rounding half up, and a grade waiting for a half", () => {
+  require("tsx/cjs");
+  const grade = require("../src/services/finalGrade.ts");
+  assert.deepEqual(grade.DEFAULT_WEIGHTS, { logs: 25, punctuality: 25, preparation: 25, conduct: 25 });
+  assert.equal(grade.instructorGrade({ logs: 80, punctuality: 90, preparation: 70, conduct: 100 }, grade.DEFAULT_WEIGHTS), 85);
+  assert.equal(grade.instructorGrade({ logs: 80, punctuality: 90, preparation: 70, conduct: 100 }, { logs: 40, punctuality: 20, preparation: 20, conduct: 20 }), 84);
+  assert.deepEqual(grade.finalGrade(90, 80, 50), { final: 85, state: "final" });
+  assert.deepEqual(grade.finalGrade(90, 80, 60), { final: 86, state: "final" });
+  assert.deepEqual(grade.finalGrade(91.15, 88.1, 50), { final: 89.63, state: "final" }, "89.625 rounds half up");
+  assert.equal(grade.round2(1.005), 1.01);
+  assert.deepEqual(grade.finalGrade(null, 80, 50), { final: null, state: "waiting_hte" });
+  assert.deepEqual(grade.finalGrade(90, null, 50), { final: null, state: "waiting_instructor" });
+  assert.deepEqual(grade.finalGrade(null, null, 50), { final: null, state: "waiting_both" });
+  // The HTE half: the form's own grade, or an unweighted form's average on the same scale.
+  assert.equal(grade.hteGrade({ grade: "91.00", average: 4.1, scale_max: 5 }), 91);
+  assert.equal(grade.hteGrade({ grade: null, average: 4, scale_max: 5 }), 90);
+  assert.equal(grade.hteGrade(null), null);
+  // Weights: whole numbers adding up to 100.
+  assert.deepEqual(grade.readWeights({ logs: 40, punctuality: 20, preparation: 20, conduct: 20 }), { logs: 40, punctuality: 20, preparation: 20, conduct: 20 });
+  assert.match(grade.readWeights({ logs: 40, punctuality: 20, preparation: 20, conduct: 10 }).problem, /add up to 90/);
+  assert.match(grade.readWeights({ logs: 25.5, punctuality: 25, preparation: 25, conduct: 24.5 }).problem, /whole number/);
+  assert.deepEqual(grade.weightsOf(null), grade.DEFAULT_WEIGHTS);
+  // Scores: 0 to 100, at most 2 decimals.
+  assert.equal(grade.readScore(87.25), 87.25);
+  assert.equal(grade.readScore(100.5), null);
+  assert.equal(grade.readScore(87.255), null);
+  assert.equal(grade.readScore("90"), null);
+});
+
+test("the instructor's evaluation, the grade sheet, and a grade the student sees only once released", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const id = `GRADE-${stamp}`.toUpperCase();
+  const email = `grade.${stamp}@demo.invalid`;
+  const bcrypt = require("bcryptjs");
+  await pool.query(
+    `INSERT INTO students (student_id, email, password, name, is_active, must_change_password) VALUES ($1, $2, $3, 'Made Up Grade Trainee', TRUE, FALSE)`,
+    [id, email, await bcrypt.hash("GradePass12345", 4)]
+  );
+  const coordinator = jsonBody.bind(null, coordinatorToken);
+  const save = (body) => jsonRequest(`/api/coordinator/students/${id}/instructor-evaluation`, coordinator("PUT", body));
+  const sheet = async () =>
+    (await jsonRequest(`/api/coordinator/grade-sheet`, { headers: authHeaders(coordinatorToken) })).body.students.find((row) => row.student_id === id);
+  try {
+    const trainee = await login("student", email, "GradePass12345");
+    const own = () => jsonRequest(`/api/students/${id}/final-grade`, { headers: authHeaders(trainee.token) });
+
+    // Nothing yet: waiting for both halves.
+    assert.equal((await sheet()).state, "waiting_both");
+    const breakdown = await jsonRequest(`/api/coordinator/students/${id}/final-grade`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(breakdown.response.status, 200);
+    assert.equal(breakdown.body.split, 50);
+    assert.equal(breakdown.body.suggestions.punctuality.score, null, "nothing was due yet");
+    assert.equal(breakdown.body.suggestions.logs.score, null);
+
+    // The instructor's half, checked first.
+    assert.equal((await save({ logs: 101, punctuality: 90, preparation: 70, conduct: 100 })).response.status, 400);
+    assert.equal((await save({ logs: 80, punctuality: 90, preparation: 70 })).response.status, 400);
+    const first = await save({ logs: 80, punctuality: 90, preparation: 70, conduct: 100, remarks: "Steady and prepared." });
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    assert.equal(first.body.version, 1);
+    assert.equal(first.body.grade.instructor, 85);
+    assert.equal(first.body.grade.state, "waiting_hte");
+    // A save made from an old version is refused.
+    assert.equal((await save({ logs: 80, punctuality: 90, preparation: 70, conduct: 100 })).response.status, 409);
+    assert.equal((await save({ logs: 80, punctuality: 90, preparation: 70, conduct: 100, version: 7 })).body.code, "STALE");
+
+    // The HTE half: the supervisor's final evaluation, grade 90.
+    const form = (await pool.query(`SELECT id FROM evaluation_forms ORDER BY id LIMIT 1`)).rows[0].id;
+    await pool.query(
+      `INSERT INTO final_evaluations (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks, grade)
+       VALUES ($1, $2, '{"scale_max": 5, "criteria": []}'::jsonb, 'SUP-T', 'Made Up Supervisor', '{}'::jsonb, 4, 'Good work all through.', 90)`,
+      [id, form]
+    );
+    let row = await sheet();
+    assert.deepEqual([row.hte, row.instructor, row.final, row.state], [90, 85, 87.5, "final"]);
+    assert.equal(row.released_at, null);
+    assert.deepEqual((await own()).body, { released: false }, "not released: the student sees nothing");
+
+    // Released: the student sees it, and hears.
+    assert.equal((await jsonRequest("/api/coordinator/grades/release", coordinator("POST", { student_ids: [] }))).response.status, 400);
+    const released = await jsonRequest("/api/coordinator/grades/release", coordinator("POST", { student_ids: [id, "NO-SUCH-STUDENT"] }));
+    assert.equal(released.response.status, 200, JSON.stringify(released.body));
+    assert.equal(released.body.message, "Grades released for 1 student.");
+    assert.deepEqual(released.body.left, { waiting: 0, already_released: 0, not_found: 1 });
+    const seen = await own();
+    assert.equal(seen.body.released, true);
+    assert.equal(seen.body.grade, 87.5);
+    const told = await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Final grade released'`, [id]);
+    assert.equal(told.rows.length, 1);
+    // Releasing again changes nothing.
+    assert.equal((await jsonRequest("/api/coordinator/grades/release", coordinator("POST", { student_ids: [id] }))).body.left.already_released, 1);
+
+    // A change after the release: the sheet says so, the student keeps what was released until it is released again.
+    const changed = await save({ logs: 100, punctuality: 90, preparation: 70, conduct: 100, version: 1 });
+    assert.equal(changed.response.status, 200);
+    assert.deepEqual(changed.body.old, { logs: 80, punctuality: 90, preparation: 70, conduct: 100 });
+    row = await sheet();
+    assert.equal(row.final, 90);
+    assert.equal(row.changed_since_release, true);
+    assert.equal((await own()).body.grade, 87.5);
+    await jsonRequest("/api/coordinator/grades/release", coordinator("POST", { student_ids: [id] }));
+    assert.equal((await own()).body.grade, 90);
+
+    // The split is an OJT rule; with 60 for the HTE the final moves.
+    const split = await jsonRequest("/api/coordinator/ojt-settings/grade_split_hte", coordinator("PUT", { value: 60 }));
+    assert.equal(split.response.status, 200, JSON.stringify(split.body));
+    assert.equal((await jsonRequest("/api/coordinator/ojt-settings/grade_split_hte", coordinator("PUT", { value: 100 }))).response.status, 400);
+    assert.equal((await sheet()).final, 90, "90 and 90 stay 90");
+
+    // The term's weights (the office's); a term that does not exist, or weights that do not add up, are refused.
+    const term = (await pool.query(`SELECT id FROM terms ORDER BY id LIMIT 1`)).rows[0];
+    if (term) {
+      const before = (await pool.query(`SELECT grade_weights FROM terms WHERE id = $1`, [term.id])).rows[0].grade_weights;
+      try {
+        const weights = await jsonRequest(`/api/coordinator/terms/${term.id}/grade-weights`, coordinator("PUT", { weights: { logs: 40, punctuality: 20, preparation: 20, conduct: 20 } }));
+        assert.equal(weights.response.status, 200, JSON.stringify(weights.body));
+        assert.deepEqual(weights.body.value, { logs: 40, punctuality: 20, preparation: 20, conduct: 20 });
+      } finally {
+        await pool.query(`UPDATE terms SET grade_weights = $2 WHERE id = $1`, [term.id, before === null ? null : JSON.stringify(before)]);
+      }
+    }
+    assert.equal((await jsonRequest(`/api/coordinator/terms/999999/grade-weights`, coordinator("PUT", { weights: { logs: 25, punctuality: 25, preparation: 25, conduct: 25 } }))).response.status, 404);
+    assert.equal((await jsonRequest(`/api/coordinator/terms/1/grade-weights`, coordinator("PUT", { weights: { logs: 50, punctuality: 25, preparation: 25, conduct: 25 } }))).response.status, 400);
+
+    // Withdrawn: the student sees nothing again.
+    const withdrawn = await jsonRequest(`/api/coordinator/students/${id}/grade/withdraw`, { method: "POST", headers: authHeaders(coordinatorToken) });
+    assert.equal(withdrawn.response.status, 200);
+    assert.deepEqual((await own()).body, { released: false });
+    assert.equal((await jsonRequest(`/api/coordinator/students/${id}/grade/withdraw`, { method: "POST", headers: authHeaders(coordinatorToken) })).response.status, 404);
+
+    // Who may: not a supervisor, not another student; the student only their own.
+    const supervisor = await supervisorSession();
+    assert.equal((await jsonRequest(`/api/coordinator/grade-sheet`, { headers: authHeaders(supervisor.token) })).response.status, 403);
+    assert.equal((await jsonRequest(`/api/coordinator/students/${id}/instructor-evaluation`, jsonBody(supervisor.token, "PUT", { logs: 1, punctuality: 1, preparation: 1, conduct: 1 }))).response.status, 403);
+    assert.equal((await jsonRequest(`/api/students/${id}/final-grade`, { headers: authHeaders(studentToken) })).response.status, 403);
+
+    // Every change is in the audit log.
+    const actions = (await pool.query(`SELECT action FROM audit_log WHERE entity_id = $1 OR action = 'grade.release' ORDER BY id`, [id])).rows.map((r) => r.action);
+    for (const action of ["grade.instructor_create", "grade.instructor_edit", "grade.release", "grade.withdraw"]) assert.ok(actions.includes(action), action);
+  } finally {
+    await pool.query(`INSERT INTO ojt_settings (key, value, updated_by) VALUES ('grade_split_hte', '50', 'test') ON CONFLICT (key) DO UPDATE SET value = '50'`);
+    await pool.query(`DELETE FROM notifications WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM instructor_evaluations WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+test("the instructor's suggestions count what was due and what was handed in, on time or not", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { punctualitySuggestion, logsSuggestion } = require("../src/services/finalGrade.ts");
+  const pool = localTestPool();
+  const id = `SUGGEST-${Date.now().toString(36)}`.toUpperCase();
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Made Up Suggest Trainee', TRUE)`, [id, `${id.toLowerCase()}@demo.invalid`]);
+  try {
+    // Two weeks ago: a Monday and Tuesday at work; a daily report for the Monday (on time) and none for the Tuesday;
+    // that week's weekly report handed in a day late.
+    const monday = (await pool.query(`SELECT (CURRENT_DATE - 14 - (EXTRACT(ISODOW FROM CURRENT_DATE)::int - 1))::date AS d`)).rows[0].d;
+    const day = (offset) => new Date(monday.getTime() + offset * 86_400_000).toISOString().slice(0, 10);
+    for (const date of [day(0), day(1)]) {
+      await pool.query(`INSERT INTO attendance (student_id, date, time_in, status) VALUES ($1, $2::date, $2::date + TIME '08:00', 'Verified')`, [id, date]);
+    }
+    await pool.query(`INSERT INTO daily_reports (student_id, report_date, summary, created_at) VALUES ($1, $2::date, 'Filed letters.', ($2::date + TIME '17:00') AT TIME ZONE 'Asia/Manila')`, [id, day(0)]);
+    await pool.query(
+      `INSERT INTO journals (student_id, week_start, activities, learnings, submitted_at) VALUES ($1, $2::date, 'Filing', 'Order', $2::date + 8 + TIME '09:00')`,
+      [id, day(0)]
+    );
+    const logs = await logsSuggestion(pool, id);
+    assert.deepEqual([logs.expected, logs.submitted, logs.score], [3, 2, 66.67], "2 days and 1 week expected; 1 day and 1 week handed in");
+    const punctuality = await punctualitySuggestion(pool, id);
+    assert.deepEqual([punctuality.counted, punctuality.on_time, punctuality.score], [2, 1, 50], "the daily report on time, the weekly one late");
+  } finally {
+    await pool.query(`DELETE FROM journals WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM daily_reports WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
     await pool.end();
   }
 });

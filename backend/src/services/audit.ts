@@ -95,6 +95,9 @@ function timesText(times: unknown): string {
   ].join(", ");
 }
 
+/** The instructor's four scores, in the order the form has them (services/finalGrade.ts). */
+const SCORE_LIST = ["logs", "punctuality", "preparation", "conduct"] as const;
+
 export const AUDIT_RULES: Rule[] = [
   // Privacy
   {
@@ -104,6 +107,54 @@ export const AUDIT_RULES: Rule[] = [
     entityType: "student",
     entityId: param("studentId"),
     from: (source) => ({ version: source.result.consent_version }),
+  },
+  // Phase 1.5: the instructor's evaluation and the final grade. The scores
+  // before and after; a release names who was given which grade.
+  {
+    method: "PUT",
+    path: "/api/coordinator/students/:studentId/instructor-evaluation",
+    action: (source) => (source.result.old ? "grade.instructor_edit" : "grade.instructor_create"),
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({
+      old_logs: nested(source.result.old, "logs"),
+      old_punctuality: nested(source.result.old, "punctuality"),
+      old_preparation: nested(source.result.old, "preparation"),
+      old_conduct: nested(source.result.old, "conduct"),
+      logs: nested(source.result.value, "logs"),
+      punctuality: nested(source.result.value, "punctuality"),
+      preparation: nested(source.result.value, "preparation"),
+      conduct: nested(source.result.value, "conduct"),
+    }),
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/grades/release",
+    action: "grade.release",
+    entityType: "student",
+    entityId: () => null,
+    from: (source) => {
+      const released = Array.isArray(source.result.released) ? (source.result.released as Array<{ student_id: string; grade: number }>) : [];
+      return { students: released.map((row) => `${row.student_id}: ${row.grade}`) };
+    },
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/students/:studentId/grade/withdraw",
+    action: "grade.withdraw",
+    entityType: "student",
+    entityId: param("studentId"),
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/terms/:termId/grade-weights",
+    action: "term.grade_weights",
+    entityType: "term",
+    entityId: param("termId"),
+    from: (source) => ({
+      old: SCORE_LIST.map((key) => `${key} ${nested(source.result.old, key)}`).join(", "),
+      value: SCORE_LIST.map((key) => `${key} ${nested(source.result.value, key)}`).join(", "),
+    }),
   },
   // Phase 1.7: the IT administrator. Every action is logged; a temporary
   // password never is (it is not in the request, and the answer only says it went).
