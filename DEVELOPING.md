@@ -407,6 +407,20 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Agency choices and assignment (Phase 2.2)
+
+- **A window per term** (`terms.choice_opens_at`, `choice_closes_at`,
+  migration 086), opened by a coordinator in Agency choices on Companies.
+  Outside it a student's choices are read-only.
+- **What a student may choose** (`routes/companyChoices.ts`): approved,
+  active companies that take their program (`company_programs`, set on the
+  company's page; none means any) with a free slot in their term. They
+  rank up to three on their schedule page; a choice already made stays
+  listed once its company fills.
+- **Assigning** goes through `withPlacement`, so the slots and approval are
+  checked as for every placement, and the student is notified. A scoped
+  coordinator sees and assigns only their own students.
+
 ## The location check at time-in (Phase 2.1)
 
 - **Off unless the OJT rule `geofence_mode` says `record` or

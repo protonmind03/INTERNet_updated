@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -14975,4 +14975,119 @@ test("a day outside the area with the rule on review_outside does not count by i
   require("tsx/cjs");
   const { cleanLogSql } = require("../src/services/autoCount.ts");
   assert.match(cleanLogSql("a", "FALSE", 16), /COALESCE\(a\.geo_needs_review, FALSE\) = FALSE/);
+});
+
+/*
+| Phase 2.2: students choose their agency in a window; the coordinator assigns
+*/
+
+test("agency choices: the window, what may be chosen, ranking, a full company, and assignment", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const bcrypt = require("bcryptjs");
+  const stamp = Date.now().toString(36);
+  const sid = `CHO-${stamp}`.toUpperCase();
+  const otherId = `CHF-${stamp}`.toUpperCase();
+  const names = { open: `Made Up Open Office ${stamp}`, any: `Made Up Any Office ${stamp}`, other: `Made Up Other Program ${stamp}`, applied: `Made Up Applied ${stamp}`, full: `Made Up Full Office ${stamp}` };
+  const [mine, theirs] = (await pool.query(`SELECT id FROM programs ORDER BY id LIMIT 2`)).rows.map((row) => row.id);
+  assert.ok(mine && theirs, "two programs to test with");
+  const termId = (await pool.query(`INSERT INTO terms (name, start_date, end_date) VALUES ($1, CURRENT_DATE, CURRENT_DATE + 90) RETURNING id`, [`Choice test ${stamp}`])).rows[0].id;
+  const company = async (name, status, slots) => (await pool.query(`INSERT INTO companies (name, status, slots) VALUES ($1, $2, $3) RETURNING id`, [name, status, slots])).rows[0].id;
+  const ids = {
+    open: await company(names.open, "approved", 1),
+    any: await company(names.any, "approved", null),
+    other: await company(names.other, "approved", 5),
+    applied: await company(names.applied, "applied", 5),
+    full: await company(names.full, "approved", 1),
+  };
+  const supervisor = await supervisorSession();
+  try {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, must_change_password, term_id, program_id) VALUES ($1, $2, $3, 'Made Up Chooser', TRUE, FALSE, $4, $5)`, [sid, `${sid.toLowerCase()}@demo.invalid`, await bcrypt.hash("ChoosePass12345", 4), termId, mine]);
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, term_id, program_id, company) VALUES ($1, $2, 'x', 'Made Up Placed', TRUE, $3, $4, $5)`, [otherId, `${otherId.toLowerCase()}@demo.invalid`, termId, mine, names.full]);
+    const trainee = await login("student", `${sid.toLowerCase()}@demo.invalid`, "ChoosePass12345");
+    const choices = () => jsonRequest(`/api/students/${sid}/company-choices`, { headers: authHeaders(trainee.token) });
+    const choose = (company_ids) => jsonRequest(`/api/students/${sid}/company-choices`, jsonBody(trainee.token, "PUT", { company_ids }));
+    const setWindow = (body, token = coordinatorToken) => jsonRequest(`/api/coordinator/terms/${termId}/choice-window`, jsonBody(token, "PUT", body));
+
+    // No window: nothing to choose, and saving is refused.
+    assert.equal((await choices()).body.window.state, "none");
+    assert.equal((await choose([ids.any])).body.code, "WINDOW_CLOSED");
+
+    // The programs a company takes: the coordinator only, and real programs only.
+    const programs = (id, program_ids, token = coordinatorToken) => jsonRequest(`/api/coordinator/company-records/${id}/programs`, jsonBody(token, "PUT", { program_ids }));
+    assert.equal((await programs(ids.open, [mine], supervisor.token)).response.status, 403);
+    assert.equal((await programs(ids.open, [987654321])).response.status, 400);
+    assert.equal((await programs(ids.open, [mine])).response.status, 200);
+    assert.equal((await programs(ids.other, [theirs])).response.status, 200);
+
+    // The window: the coordinator only; both times, close after open.
+    const opens = new Date(Date.now() - 60 * 60_000).toISOString();
+    const closes = new Date(Date.now() + 60 * 60_000).toISOString();
+    assert.equal((await setWindow({ opens_at: opens, closes_at: closes }, supervisor.token)).response.status, 403);
+    assert.equal((await setWindow({ opens_at: closes, closes_at: opens })).response.status, 400);
+    assert.equal((await setWindow({ opens_at: opens })).response.status, 400);
+    const set = await setWindow({ opens_at: opens, closes_at: closes });
+    assert.equal(set.response.status, 200, JSON.stringify(set.body));
+    assert.equal(set.body.window.state, "open");
+
+    // What may be chosen: approved, active, taking the program, with a free slot this term.
+    const listed = await choices();
+    assert.equal(listed.response.status, 200, JSON.stringify(listed.body));
+    const offered = listed.body.options.map((option) => option.id);
+    assert.ok(offered.includes(ids.open) && offered.includes(ids.any), JSON.stringify(offered));
+    for (const refused of [ids.other, ids.applied, ids.full]) assert.equal(offered.includes(refused), false, `company ${refused} is not offered`);
+    assert.equal(listed.body.options.find((option) => option.id === ids.open).free, 1);
+    assert.equal((await jsonRequest(`/api/students/${sid}/company-choices`, { headers: authHeaders(studentToken) })).response.status, 403, "another student cannot read them");
+
+    // Ranking: up to three, each once, only from what is offered.
+    assert.equal((await choose([ids.any, ids.any])).response.status, 400);
+    assert.equal((await choose([1, 2, 3, 4])).response.status, 400);
+    for (const refused of [ids.other, ids.applied, ids.full]) assert.equal((await choose([refused])).body.code, "NOT_AVAILABLE");
+    const saved = await choose([ids.open, ids.any]);
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.deepEqual((await choices()).body.choices.map((choice) => [choice.rank, choice.company_id]), [[1, ids.open], [2, ids.any]]);
+    assert.equal((await jsonRequest(`/api/students/${sid}/company-choices`, jsonBody(studentToken, "PUT", { company_ids: [ids.any] }))).response.status, 403, "nor choose for them");
+
+    // The coordinator's view: demand against slots, and the student's ranks.
+    const board = await jsonRequest(`/api/coordinator/company-choices?term_id=${termId}`, { headers: authHeaders(coordinatorToken) });
+    assert.equal(board.response.status, 200, JSON.stringify(board.body));
+    const open = board.body.companies.find((row) => row.id === ids.open);
+    assert.deepEqual([open.first_choice, open.any_choice, open.slots, open.placed], [1, 1, 1, 0]);
+    const row = board.body.students.find((student) => student.student_id === sid);
+    assert.deepEqual(row.choices.map((choice) => choice.company_id), [ids.open, ids.any]);
+    assert.ok(board.body.unassigned >= 1);
+    assert.equal((await jsonRequest(`/api/coordinator/company-choices?term_id=${termId}`, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+    // Assigning: a full company or one not approved is refused; a choice is set and the student is told.
+    const assign = (company_id, token = coordinatorToken) => jsonRequest(`/api/coordinator/students/${sid}/assign-company`, jsonBody(token, "POST", { company_id }));
+    assert.equal((await assign(ids.open, supervisor.token)).response.status, 403);
+    assert.equal((await assign(ids.full)).body.code, "NO_SLOTS");
+    assert.equal((await assign(ids.applied)).body.code, "COMPANY_NOT_APPROVED");
+    const done = await assign(ids.open);
+    assert.equal(done.response.status, 200, JSON.stringify(done.body));
+    const placed = (await pool.query(`SELECT company, company_id FROM students WHERE student_id = $1`, [sid])).rows[0];
+    assert.deepEqual([placed.company, placed.company_id], [names.open, ids.open]);
+    assert.equal((await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Your agency is assigned'`, [sid])).rows.length, 1);
+    assert.equal((await choices()).body.assigned, names.open);
+    // A choice already made stays listed once its company fills.
+    assert.ok((await choices()).body.options.some((option) => option.id === ids.open));
+
+    // A closed window keeps the choices but refuses changes.
+    await pool.query(`UPDATE terms SET choice_opens_at = NOW() - INTERVAL '2 days', choice_closes_at = NOW() - INTERVAL '1 day' WHERE id = $1`, [termId]);
+    assert.equal((await choose([ids.any])).body.code, "WINDOW_CLOSED");
+    const closed = await choices();
+    assert.equal(closed.body.window.state, "closed");
+    assert.equal(closed.body.choices.length, 2);
+    assert.equal((await setWindow({ opens_at: null, closes_at: null })).body.window.state, "none");
+
+    // Audited.
+    const logged = (await pool.query(`SELECT action FROM audit_log WHERE entity_id IN ($1, $2, $3) AND action IN ('company_choice.save', 'company.assign', 'term.choice_window', 'company.programs')`, [sid, String(termId), String(ids.open)])).rows.map((entry) => entry.action);
+    for (const action of ["company_choice.save", "company.assign", "term.choice_window", "company.programs"]) assert.ok(logged.includes(action), `${action} is audited`);
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1)`, [[sid, otherId]]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [[sid, otherId]]);
+    await pool.query(`DELETE FROM companies WHERE id = ANY($1)`, [Object.values(ids)]);
+    await pool.query(`DELETE FROM terms WHERE id = $1`, [termId]);
+    await pool.end();
+  }
 });

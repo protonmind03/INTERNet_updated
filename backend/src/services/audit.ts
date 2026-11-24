@@ -118,6 +118,39 @@ export const AUDIT_RULES: Rule[] = [
     keep: ["radius_m"],
     from: (source) => ({ located: nested(source.result.fence, "latitude") !== null }),
   },
+  // Phase 2.2: the agency choice window, the programs a company takes, the student's choices, and assignment.
+  {
+    method: "PUT",
+    path: "/api/coordinator/terms/:termId/choice-window",
+    action: "term.choice_window",
+    entityType: "term",
+    entityId: param("termId"),
+    keep: ["opens_at", "closes_at"],
+  },
+  {
+    method: "PUT",
+    path: "/api/coordinator/company-records/:id/programs",
+    action: "company.programs",
+    entityType: "company",
+    entityId: param("id"),
+    keep: ["program_ids"],
+  },
+  {
+    method: "PUT",
+    path: "/api/students/:studentId/company-choices",
+    action: "company_choice.save",
+    entityType: "student",
+    entityId: param("studentId"),
+    keep: ["company_ids"],
+  },
+  {
+    method: "POST",
+    path: "/api/coordinator/students/:studentId/assign-company",
+    action: "company.assign",
+    entityType: "student",
+    entityId: param("studentId"),
+    keep: ["company_id"],
+  },
   // Phase 1.4: overtime, asked for and decided.
   {
     method: "POST",

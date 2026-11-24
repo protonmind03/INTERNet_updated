@@ -22,6 +22,7 @@ import { usePagination } from "../../lib/usePagination";
 import { forgetCompanyNames } from "./companyNames";
 import { coordinatorRequest } from "./request";
 import { CompanyRequests, HteChips } from "./Hte";
+import AgencyChoices from "./AgencyChoices";
 import type { HteStatus, HteType } from "../../lib/hte";
 
 /*
@@ -210,6 +211,8 @@ export default function CoordinatorCompanies() {
             void load();
           }}
         />
+        {/* Phase 2.2: the term's choice window, demand against slots, and assigning. */}
+        <AgencyChoices onAssigned={() => void load()} />
 
         {!loading && unlinked.length > 0 && (
           <Card>

@@ -34,6 +34,7 @@ import { registerHteRoutes } from "./routes/htes";
 import { hoursSql } from "./services/creditedHours";
 import { registerOvertimeRoutes } from "./routes/overtime";
 import { registerGeofenceRoutes } from "./routes/geofence";
+import { registerCompanyChoiceRoutes } from "./routes/companyChoices";
 import { judgeGeo } from "./services/geofence";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
@@ -10770,6 +10771,8 @@ registerDeliverableRoutes(app, { pool, requireRole, requireCoordinator });
 registerClearanceRoutes(app, { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification });
 // Phase 2.1: a company's point for the geofence, and the student's fence.
 registerGeofenceRoutes(app, { pool, requireRole, requireCoordinator });
+// Phase 2.2: students choose their agency in a window; the coordinator assigns.
+registerCompanyChoiceRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 // Phase 1.4: overtime requests and their approval.
 registerOvertimeRoutes(app, { pool, requireRole, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification });
 // Phase 1.3: HTE status, screenings, the MOA file and agency requests.

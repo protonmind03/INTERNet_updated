@@ -8,6 +8,7 @@ import { errorText } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import { HteSection, type HteCompany } from "./Hte";
 import CompanyLocation from "./CompanyLocation";
+import CompanyPrograms from "./CompanyPrograms";
 
 /*
 |--------------------------------------------------------------------------
@@ -40,6 +41,8 @@ type Company = {
   latitude?: number | null;
   longitude?: number | null;
   radius_m?: number;
+  /** Phase 2.2: the programs it takes; none: any. */
+  program_ids?: number[];
 } & HteCompany;
 type Supervisor = { supervisor_id: string; name: string; email: string; department: string | null; position: string | null; is_active: boolean; interns: number };
 type Visit = { id: number; visit_date: string; visited_by_name: string; findings: string; follow_up: string | null };
@@ -131,6 +134,8 @@ export default function CompanyPage() {
             <HteSection company={company} onChanged={() => void load()} />
             {/* Phase 2.1: where the company is, for the location check at time-in. */}
             <CompanyLocation company={company} onSaved={() => void load()} />
+            {/* Phase 2.2: the programs it takes, for students choosing an agency. */}
+            <CompanyPrograms company={company} onSaved={() => void load()} />
 
             <Card>
               <CardHeader icon="users" title="Supervisors" description="Who supervises interns here, and how many each has." />

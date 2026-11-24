@@ -239,6 +239,7 @@ export function registerAccountDetailRoutes(app: express.Express, deps: Dependen
                 c.hte_type, c.status, c.version, c.moa_notarized, TO_CHAR(c.moa_notarized_on, 'YYYY-MM-DD') AS moa_notarized_on,
                 c.moa_document_name AS moa_file,
                 c.latitude::float AS latitude, c.longitude::float AS longitude, c.radius_m,
+                COALESCE((SELECT ARRAY_AGG(cp.program_id ORDER BY cp.program_id) FROM company_programs cp WHERE cp.company_id = c.id), ARRAY[]::int[]) AS program_ids,
                 (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id AND s.is_active = TRUE) AS students
          FROM companies c WHERE c.id = $1`,
         [id]
