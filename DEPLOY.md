@@ -1128,6 +1128,10 @@ log, and cannot open students' records, documents, photos or grades.
 2. It prints a temporary password once: give it to them. They must set
    their own at first sign-in.
 
+When an administrator makes or reactivates an OJT Director or
+administrator account, every other active Director and administrator is
+told in the app and by email, naming who did it.
+
 From that moment the coordinators' System status shows only whether
 something is wrong; the administrator has the details. Temporary passwords
 and new accounts made from Accounts are **emailed** to their owner, so set

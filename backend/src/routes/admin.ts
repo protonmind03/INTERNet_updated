@@ -9,8 +9,10 @@ import {
   createAccount,
   isAccountRole,
   searchAccounts,
+  tellTheOffice,
   type AccountAction,
   type AccountDeps,
+  type OversightDeps,
 } from "../services/adminAccounts";
 import { backupStatus, runUploadsPackIfDue } from "../services/backups";
 import { EmailLimitError } from "../services/emailBudget";
@@ -37,7 +39,7 @@ import { productionWarnings } from "../services/systemStatus";
 */
 
 type Authed = express.Request & { auth?: { role: string; id: string } };
-type Dependencies = Omit<AccountDeps, "pool"> & {
+type Dependencies = Omit<AccountDeps, "pool"> & Pick<OversightDeps, "notify"> & {
   pushConfigured: () => boolean;
   pool: Pool;
   requireAdmin: express.RequestHandler;
@@ -80,7 +82,12 @@ export function registerAdminRoutes(app: express.Express, deps: Dependencies): v
       const action = req.body?.action as AccountAction;
       if (!isAccountRole(role)) return res.status(404).json({ message: "Account not found." });
       if (!ACCOUNT_ACTIONS.includes(action)) return res.status(400).json({ message: "Choose what to do to the account." });
-      const done = await actOnAccount(accountDeps, { id: (req as Authed).auth!.id }, role, String(id), action);
+      const actor = { id: (req as Authed).auth!.id };
+      const done = await actOnAccount(accountDeps, actor, role, String(id), action);
+      // A Director or administrator back in use: the rest of the office is told.
+      if (action === "reactivate" && (role === "director" || role === "admin")) {
+        await tellTheOffice(deps, { what: "reactivated", kind: role, account: done.account, actor });
+      }
       return res.json(done);
     } catch (error) {
       return answerError(res, "ADMIN ACCOUNT ACTION ERROR", "Failed to change the account.", error);
@@ -98,7 +105,10 @@ export function registerAdminRoutes(app: express.Express, deps: Dependencies): v
       }
       const email = typeof req.body?.email === "string" ? req.body.email : "";
       const name = typeof req.body?.name === "string" ? req.body.name : "";
-      return res.status(201).json(await createAccount(accountDeps, kind, email, name));
+      const made = await createAccount(accountDeps, kind, email, name);
+      // A new Director or administrator: the rest of the office is told.
+      await tellTheOffice(deps, { what: "made", kind, account: made.account, actor: { id: (req as Authed).auth!.id } });
+      return res.status(201).json(made);
     } catch (error) {
       return answerError(res, "ADMIN CREATE ACCOUNT ERROR", "Failed to make the account.", error);
     }

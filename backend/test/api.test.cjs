@@ -14819,3 +14819,65 @@ test("a private company never starts approved, loses its approval when made priv
     await pool.end();
   }
 });
+
+test("a new or reactivated Director or administrator account is told to the rest of the office, not to itself or the one who acted", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { tellTheOffice } = require("../src/services/adminAccounts.ts");
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36).toUpperCase();
+  const ids = { actor: `ADM-OA-${stamp}`, other: `ADM-OB-${stamp}`, director: `DIR-OD-${stamp}`, made: `DIR-OM-${stamp}` };
+  const hash = await bcrypt.hash("OversightPass123", 4);
+  // Others already active on this database are told too; only these four are checked.
+  await pool.query(
+    `INSERT INTO system_admins (admin_id, email, password, name, must_change_password) VALUES ($1, $2, $5, 'Made Up Acting Admin', FALSE), ($3, $4, $5, 'Made Up Other Admin', FALSE)`,
+    [ids.actor, `${ids.actor.toLowerCase()}@demo.invalid`, ids.other, `${ids.other.toLowerCase()}@demo.invalid`, hash]
+  );
+  await pool.query(
+    `INSERT INTO directors (director_id, email, password, name, must_change_password) VALUES ($1, $2, $5, 'Made Up Director', FALSE), ($3, $4, $5, 'Made Up New Director', FALSE)`,
+    [ids.director, `${ids.director.toLowerCase()}@demo.invalid`, ids.made, `${ids.made.toLowerCase()}@demo.invalid`, hash]
+  );
+  try {
+    const notified = [];
+    const mailed = [];
+    const deps = {
+      pool,
+      notify: async (recipient, title, message) => notified.push({ ...recipient, title, message }),
+      send: async (email) => mailed.push(email),
+      emailConfigured: () => true,
+      siteAddress: () => "https://internet.example.invalid",
+    };
+    await tellTheOffice(deps, { what: "made", kind: "director", account: { id: ids.made, name: "Made Up New Director" }, actor: { id: ids.actor } });
+    const who = notified.map((item) => `${item.role}:${item.id}`);
+    assert.ok(who.includes(`admin:${ids.other}`), "the other administrator");
+    assert.ok(who.includes(`director:${ids.director}`), "the Director");
+    assert.ok(!who.includes(`admin:${ids.actor}`), "not the administrator who acted");
+    assert.ok(!who.includes(`director:${ids.made}`), "not the new account itself");
+    const note = notified.find((item) => item.id === ids.director);
+    assert.equal(note.title, "New OJT Director account");
+    assert.match(note.message, /Made Up Acting Admin \(administrator ADM-OA-.+\) made the OJT Director account of Made Up New Director/);
+    assert.ok(mailed.some((email) => email.to === `${ids.director.toLowerCase()}@demo.invalid`), "and by email");
+    // Without email: only in the app.
+    mailed.length = 0;
+    await tellTheOffice({ ...deps, emailConfigured: () => false }, { what: "reactivated", kind: "admin", account: { id: ids.other, name: "Made Up Other Admin" }, actor: { id: ids.actor } });
+    assert.equal(mailed.length, 0);
+
+    // Through the route: reactivating a Director tells the others in the app.
+    await pool.query(`UPDATE directors SET is_active = FALSE WHERE director_id = $1`, [ids.made]);
+    const signIn = await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `${ids.actor.toLowerCase()}@demo.invalid`, password: "OversightPass123" }) });
+    const back = await jsonRequest(`/api/admin/accounts/director/${ids.made}`, jsonBody(signIn.body.token, "POST", { action: "reactivate" }));
+    assert.equal(back.response.status, 200, JSON.stringify(back.body));
+    const rows = (await pool.query(`SELECT director_id, admin_id, title FROM notifications WHERE title = 'OJT Director account reactivated' AND (director_id = $1 OR admin_id = $2 OR admin_id = $3)`, [ids.director, ids.other, ids.actor])).rows;
+    assert.ok(rows.some((row) => row.director_id === ids.director));
+    assert.ok(rows.some((row) => row.admin_id === ids.other));
+    assert.ok(!rows.some((row) => row.admin_id === ids.actor));
+    const listed = await jsonRequest(`/api/notifications/admin/${ids.other}`, { headers: authHeaders((await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `${ids.other.toLowerCase()}@demo.invalid`, password: "OversightPass123" }) })).body.token) });
+    assert.ok(JSON.stringify(listed.body).includes("OJT Director account reactivated"), "the administrator sees it in their notifications");
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE director_id = ANY($1::text[]) OR admin_id = ANY($1::text[])`, [Object.values(ids)]);
+    await pool.query(`DELETE FROM system_admins WHERE admin_id = ANY($1::text[])`, [Object.values(ids)]);
+    await pool.query(`DELETE FROM directors WHERE director_id = ANY($1::text[])`, [Object.values(ids)]);
+    await pool.end();
+  }
+});

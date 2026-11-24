@@ -265,3 +265,48 @@ export async function createAccount(
     client.release();
   }
 }
+
+/*
+| Telling the office (25 November 2026). A Director account can open
+| students' records and health documents, and only an administrator makes
+| one, so every new or reactivated Director or administrator account is
+| told at once to every other active Director and administrator, in the
+| app and by email when email is set up, naming who did it. Not the account
+| itself, nor the administrator who acted. A failure to tell never undoes
+| the change; it is in the audit log either way.
+*/
+export type OversightDeps = Pick<AccountDeps, "pool" | "send" | "emailConfigured" | "siteAddress"> & {
+  notify: (recipient: { role: "director" | "admin"; id: string }, title: string, message: string) => Promise<unknown>;
+};
+
+export async function tellTheOffice(
+  deps: OversightDeps,
+  event: { what: "made" | "reactivated"; kind: StaffKind; account: { id: string; name: string }; actor: { id: string } }
+): Promise<number> {
+  const actor = await deps.pool.query<{ name: string }>(`SELECT name FROM system_admins WHERE admin_id = $1`, [event.actor.id]);
+  const actorName = actor.rows[0]?.name ?? "An administrator";
+  const label = STAFF_KINDS[event.kind].label;
+  const title = event.what === "made" ? `New ${label} account` : `${label[0].toUpperCase()}${label.slice(1)} account reactivated`;
+  const message = `${actorName} (administrator ${event.actor.id}) ${event.what === "made" ? "made" : "reactivated"} the ${label} account of ${event.account.name} (${event.account.id}). If you did not expect this, tell the OJT office.`;
+  const everyone = await deps.pool.query<{ role: "director" | "admin"; id: string; email: string; name: string }>(
+    `SELECT 'director' AS role, TRIM(director_id) AS id, email, name FROM directors WHERE is_active = TRUE
+     UNION ALL
+     SELECT 'admin' AS role, TRIM(admin_id) AS id, email, name FROM system_admins WHERE is_active = TRUE`
+  );
+  const told = everyone.rows.filter(
+    (person) => !(person.role === event.kind && person.id === event.account.id) && !(person.role === "admin" && person.id === event.actor.id)
+  );
+  for (const person of told) {
+    await deps.notify({ role: person.role, id: person.id }, title, message).catch((error) => console.error("OVERSIGHT NOTIFICATION ERROR:", error));
+    if (deps.emailConfigured()) {
+      await deps
+        .send({ to: person.email, subject: `INTERNet: ${title.toLowerCase()}`, kind: "account", text: `Hello ${person.name},
+
+${message}${deps.siteAddress() ? `
+
+${deps.siteAddress()}` : ""}` })
+        .catch((error) => console.error("OVERSIGHT EMAIL ERROR:", error));
+    }
+  }
+  return told.length;
+}

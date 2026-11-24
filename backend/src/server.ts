@@ -1338,6 +1338,8 @@ async function createNotification(options: {
   coordinatorId?: string | null;
   /** Phase 1.6: the OJT Director (migration 080). */
   directorId?: string | null;
+  /** Phase 1.7: the IT administrator (migration 080's notifications.admin_id). */
+  adminId?: string | null;
   title: string;
   message: string;
   type?: string;
@@ -1362,6 +1364,9 @@ async function createNotification(options: {
   }
   if (options.directorId) {
     recipients.push({ role: "director", id: options.directorId });
+  }
+  if (options.adminId) {
+    recipients.push({ role: "admin", id: options.adminId });
   }
 
   const recipient = recipients[0];
@@ -1398,8 +1403,8 @@ async function createNotification(options: {
     `
     INSERT INTO notifications
     (student_id, supervisor_id, coordinator_id, title, message, type, is_read,
-     link, entity_type, entity_id, kind, action_required, director_id)
-    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, $10, $11, $12)
+     link, entity_type, entity_id, kind, action_required, director_id, admin_id)
+    VALUES ($1, $2, $3, $4, $5, $6, FALSE, $7, $8, $9, $10, $11, $12, $13)
     RETURNING id, title, message, type, created_at, link, entity_type, entity_id, kind, action_required, acted_at
     `,
     [
@@ -1415,6 +1420,7 @@ async function createNotification(options: {
       options.kind ?? rule.kind,
       options.actionRequired ?? rule.actionRequired,
       options.directorId || null,
+      options.adminId || null,
     ]
   );
   const payload = result.rows[0];
@@ -10756,6 +10762,15 @@ registerAdminRoutes(app, {
   emailConfigured: () => isEmailConfigured(),
   closeStreams: (account) => closeNotificationStreams(account),
   siteAddress: () => (process.env.FRONTEND_URL || "").trim().replace(/\/+$/, "") || null,
+  // A new or reactivated Director or administrator account: the rest of the office is told.
+  notify: (recipient, title, message) =>
+    createNotification({
+      ...(recipient.role === "director" ? { directorId: recipient.id } : { adminId: recipient.id }),
+      title,
+      message,
+      type: "account",
+      link: recipient.role === "director" ? "/director/notifications" : "/admin/notifications",
+    }),
 });
 // Revisions, November 2026: the trainee's feedback form, progress reports and narrative drafts.
 registerTraineeRecordRoutes(app, { pool, requireRole, notifyCoordinators });

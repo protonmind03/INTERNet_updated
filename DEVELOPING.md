@@ -508,7 +508,10 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   administrator ... is refused every route about students ..." walks the
   whole sweep: **never add "admin" to a route that returns a student's
   records, documents, photos, evaluations, grades, journals, reports or
-  messages.** A temporary password is emailed to its owner only
+  messages.** A new or reactivated Director or administrator account is
+  told at once to every other active Director and administrator, in the
+  app and by email (`tellTheOffice`), since a Director can open students'
+  records and only an administrator makes one. A temporary password is emailed to its owner only
   (`services/adminAccounts.ts`, which takes the send function so tests
   pass a mock); without email it is refused and nothing changes.
 - **System pages move to the administrator.** System status, problems,
