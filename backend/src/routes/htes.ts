@@ -209,9 +209,19 @@ export function registerHteRoutes(app: express.Express, deps: Dependencies): voi
     try {
       const id = idOf(req.params.screeningId);
       if (id === null) return res.status(404).json({ message: "Screening not found." });
-      const removed = await pool.query(`DELETE FROM company_screenings WHERE id = $1 RETURNING company_id`, [id]);
+      const removed = await pool.query<{ company_id: number }>(`DELETE FROM company_screenings WHERE id = $1 RETURNING company_id`, [id]);
       if (removed.rows.length === 0) return res.status(404).json({ message: "Screening not found." });
-      return res.json({ message: "Screening removed." });
+      // A private company approved on it, with no other screening that passed, goes back to screening.
+      const reopened = await pool.query(
+        `UPDATE companies SET status = 'screening', version = version + 1
+         WHERE id = $1 AND hte_type = 'private' AND status = 'approved'
+           AND NOT EXISTS (SELECT 1 FROM company_screenings WHERE company_id = $1 AND decision IN ('pass', 'conditional'))
+         RETURNING name`,
+        [removed.rows[0].company_id]
+      );
+      return res.json({
+        message: reopened.rows.length > 0 ? `Screening removed. ${reopened.rows[0].name} has no screening that passed now, so it is back to screening.` : "Screening removed.",
+      });
     } catch (error) {
       console.error("REMOVE SCREENING ERROR:", error);
       return res.status(500).json({ message: "Failed to remove the screening." });

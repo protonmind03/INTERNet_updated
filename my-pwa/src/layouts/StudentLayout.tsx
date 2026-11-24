@@ -153,7 +153,8 @@ function StudentChrome({ title, actions, showPhotoRedo = true, folderLabel, chil
   const waiting = unsent > 0 || unsentPhotos > 0;
   const signOut = () => {
     // What waits to be sent stays for this account's next sign-in on this phone, unless the phone is shared.
-    endSession("student", { keepWaiting: waiting && !sharedPhone });
+    // Kept unless the phone is shared, even before the counts have come (unsent writing is never counted).
+    endSession("student", { keepWaiting: !sharedPhone });
     navigate("/", { replace: true });
   };
   const lost = [

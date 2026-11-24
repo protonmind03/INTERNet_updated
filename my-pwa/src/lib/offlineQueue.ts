@@ -392,10 +392,14 @@ async function send(): Promise<"done" | "waiting"> {
       break;
     }
     // The session has ended: the steps wait for the next sign-in on this phone.
-    if (response.status === 401 || response.status === 403) {
+    const refusal = response.status === 401 || response.status === 403
+      ? ((await response.clone().json().catch(() => ({}))) as { code?: unknown })
+      : null;
+    // Phase 1.2's deployment gate (403 NOT_CLEARED) is a refusal for good, handled below
+    // with the others; any other 401 or 403 is the session, or the privacy notice.
+    if (refusal && refusal.code !== "NOT_CLEARED") {
       // Not the session: the privacy notice has not been agreed to yet.
-      const body = (await response.clone().json().catch(() => ({}))) as { code?: unknown };
-      if (timeIn && body.code === "CONSENT_REQUIRED") {
+      if (timeIn && refusal.code === "CONSENT_REQUIRED") {
         toast.info(
           "Your time-in is still waiting on this phone. Agree to the privacy notice in your Profile and it will be sent."
         );

@@ -1915,8 +1915,8 @@ export function registerExtensionRoutes(
         `
         INSERT INTO companies
           (name, address, contact_person, contact_email, contact_phone, moa_start, moa_expiry, slots,
-           industry, website, hr_contact, hte_type)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+           industry, website, hr_contact, hte_type, status)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         RETURNING id
         `,
         [
@@ -1924,6 +1924,8 @@ export function registerExtensionRoutes(
           company.contact_phone, company.moa_start, company.moa_expiry, company.slots,
           company.industry ?? null, company.website ?? null, company.hr_contact ?? null,
           company.hte_type ?? "government",
+          // Phase 1.3: a private company is approved only after a screening that passed.
+          company.hte_type === "private" ? "applied" : "approved",
         ]
       );
       // Accounts that already carry this name become its people.
@@ -1991,6 +1993,13 @@ export function registerExtensionRoutes(
           company.hr_contact !== undefined, company.hr_contact ?? null,
           company.hte_type ?? null,
         ]
+      );
+      // Phase 1.3: made private without a screening that passed, it is no longer approved.
+      await client.query(
+        `UPDATE companies SET status = 'screening', version = version + 1
+         WHERE id = $1 AND hte_type = 'private' AND status = 'approved'
+           AND NOT EXISTS (SELECT 1 FROM company_screenings WHERE company_id = $1 AND decision IN ('pass', 'conditional'))`,
+        [id]
       );
       // A renamed company takes its people with it: the name typed on each of
       // them is rewritten, which is what every other screen shows.
@@ -2392,7 +2401,8 @@ export function registerExtensionRoutes(
       if (value) summary[key] = value;
     }
     for (const [key, value] of Object.entries(subject.filters)) {
-      if (value !== undefined) summary[key] = String(value);
+      // A coordinator's scope is who they are, not a filter they chose (Phase 1.6).
+      if (value !== undefined && key !== "scope") summary[key] = String(value);
     }
     const bound = bindFilters(
       `
@@ -4035,7 +4045,8 @@ export function registerExtensionRoutes(
         return res.status(400).json({ message: "Say whether the account is active." });
       }
       const active: boolean = req.body.is_active;
-      if (!active && sameId(target, auth.id)) {
+      // Only a coordinator can be deactivating their own account here (a Director's id is not a coordinator's).
+      if (!active && auth.role === "coordinator" && sameId(target, auth.id)) {
         return res.status(409).json({
           message: "You cannot deactivate your own account. Ask another coordinator to do it.",
         });

@@ -160,6 +160,14 @@ export async function actOnAccount(
 
   if (action === "deactivate" || action === "reactivate") {
     const active = action === "reactivate";
+    if (!active && role === "coordinator") {
+      // As PATCH /api/coordinator/coordinators/:id/status: never the last active coordinator.
+      const others = await pool.query(
+        `SELECT 1 FROM coordinators WHERE is_active = TRUE AND TRIM(coordinator_id::text) <> TRIM($1) LIMIT 1`,
+        [account.id]
+      );
+      if (others.rows.length === 0) throw new AccountActionError(409, "This is the only active coordinator account. Have another made or reactivated first.");
+    }
     if (!active && role === "admin") {
       const others = await pool.query(
         `SELECT 1 FROM system_admins WHERE is_active = TRUE AND TRIM(admin_id) <> TRIM($1) LIMIT 1`,

@@ -14431,12 +14431,12 @@ test("a private company is approved only after a passed screening, and only appr
   const stamp = Date.now().toString(36);
   try {
     const company = await hteCompany(pool, stamp, { hte_type: "private", slots: 5 });
-    // Put it back to screening, from the version read.
+    // Into screening, from the version read.
     const status = (body) => jsonRequest(`/api/coordinator/company-records/${company.id}/hte-status`, jsonBody(coordinatorToken, "PUT", body));
     assert.equal((await status({ status: "screening", expected_version: 99 })).body.code, "STALE");
     const toScreening = await status({ status: "screening", expected_version: company.version });
     assert.equal(toScreening.response.status, 200, JSON.stringify(toScreening.body));
-    assert.equal(toScreening.body.old, "approved");
+    assert.equal(toScreening.body.old, "applied", "a private company starts unapproved");
     let version = toScreening.body.version;
 
     // Not approved: a student cannot be placed there.
@@ -14754,4 +14754,63 @@ test("production warns the office and the administrator of missing privacy setti
   assert.equal(asked.response.status, 200);
   assert.equal(asked.body.production, false, "the test server is not production");
   assert.equal((await jsonRequest("/api/privacy/warnings", { headers: authHeaders(studentToken) })).response.status, 403);
+});
+
+/*
+| Phase 1, after /code-review
+*/
+
+test("a break after the scheduled end takes nothing off the credited hours; one inside them does", async (t) => {
+  if (needsWrites(t)) return;
+  require("tsx/cjs");
+  const { storedLogHoursSql } = require("../src/services/creditedHours.ts");
+  const pool = localTestPool();
+  const id = `BRK-${Date.now().toString(36)}`.toUpperCase();
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Made Up Break Trainee', TRUE)`, [id, `${id.toLowerCase()}@demo.invalid`]);
+  const log = async (date, breakStart, breakEnd, creditedUntil) =>
+    (await pool.query(
+      `INSERT INTO attendance (student_id, date, time_in, break_time, break_end_time, time_out, status, credited_from, credited_until)
+       VALUES ($1, $2::date, $2::date + TIME '08:00', $2::date + $3::time, $2::date + $4::time, $2::date + TIME '19:00', 'Pending', $2::date + TIME '08:00', $5::timestamp)
+       RETURNING id`,
+      [id, date, breakStart, breakEnd, creditedUntil]
+    )).rows[0].id;
+  const hoursOf = async (logId) => Number((await pool.query(`SELECT ${storedLogHoursSql("a")} AS h FROM attendance a WHERE a.id = $1`, [logId])).rows[0].h);
+  try {
+    assert.equal(await hoursOf(await log("2026-10-05", "17:30", "18:00", "2026-10-05 17:00")), 9, "the break after 17:00 was never counted");
+    assert.equal(await hoursOf(await log("2026-10-06", "16:30", "17:30", "2026-10-06 17:00")), 8.5, "only its half inside the shift is taken off");
+    assert.equal(await hoursOf(await log("2026-10-07", "17:30", "18:00", null)), 10.5, "a log from before keeps the whole break off, as it always did");
+  } finally {
+    await pool.query(`DELETE FROM attendance WHERE student_id = $1`, [id]);
+    await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+test("a private company never starts approved, loses its approval when made private unscreened, and when its only passed screening goes", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  try {
+    const made = await jsonRequest("/api/coordinator/company-records", jsonBody(coordinatorToken, "POST", { name: `Made Up Private ${stamp}`, hte_type: "private" }));
+    assert.equal(made.response.status, 201);
+    assert.equal(made.body.company.status, "applied", "a new private company waits for its screening");
+    const government = await jsonRequest("/api/coordinator/company-records", jsonBody(coordinatorToken, "POST", { name: `Made Up Office ${stamp}` }));
+    assert.equal(government.body.company.status, "approved");
+    const madePrivate = await jsonRequest(`/api/coordinator/company-records/${government.body.company.id}`, jsonBody(coordinatorToken, "PUT", { name: `Made Up Office ${stamp}`, hte_type: "private" }));
+    assert.equal(madePrivate.body.company.status, "screening", "made private with no passed screening");
+
+    // Screened, approved, then its only passed screening removed: back to screening.
+    const id = government.body.company.id;
+    const screened = await jsonRequest(`/api/coordinator/company-records/${id}/screenings`, jsonBody(coordinatorToken, "POST", {
+      screened_on: "2026-11-20", standing: 4, work_environment: 4, space_capacity: 4, safety: 4, decision: "pass",
+    }));
+    const approved = await jsonRequest(`/api/coordinator/company-records/${id}/hte-status`, jsonBody(coordinatorToken, "PUT", { status: "approved", expected_version: madePrivate.body.company.version }));
+    assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+    const removed = await jsonRequest(`/api/coordinator/company-screenings/${screened.body.screening.id}`, { method: "DELETE", headers: authHeaders(coordinatorToken) });
+    assert.match(removed.body.message, /back to screening/);
+    assert.equal((await pool.query(`SELECT status FROM companies WHERE id = $1`, [id])).rows[0].status, "screening");
+  } finally {
+    await pool.query(`DELETE FROM companies WHERE name ILIKE $1`, [`%${stamp}%`]);
+    await pool.end();
+  }
 });

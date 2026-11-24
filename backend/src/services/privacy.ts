@@ -54,7 +54,7 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
     {
       heading: "Health and clearance documents",
       body:
-        "Your medical examination, urinalysis, chest X-ray and CBC results, and your NBI, police and barangay clearances, are kept to check that you are ready to be deployed. Only you and the OJT coordinator can open them; your company supervisor cannot, and is not told what is missing. Each time a coordinator opens one, it is written in the system's audit log. They are never shown in your album, in previews or in exports of your records.",
+        "Your medical examination, urinalysis, chest X-ray and CBC results, and your NBI, police and barangay clearances, are kept to check that you are ready to be deployed. Only you, the OJT coordinator and the OJT Director can open them; your company supervisor cannot, and is not told what is missing. Each time one of them opens one, it is written in the system's audit log. They are never shown in your album, in previews or in exports of your records.",
     },
     {
       heading: "Optional personal details",

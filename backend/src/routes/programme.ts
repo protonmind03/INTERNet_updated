@@ -258,7 +258,7 @@ export function registerProgrammeRoutes(app: express.Express, deps: ProgrammeDep
       // What was asked for, in words, for the audit log.
       const filterText =
         [
-          ...Object.entries(read.filters).map(([key, value]) => `${key}=${value}`),
+          ...Object.entries(read.filters).filter(([key]) => key !== "scope").map(([key, value]) => `${key}=${value}`),
           status ? `status=${status}` : "",
           docType ? `doc_type=${docType}` : "",
           withPictures ? "include_pictures" : "",
