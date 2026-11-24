@@ -1,5 +1,6 @@
 import { useState } from "react";
 import PasswordForm from "../../components/PasswordForm";
+import PrivacyWarnings from "../../components/PrivacyWarnings";
 import { Button, Card, FormError, FormField } from "../../components/ui";
 import DirectorLayout from "../../layouts/DirectorLayout";
 import { updateStoredAccount, useAccount } from "../../lib/session";
@@ -38,6 +39,7 @@ export default function DirectorProfile() {
   return (
     <DirectorLayout title="Profile">
       <div className="max-w-2xl space-y-4">
+        <PrivacyWarnings role="director" />
         <Card>
           <form onSubmit={save} className="space-y-4 p-4 sm:p-5" noValidate>
             <h2 className="text-sm font-semibold text-slate-900">Name and email</h2>

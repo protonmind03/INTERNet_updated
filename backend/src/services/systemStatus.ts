@@ -113,6 +113,21 @@ export function productionWarnings(
 }
 
 /**
+ * Phase 1.8: the privacy settings a live site must not go without, as the
+ * coordinators, the OJT Director and the administrator are warned of them.
+ * Only in production: a test or development server is expected to lack them.
+ */
+export function privacyWarnings(env: Env = process.env): { production: boolean; warnings: string[] } {
+  const production = env.NODE_ENV === "production";
+  if (!production) return { production, warnings: [] };
+  const warnings: string[] = [];
+  if (!consentRequired(env)) warnings.push("Students are not asked to agree to the privacy notice: set PRIVACY_CONSENT_REQUIRED to true.");
+  if (photoRetentionDays(env) === null) warnings.push("Old time-in photos are kept with no limit: set PHOTO_RETENTION_DAYS (30 or more).");
+  if (PRIVACY_NOTICE.placeholder) warnings.push("The privacy notice is still the draft: it needs the university's approved wording and the Data Protection Officer's contact.");
+  return { production, warnings };
+}
+
+/**
  * True when a coordinator should hear that something is wrong: a fault in
  * the last day, or backups that ran before and have stopped. A site that
  * never set backups up is a warning for the administrator, not news.

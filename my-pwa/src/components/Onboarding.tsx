@@ -3,6 +3,7 @@ import { PsuSeal } from "../brand";
 import { enablePush } from "../lib/pushDevice";
 import { onboardingKey, shouldShowOnboarding, type OnboardingRole } from "../lib/onboarding";
 import { useScrollPane } from "../lib/useScrollPane";
+import PrepareOffline from "./PrepareOffline";
 import { Button, Modal } from "./ui";
 
 /*
@@ -20,7 +21,7 @@ import { Button, Modal } from "./ui";
 |
 */
 
-type Slide = { title: string; text: string; fragment: ReactNode; primer?: "push" };
+type Slide = { title: string; text: string; fragment: ReactNode; primer?: "push" | "offline" };
 
 function Chip({ children, tone = "primary" }: { children: ReactNode; tone?: "primary" | "quiet" }) {
   return (
@@ -81,6 +82,13 @@ const SLIDES: Record<OnboardingRole, Slide[]> = {
       text: "Get a notification when your supervisor verifies a day or a task needs you.",
       fragment: <Rows rows={[["Day verified", "Tuesday"], ["New task", "Due Friday"]]} />,
       primer: "push",
+    },
+    // Phase 1.8: get the face-check files and the offline passes now, not on the first day without a signal.
+    {
+      title: "Prepare for offline",
+      text: "Download the face-check files and your offline time-in passes now, so a day with no signal still counts with your photo.",
+      fragment: <Rows rows={[["Face-check files", "About 13 MB"], ["Offline passes", "Your next scheduled days"]]} />,
+      primer: "offline",
     },
   ],
   supervisor: [
@@ -254,6 +262,7 @@ export default function Onboarding({ role }: { role: OnboardingRole }) {
             <p className="m-0 text-[15px] leading-relaxed text-(--land-muted)">{item.text}</p>
             <div aria-hidden="true">{item.fragment}</div>
             {item.primer === "push" && i === index && <PushPrimer role={role} />}
+            {item.primer === "offline" && i === index && <PrepareOffline />}
           </section>
         ))}
       </div>

@@ -410,6 +410,9 @@ async function send(): Promise<"done" | "waiting"> {
       message?: unknown;
       attendance?: { id?: unknown };
     };
+    // Phase 1.8: the server has answered, so the step (and a time-in's photo
+    // with it) leaves the phone now, before anything else is done.
+    await dequeue(row.id).catch(() => {});
     if (timeIn) {
       // Accepted, or the day already had a log: either way the day's log has
       // an id now, and the steps waiting behind this time-in belong to it.
@@ -426,7 +429,6 @@ async function send(): Promise<"done" | "waiting"> {
         nothingToAttachTo = true;
       }
     }
-    await dequeue(row.id).catch(() => {});
     if (response.ok) {
       sent += 1;
     } else {

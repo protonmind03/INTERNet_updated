@@ -43,3 +43,30 @@ test("the Profile says when this phone is ready to time in with a photo and no s
   await expect(card.getByRole("status")).toContainText("Ready.", { timeout: 60_000 });
   await expect(card.getByRole("status")).toContainText("With no signal, you can still time in with your photo");
 });
+
+/** Makes the page believe it runs as the installed app, where the first-open slides show. */
+async function asInstalledApp(page: import("@playwright/test").Page): Promise<void> {
+  await page.addInitScript(() => {
+    const real = window.matchMedia.bind(window);
+    window.matchMedia = (query: string) =>
+      query.includes("display-mode: standalone")
+        ? ({ matches: true, media: query, onchange: null, addEventListener: () => {}, removeEventListener: () => {}, addListener: () => {}, removeListener: () => {}, dispatchEvent: () => false } as unknown as MediaQueryList)
+        : real(query);
+  });
+}
+
+test("the first-open slides end with Prepare for offline: a progress bar, then ready", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await asInstalledApp(page);
+  await signIn(page, "student");
+  await page.getByRole("button", { name: /^Slide 5: Prepare for offline$/ }).click();
+  const dialog = page.getByRole("dialog", { name: "Prepare for offline" });
+  await expect(dialog.getByText("About 13 MB. Recommended on Wi-Fi.")).toBeVisible();
+  await dialog.getByRole("button", { name: "Prepare now" }).click();
+  await expect(dialog.getByRole("progressbar", { name: "Preparing for offline" })).toBeVisible();
+  await expect(dialog.getByRole("progressbar", { name: "Preparing for offline" })).toHaveAttribute("aria-valuenow", "100", { timeout: 60_000 });
+  // The demo student has scheduled days ahead: ready, or told plainly why not.
+  await expect(dialog.getByRole("status")).toContainText(/Ready\. With no signal you can time in with your photo|No scheduled day is coming up/);
+  await dialog.getByRole("button", { name: "Start" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});

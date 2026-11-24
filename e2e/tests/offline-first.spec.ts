@@ -184,3 +184,39 @@ test("the Help page: what works with no connection, for each role, signed in or 
   // It is part of the first download, so the health of the API does not matter to it.
   expect((await fetch(`${API}/api/health`)).ok).toBe(true);
 });
+
+/** Opens the sign-out question: the side menu on a computer, More on a phone. */
+async function askToSignOut(page: Page) {
+  const side = page.locator("aside.role-side");
+  if (await side.isVisible()) {
+    await side.hover();
+    await side.getByRole("button", { name: "Sign out" }).click();
+  } else {
+    await page.locator(".role-dock").getByRole("button", { name: /^More/ }).click();
+    await page.getByRole("dialog", { name: "More" }).getByRole("button", { name: "Sign out", exact: true }).click();
+  }
+}
+
+test("signing out keeps what waits to be sent for this account, unless the phone is marked as shared", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  // Nothing reaches the server in this test: the steps stay where the sign-out puts them.
+  await page.route("**/api/health", (route) => route.abort());
+  await signIn(page, "student");
+  await queueStep(page, "break", 1);
+  await askToSignOut(page);
+  const dialog = page.getByRole("dialog", { name: "Sign out?" });
+  await expect(dialog).toContainText("It stays on this phone and is sent the next time you sign in here.");
+  // A plain sign-out keeps it.
+  await dialog.getByRole("button", { name: "Sign out", exact: true }).click();
+  await expect(page).toHaveURL(/\/student\/sign-in$/);
+  expect(await waiting(page)).toBe(1);
+
+  // On a shared phone: the warning says what is lost, and it is erased.
+  await signIn(page, "student");
+  await askToSignOut(page);
+  await dialog.getByRole("checkbox", { name: /This is a shared phone: also erase anything waiting to send/ }).check();
+  await expect(dialog.getByRole("alert")).toContainText("Erased and never sent: 1 attendance step.");
+  await dialog.getByRole("button", { name: "Sign out and erase" }).click();
+  await expect(page).toHaveURL(/\/student\/sign-in$/);
+  await expect.poll(() => waiting(page)).toBe(0);
+});

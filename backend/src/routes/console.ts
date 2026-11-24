@@ -9,7 +9,7 @@ import { EmailLimitError } from "../services/emailBudget";
 import { checkFileStore, fileStoreKind } from "../services/privateFileStore";
 import { recentProblems } from "../services/problems";
 import { uploadUsage } from "../services/uploadQuota";
-import { systemStatus, somethingWrong } from "../services/systemStatus";
+import { privacyWarnings, systemStatus, somethingWrong } from "../services/systemStatus";
 
 /*
 |--------------------------------------------------------------------------
@@ -30,6 +30,7 @@ type Dependencies = {
   requireCoordinator: express.RequestHandler;
   /** Phase 1.7: the IT administrator, who has the system pages once their account exists. */
   requireAdmin: express.RequestHandler;
+  requireRole: (roles: ("coordinator" | "director" | "admin")[]) => express.RequestHandler;
   /** The server's rule for a flagged attendance log, as SQL on an alias. */
   flaggedLogCondition: (alias: string) => string;
   /** Whether the push keys are set. */
@@ -88,6 +89,11 @@ export function registerConsoleRoutes(app: express.Express, deps: Dependencies):
     }
   });
   app.get("/api/admin/system-status", requireAdmin, readStatus);
+
+  // Phase 1.8: the privacy settings missing on a live site, for the coordinators, the OJT Director and the administrator.
+  app.get("/api/privacy/warnings", deps.requireRole(["coordinator", "director", "admin"]), (_req, res) => {
+    return res.json(privacyWarnings());
+  });
 
   // A restore drill done by a person (DEPLOY.md, "Restore drill"), recorded so the
   // status card stops asking for one until next month. What was restored, in a line.

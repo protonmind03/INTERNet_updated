@@ -1116,6 +1116,8 @@ test.describe("attendance steps recorded offline and not sent yet", () => {
     expect(await waiting(page)).toBe(1);
 
     await askToSignOut();
+    // Phase 1.8: what waits is erased only on a phone marked as shared.
+    await dialog.getByRole("checkbox", { name: /This is a shared phone/ }).check();
     await dialog.getByRole("button", { name: "Sign out and erase" }).click();
     await expect(page).toHaveURL(/\/student\/sign-in$/);
     await expect.poll(() => waiting(page)).toBe(0);

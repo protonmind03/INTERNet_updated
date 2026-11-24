@@ -24,7 +24,10 @@ export type PrivacyNotice = {
 };
 
 export const PRIVACY_NOTICE: PrivacyNotice = {
-  version: "draft-4",
+  // draft-5 (Phase 1.8): health and clearance documents, the optional
+  // personal details, and the location check planned for Phase 2. A new
+  // version asks every student to agree again.
+  version: "draft-5",
   placeholder: true,
   title: "Privacy notice",
   sections: [
@@ -47,6 +50,21 @@ export const PRIVACY_NOTICE: PrivacyNotice = {
       heading: "Files you upload",
       body:
         "Before a photo or picture is kept, the details your phone's camera writes into it are taken out, including where it was taken. PDF and Word files are kept exactly as you upload them, so check them for anything you do not want to share. If you add your signature in Profile, an image of your handwriting is kept and printed on your Time Record; it is not a digital or cryptographic signature, and it is in the copy of your data you can download.",
+    },
+    {
+      heading: "Health and clearance documents",
+      body:
+        "Your medical examination, urinalysis, chest X-ray and CBC results, and your NBI, police and barangay clearances, are kept to check that you are ready to be deployed. Only you and the OJT coordinator can open them; your company supervisor cannot, and is not told what is missing. Each time a coordinator opens one, it is written in the system's audit log. They are never shown in your album, in previews or in exports of your records.",
+    },
+    {
+      heading: "Optional personal details",
+      body:
+        "You may add your sex, your SSS number and your Pag-IBIG MID number in Profile, or leave them out. Your sex is used only to show which requirements apply to you (some medical tests differ). The SSS and Pag-IBIG numbers are kept for the forms of your company or the government that ask for them, and are shown only to you. You can change or remove them at any time.",
+    },
+    {
+      heading: "Where you are when you time in",
+      body:
+        "[NOT YET IN USE; PLANNED FOR THE PILOT.] INTERNet may check that a time-in is made at your company's location. If it does, only the result is kept (inside the company's area or not, and how far), not a record of where you go, and only your supervisor and the OJT coordinator see it. You will be told before it starts.",
     },
     {
       heading: "Who can see it",

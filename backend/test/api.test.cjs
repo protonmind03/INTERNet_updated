@@ -12046,9 +12046,10 @@ test("the trainee's signature: saved, replaced, read by their supervisor and a c
     assert.equal(exported.body.signatures.length, 2);
     assert.ok(!("file_path" in exported.body.signatures[0]));
     // The privacy notice says so; its version waits for the university's text (D8).
+    // Phase 1.8 added sections and moved it to draft-5, so students agree again.
     const { PRIVACY_NOTICE } = require("../src/services/privacy.ts");
     assert.match(JSON.stringify(PRIVACY_NOTICE.sections), /image of your handwriting/);
-    assert.equal(PRIVACY_NOTICE.version, "draft-4");
+    assert.equal(PRIVACY_NOTICE.version, "draft-5");
   } finally {
     await f.pool.query(`DELETE FROM dtr_certifications WHERE student_id = $1`, [f.sid]);
     await f.pool.query(`DELETE FROM student_signatures WHERE student_id = $1`, [f.sid]);
@@ -14717,4 +14718,40 @@ test("approving overtime works out a finished day again, but never a verified on
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [id]);
     await pool.end();
   }
+});
+
+/*
+| Phase 1.8: privacy and offline hygiene
+*/
+
+test("the privacy notice names health and clearance documents, the optional details and the planned location check, and asks again", () => {
+  require("tsx/cjs");
+  const { PRIVACY_NOTICE } = require("../src/services/privacy.ts");
+  const headings = PRIVACY_NOTICE.sections.map((section) => section.heading);
+  for (const heading of ["Health and clearance documents", "Optional personal details", "Where you are when you time in"]) {
+    assert.ok(headings.includes(heading), heading);
+  }
+  const text = JSON.stringify(PRIVACY_NOTICE.sections);
+  assert.match(text, /your company supervisor cannot/);
+  assert.match(text, /never shown in your album, in previews or in exports/);
+  assert.equal(PRIVACY_NOTICE.placeholder, true, "the university's wording is still to come");
+  assert.match(text, /\[CONTACT OF THE UNIVERSITY'S DATA PROTECTION OFFICER TO BE ADDED\.\]/);
+});
+
+test("production warns the office and the administrator of missing privacy settings, and only production", async () => {
+  require("tsx/cjs");
+  const { privacyWarnings } = require("../src/services/systemStatus.ts");
+  assert.deepEqual(privacyWarnings({ NODE_ENV: "development" }), { production: false, warnings: [] });
+  const bare = privacyWarnings({ NODE_ENV: "production" });
+  assert.equal(bare.production, true);
+  assert.equal(bare.warnings.length, 3, "consent, photo retention and the placeholder notice");
+  assert.match(bare.warnings.join(" "), /PRIVACY_CONSENT_REQUIRED/);
+  assert.match(bare.warnings.join(" "), /PHOTO_RETENTION_DAYS/);
+  const set = privacyWarnings({ NODE_ENV: "production", PRIVACY_CONSENT_REQUIRED: "true", PHOTO_RETENTION_DAYS: "90" });
+  assert.deepEqual(set.warnings.length, 1, "the placeholder notice stays until the university's text");
+
+  const asked = await jsonRequest("/api/privacy/warnings", { headers: authHeaders(coordinatorToken) });
+  assert.equal(asked.response.status, 200);
+  assert.equal(asked.body.production, false, "the test server is not production");
+  assert.equal((await jsonRequest("/api/privacy/warnings", { headers: authHeaders(studentToken) })).response.status, 403);
 });

@@ -32,16 +32,27 @@ let precaching: Promise<boolean> | null = null;
 /**
  * Puts the face-tracking files in the service worker's caches, unless they
  * are there already. True when all of them are kept. Safe to call often.
+ * Phase 1.8: `onFile` hears each file as it is kept (the onboarding's
+ * "Prepare for offline" progress); a call that joins one already running
+ * hears only the end.
  */
-export function precacheFaceTracker(): Promise<boolean> {
-  precaching ??= (async () => {
+export function precacheFaceTracker(onFile?: (done: number, total: number) => void): Promise<boolean> {
+  if (precaching) {
+    return precaching.then((kept) => {
+      if (kept) onFile?.(1, 1);
+      return kept;
+    });
+  }
+  precaching = (async () => {
     if (typeof caches === "undefined") return false;
     try {
       const vision = await import("@mediapipe/tasks-vision");
       const simd = await vision.FilesetResolver.isSimdSupported();
-      for (const file of trackerFiles(simd)) {
+      const files = trackerFiles(simd);
+      for (const [index, file] of files.entries()) {
         const cache = await caches.open(file.cache);
         if (!(await cache.match(file.url))) await cache.add(file.url);
+        onFile?.(index + 1, files.length);
       }
       return true;
     } catch {

@@ -128,6 +128,8 @@ function StudentChrome({ title, actions, showPhotoRedo = true, folderLabel, chil
   // Report photos kept on this phone are sent whenever it comes back online, from any page.
   usePendingPhotoSender();
   const [unsentPhotos, setUnsentPhotos] = useState(0);
+  // Phase 1.8: on a shared phone, what waits to be sent is erased too; otherwise it waits for this account.
+  const [sharedPhone, setSharedPhone] = useState(false);
   useEffect(() => {
     if (!confirmSignOut) return;
     let current = true;
@@ -148,10 +150,16 @@ function StudentChrome({ title, actions, showPhotoRedo = true, folderLabel, chil
 
   if (!student) return <Navigate to="/" replace />;
 
+  const waiting = unsent > 0 || unsentPhotos > 0;
   const signOut = () => {
-    endSession("student");
+    // What waits to be sent stays for this account's next sign-in on this phone, unless the phone is shared.
+    endSession("student", { keepWaiting: waiting && !sharedPhone });
     navigate("/", { replace: true });
   };
+  const lost = [
+    unsent > 0 ? (unsent === 1 ? "1 attendance step" : `${unsent} attendance steps`) : "",
+    unsentPhotos > 0 ? (unsentPhotos === 1 ? "1 report photo" : `${unsentPhotos} report photos`) : "",
+  ].filter(Boolean).join(" and ");
 
   const waitingBadge =
     waitingCount > 0 ? (
@@ -216,17 +224,34 @@ function StudentChrome({ title, actions, showPhotoRedo = true, folderLabel, chil
         title="Sign out?"
         message={
           unsent > 0
-            ? `${unsent === 1 ? "1 attendance step you recorded offline has" : `${unsent} attendance steps you recorded offline have`} not been sent yet. Signing out now erases ${unsent === 1 ? "it" : "them"}. To keep ${unsent === 1 ? "it" : "them"}, stay signed in until this phone is connected and ${unsent === 1 ? "it has" : "they have"} been sent.${unsentPhotos > 0 ? ` ${unsentPhotos === 1 ? "1 report photo is" : `${unsentPhotos} report photos are`} waiting too.` : ""}`
+            ? `${unsent === 1 ? "1 attendance step you recorded offline has" : `${unsent} attendance steps you recorded offline have`} not been sent yet.${unsentPhotos > 0 ? ` ${unsentPhotos === 1 ? "1 report photo is" : `${unsentPhotos} report photos are`} waiting too.` : ""} ${unsent + unsentPhotos === 1 ? "It stays" : "They stay"} on this phone and ${unsent + unsentPhotos === 1 ? "is" : "are"} sent the next time you sign in here.`
             : unsentPhotos > 0
-              ? `${unsentPhotos === 1 ? "1 report photo is" : `${unsentPhotos} report photos are`} saved on this phone and not sent yet. Signing out erases ${unsentPhotos === 1 ? "it" : "them"}: stay signed in until you're back online, or save copies to your phone from Progress reports first.`
+              ? `${unsentPhotos === 1 ? "1 report photo is" : `${unsentPhotos} report photos are`} saved on this phone and not sent yet. ${unsentPhotos === 1 ? "It stays" : "They stay"} on this phone and ${unsentPhotos === 1 ? "is" : "are"} sent the next time you sign in here.`
               : "You will need your password to sign in again."
         }
-        confirmLabel={unsent > 0 || unsentPhotos > 0 ? "Sign out and erase" : "Sign out"}
+        confirmLabel={waiting && sharedPhone ? "Sign out and erase" : "Sign out"}
         cancelLabel="Stay signed in"
-        tone="danger"
+        tone={waiting && sharedPhone ? "danger" : "primary"}
         onConfirm={signOut}
-        onCancel={() => setConfirmSignOut(false)}
-      />
+        onCancel={() => {
+          setConfirmSignOut(false);
+          setSharedPhone(false);
+        }}
+      >
+        {waiting && (
+          <div className="space-y-2">
+            <label className="flex min-h-11 items-start gap-2.5 text-sm text-slate-800">
+              <input type="checkbox" className="mt-1 h-4 w-4" checked={sharedPhone} onChange={(event) => setSharedPhone(event.target.checked)} />
+              This is a shared phone: also erase anything waiting to send
+            </label>
+            {sharedPhone && (
+              <p role="alert" className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-800">
+                Erased and never sent: {lost}. Your supervisor will not see {unsent + unsentPhotos === 1 ? "it" : "them"}.
+              </p>
+            )}
+          </div>
+        )}
+      </ConfirmDialog>
     </>
   );
 }

@@ -10723,6 +10723,7 @@ registerConsoleRoutes(app, {
   pool,
   requireCoordinator,
   requireAdmin,
+  requireRole,
   flaggedLogCondition,
   pushConfigured: isWebPushConfigured,
   createRateLimiter,

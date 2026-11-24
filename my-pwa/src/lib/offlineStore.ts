@@ -136,11 +136,13 @@ export const QUEUE_KEEP_HOURS = 72;
 | When a session ends by itself (it expired overnight while the phone was
 | offline), those words are kept for the same account, like the steps
 | waiting to be sent, for the same `QUEUE_KEEP_HOURS`; signing in again
-| brings them back and sends them. Signing out on purpose still erases
-| everything.
+| brings them back and sends them. Phase 1.8: signing out on purpose keeps
+| them too, with the report photos waiting to be sent, unless the trainee
+| ticks "This is a shared phone"; then everything is erased.
 */
 function isUnsentWriting(key: IDBValidKey | undefined): boolean {
-  return typeof key === "string" && key.includes("|autosave:");
+  // Words typed and not yet saved, and report photos waiting to be sent (lib/pendingPhotos.ts).
+  return typeof key === "string" && (key.includes("|autosave:") || key.endsWith("|pending-photos"));
 }
 
 export async function purgeOfflineData(

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PrivacyWarnings from "../../components/PrivacyWarnings";
 import SystemStatusCard from "../../components/SystemStatusCard";
 import { Card, ErrorNotice, SkeletonRows, StatusBadge } from "../../components/ui";
 import AdminLayout from "../../layouts/AdminLayout";
@@ -55,6 +56,7 @@ export default function AdminStatus() {
   return (
     <AdminLayout title="System status">
       <div className="max-w-3xl space-y-4">
+        <PrivacyWarnings role="admin" />
         <Card className="p-4 sm:p-5">
           <h2 className="text-[16px] font-bold text-slate-900">The server</h2>
           {error ? (

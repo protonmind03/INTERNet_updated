@@ -407,6 +407,30 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Privacy and offline hygiene (Phase 1.8)
+
+- **The privacy notice** (`services/privacy.ts`) is `draft-5`: it now
+  names health and clearance documents, the optional sex and SSS/Pag-IBIG
+  numbers, and the location check planned for Phase 2. It stays
+  `placeholder: true`, with the bracketed retention and DPO text, until
+  the university's wording comes; a new version asks every student to
+  agree again (when `PRIVACY_CONSENT_REQUIRED` is on).
+- **Warnings in production** (`privacyWarnings`,
+  `GET /api/privacy/warnings`): consent not required, no photo
+  retention, or the notice still a placeholder. Shown to coordinators
+  (System status), the Director (Profile) and the administrator (System
+  status); nothing on a development or test server.
+- **Signing out keeps what waits to be sent** (steps recorded offline,
+  report photos, unsent writing) for the same account's next sign-in on
+  this phone, as an expired session does. "This is a shared phone: also
+  erase anything waiting to send" on the sign-out question erases it, after
+  saying what will be lost. A time-in's photo leaves the queue the moment
+  the server answers.
+- **Prepare for offline** is the last of the trainee's first-open slides:
+  the face-check files and the offline passes, with a progress bar
+  (`components/PrepareOffline.tsx`; `precacheFaceTracker` reports each
+  file).
+
 ## Overtime and the 8-hour day (Phase 1.4)
 
 - **A day's hours stop at the scheduled end**, unless the supervisor
