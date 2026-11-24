@@ -3,6 +3,7 @@ import type { Pool } from "pg";
 import { scopeCondition } from "../services/coordinatorScope";
 import {
   GRADE_COLUMNS,
+  equivalentGrade,
   GRADE_JOINS,
   SCORE_KEYS,
   gradeOf,
@@ -221,7 +222,7 @@ export function registerFinalGradeRoutes(app: express.Express, deps: Dependencie
         await createNotification({
           studentId: row.student_id,
           title: "Final grade released",
-          message: `Your final OJT grade is ${row.final!.toFixed(2)}.`,
+          message: `Your final OJT grade is ${equivalentGrade(row.final!)} (${row.final!.toFixed(2)}).`,
           type: "evaluation",
           link: "/student/resolution?tab=evaluation",
         }).catch((error) => console.error("GRADE RELEASE NOTIFICATION ERROR:", error));
@@ -288,7 +289,11 @@ export function registerFinalGradeRoutes(app: express.Express, deps: Dependencie
         [auth.id]
       );
       const row = found.rows[0];
-      return res.json(row ? { released: true, grade: Number(row.released_grade), released_at: row.released_at } : { released: false });
+      return res.json(
+        row
+          ? { released: true, grade: Number(row.released_grade), equivalent: equivalentGrade(Number(row.released_grade)), released_at: row.released_at }
+          : { released: false }
+      );
     } catch (error) {
       console.error("GET OWN FINAL GRADE ERROR:", error);
       return res.status(500).json({ message: "Failed to load your grade." });

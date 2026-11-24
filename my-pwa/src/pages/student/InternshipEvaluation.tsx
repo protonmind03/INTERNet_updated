@@ -53,15 +53,15 @@ type Side = "feedback" | "supervisor";
 function ReleasedGrade() {
   const student = useAccount("student");
   const studentId = student?.student_id;
-  const [grade, setGrade] = useState<{ grade: number; released_at: string } | null>(null);
+  const [grade, setGrade] = useState<{ grade: number; equivalent: string | null; released_at: string } | null>(null);
 
   useEffect(() => {
     if (!studentId) return;
     let live = true;
     savedFetch("student", "final-grade", `${API_URL}/api/students/${encodeURIComponent(studentId)}/final-grade`, withStudentAuth())
       .then((response) => (response.ok ? response.json() : null))
-      .then((data: { released: boolean; grade?: number; released_at?: string } | null) => {
-        if (live) setGrade(data?.released && typeof data.grade === "number" && data.released_at ? { grade: data.grade, released_at: data.released_at } : null);
+      .then((data: { released: boolean; grade?: number; equivalent?: string; released_at?: string } | null) => {
+        if (live) setGrade(data?.released && typeof data.grade === "number" && data.released_at ? { grade: data.grade, equivalent: data.equivalent ?? null, released_at: data.released_at } : null);
       })
       .catch(() => undefined);
     return () => {
@@ -76,7 +76,10 @@ function ReleasedGrade() {
         <h2 className="text-[16px] font-bold text-slate-900">Your final OJT grade</h2>
         <p className="text-sm text-slate-600">Released {formatDate(grade.released_at)}. Half your supervisor's evaluation, half your instructor's.</p>
       </div>
-      <p className="font-display text-3xl font-extrabold tabular-nums text-slate-900">{grade.grade.toFixed(2)}</p>
+      <p className="text-right">
+        {grade.equivalent && <span className="block font-display text-3xl font-extrabold tabular-nums text-slate-900">{grade.equivalent}</span>}
+        <span className={grade.equivalent ? "text-sm tabular-nums text-slate-600" : "font-display text-3xl font-extrabold tabular-nums text-slate-900"}>{grade.grade.toFixed(2)}%</span>
+      </p>
     </Card>
   );
 }

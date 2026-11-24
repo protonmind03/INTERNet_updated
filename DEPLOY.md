@@ -1098,13 +1098,17 @@ instructor's (the OJT rule "Final grade split", 50 unless changed on the
 Director's Rules page). Before the first release, confirm with the
 registrar or the OJT office:
 
-- **Rounding.** Every grade is rounded to 2 decimals, half up (89.625 is
-  89.63). If the university rounds otherwise, or turns grades into its
-  1.00 to 5.00 scale, that is a code change (`services/finalGrade.ts`).
-- **The split and the weights.** HTE 50 / instructor 50, and the
+- **Rounding and the scale.** Every percentage is rounded to 2 decimals,
+  half up (89.625 is 89.63), as the university computes a GWA. The final
+  grade is also shown on the 1.00 to 5.00 scale, using the common
+  Philippine table (97 and up 1.00, 94 1.25, 91 1.50, 88 1.75, 85 2.00, 82
+  2.25, 79 2.50, 76 2.75, 75 3.00, below 75 5.00). **Check it against
+  PSU's own table**; if it differs, change `GRADE_SCALE` in
+  `services/finalGrade.ts`.
+- **The split and the weights: pending.** HTE 50 / instructor 50, and the
   instructor's four scores (logs, punctuality, preparation, conduct) 25
-  each. A term's weights are set through
-  `PUT /api/coordinator/terms/<id>/grade-weights` (no page yet).
+  each, until the university confirms them. A term's weights are set
+  through `PUT /api/coordinator/terms/<id>/grade-weights` (no page yet).
 - **The supervisor's form.** The HTE half uses the weighted
   FM-AA-INT-13 grade; a form still without weights uses its average on
   the same scale.

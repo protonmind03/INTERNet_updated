@@ -19,9 +19,11 @@ import { phSql } from "./phTime";
 |
 |   final = (HTE x split + instructor x (100 - split)) / 100
 |
-| The split is the OJT rule grade_split_hte (50). Every grade is rounded
-| to 2 decimals, half up: how the university rounds was not known when
-| this was written (DEPLOY.md, "Before grades are released").
+| The split is the OJT rule grade_split_hte (50); it and the instructor's
+| weights are pending the university's confirmation. Every percentage is
+| rounded to 2 decimals, half up, as the university computes a GWA. The
+| final grade is also given on the 1.00 to 5.00 scale (GRADE_SCALE below:
+| the common Philippine table, to be checked against PSU's own).
 |
 | A grade is final only when both halves exist; until then it is waiting
 | for the HTE, the instructor, or both.
@@ -69,6 +71,28 @@ export function readWeights(value: unknown): Weights | { problem: string } {
 export function weightsOf(stored: unknown): Weights {
   const read = readWeights(stored);
   return "problem" in read ? DEFAULT_WEIGHTS : read;
+}
+
+/**
+ * The 1.00 to 5.00 scale: the lowest percentage that earns each grade.
+ * 75 passes (3.00); below it is 5.00. The table most Philippine
+ * universities use; replace it here if PSU's differs.
+ */
+export const GRADE_SCALE: readonly { from: number; grade: string }[] = [
+  { from: 97, grade: "1.00" },
+  { from: 94, grade: "1.25" },
+  { from: 91, grade: "1.50" },
+  { from: 88, grade: "1.75" },
+  { from: 85, grade: "2.00" },
+  { from: 82, grade: "2.25" },
+  { from: 79, grade: "2.50" },
+  { from: 76, grade: "2.75" },
+  { from: 75, grade: "3.00" },
+];
+
+/** A percentage (already rounded to 2 decimals) on the 1.00 to 5.00 scale. */
+export function equivalentGrade(percent: number): string {
+  return GRADE_SCALE.find((step) => percent >= step.from)?.grade ?? "5.00";
 }
 
 export function instructorGrade(scores: Scores, weights: Weights): number {
@@ -237,9 +261,12 @@ export function gradeOf(row: GradeRow, split: number) {
     remarks: row.remarks,
     version: row.version,
     final,
+    // Phase 1.5: the final grade on the 1.00 to 5.00 scale.
+    equivalent: final === null ? null : equivalentGrade(final),
     state,
     released_at: row.released_at,
     released_grade: row.released_grade,
+    released_equivalent: row.released_grade === null ? null : equivalentGrade(row.released_grade),
     // Released, then either half changed: what the student has is not today's grade.
     changed_since_release: row.released_at !== null && final !== row.released_grade,
     weights,

@@ -14194,6 +14194,10 @@ test("the final grade: weights, the split, rounding half up, and a grade waiting
   assert.equal(grade.readScore(100.5), null);
   assert.equal(grade.readScore(87.255), null);
   assert.equal(grade.readScore("90"), null);
+  // The 1.00 to 5.00 scale, from the percentage rounded to 2 decimals.
+  for (const [percent, equivalent] of [[100, "1.00"], [97, "1.00"], [96.99, "1.25"], [94, "1.25"], [90.5, "1.75"], [87.5, "2.00"], [85, "2.00"], [75, "3.00"], [74.99, "5.00"], [60, "5.00"]]) {
+    assert.equal(grade.equivalentGrade(percent), equivalent, String(percent));
+  }
 });
 
 test("the instructor's evaluation, the grade sheet, and a grade the student sees only once released", async (t) => {
@@ -14243,7 +14247,7 @@ test("the instructor's evaluation, the grade sheet, and a grade the student sees
       [id, form]
     );
     let row = await sheet();
-    assert.deepEqual([row.hte, row.instructor, row.final, row.state], [90, 85, 87.5, "final"]);
+    assert.deepEqual([row.hte, row.instructor, row.final, row.equivalent, row.state], [90, 85, 87.5, "2.00", "final"]);
     assert.equal(row.released_at, null);
     assert.deepEqual((await own()).body, { released: false }, "not released: the student sees nothing");
 
@@ -14256,7 +14260,8 @@ test("the instructor's evaluation, the grade sheet, and a grade the student sees
     const seen = await own();
     assert.equal(seen.body.released, true);
     assert.equal(seen.body.grade, 87.5);
-    const told = await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Final grade released'`, [id]);
+    assert.equal(seen.body.equivalent, "2.00", "and on the 1.00 to 5.00 scale");
+    const told = await pool.query(`SELECT 1 FROM notifications WHERE student_id = $1 AND title = 'Final grade released' AND message LIKE '%2.00 (87.50)%'`, [id]);
     assert.equal(told.rows.length, 1);
     // Releasing again changes nothing.
     assert.equal((await jsonRequest("/api/coordinator/grades/release", coordinator("POST", { student_ids: [id] }))).body.left.already_released, 1);

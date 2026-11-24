@@ -476,9 +476,11 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   unweighted form's average on the same scale); the instructor's is the
   coordinator's four scores in `instructor_evaluations` (migration 082),
   weighed by `terms.grade_weights` (25 each unless set). The OJT rule
-  `grade_split_hte` (50) is the HTE's share. Everything is rounded to 2
-  decimals, half up (`round2`); change it there if the university rounds
-  otherwise, and the tests with it.
+  `grade_split_hte` (50) is the HTE's share; the split and weights are
+  pending the university's confirmation. Percentages are rounded to 2
+  decimals, half up (`round2`), as a GWA is; the final grade is also given
+  on the 1.00 to 5.00 scale (`GRADE_SCALE`, `equivalentGrade`), the
+  common Philippine table until PSU's is confirmed.
 - **Final only with both halves**; otherwise the state says which is
   missing. A release copies the grade into `released_grade`: the student
   is shown that, never a grade worked out live, so a later change waits

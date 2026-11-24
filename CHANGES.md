@@ -2152,9 +2152,10 @@ was built; the real ones are below.
 **Accounts to make before a demo:** `npm run director:create` and
 `npm run admin:create` (each prints a temporary password once).
 
-**To confirm with the university:** how final grades are rounded (or
-turned into 1.00 to 5.00); the grade split and weights; the privacy
-notice's wording, retention and DPO contact.
+**To confirm with the university:** PSU's own 1.00 to 5.00 table (the
+common Philippine one is used: `GRADE_SCALE`); the grade split and
+weights (pending); the privacy notice's wording, retention and DPO contact.
+Percentages are rounded to 2 decimals, as a GWA is (decided 25 November).
 
 Reviewed with `/code-review` (high); its fixes are `fa4bf61`. `/simplify`
 was done by hand (`4bca88f`) because its review agents hit the account's

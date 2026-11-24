@@ -120,7 +120,7 @@ export default function DirectorRules() {
               <div className="min-w-0 flex-1">
                 <h2 className="font-semibold text-(--role-ink)">Final grade split</h2>
                 <p className="mt-1 max-w-[65ch] text-sm text-slate-700">
-                  HTE {settings.grade_split_hte}%, instructor {100 - settings.grade_split_hte}%. Grades already released keep the value they were released with.
+                  HTE {settings.grade_split_hte}%, instructor {100 - settings.grade_split_hte}%, pending the university's confirmation. Grades already released keep the value they were released with.
                 </p>
               </div>
               <Button

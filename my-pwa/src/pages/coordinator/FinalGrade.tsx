@@ -29,9 +29,12 @@ export type GradeRow = {
   remarks: string | null;
   version: number | null;
   final: number | null;
+  /** The final grade on the 1.00 to 5.00 scale. */
+  equivalent: string | null;
   state: State;
   released_at: string | null;
   released_grade: number | null;
+  released_equivalent: string | null;
   changed_since_release: boolean;
   weights: Scores;
 };
@@ -58,6 +61,8 @@ const STATE_WORDS: Record<State, string> = {
 };
 
 const shown = (value: number | null) => (value === null ? "None yet" : value.toFixed(2));
+/** "2.00 (87.50)": the grade on the 1.00 to 5.00 scale, then the percentage. */
+const finalText = (equivalent: string | null, percent: number | null) => (percent === null ? "None yet" : `${equivalent} (${percent.toFixed(2)})`);
 const section = (row: Pick<GradeRow, "program" | "block">) => [row.program, row.block].filter(Boolean).join(" ") || "No program";
 
 function weightedPreview(scores: Partial<Record<ScoreKey, string>>, weights: Scores): number | null {
@@ -262,13 +267,13 @@ export function FinalGradeCard({ studentId }: { studentId: string }) {
             </div>
             <div>
               <dt className="text-sm text-slate-600">Final</dt>
-              <dd className="text-lg font-bold tabular-nums text-slate-900">{shown(data.grade.final)}</dd>
+              <dd className="text-lg font-bold tabular-nums text-slate-900">{finalText(data.grade.equivalent, data.grade.final)}</dd>
               <dd className="mt-1"><GradeState row={data.grade} /></dd>
             </div>
           </dl>
           <p className="mt-3 text-sm text-slate-600">
             {data.grade.released_at
-              ? `Released ${phStamp(new Date(data.grade.released_at))}: the student sees ${data.grade.released_grade?.toFixed(2)}.`
+              ? `Released ${phStamp(new Date(data.grade.released_at))}: the student sees ${finalText(data.grade.released_equivalent, data.grade.released_grade)}.`
               : "Not released: the student does not see a final grade yet. Release it from Evaluations."}
           </p>
         </>
@@ -321,8 +326,8 @@ export function GradeSheet({ query }: { query: string }) {
     }
   };
 
-  const table = (rows ?? []).map((row) => [row.student_id, row.name, section(row), shown(row.hte), shown(row.instructor), shown(row.final), row.released_at ? "Released" : STATE_WORDS[row.state]]);
-  const head = ["Student ID", "Name", "Program and block", `HTE (${split}%)`, `Instructor (${100 - split}%)`, "Final", "State"];
+  const table = (rows ?? []).map((row) => [row.student_id, row.name, section(row), shown(row.hte), shown(row.instructor), shown(row.final), row.equivalent ?? "", row.released_at ? "Released" : STATE_WORDS[row.state]]);
+  const head = ["Student ID", "Name", "Program and block", `HTE (${split}%)`, `Instructor (${100 - split}%)`, "Final (%)", "Grade (1.00 to 5.00)", "State"];
   const exportCsv = () => saveCsv([head, ...table], "internet-grade-sheet.csv");
   const exportPdf = async () => {
     try {
@@ -340,7 +345,7 @@ export function GradeSheet({ query }: { query: string }) {
         <div>
           <h2 className="text-[16px] font-bold text-slate-900">Grade sheet</h2>
           <p className="text-sm text-slate-600">
-            Final grade: HTE {split}%, instructor {100 - split}%. The student sees it only once released.
+            Final grade: HTE {split}%, instructor {100 - split}% (pending the university's confirmation), on the 1.00 to 5.00 scale. The student sees it only once released.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -367,6 +372,7 @@ export function GradeSheet({ query }: { query: string }) {
                 <th scope="col" className="px-4 py-2.5 text-right font-medium">HTE</th>
                 <th scope="col" className="px-4 py-2.5 text-right font-medium">Instructor</th>
                 <th scope="col" className="px-4 py-2.5 text-right font-medium">Final</th>
+                <th scope="col" className="px-4 py-2.5 text-right font-medium">Grade</th>
                 <th scope="col" className="px-4 py-2.5 font-medium">State</th>
                 <th scope="col" className="px-2 py-2.5"><span className="sr-only">Instructor evaluation</span></th>
               </tr>
@@ -382,7 +388,8 @@ export function GradeSheet({ query }: { query: string }) {
                   </td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{shown(row.hte)}</td>
                   <td className="px-4 py-2.5 text-right tabular-nums">{shown(row.instructor)}</td>
-                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{shown(row.final)}</td>
+                  <td className="px-4 py-2.5 text-right tabular-nums">{shown(row.final)}</td>
+                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">{row.equivalent ?? ""}</td>
                   <td className="px-4 py-2.5"><GradeState row={row} /></td>
                   <td className="px-2 py-1.5 text-right">
                     <EvaluateButton row={row} onClick={() => setEditing(row.student_id)} />
@@ -406,7 +413,7 @@ export function GradeSheet({ query }: { query: string }) {
                 <dl className="mt-1.5 grid grid-cols-3 gap-2 text-sm">
                   <div><dt className="text-xs text-slate-500">HTE</dt><dd className="tabular-nums">{shown(row.hte)}</dd></div>
                   <div><dt className="text-xs text-slate-500">Instructor</dt><dd className="tabular-nums">{shown(row.instructor)}</dd></div>
-                  <div><dt className="text-xs text-slate-500">Final</dt><dd className="font-semibold tabular-nums">{shown(row.final)}</dd></div>
+                  <div><dt className="text-xs text-slate-500">Final</dt><dd className="font-semibold tabular-nums">{finalText(row.equivalent, row.final)}</dd></div>
                 </dl>
                 <div className="mt-1.5"><GradeState row={row} /></div>
               </li>
