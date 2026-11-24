@@ -36,6 +36,7 @@ import { registerOvertimeRoutes } from "./routes/overtime";
 import { registerGeofenceRoutes } from "./routes/geofence";
 import { registerCompanyChoiceRoutes } from "./routes/companyChoices";
 import { registerMonitoringPlanRoutes } from "./routes/monitoringPlan";
+import { registerHardCopyRoutes } from "./routes/hardCopies";
 import { judgeGeo } from "./services/geofence";
 import { deploymentBlock } from "./services/deploymentClearance";
 import { BCRYPT_HASH, BCRYPT_ROUNDS } from "./services/passwordHash";
@@ -10330,7 +10331,10 @@ app.get(
                  s.company, sup.name AS supervisor_name, d.doc_type,
                  d.original_filename, d.mime_type, d.size_bytes, d.status,
                  d.review_notes, d.uploaded_at, d.reviewed_at, d.version,
-                 CASE WHEN ${coordinatorReviews("d")} THEN 'coordinator' ELSE 'supervisor' END AS reviewer_role
+                 CASE WHEN ${coordinatorReviews("d")} THEN 'coordinator' ELSE 'supervisor' END AS reviewer_role,
+                 -- Phase 2.4: the day its hard copy came in, if it has.
+                 (SELECT TO_CHAR(h.received_on, 'YYYY-MM-DD') FROM hard_copies h
+                   WHERE h.record_type = 'document' AND h.record_id = d.id) AS hard_copy_received_on
           FROM documents d
           LEFT JOIN students s ON s.student_id = d.student_id
           LEFT JOIN supervisors sup ON sup.supervisor_id = s.supervisor_id
@@ -10776,6 +10780,8 @@ registerGeofenceRoutes(app, { pool, requireRole, requireCoordinator });
 registerCompanyChoiceRoutes(app, { pool, requireRole, requireCoordinator, createNotification });
 // Phase 2.3: planned visits, calls and message check-ins.
 registerMonitoringPlanRoutes(app, { pool, requireCoordinator });
+// Phase 2.4: hard copies received, with an optional transmittal scan.
+registerHardCopyRoutes(app, { pool, requireCoordinator, upload, savePrivateFile, deletePrivateFile, readPrivateFile });
 // Phase 1.4: overtime requests and their approval.
 registerOvertimeRoutes(app, { pool, requireRole, upload, savePrivateFile, deletePrivateFile, readPrivateFile, createNotification });
 // Phase 1.3: HTE status, screenings, the MOA file and agency requests.

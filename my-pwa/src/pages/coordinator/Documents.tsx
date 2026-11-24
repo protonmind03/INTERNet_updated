@@ -45,6 +45,8 @@ type SubmittedDocument = {
   reviewer_role?: "supervisor" | "coordinator";
   /** Sent back with a decision (migration 062). Missing from an older server. */
   version?: number;
+  /** Phase 2.4: the day its hard copy came in. */
+  hard_copy_received_on?: string | null;
 };
 
 type StudentProgress = {
@@ -264,6 +266,8 @@ export default function CoordinatorDocuments() {
               }
               tone={item.status === "Pending" ? "waiting" : undefined}
             />
+            {/* Phase 2.4: recorded on the student's Documents tab. */}
+            {item.hard_copy_received_on && <StatusBadge status="Hard copy received" tone="good" />}
             {/* A deliverable the coordinator reviews is decided here. */}
             {item.status === "Pending" && item.reviewer_role === "coordinator" && (
               <>

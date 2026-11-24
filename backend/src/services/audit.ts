@@ -979,6 +979,33 @@ export const AUDIT_RULES: Rule[] = [
     entityId: (source) => nested(source.result.visit, "company_id"),
     from: (source) => ({ visit_date: nested(source.result.visit, "visit_date") }),
   },
+  // Phase 2.4: hard copies received.
+  {
+    method: "PUT",
+    path: "/api/coordinator/students/:studentId/hard-copies/:recordType/:recordId",
+    action: "hard_copy.record",
+    entityType: "student",
+    entityId: param("studentId"),
+    keep: ["received_on"],
+    from: (source) => ({ record_type: source.params.recordType, record_id: source.params.recordId }),
+  },
+  {
+    method: "DELETE",
+    path: "/api/coordinator/students/:studentId/hard-copies/:recordType/:recordId",
+    action: "hard_copy.remove",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ record_type: source.params.recordType, record_id: source.params.recordId }),
+  },
+  {
+    method: "GET",
+    path: "/api/coordinator/students/:studentId/hard-copies/:recordType/:recordId/scan",
+    action: "hard_copy.scan_view",
+    entityType: "student",
+    entityId: param("studentId"),
+    from: (source) => ({ record_type: source.params.recordType, record_id: source.params.recordId }),
+    quietMinutes: READ_QUIET_MINUTES,
+  },
   // Phase 2.3: the monitoring plan.
   {
     method: "POST",

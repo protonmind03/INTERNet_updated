@@ -31,6 +31,7 @@ import {
 } from "./studentRecord/model";
 import RecordOverview from "./studentRecord/RecordOverview";
 import UploadUsage from "./UploadUsage";
+import HardCopies from "./HardCopies";
 import { FinalGradeCard } from "./FinalGrade";
 import TraineeReportsView from "../../components/TraineeReportsView";
 import {
@@ -426,6 +427,8 @@ export default function StudentRecord() {
             {tab === "documents" && (
               <>
                 <DocumentsSection data={data} perf={perf} canDecide={canDecide} online={online} onApprove={approve} onReject={setRejecting} />
+                {/* Phase 2.4: paper copies received, and the transmittal letter. */}
+                <div className="mt-4"><HardCopies studentId={data.student.student_id} /></div>
                 <UploadUsage studentId={studentId} />
               </>
             )}

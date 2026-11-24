@@ -407,6 +407,20 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Hard copies and the transmittal letter (Phase 2.4)
+
+- **`hard_copies`** (migration 088): one row per document or final
+  evaluation whose paper copy came in: who received it, the day, a note,
+  and optionally a scan of the transmittal letter (a private file).
+  Recorded on the student's Documents tab (`routes/hardCopies.ts`); the
+  routes name the student, so a scoped coordinator reaches only their own.
+- **"Hard copy received"** shows there and on the Documents list
+  (`hard_copy_received_on`).
+- **The transmittal letter** is made in the browser
+  (`lib/transmittalPdf.ts`) from approved documents and final evaluations.
+  Health and clearance documents are never listed on it; it says they go
+  separately.
+
 ## The monitoring plan (Phase 2.3)
 
 - **Planned check-ins live in `site_visits`** (migration 087) with

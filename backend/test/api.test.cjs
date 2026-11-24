@@ -1730,7 +1730,7 @@ const PUBLIC_ROUTES = new Set([
 
 function readRoutes() {
   const routes = [];
-  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts"]) {
+  for (const file of ["server.ts", "routes/extensions.ts", "routes/console.ts", "routes/academics.ts", "routes/supervisorDesk.ts", "routes/offlineTimeIn.ts", "routes/attachments.ts", "routes/programme.ts", "routes/deliverables.ts", "routes/appeals.ts", "routes/messages.ts", "routes/accountDetails.ts", "routes/projections.ts", "routes/institution.ts", "routes/timeRecord.ts", "routes/passkeys.ts", "routes/traineeRecord.ts", "routes/clearance.ts", "routes/director.ts", "routes/admin.ts", "routes/finalGrades.ts", "routes/htes.ts", "routes/overtime.ts", "routes/geofence.ts", "routes/companyChoices.ts", "routes/monitoringPlan.ts", "routes/hardCopies.ts"]) {
     const text = fs.readFileSync(
       nodePath.join(__dirname, "..", "src", file),
       "utf8"
@@ -15189,6 +15189,80 @@ test("the monitoring plan: planning, overdue and this week, the reminder, moving
     await pool.query(`DELETE FROM site_visits WHERE company_id = $1`, [companyId]);
     await pool.query(`DELETE FROM students WHERE student_id = $1`, [sid]);
     await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
+    await pool.end();
+  }
+});
+
+/*
+| Phase 2.4: hard copies received, and their transmittal
+*/
+
+test("hard copies: recorded for a document and a final evaluation, with a scan, shown, and taken off", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const sid = `HCP-${stamp}`.toUpperCase();
+  const other = `HCQ-${stamp}`.toUpperCase();
+  await pool.query(`INSERT INTO students (student_id, email, password, name, is_active) VALUES ($1, $2, 'x', 'Made Up Paper Trainee', TRUE), ($3, $4, 'x', 'Made Up Other', TRUE)`, [sid, `${sid.toLowerCase()}@demo.invalid`, other, `${other.toLowerCase()}@demo.invalid`]);
+  const doc = (await pool.query(`INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status) VALUES ($1::text, 'Made Up Letter', 'letter.pdf', $1::text || '-made-up.pdf', 'application/pdf', 10, 'Approved') RETURNING id`, [sid])).rows[0].id;
+  const otherDoc = (await pool.query(`INSERT INTO documents (student_id, doc_type, original_filename, file_path, mime_type, size_bytes, status) VALUES ($1::text, 'Made Up Letter', 'letter.pdf', $1::text || '-made-up.pdf', 'application/pdf', 10, 'Approved') RETURNING id`, [other])).rows[0].id;
+  const evaluation = (await pool.query(`INSERT INTO final_evaluations (student_id, form_id, form_snapshot, supervisor_id, supervisor_name, ratings, average, remarks) VALUES ($1, 1, '{}'::jsonb, 'SUP', 'Made Up Supervisor', '{}'::jsonb, 4.5, 'Made up remarks.') RETURNING id`, [sid])).rows[0].id;
+  const supervisor = await supervisorSession();
+  const base = `/api/coordinator/students/${sid}/hard-copies`;
+  const record = (type, id, fields, token = coordinatorToken, file) => {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(fields)) form.append(key, value);
+    if (file) form.append("scan", file.blob, file.name);
+    return jsonRequest(`/api/coordinator/students/${sid}/hard-copies/${type}/${id}`, { method: "PUT", headers: authHeaders(token), body: form });
+  };
+  try {
+    const fields = { received_on: "2026-11-20", received_by_name: "Made Up Office Clerk", note: "Two copies." };
+    assert.equal((await record("document", doc, fields, supervisor.token)).response.status, 403);
+    assert.equal((await record("memo", doc, fields)).response.status, 404);
+    assert.equal((await record("document", otherDoc, fields)).response.status, 404, "another student's document is not reached through this one");
+    assert.equal((await record("document", doc, { ...fields, received_on: "2999-01-01" })).response.status, 400);
+    assert.equal((await record("document", doc, { ...fields, received_by_name: "" })).response.status, 400);
+    const wrongType = await record("document", doc, fields, coordinatorToken, { blob: new Blob(["x"], { type: "text/plain" }), name: "scan.txt" });
+    assert.equal(wrongType.response.status, 400);
+
+    const pdf = new Blob(["%PDF-1.4 made up transmittal"], { type: "application/pdf" });
+    const saved = await record("document", doc, fields, coordinatorToken, { blob: pdf, name: "transmittal.pdf" });
+    assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
+    assert.equal((await record("final_evaluation", evaluation, { received_on: "2026-11-21", received_by_name: "Made Up Office Clerk" })).response.status, 200);
+
+    const listed = await jsonRequest(base, { headers: authHeaders(coordinatorToken) });
+    assert.equal(listed.response.status, 200, JSON.stringify(listed.body));
+    assert.equal(listed.body.student.name, "Made Up Paper Trainee");
+    const item = (type, id) => listed.body.items.find((row) => row.record_type === type && row.record_id === id);
+    assert.deepEqual(item("document", doc).hard_copy, { received_on: "2026-11-20", received_by_name: "Made Up Office Clerk", note: "Two copies.", has_scan: true });
+    assert.equal(item("final_evaluation", evaluation).hard_copy.has_scan, false);
+    assert.equal((await jsonRequest(base, { headers: authHeaders(supervisor.token) })).response.status, 403);
+
+    // The documents list says so too.
+    const documents = await jsonRequest(`/api/coordinator/documents?q=${encodeURIComponent(sid)}`, { headers: authHeaders(coordinatorToken) });
+    const row = documents.body.documents.find((entry) => entry.id === doc);
+    assert.equal(row?.hard_copy_received_on, "2026-11-20", JSON.stringify(row));
+
+    // The scan opens for a coordinator; changing the record without a new scan keeps it.
+    const scan = await fetch(new URL(`/api/coordinator/students/${sid}/hard-copies/document/${doc}/scan`, apiBaseUrl), { headers: authHeaders(coordinatorToken) });
+    assert.equal(scan.status, 200);
+    assert.match(await scan.text(), /made up transmittal/);
+    assert.equal((await record("document", doc, { ...fields, note: "" })).response.status, 200);
+    assert.equal((await fetch(new URL(`/api/coordinator/students/${sid}/hard-copies/document/${doc}/scan`, apiBaseUrl), { headers: authHeaders(coordinatorToken) })).status, 200);
+
+    // Taken off: the scan goes with it.
+    const removed = await jsonRequest(`/api/coordinator/students/${sid}/hard-copies/document/${doc}`, { method: "DELETE", headers: authHeaders(coordinatorToken) });
+    assert.equal(removed.response.status, 200, JSON.stringify(removed.body));
+    assert.equal((await jsonRequest(`/api/coordinator/students/${sid}/hard-copies/document/${doc}`, { method: "DELETE", headers: authHeaders(coordinatorToken) })).response.status, 404);
+    assert.equal((await fetch(new URL(`/api/coordinator/students/${sid}/hard-copies/document/${doc}/scan`, apiBaseUrl), { headers: authHeaders(coordinatorToken) })).status, 404);
+
+    const actions = (await pool.query(`SELECT action FROM audit_log WHERE entity_id = $1 AND action LIKE 'hard_copy.%'`, [sid])).rows.map((entry) => entry.action);
+    for (const action of ["hard_copy.record", "hard_copy.remove", "hard_copy.scan_view"]) assert.ok(actions.includes(action), `${action} is audited`);
+  } finally {
+    await pool.query(`DELETE FROM hard_copies WHERE student_id = ANY($1)`, [[sid, other]]);
+    await pool.query(`DELETE FROM final_evaluations WHERE student_id = $1`, [sid]);
+    await pool.query(`DELETE FROM documents WHERE student_id = ANY($1)`, [[sid, other]]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [[sid, other]]);
     await pool.end();
   }
 });
