@@ -1,196 +1,221 @@
 # INTERNet readiness for PSU Lingayen OJT: gap report and presentation brief
 
-Prepared 22 November 2026 for the presentation to the OJT Director.
+Version 2, 25 November 2026. It replaces the version of 22 November.
 
-The two interview notes on how the campus runs OJT were compared against the code on `ui-redesign`. Those notes are the "flow and requirements" summary and "1. Initial Evaluation & Prerequisites". Neither note is in git.
+The two interview notes on how the campus runs OJT were compared against `ui-redesign` at `c1ef679`. Those notes are the "flow and requirements" summary and "1. Initial Evaluation & Prerequisites". Neither note is in git.
 
 **Reading the status column:**
 - ✅ In the system and working.
-- 🟡 There, but needs revision to match the campus process.
+- 🟡 There, but needs revision or a decision from the university.
 - ❌ Not built yet.
 
-## Summary
+---
 
-INTERNet is already strong on **daily OJT operations**:
-- attendance with a camera check;
-- offline time-in;
-- the CS Form 48 DTR;
-- daily, weekly and monthly reports;
-- the Narrative builder;
-- the university's FM-AA-INT forms;
-- messages and announcements;
-- monitoring, KPIs and backups.
+## 0. What changed since 22 November, and what was checked
 
-There are about 280 API tests and 22 end-to-end specs, and the axe sweep reports 0 accessibility violations.
+**42 commits were pushed between 23 and 25 November.** They change 274 files (about 20,800 lines added) and add migrations 077 to 092. Together they build all three phases of `docs/IMPLEMENTATION-PROMPT.md` (CHANGES.md sections 41–43):
 
-INTERNet is weak on what happens **before deployment** and at **grading time**:
-- No rule stops a student who has not cleared medical exams, clearances or academic screening.
-- Required hours are a per-student default of 180, not set by program.
-- Overtime is not handled.
-- Only the agency's 50% of the grade is computed.
-- There is no Director role, and every coordinator sees every student.
+- **Phase 0:**
+  - no plain-text passwords;
+  - CORS fails closed;
+  - hours by program;
+  - deployment doc fixed;
+  - PSU-like demo data.
+- **Phase 1:**
+  - requirements pack;
+  - deployment gate and Clearance board;
+  - HTE type, approval, screening, MOA and slots;
+  - overtime;
+  - 50/50 grade;
+  - **Director portal**;
+  - **IT Admin portal**;
+  - privacy and offline hygiene.
+- **Phase 2:**
+  - location check;
+  - agency choices;
+  - monitoring plan;
+  - hard copies and transmittal;
+  - completion approval;
+  - semesters;
+  - steadier camera check;
+  - accessibility in CI.
 
-There is also no portal for the Director or for whoever runs the system: the plan adds a **Director portal** and a separate **IT Admin portal** with separate duties (the admin never sees student records or grades).
+`main` was also moved to the same commit (`c1ef679`) on 25 November.
 
-These are the gaps the Director is most likely to notice. Each one has a fix planned below, and the step-by-step prompt is in `docs/IMPLEMENTATION-PROMPT.md`.
+**Checked for this report:**
+
+| Check | Result |
+|---|---|
+| Backend API tests, on a fresh database with the clock on UTC (as CI) | **322 of 322 pass** |
+| Backend lint (time zones), every route named by a test | Clean; 347 routes |
+| Frontend build, lint, `check:pwa` | Clean; `check:pwa` 198 of 198 |
+| **GitHub CI on `c1ef679`** (both `ui-redesign` and `main`) | **Failed**, for the three reasons below |
+| CI end-to-end | 136 passed, 1 failed, 2 did not run |
+| CI Lighthouse (mobile, report only) | Performance: landing 91 (layout shift 0.177), Today 88, Review 86, coordinator 83. Accessibility 99–100. These are lower than October's 97–100. |
+
+**Why CI is red:**
+1. **Backend job.**
+   - `docs/ARCHITECTURE.md` was not regenerated after the new routes.
+   - The job stops at that check, so **CI never ran the backend tests** (they pass locally, above).
+   - Fix: `cd backend && npm run docs:architecture`, then commit the file.
+2. **End-to-end: `admin-portal.spec.ts:102`**, "End every session" menu item not found.
+   - It passes when run alone, so it is an order-dependent flake.
+   - Likely cause: the accounts list reloads while the menu is open, during the full run.
+   - Fix: wait for the list to settle before opening the menu, or keep the menu open across reloads.
+3. **Accessibility sweep: 16 serious findings, all on `/supervisor/journals`** (`my-pwa/src/pages/supervisor/Journals.tsx` around line 220).
+   - **Nested interactive:** the "Review now" link sits inside the `<summary>` that opens the week. Move the link out of the `<summary>`, for example into the opened part or beside the row.
+   - **Colour contrast:** the month label (`<i>` in `.att-date`) is too light.
+   - These show only when a weekly report is still waiting, which is why the local sweep was clean and CI's data is not.
+
+**Production is unknown.** `main` now holds a commit whose CI failed.
+- **If Railway's "Wait for CI" is on:** the backend did not deploy. But Vercel may have deployed the new site, so the new site may be talking to the old API.
+- **If it is off:** production ran migrations 035 to 092. That would have skipped the go-live rehearsal, unless steps 1–4 were done first.
+- **The go-live checklist is out of date:** it still says "43 migrations, 035 to 077"; it is now 58, 035 to 092.
+- Check production before the demo (see section 6).
 
 ---
 
-## 1. What the process needs vs. what INTERNet has
+## 1. What the process needs vs. what INTERNet has now
 
 ### A. Before deployment
-| Requirement (from the notes) | Status | In the code / what is missing |
+| Requirement (from the notes) | Status | Where it is / what is left |
 |---|---|---|
-| Academic screening: the instructor checks the portal record for failed or missing subjects | ❌ | Exists only on paper: FM-AA-INT-01 section B and FM-AA-INT-02 (`my-pwa/src/pages/student/forms/formModel.ts:171`, `:254`). No eligibility status, hold or result is recorded. |
-| Internship in the 2nd semester; some programs span both semesters | 🟡 | `terms` (migration 021) with open/close and a setup checklist (`backend/src/services/termSetup.ts`). There is no semester type, and a student belongs to one term only. |
-| Medical: general exam, urinalysis, chest X-ray, CBC, and a pregnancy test for female students | 🟡 | One generic "Medical" requirement (migration 006). Per-program targeting exists (`applies_to`, migration 045, `backend/src/services/deliverables.ts:32`). The separate items are not seeded, and the student record has no sex field to target the pregnancy test. |
-| Anti-hepatitis for food-related programs (HM, VIT/BTVTEd, BIT Food Service, BSND) | 🟡 | Can be targeted with `applies_to`, but is not seeded. |
-| NBI, police and barangay clearance | ❌ | Not present. These can be modelled as requirements. |
-| SSS and Pag-IBIG numbers (optional, advised) | ❌ | No fields. Migration 060 holds contact details only. |
-| **Deployment gate**: no OJT until cleared | ❌ | Time-in (`POST /api/attendance`, `backend/src/server.ts` around 2510–2630) never checks requirements or eligibility. |
-| Independent (self-arranged) internship with extra clearances | ❌ | There is no placement type. |
+| Academic screening (failed or missing subjects) | ✅ / 🟡 | Eligibility status (unchecked / eligible / deficient) with a note, recorded by the coordinator (migration 079). It is a **manual** check: grades are not imported from the university portal. |
+| 2nd-semester timing; programs that span two terms | ✅ | Term semester and academic year; the semesters each program's OJT runs in; carry-over of continuing students with their hours (migration 090). |
+| Medical: exam, urinalysis, chest X-ray, CBC, pregnancy test for female students | ✅ / 🟡 | Requirements pack with restricted health files, and targeting by sex (migration 078). **The items and the programs they apply to still need the Director's confirmation.** |
+| Anti-hepatitis for food-related programs | ✅ / 🟡 | Targeted by program. Confirm which programs. |
+| NBI, police and barangay clearance | ✅ | Restricted clearance requirements. |
+| SSS and Pag-IBIG numbers | ✅ | Optional fields in the student's profile. |
+| **Deployment gate** | ✅ | Clearance board, "clear anyway" with a reason, and no time-in until cleared, on every time-in path. **Off by default; the Director switches it on.** |
+| Independent (self-arranged) internship | ❌ | Still no placement type. A student-arranged agency can come in as an agency suggestion, but there is no separate path with its own clearances. |
 
 ### B. Host Training Establishments (HTE) and placement
-| Requirement | Status | In the code / what is missing |
+| Requirement | Status | Where it is / what is left |
 |---|---|---|
-| Registry of partner agencies | ✅ | `companies` (migrations 020 and 060), `pages/coordinator/Companies.tsx` and `CompanyPage.tsx`. MOA start and expiry dates, with an "agreement ending/expired" filter. |
-| Notarized MOA | ❌ | The MOA is only a *student* upload. Companies have no MOA file and no notarized flag. |
-| Government vs. private | ❌ | No type field. |
-| Screening of private agencies: standing, work environment, space, safety | ❌ | `site_visits` (migration 034) holds free-text findings only. |
-| New-agency application or assessment form, requested by a student, the agency or the university | ❌ | |
-| Slot allocation (e.g. 5 of 40) | 🟡 | `companies.slots` is shown as "X of Y taken" but is **not enforced** when a student is assigned (`backend/src/routes/extensions.ts:1773-1789`). |
-| Student picks a preferred agency by program; the instructor assigns the rest | 🟡 | Direct assignment and CSV import work, and term setup counts students with no company. There is no preference or request flow. |
+| Registry, government / private / university | ✅ | Migration 083. |
+| Notarized MOA | ✅ | MOA file kept privately, with a notarized flag and date. |
+| Screening of private agencies | ✅ | Screenings on standing, environment, space and safety. A private agency is approved only after a pass. |
+| New-agency request | ✅ | Suggestions from students and coordinators. |
+| Slot allocation | ✅ | Enforced on create, edit, import and carry-over, with the company locked. |
+| Student picks an agency; instructor assigns the rest | ✅ | Choice window, top 3 choices, demand against slots, assignment (migration 086). |
 
 ### C. Hours and daily operations
-| Requirement | Status | In the code / what is missing |
+| Requirement | Status | Where it is / what is left |
 |---|---|---|
-| Program hours: PA 400, IT 480, BSBA 600 | 🟡 | Hours are set **per student, with a default of 180** (migration 002 line 61, `Students.tsx:90`, import `extensions.ts:931`). `programs` has no hours column. The first note gives PA as "400 or 480"; the second says 400. Confirm with the Director. |
-| Standard 8-hour workday | 🟡 | Hours come from each student's schedule (`backend/src/services/dayRules.ts`, migration 065). The only cap is `MAX_SHIFT_HOURS = 16` (`server.ts:3585`). Credit beyond the scheduled day is not limited. |
-| Overtime: an official form, at most 2 a week | ❌ | Only a printable waiver/overtime form exists (`formModel.ts:334`). |
-| DTR on the Civil Service form, or the agency's DTR system | ✅ | CS Form 48 (`components/DtrSheet.tsx`, `routes/timeRecord.ts`), with monthly supervisor certification (migration 030). An agency's own DTR can only be uploaded as a generic document. |
-| Biometric / face-recognition-style check | ✅ / 🟡 | MediaPipe liveness check (`my-pwa/src/lib/liveness/*`, `backend/src/services/liveness.ts`), and the supervisor reviews the photo. It is **not** face recognition, and the server trusts the phone's report. It is a deterrent, not proof. |
-| Location / surroundings verification | ❌ | No geolocation. GPS data is deliberately removed from photos, and companies have no coordinates. |
-| Working without signal at the agency | ✅ | Offline time-in with signed vouchers and a device key, plus the waiting queue (`lib/offlineTimeIn.ts`, `routes/offlineTimeIn.ts`, migrations 049 and 055). |
-| Daily diary / tickler notebook, read at the end | ✅ | Accomplishments at time-out; daily, weekly and monthly reports; journals; the Narrative builder with Word export. |
+| Program hours: PA 400, IT 480, BSBA 600 | ✅ / 🟡 | `programs.required_hours` (migration 077). **The other 12 programs are blank and fall back to 180** until the Director sets them. |
+| 8-hour day; overtime at most 2 a week | ✅ | Hours stop at the scheduled end unless overtime is approved. Requests on Days, decisions in Review, shown on the DTR (migration 084). Logs from before keep their hours. |
+| CS Form 48 DTR | ✅ | Unchanged. An agency's own DTR is still only a generic upload. |
+| Camera check | ✅ | Liveness at about 15 readings a second, a low-light hint, and after 20 s "Continue without photo", with the reason kept (migration 091). Still not face recognition. |
+| Location verification | ✅ | Optional (off / record / review when outside). Only the distance is kept, never the coordinates; a time-in is never refused (migration 085). |
+| Offline time-in, diary and reports | ✅ | Unchanged, plus "Prepare for offline" in onboarding and the shared-phone sign-out. |
 
 ### D. Monitoring, communication and records
-| Requirement | Status | In the code / what is missing |
+| Requirement | Status | Where it is / what is left |
 |---|---|---|
-| A monitoring plan with periodic check-ins | 🟡 | The Monitoring page, alerts, the site-visit log and student notes. There are **no planned visits**, no visit schedule and no reminders. |
-| Email, Messenger, text and calls | ✅ | In-app messages, announcements with read receipts, notifications, email (Resend) and push. **Email and push are off until they are configured.** |
-| Formal forms sent officially | 🟡 | Evaluations are submitted in the app, but no transmittal or receipt is recorded. |
-| Papers lost in office stacks; scan and upload to a central database | ✅ / 🟡 | Private file store, document review, ZIP export, version history and soft delete. Missing: transmittal letters and "received by / received on" for hard copies. |
+| Monitoring plan and check-ins | ✅ | Planned visits, calls and message check-ins; "Planned this week" and "Overdue"; a reminder the day before; a PDF of the plan (migration 087). |
+| Email, Messenger, text and calls | ✅ / 🟡 | In-app channels. **Email and push still need their production keys.** |
+| Transmittal and hard copies | ✅ | Received by and on, a transmittal scan, and a printable letter (migration 088). A re-upload shows as "not received" again. |
+| Central storage of scanned forms | ✅ | Unchanged. |
 
-### E. Evaluation and grading
-| Requirement | Status | In the code / what is missing |
+### E. Evaluation, grading and oversight
+| Requirement | Status | Where it is / what is left |
 |---|---|---|
-| 50% from the HTE evaluation | ✅ | The weighted FM-AA-INT-13 form (migration 074, `backend/src/services/evaluationGrade.ts`). Its criteria are a **sample** until the university confirms them. |
-| 50% from the university / instructor: logs, punctuality, pre-internship preparation, conduct | ❌ | Only a free 1–5 "teacher" rating (migration 002), which feeds no grade. |
-| Final grade = 50 / 50 | ❌ | Not computed. |
-| KDCC / OJT office holds the forms; Director oversight | ❌ | The only roles are student, supervisor and coordinator. **Every coordinator sees every student** (`GET /api/coordinator/students`), and any coordinator can deactivate another (`extensions.ts:3900-3985`). Planned: a Director portal and a separate IT Admin portal (implementation prompt items 1.6 and 1.7). |
-| Completion | 🟡 | Completion checklist and review request (migration 027). The certificate is an upload from the agency, and the coordinator has no approve/close step. |
+| 50% HTE + 50% instructor | ✅ / 🟡 | Instructor's four scores, a grade sheet with CSV and PDF, release before students see it, and a 1.00–5.00 grade (migration 082). **The split, the weights, PSU's own grade table and the HTE criteria are marked pending until the university confirms them.** |
+| Director oversight | ✅ | **Director portal (`/director`):** campus by college, coordinators and their scopes, programs, rules, approvals, reports. Coordinators keep the office's powers until a Director account exists. |
+| System administration | ✅ | **IT Admin portal (`/admin`):** accounts, status, backups, warnings, maintenance notice, audit log. It cannot open students' records. |
+| Completion | ✅ | The coordinator approves or returns a completion review (migration 089). No certificate is generated, by decision on 25 November. |
 
 ---
 
-## 2. Flaws the Director may point out, and the fix for each
+## 2. What the Director may still object to, and the answer
 
-| # | Likely objection | Fix |
+| # | Likely objection | Answer or fix |
 |---|---|---|
-| F1 | "A student can start OJT without the medical exams, clearances or academic screening." | Seed a requirements pack per program and add a **deployment gate**. Time-in is refused until the coordinator marks the student *Cleared for deployment*. An override needs a reason and is written to the audit log. |
-| F2 | "The hours are wrong; it says 180." | Give each program its required hours (BPA 400, BSIT 480, BSBA 600, the others set by the Director). New and imported students take the program's hours, and a per-student override stays possible. |
-| F3 | "There is no overtime rule." | Overtime requests: the student files one, the supervisor approves it. The limit is 2 per week and can be changed. Time beyond the scheduled day counts only when overtime was approved. |
-| F4 | "The grade is not 50/50." | An instructor rubric: logs and diaries, punctuality (computed from submission dates), pre-internship preparation and conduct. The final grade is the HTE half plus the instructor half, worked out on the server, shown and exportable. The weights can be changed per term. |
-| F5 | "How do I see every college, and how do coordinators see only their own?" | A **Director portal** of its own (`/director`): campus overview by college, programs and hours, coordinators and their scopes, term rules, approvals (agencies, grade release, clearance overrides), campus reports and audit. Coordinators are limited to their assigned colleges or programs. A separate **IT Admin portal** (`/admin`) for university MIS handles accounts, unlocks, password resets, system status and backups, and is barred from student records and grades. |
-| F6 | "Is the MOA notarized? Are private agencies screened? What about slots?" | HTE type, MOA file with notarized flag and dates, a screening checklist for private agencies, an approval status, and slots **enforced** when students are assigned. |
-| F7 | "The biometric check should verify the location." | An optional geofence: the HTE's location and radius. Time-in keeps only "inside / outside, about N m" and never a location trail. Outside the fence, the log goes to the supervisor instead of being refused. |
-| F8 | "What about cheap phones, no data, or a camera that fails?" | These already exist: time-in without a photo (the supervisor confirms), the supervisor records the time-in in person, offline vouchers, and the QR hand-off from a computer. Show them in the demo. |
-| F9 | "Is the data safe under RA 10173? The medical files?" | Finish the privacy notice (DPO and retention), turn on `PRIVACY_CONSENT_REQUIRED`, set `PHOTO_RETENTION_DAYS`, put health and clearance documents in a restricted category, and remove the plain-text password fallback. |
-| F10 | "Who runs this after you graduate, and what does it cost?" | A handover: DEPLOY.md, encrypted backups, the go-live checklist, a hosting cost estimate, and a proposal that university IT/MIS owns the hosting. |
+| F1 | "Can a student start without clearances?" | Not once the deployment gate is on. Show the Clearance board and a refused time-in. The gate is off by default so nobody is locked out on deploy: **the Director decides when to turn it on.** |
+| F2 | "Is the grade official?" | The 50/50 sheet works, but its split, weights, grade table and HTE criteria are **marked pending**. Ask the Director for the official values. Each is one setting or one constant. |
+| F3 | "What about programs other than PA, IT and BSBA?" | Their hours are blank and fall back to 180. Ask for the hours of all 15 programs, and set them in the Director's Programs page. |
+| F4 | "Who can see medical files?" | Only the student, the coordinators in scope and the Director. Supervisors and the IT admin never can, and every opening is logged. |
+| F5 | "Is the privacy notice final?" | No: `draft-6` is still a placeholder. **Do not switch on `PRIVACY_CONSENT_REQUIRED` until the DPO approves the wording**, or students will be asked to agree to a draft. |
+| F6 | "Does the location check track students?" | No: it keeps only the distance, never coordinates or a trail, and never refuses a time-in. It is off unless the Director turns it on. |
+| F7 | "Is it tested on real phones?" | Not yet. Run the device day (section 3) before the pilot. |
+| F8 | "Self-arranged internships?" | Not a separate path yet. For now they come in as an agency suggestion, then go through screening and approval. |
+| F9 | "Is it stable? The build shows a red cross." | Fix the three CI causes in section 0 first (about an hour of work) so the record shows green. |
+| F10 | "Who runs it?" | The IT Admin portal is built for university MIS. Name the owner and a hosting budget. |
 
 ---
 
-## 3. Concerns about using it across the whole campus
+## 3. Concerns about using it across the campus
 
-- **Hosting and scale.**
-  - The backend runs as one instance (DEPLOY.md, "one instance"), and some rate limits are held in memory.
-  - That is enough for one campus, but it needs a paid plan, a budget line and a named owner.
-  - The Railway trial has ended, per the 24 October report.
-- **Production is behind.**
-  - `main` lacks 233 commits and 42 migrations.
-  - The go-live checklist (`docs/GO-LIVE-CHECKLIST.md`) has not been run, and the scheduled backups are not on yet.
-- **Not yet tested on real phones.**
-  - The camera check, offline time-in, passkeys and push have only been tested in a browser with a fake camera.
-  - Before the pilot, run a one-day device test on 5–10 phones, including a low-end Android and an iPhone.
-- **Signal at the agencies.**
-  - The offline queue covers this.
-  - The first time-in downloads about 19 MB of face-check files, so students should open the app once on campus Wi-Fi during orientation.
-- **Supervisor workload.**
-  - Government supervisors are busy, so their part has to stay small: the daily digest, one Review button and a one-page guide.
-  - An agency's biometric DTR printout can be uploaded as supporting evidence.
-- **Policy.**
-  - The process has to fit CHED CMO No. 104 s. 2017 and the PSU OJT manual. The FM-AA-INT forms are already mirrored.
-  - The MOA template should carry a data-sharing clause naming INTERNet.
-- **Change management.**
-  - Run paper in parallel for the first 2–4 weeks.
-  - Hold orientation for students, coordinators and HTE supervisors.
-  - Name a help-desk contact.
-- **Students without a smartphone.**
-  - The supervisor can record time-in, and the QR hand-off lets a computer start the step.
+- **Production state and deploy safety.** Confirm what production runs; update the go-live checklist to 092; turn on Railway's "Wait for CI". Vercel can deploy the site without waiting for CI, so a red build is a signal not to trust it.
+- **Settings the university must give.** Grade split and weights, PSU's grade table, the HTE criteria, the hours of 12 programs, the medical items per program, the OJT semesters per program, the location rule and each company's point, the privacy wording, the DPO and the retention period.
+- **Real phones.** Camera check, offline time-in, location prompt, passkeys, push, install on iPhone. Spend one day with 5–10 phones, including a low-end Android and an iPhone.
+- **Speed.** Lighthouse performance fell to 83–91, and the landing page's layout shift is 0.177 (above 0.1). This matters on cheap phones.
+- **Accounts.** Make the first accounts with `npm run admin:create` and `npm run director:create`. Each prints a temporary password once, and it must be changed.
+- **Change management.** Paper in parallel for 2–4 weeks; orientation for each role; a help-desk contact.
+- **Known open items** (CHANGES.md §43):
+  - a term can be closed before its continuing students are carried over;
+  - a re-upload loses the "hard copy received" mark;
+  - an online time-in without a photo still counts as "offline" on some supervisor screens;
+  - the Director and Admin portals are not yet in the CI accessibility sweep.
 
 ---
 
-## 4–5. Quality checklist before publishing: issue and resolution
+## 4–5. Quality checklist: issue and resolution
 
 | Area | What was found | Resolution |
 |---|---|---|
-| Security | Legacy plain-text passwords are still accepted (`verifyPassword`, `server.ts:883-896`). The sign-in token is in localStorage. CORS accepts any origin if its variables are unset. Some IP limits are held in memory. | Hash the remaining plain rows with a one-off script, then delete the fallback. Refuse to start in production without `FRONTEND_URL`/`CORS_ORIGINS`. Keep the enforced CSP. The token in localStorage stays a documented, accepted risk (audit L3). |
-| Privacy (RA 10173) | The notice is still `placeholder: true`, with no DPO or retention period. Photos are kept forever unless `PHOTO_RETENTION_DAYS` is set. The notice does not name health documents. Every coordinator sees every student. | Finish the notice with the Director and the DPO, and set the retention period. Put medical and clearance documents in a restricted category: only the student, the assigned coordinator and the Director can open them, and each opening is logged. Add coordinator scoping. |
-| Integrity | The server trusts the phone's camera-check report. The 50/50 grade is not computed. Slots are not enforced. | The supervisor's photo review stays the final word (call it a deterrent, not proof). Compute the grade on the server. Check the slot inside the same transaction as the assignment. |
-| Consistency | The 180-hour default conflicts with program rules. DEPLOY.md (removing old photos) says nothing is removed automatically, but a nightly purge exists. IDs are compared with and without trimming (audit M2). | Program defaults; correct the doc; normalise IDs when they are written. |
-| Responsiveness | axe reports 0 violations; the supervisor layout shift is fixed; a ten-width sweep has been done. | Keep it that way: add the axe sweep to CI. |
-| Functionality and capability | The gaps in section 1. | Phases 1 and 2 of the implementation prompt. |
-| PWA and offline | IndexedDB is not encrypted (queued photos, vouchers). Data stays up to 72 h after a session ends. The first download is about 19 MB. Background Sync is not used, by design, because the service worker cannot read the token. | Delete a queued photo as soon as it is sent. Add a "Prepare for offline" step to onboarding. Add a "Shared phone: erase everything" sign-out. Document these trade-offs. |
-| Error handling | Good: ErrorBoundary, client error reports, the problems log, toasts, and 409 "changed since you opened it". | When the deployment gate blocks a time-in, list exactly what is missing ("Not cleared yet: Chest X-ray, NBI clearance"). |
-| Ease of use and affordance | The calm passes are done, and every screen has Help. | Add a "Requirements" card on the student's Today screen and a coordinator "Clearance board". |
-| "AI" behaviour | No large language model is used. The only model is the MediaPipe face tracker for liveness. It can struggle in low light, with glasses or on slow phones. Detection runs on every frame with no throttling, and it has not been tested on phones. | Throttle detection to about 15 frames a second. After about 20 s with no pass, offer "Continue without photo (supervisor confirms)". Show a low-light hint. Never call it face recognition. |
-| Policy | Rules are hard-coded or missing (overtime limit, grade weights, hours). | Make every rule a setting per term, changed only by the Director, with an audit log entry. |
-| Precautions | No scheduled backups are running, and nothing outside watches the service. | Run go-live checklist steps 1–9, run a restore drill, and add a free uptime check on `/api/health`. |
+| Security | Plain-text passwords and open CORS are fixed. Phase 2 had a full security review with no findings. **Phase 1's phase-wide security review was postponed** (usage limit) and is not recorded as done. | Run `/security-review` on Phase 1 (`88cc499..fc2cb34`). Keep "Wait for CI" on. |
+| Privacy | Notice `draft-6` is still a placeholder. Photo retention needs `PHOTO_RETENTION_DAYS`. The Director can open health files; admins making Directors notify the office. | Final wording from the DPO, then consent on. Set retention. Review the Director accounts every term. |
+| Integrity | Slots, approvals, the grade and the gate are enforced on the server. The camera check still relies on the phone's report. | Keep the supervisor's photo review as the final word. |
+| Consistency | The go-live checklist says 077; the code is at 092. `docs/ARCHITECTURE.md` is stale. A no-photo online time-in counts as offline on some screens. | Update both docs; fix the label. |
+| Responsiveness | Journals page: 16 serious accessibility findings in CI. Performance is lower. Landing page layout shift 0.177. | Fix Journals (section 0). Reserve space for the landing hero. Look at the Lighthouse reports in the CI artifacts. |
+| Functionality | Independent internship path missing; agency DTR upload generic; no certificate (by decision). | Add a placement type if the Director wants one. |
+| PWA and offline | The new portals have their own manifests and icons; "Prepare for offline" and the shared-phone sign-out are added. | Test install and update on real phones for all five portals. |
+| Error handling | Gate refusals name what is missing (but not to supervisors, for privacy). Slot and approval refusals say why. | Keep. |
+| Ease of use | Five portals; the Director and Admin portals look deliberately different. | One-page guide per role. |
+| "AI" behaviour | Camera check throttled, low-light hint, 20-second way out. No LLM. | Never call it face recognition. |
+| Policy | Every rule is a setting, changed by the Director and audited. Defaults are safe (gate off, location off). | The Director sets the rules at term setup. |
+| Precautions | Backups need the go-live steps; CI is red. | Section 6, step 1. |
 
 ---
 
 ## 6. Presentation brief
 
-**Demo path (about 15 minutes, on a phone and a laptop):**
-1. Install the student app from the landing page, then sign in.
-2. Open Today, time in with the camera check, and show the hours strip.
-3. Switch to airplane mode, time out, show "Waiting to send", reconnect and watch it send.
-4. Show a daily report with a photo, the Narrative builder, and Fill and print for the FM-AA-INT forms.
-5. As the supervisor, open Review and verify the log, then look at the intern's page.
-6. As the coordinator, show Today, the KPIs, Companies with MOA dates, the student record, the DTR print and an analytics export.
+**Before the demo (in this order):**
+1. **Do not use production** until you know what it runs. Use the test site or a local copy with `npm run db:seed-demo`.
+2. If you can, fix the three CI causes and push, so the latest commit has a green tick.
+3. Make the accounts: `npm run director:create` and `npm run admin:create`, plus the demo students, supervisors and coordinator.
+4. On the demo database only, turn on the deployment gate and set one company's location point, so you can show them.
+5. Rehearse twice on a real phone and a laptop. Keep screenshots as a backup.
 
-**Say plainly what is not built yet:** the ❌ rows in section 1, and when each will be ready (Phases 0–2 in the implementation prompt). Being honest about the gaps earns more trust than a perfect demo.
+**Demo path (about 20 minutes):**
+1. Student: install the app, sign in, see the Requirements card, then try a time-in and get refused because the student is not cleared.
+2. Coordinator: open the Clearance board, approve the requirements, and clear the student.
+3. Student: time in with the camera check, show the location result, time out offline, then reconnect.
+4. Supervisor: approve an overtime request and verify the day in Review.
+5. Coordinator: show Companies (MOA notarized, slots, screening), the monitoring plan, and the grade sheet.
+6. **Director portal:** campus by college, coordinators and their scopes, program hours, the Rules page (gate, overtime, grade split), approvals.
+7. **IT Admin portal:** accounts and system status. Point out that it cannot open students' records.
 
-**Do not claim** (see PAPER-CORRECTIONS.md):
-- "works fully offline";
-- "face recognition";
-- "penetration tested";
-- "WCAG certified";
+**Do not claim:**
+- face recognition;
+- fully offline;
+- penetration tested;
+- WCAG certified;
 - that email and push are live;
-- that the evaluation criteria are the university's official ones.
+- that the grade values or the evaluation criteria are official;
+- that the privacy notice is final;
+- that it has been tested on real phones.
 
 **Ask the Director to decide:**
-1. The required hours for every program.
-2. The overtime limit, which the notes give as 2 a week.
-3. The weights of the instructor half of the grade.
-4. The medical and clearance items for each program.
-5. The retention period and the DPO's contact details.
-6. Who hosts the system, and on what budget.
-7. Whether to pilot first or go campus-wide.
+1. The grade split, the instructor weights, PSU's grade table and the HTE evaluation criteria.
+2. The required hours for all 15 programs, and each program's OJT semesters.
+3. The medical and clearance items for each program.
+4. When to turn on the deployment gate and the location check.
+5. The privacy wording, the DPO and the retention period.
+6. Who owns the IT Admin role and the hosting budget.
+7. Pilot first or campus-wide, and whether a self-arranged internship path is needed.
 
 **Rollout options:**
-- **A. Pilot, then campus-wide (lower risk).**
-  - 1–2 programs (for example BSIT and BPA) for the first 4 weeks, with paper in parallel.
-  - Review with the Director, then open it to every college.
-  - Needs Phase 0 and the deployment gate.
-- **B. Campus-wide from day one.**
-  - Needs all of Phase 1, the go-live checklist done, paid hosting, and orientation for every college before the semester starts.
+- **A. Pilot first (lower risk).** 1–2 programs for 4 weeks with paper in parallel, then every college. Needs a green CI, the go-live checklist and the device day.
+- **B. Campus-wide.** Needs all of A done before the semester, plus the Director's settings and orientation for every college.
