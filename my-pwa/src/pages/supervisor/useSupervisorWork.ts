@@ -88,6 +88,8 @@ export type AttendanceEntry = {
   recorded_offline?: boolean;
   /** The time-in itself was recorded with no connection: no photo and no camera check. */
   offline_time_in?: boolean;
+  /** Phase 2.7: why there is no photo (no connection, the camera check could not run, or it took too long). */
+  no_photo_reason?: "no_connection" | "camera_problem" | "check_too_long" | null;
   /**
    * How far the intern's phone clock was from the server's when offline steps
    * of this log were sent, in seconds; positive when the phone was ahead.

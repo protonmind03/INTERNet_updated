@@ -126,14 +126,18 @@ function requestId(): string {
  * photo and what was signed about it, when the camera check ran offline;
  * its time is the moment the photo was taken.
  */
+/** Phase 2.7: why a time-in goes without a photo (backend migration 091). */
+export type NoPhotoReason = "no_connection" | "camera_problem" | "check_too_long";
+
 export async function queueTimeIn(
   note: string,
-  attested?: { photo: Blob; takenAt: string; fields: Record<string, string> }
+  attested?: { photo: Blob; takenAt: string; fields: Record<string, string> },
+  noPhotoReason: NoPhotoReason = "no_connection"
 ): Promise<QueuedStep | null> {
   if ((await waitingSteps()).some((step) => step.path === "time-in")) return null;
   // Phase 2.1: the distance from the company, worked out on this phone (never the fix).
   const geo = await offlineGeoFields().catch(() => ({}));
-  const extra = { ...(note.trim() ? { note: note.trim() } : {}), ...(attested?.fields ?? {}), ...geo };
+  const extra = { ...(note.trim() ? { note: note.trim() } : {}), ...(attested?.fields ?? {}), ...geo, ...(attested ? {} : { no_photo_reason: noPhotoReason }) };
   return queueStep(LOCAL_LOG_ID, "time-in", Object.keys(extra).length > 0 ? extra : undefined, attested);
 }
 

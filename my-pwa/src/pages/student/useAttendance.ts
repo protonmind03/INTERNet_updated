@@ -17,6 +17,7 @@ import {
   isLogStep,
   type QueuedStep,
   type StepPath,
+  type NoPhotoReason,
 } from "../../lib/offlineQueue";
 import { savedFetch } from "../../lib/offlineStore";
 import { attestTimeIn, forgetVoucher, prepareOfflineTimeIn, voucherFor, type OfflineVoucher } from "../../lib/offlineTimeIn";
@@ -428,8 +429,8 @@ export function useAttendance(studentId: string | undefined) {
    * Records the time-in on this phone, for when there is no connection. No
    * photo is taken or kept. False when this browser cannot keep it.
    */
-  const timeInOffline = useCallback(async (note: string): Promise<boolean> => {
-    const kept = await queueTimeIn(note);
+  const timeInOffline = useCallback(async (note: string, reason: NoPhotoReason = "no_connection"): Promise<boolean> => {
+    const kept = await queueTimeIn(note, undefined, reason);
     if (!kept) return false;
     setLogs((current) => withWaitingSteps(current, [kept]));
     // Start trying to send it: this keeps going until it gets through.

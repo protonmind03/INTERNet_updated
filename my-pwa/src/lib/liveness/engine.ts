@@ -8,6 +8,10 @@
 | reading per video frame and answers with what to show next. Keeping it
 | free of the browser means the rules can be tested on their own.
 |
+| Phase 2.7: the camera feeds it about 15 readings a second, not every
+| frame. Every rule below is timed in milliseconds, not frames, so the
+| pace changes nothing; READY_FRAMES (3) is then about 200 ms.
+|
 | The check runs in this order:
 |
 |   position  one face, close enough, lit well enough, held for a moment

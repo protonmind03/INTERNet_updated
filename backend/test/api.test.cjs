@@ -15409,3 +15409,51 @@ test("semesters: a term's semester and year, a program's OJT semesters, the warn
     await pool.end();
   }
 });
+
+/*
+| Phase 2.7: why a time-in came without a photo
+*/
+
+test("a time-in without a photo keeps why: no connection, a camera problem, or a check that took too long", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const bcrypt = require("bcryptjs");
+  const stamp = Date.now().toString(36);
+  const made = [];
+  const trainee = async (suffix) => {
+    const sid = `NPH-${suffix}-${stamp}`.toUpperCase();
+    made.push(sid);
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, must_change_password) VALUES ($1, $2, $3, 'Made Up No Photo', TRUE, FALSE)`,
+      [sid, `${sid.toLowerCase()}@demo.invalid`, await bcrypt.hash("NoPhotoPass123", 4)]
+    );
+    const session = await login("student", `${sid.toLowerCase()}@demo.invalid`, "NoPhotoPass123");
+    return { sid, token: session.token };
+  };
+  const send = (token, extra) =>
+    jsonRequest("/api/attendance/offline-time-in", jsonBody(token, "POST", {
+      occurred_at: new Date(Date.now() - 5 * 60_000).toISOString(),
+      client_request_id: `nph-${Math.random().toString(36).slice(2)}`,
+      ...extra,
+    }));
+  try {
+    for (const [suffix, extra, expected] of [
+      ["A", { no_photo_reason: "camera_problem" }, "camera_problem"],
+      ["B", { no_photo_reason: "check_too_long" }, "check_too_long"],
+      ["C", {}, "no_connection"],
+      ["D", { no_photo_reason: "face_recognition_off" }, "no_connection"],
+    ]) {
+      const { sid, token } = await trainee(suffix);
+      const sent = await send(token, extra);
+      assert.equal(sent.response.status, 201, JSON.stringify(sent.body));
+      assert.equal(sent.body.attendance.no_photo_reason, expected);
+      const kept = (await pool.query(`SELECT no_photo_reason, image_url, status FROM attendance WHERE student_id = $1`, [sid])).rows[0];
+      assert.deepEqual([kept.no_photo_reason, kept.image_url, kept.status], [expected, null, "Pending"]);
+    }
+  } finally {
+    await pool.query(`DELETE FROM attendance WHERE student_id = ANY($1)`, [made]);
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1)`, [made]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [made]);
+    await pool.end();
+  }
+});

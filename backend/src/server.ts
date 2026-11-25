@@ -2585,6 +2585,8 @@ const DAY_RULE_COLUMNS = `
   geo_distance_m,
   geo_source,
   geo_needs_review,
+  -- Phase 2.7: why a time-in came without a photo.
+  no_photo_reason,
   TO_CHAR(scheduled_start, 'HH24:MI') AS scheduled_start,
   lunch_late_minutes
 `;
@@ -4255,6 +4257,8 @@ app.get(
             a.geo_distance_m,
             a.geo_source,
             a.geo_needs_review,
+            -- Phase 2.7: why a time-in came without a photo.
+            a.no_photo_reason,
             -- Iteration 22: how each later step was made (passkey, not confirmed).
             a.step_verifications,
             (a.offline_time_in_request IS NOT NULL) AS offline_time_in,

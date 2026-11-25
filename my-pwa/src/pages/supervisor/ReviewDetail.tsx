@@ -217,8 +217,12 @@ function AttendanceDetail({ entry, work, onDecided, shortcuts }: DetailProps<Att
         <p className="flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2.5 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
           <Icon name="alert" size={16} className="mt-0.5 shrink-0 text-amber-600" />
           <span>
-            <span className="font-semibold">No photo and no camera check.</span> The intern
-            recorded this time-in on a phone with no connection, so the time is the phone's own.
+            <span className="font-semibold">No photo and no camera check.</span>{" "}
+            {entry.no_photo_reason === "camera_problem"
+              ? "The camera check could not run on the intern's phone, so they timed in without it."
+              : entry.no_photo_reason === "check_too_long"
+                ? "The camera check had not passed after 20 seconds, so the intern timed in without it."
+                : "The intern recorded this time-in on a phone with no connection, so the time is the phone's own."}{" "}
             Verify it only if you know they were at work at that time.
           </span>
         </p>

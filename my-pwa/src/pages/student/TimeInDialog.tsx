@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { BrandLoader } from "../../brand";
 import Icon from "../../components/Icon";
-import LivenessCamera, { type LivenessReport } from "../../components/LivenessCamera";
+import LivenessCamera, { type LivenessReport, type WithoutPhotoReason } from "../../components/LivenessCamera";
 import { Button, FormError, Modal, StatusBadge } from "../../components/ui";
 import { cue } from "../../lib/cues";
 import { formatTime } from "../../lib/format";
@@ -28,6 +28,10 @@ import type { LivenessChallenge } from "./useAttendance";
 | is back. Without a voucher, or when the camera cannot work, the dialog
 | offers the time-in without a photo, and says what that means: it is sent
 | later and the supervisor has to confirm it.
+|
+| Phase 2.7: online too, after 20 seconds without a pass or when the check
+| cannot start or fails, the camera offers the same time-in without a
+| photo. It is sent at once, and the reason is kept (no_photo_reason).
 |
 */
 
@@ -55,8 +59,8 @@ export default function TimeInDialog({
   onClose: () => void;
   /** What the phone says about its connection now. */
   online: boolean;
-  /** Keeps the time-in on the phone. False when the browser cannot. */
-  onOffline: (note: string) => Promise<boolean>;
+  /** Keeps the time-in on the phone (and sends it when it can). False when the browser cannot. */
+  onOffline: (note: string, reason?: "no_connection" | WithoutPhotoReason) => Promise<boolean>;
   /** Today's voucher for a time-in with a photo offline, if the phone has one. */
   loadOfflineVoucher: () => Promise<OfflineVoucher | null>;
   /** Keeps a time-in with its photo and signed record on the phone. False when it cannot. */
@@ -89,6 +93,9 @@ export default function TimeInDialog({
   const [voucher, setVoucher] = useState<OfflineVoucher | null | undefined>(undefined);
   const [withoutPhoto, setWithoutPhoto] = useState(false);
   const offlineCamera = noConnection && Boolean(voucher) && !withoutPhoto;
+  // Phase 2.7: the camera check offered the time-in without a photo, and the student took it.
+  const [fallback, setFallback] = useState<WithoutPhotoReason | null>(null);
+  const noPhotoForm = (noConnection && !offlineCamera) || fallback !== null;
   // Phase 1.2: with no connection, the readiness Today last saw. Not cleared
   // with the gate on: the time-in would be refused when it arrives, so say
   // so now. Online, the server's camera check says the same.
@@ -157,6 +164,7 @@ export default function TimeInDialog({
     setUnreachable(false);
     setVoucher(undefined);
     setWithoutPhoto(false);
+    setFallback(null);
   };
 
   const close = () => {
@@ -170,6 +178,7 @@ export default function TimeInDialog({
     setChallenge(null);
     setError("");
     setUnreachable(false);
+    setFallback(null);
     setRound((count) => count + 1);
   };
 
@@ -179,12 +188,13 @@ export default function TimeInDialog({
     setSaving(true);
     setError("");
     try {
-      if (!(await onOffline(note))) {
+      if (!(await onOffline(note, noConnection ? "no_connection" : (fallback ?? "no_connection")))) {
         setError("This browser cannot keep a time-in for later. Find a signal, or ask your supervisor to record your time-in.");
         return;
       }
       cue("saved");
-      toast.info(`Time-in saved on this phone at ${formatTime(new Date())}. It will be sent when you're back online.`);
+      if (noConnection) toast.info(`Time-in saved on this phone at ${formatTime(new Date())}. It will be sent when you're back online.`);
+      else toast.info(`Time-in sent at ${formatTime(new Date())}, without a photo. Your supervisor will confirm it.`);
       discardNote();
       reset();
       onClose();
@@ -254,6 +264,8 @@ export default function TimeInDialog({
       description={
         capture
           ? `Recorded at ${formatTime(now)} when you confirm.`
+          : fallback && !noConnection
+            ? "Time in without a photo. Your supervisor confirms it."
           : offlineCamera
             ? "No connection: the camera check runs on this phone, and your time-in is sent when you're back online."
             : noConnection
@@ -264,7 +276,7 @@ export default function TimeInDialog({
       }
       locked={saving}
       footer={
-        showBlocked ? undefined : !capture && noConnection && !offlineCamera ? (
+        showBlocked ? undefined : !capture && noPhotoForm ? (
           <>
             <Button variant="secondary" onClick={close} disabled={saving}>
               Cancel
@@ -296,7 +308,7 @@ export default function TimeInDialog({
             Open documents
           </Link>
         </div>
-      ) : !capture && offlineCamera && voucher ? (
+      ) : !capture && offlineCamera && voucher && !fallback ? (
         <div className="space-y-4">
           <LivenessCamera
             key={voucher.jti}
@@ -306,6 +318,7 @@ export default function TimeInDialog({
             // The voucher lasts the day; past it there is only the time-in without a photo.
             expiresAt={Date.parse(`${voucher.date}T23:59:59+08:00`)}
             onRenew={() => setWithoutPhoto(true)}
+            onWithoutPhoto={() => setWithoutPhoto(true)}
             onPassed={(photo, report) =>
               setCapture({
                 photo,
@@ -319,15 +332,15 @@ export default function TimeInDialog({
             Time in without a photo instead
           </Button>
         </div>
-      ) : !capture && noConnection && voucher === undefined ? (
+      ) : !capture && noConnection && voucher === undefined && !fallback ? (
         <BrandLoader role="student" process="timeIn" message="Getting the time-in ready…" />
-      ) : !capture && noConnection ? (
+      ) : !capture && noPhotoForm ? (
         <form id="offline-time-in-form" onSubmit={recordOffline} className="space-y-4">
           <div className="rounded-xl bg-amber-50 px-3.5 py-3 text-sm text-amber-950 ring-1 ring-inset ring-amber-600/20">
             <p className="font-semibold">You can still time in, without a photo.</p>
             <ul className="mt-1.5 list-disc space-y-1 pl-5">
               <li>The time is {formatTime(now)}, from this phone's clock.</li>
-              <li>It is kept on this phone and sent when you are back online.</li>
+              <li>{noConnection ? "It is kept on this phone and sent when you are back online." : "It is sent now. If the connection drops, it waits on this phone."}</li>
               <li>
                 Your supervisor is told there was no photo or camera check, and has to confirm
                 that you were at work before the day counts.
@@ -344,7 +357,7 @@ export default function TimeInDialog({
               maxLength={500}
               value={note}
               onChange={(event) => setNote(event.target.value)}
-              placeholder="For example, where you are and why there is no signal."
+              placeholder={noConnection ? "For example, where you are and why there is no signal." : "For example, what went wrong with the camera."}
               className="field resize-none"
             />
           </div>
@@ -365,6 +378,7 @@ export default function TimeInDialog({
               strict={challenge.level === "strict"}
               expiresAt={challenge.expiresAt}
               onRenew={retake}
+              onWithoutPhoto={setFallback}
               onPassed={(photo, report) =>
                 setCapture({ photo, report, preview: URL.createObjectURL(photo) })
               }

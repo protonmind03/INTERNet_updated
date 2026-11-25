@@ -407,6 +407,23 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## A more dependable camera check (Phase 2.7)
+
+- **About 15 readings a second** (`LivenessCamera.tsx`, `READ_EVERY_MS`):
+  the engine's rules are timed in milliseconds, so the pace changes nothing
+  but the load on older phones.
+- **"Too dark. Face a light"** is the light check's hint.
+- **The time-in without a photo, online too**: after 20 seconds without a
+  pass, or when the check cannot start or fails, one button ("Continue
+  without photo. Your supervisor will confirm") takes the existing
+  no-photo time-in (`/api/attendance/offline-time-in`), sent at once.
+  `attendance.no_photo_reason` (migration 091) keeps why: `no_connection`
+  (also every older one), `camera_problem` or `check_too_long`; the
+  supervisor's Review says which. The UI never calls the check "face
+  recognition".
+- The fake tracker (`e2e/camera/fake-face-tracker.ts`) sees no face when
+  `globalThis.__fakeFaceNone` is set.
+
 ## Semesters and OJT over two terms (Phase 2.6)
 
 - **A term's semester and academic year** (migration 090) are set in the

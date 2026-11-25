@@ -301,3 +301,58 @@ test.describe("the location check at time-in", () => {
     }
   });
 });
+
+/*
+| Phase 2.7: the camera check never sees a face (the fake tracker's
+| __fakeFaceNone). After 20 seconds it offers one button, the time-in
+| without a photo; it is sent at once, marked as a check that took too
+| long, and waits for the supervisor.
+*/
+test.describe("the time-in without a photo, when the camera check is slow", () => {
+  test("after 20 seconds without a pass, the student continues without a photo and the reason is kept", async ({ page }) => {
+    const coordinator = await apiSession("coordinator");
+    const supervisor = await apiSession("supervisor");
+    const stamp = Date.now();
+    const id = `SLOW-${stamp}`;
+    const email = `${id.toLowerCase()}@camera.test`;
+    const made = await api(coordinator.token, "POST", "/api/coordinator/students", {
+      student_id: id, email, password: "SlowStart123!", name: "Slow Check", supervisor_id: supervisor.id,
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    const first = await (await fetch(`${API}/api/login/student`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "SlowStart123!" }) })).json();
+    expect((await api(first.token, "PUT", `/api/students/${id}/password`, { current_password: "SlowStart123!", new_password: "SlowCheck4567!" })).status).toBe(200);
+    const signedIn = await (await fetch(`${API}/api/login/student`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "SlowCheck4567!" }) })).json();
+    const token = String(signedIn.token);
+    const privacy = await api<{ notice: { version: string } }>(token, "GET", `/api/students/${id}/privacy`);
+    expect((await api(token, "POST", `/api/students/${id}/privacy/consent`, { version: privacy.body.notice.version })).status).toBe(200);
+
+    try {
+      await page.context().grantPermissions(["camera"]);
+      await page.addInitScript(() => {
+        (globalThis as { __fakeFaceNone?: boolean }).__fakeFaceNone = true;
+      });
+      await page.route(/\/assets\/vision_bundle-[^/]+\.js$/, (route) => route.fulfill({ contentType: "application/javascript", body: FAKE_FACE_TRACKER }));
+      await signIn(page, "student", { ...ACCOUNTS.student, email, password: "SlowCheck4567!" });
+      await page.goto("/student/dashboard");
+      await page.getByRole("button", { name: "Time in", exact: true }).click();
+      const dialog = page.getByRole("dialog", { name: "Time in" });
+      await expect(dialog.getByText("Bring your face into the oval")).toBeVisible({ timeout: 30_000 });
+      const fallback = dialog.getByRole("button", { name: "Continue without photo. Your supervisor will confirm" });
+      await expect(fallback).toBeHidden();
+      await expect(fallback).toBeVisible({ timeout: 30_000 });
+      await fallback.click();
+      await expect(dialog.getByText("It is sent now. If the connection drops, it waits on this phone.")).toBeVisible();
+      await dialog.getByRole("button", { name: "Time in without a photo" }).click();
+      await expect(page.getByText(/Time-in sent at .*, without a photo\. Your supervisor will confirm it\./)).toBeVisible({ timeout: 20_000 });
+
+      await expect
+        .poll(async () => {
+          const logs = await api<{ attendance: { date: string; no_photo_reason?: string | null; image_url?: string | null }[] }>(token, "GET", `/api/attendance/${id}`);
+          return logs.body.attendance.find((entry) => entry.date === today())?.no_photo_reason ?? null;
+        }, { timeout: 20_000 })
+        .toBe("check_too_long");
+    } finally {
+      await api(coordinator.token, "PATCH", `/api/coordinator/students/${id}/status`, { is_active: false });
+    }
+  });
+});

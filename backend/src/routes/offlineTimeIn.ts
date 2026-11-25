@@ -78,11 +78,15 @@ type Dependencies = {
   jwtSecret: string;
 };
 
+/** Phase 2.7 (migration 091): why a time-in came without a photo. */
+const NO_PHOTO_REASONS: unknown[] = ["no_connection", "camera_problem", "check_too_long"];
+
 const LOG_COLUMNS = `
   id, student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
   time_out, hours, note, status, image_url, capture_method, recorded_offline,
   (offline_time_in_request IS NOT NULL) AS offline_time_in,
-  session, credited_from, late_minutes, TO_CHAR(scheduled_start, 'HH24:MI') AS scheduled_start, lunch_late_minutes
+  session, credited_from, late_minutes, TO_CHAR(scheduled_start, 'HH24:MI') AS scheduled_start, lunch_late_minutes,
+  no_photo_reason
 `;
 
 /** A refusal: the status, a code the app can act on, and a sentence for the student. */
@@ -457,6 +461,8 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
       const rawNote = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 500) : "";
       // Phase 2.1: where it was made, as the phone worked it out (never the coordinates).
       const geo = await judgeGeo(pool, auth.id, req.body, "offline");
+      // Phase 2.7: why there is no photo. Older phones send nothing: they only had no connection.
+      const noPhotoReason = NO_PHOTO_REASONS.includes(req.body?.no_photo_reason) ? (req.body.no_photo_reason as string) : "no_connection";
 
       const existingFor = async () =>
         pool.query<{ id: number; offline_time_in_request: string | null }>(
@@ -509,20 +515,21 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
             `INSERT INTO attendance
                (student_id, date, time_in, note, status, image_url, capture_method, recorded_offline, offline_time_in_request, clock_skew_seconds,
                 session, credited_from, late_minutes, scheduled_start, credited_until,
-                geo_status, geo_distance_m, geo_source, geo_needs_review)
+                geo_status, geo_distance_m, geo_source, geo_needs_review, no_photo_reason)
              VALUES
                ($1,
                 ${phSql.date("$2::timestamptz")},
                 ${phSql.wallTime("$2::timestamptz")},
                 $3, 'Pending', NULL, NULL, TRUE, $4, $5,
                 $6, ${phSql.wallTime("$7::timestamptz")}, $8, $9::time, ${phSql.wallTime("$10::timestamptz")},
-                $11, $12, $13, COALESCE($14::boolean, FALSE))
+                $11, $12, $13, COALESCE($14::boolean, FALSE), $15)
              RETURNING ${LOG_COLUMNS}, TO_CHAR(time_in, 'HH12:MI AM') AS at`,
             [
               auth.id, stamp.occurredAt.toISOString(), rawNote || null, stamp.requestId, readClockSkew(req.body),
               verdict.session, verdict.creditedFrom.toISOString(), verdict.lateMinutes, verdict.scheduledStart,
               verdict.creditedUntil?.toISOString() ?? null,
               geo?.status ?? null, geo?.distance_m ?? null, geo?.source ?? null, geo?.needs_review ?? false,
+              noPhotoReason,
             ]
           );
         } else {

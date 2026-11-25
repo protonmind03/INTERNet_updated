@@ -37,6 +37,11 @@ import { useWakeLock } from "../lib/useWakeLock";
 | points the student to their supervisor, who can record the time-in from
 | the supervisor portal instead.
 |
+| Phase 2.7: the face is read about 15 times a second (enough for the
+| prompts, and gentler on older phones). After 20 seconds without a pass,
+| or when the check cannot start or fails, one button offers the time-in
+| without a photo, which the supervisor confirms (onWithoutPhoto).
+|
 */
 
 export type LivenessReport = {
@@ -86,6 +91,13 @@ const KEEP_EVERY_MS = 250;
 const KEEP_FOR_MS = 800;
 // The countdown shows in the ticket's last minute.
 const COUNTDOWN_FROM_S = 60;
+// Phase 2.7: about 15 readings a second.
+const READ_EVERY_MS = 1000 / 15;
+// Phase 2.7: after this long without a pass, the time-in without a photo is offered.
+const SLOW_AFTER_MS = 20_000;
+
+export type WithoutPhotoReason = "camera_problem" | "check_too_long";
+const WITHOUT_PHOTO_LABEL = "Continue without photo. Your supervisor will confirm";
 
 const PROMPT_TEXT: Record<Prompt, { text: string; icon: IconName; flip?: boolean }> = {
   blink: { text: "Blink your eyes", icon: "user" },
@@ -102,7 +114,7 @@ const HINT_TEXT: Record<Hint, string> = {
   "too-far": "Move a little closer",
   "too-close": "Move back a little",
   "off-centre": "Centre your face in the oval",
-  "too-dark": "Find a spot with more light",
+  "too-dark": "Too dark. Face a light",
   "too-bright": "Too much glare. Turn away from the light",
   "hold-still": "Hold still",
   "face-forward": "Face the camera",
@@ -158,6 +170,7 @@ export default function LivenessCamera({
   expiresAt,
   onPassed,
   onRenew,
+  onWithoutPhoto,
 }: {
   /** The prompts the server picked for this time-in. */
   prompts: Prompt[];
@@ -169,6 +182,8 @@ export default function LivenessCamera({
   onPassed: (photo: File, report: LivenessReport) => void;
   /** Asks the server for a new check, when this one has run out. */
   onRenew: () => void;
+  /** Phase 2.7: the time-in without a photo, offered after 20 seconds or when the check cannot work. */
+  onWithoutPhoto?: (reason: WithoutPhotoReason) => void;
 }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const passed = useRef(onPassed);
@@ -188,6 +203,8 @@ export default function LivenessCamera({
   const [view, setView] = useState<EngineView | null>(null);
   const [flash, setFlash] = useState<FlashColour | null>(null);
   const [finished, setFinished] = useState(false);
+  // Phase 2.7: set once the check has run 20 seconds without a pass.
+  const [slow, setSlow] = useState(false);
   // The check is done by looking at the phone, not touching it: keep the
   // screen on until the photo is taken.
   useWakeLock(!finished);
@@ -196,9 +213,11 @@ export default function LivenessCamera({
     let cancelled = false;
     let stream: MediaStream | null = null;
     let frameRequest = 0;
+    let slowTimer = 0;
 
     const stopCamera = () => {
       cancelAnimationFrame(frameRequest);
+      window.clearTimeout(slowTimer);
       stream?.getTracks().forEach((track) => track.stop());
       stream = null;
     };
@@ -251,9 +270,13 @@ export default function LivenessCamera({
       const reader = createFaceReader(tracker, video);
       const startedAt = performance.now();
       setStarting(false);
+      slowTimer = window.setTimeout(() => {
+        if (!cancelled) setSlow(true);
+      }, SLOW_AFTER_MS);
 
       let latest: Reading | null = null;
       let lastVideoTime = -1;
+      let lastRead = -Infinity;
       let lastKey = "";
       let flashStarted = false;
       // Full frames kept while the button is enabled, newest last.
@@ -308,6 +331,7 @@ export default function LivenessCamera({
           return;
         }
         setFinished(true);
+        window.clearTimeout(slowTimer);
         frame.canvas.toBlob(
           (blob) => {
             stopCamera();
@@ -328,9 +352,13 @@ export default function LivenessCamera({
         frameRequest = requestAnimationFrame(loop);
         // Only look at frames the camera has actually delivered.
         if (video.readyState < 2 || video.currentTime === lastVideoTime) return;
+        // Phase 2.7: about 15 readings a second, whatever the camera's frame rate.
+        const readAt = performance.now();
+        if (readAt - lastRead < READ_EVERY_MS) return;
+        lastRead = readAt;
         lastVideoTime = video.currentTime;
 
-        latest = reader.read(performance.now());
+        latest = reader.read(readAt);
         const next = engine.step(latest.sample);
 
         if (next.phase === "flash" && !flashStarted) {
@@ -397,6 +425,7 @@ export default function LivenessCamera({
     setProblem(null);
     setView(null);
     setFinished(false);
+    setSlow(false);
     setStarting(true);
     setRun((count) => count + 1);
   };
@@ -418,6 +447,11 @@ export default function LivenessCamera({
         ) : (
           <Button block variant="secondary" icon="refresh" onClick={retry}>
             Try again
+          </Button>
+        )}
+        {onWithoutPhoto && (problem === "tracker" || problem === "failed") && (
+          <Button block onClick={() => onWithoutPhoto("camera_problem")}>
+            {WITHOUT_PHOTO_LABEL}
           </Button>
         )}
         <SupervisorTip />
@@ -566,6 +600,14 @@ export default function LivenessCamera({
           />
         ))}
       </ol>
+
+      {onWithoutPhoto && slow && !finished && (
+        <div className="mt-4">
+          <Button block variant="secondary" onClick={() => onWithoutPhoto("check_too_long")}>
+            {WITHOUT_PHOTO_LABEL}
+          </Button>
+        </div>
+      )}
 
       {!finished && (
         <details className="mt-4 text-sm">

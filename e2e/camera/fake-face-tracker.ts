@@ -12,7 +12,9 @@
 | head to one side and then the other every few seconds, which completes
 | whichever head turns the server asked for. Once the test sets
 | `globalThis.__fakeFaceHold = true` the face holds still, facing the camera,
-| so the "Take photo" button stays enabled.
+| so the "Take photo" button stays enabled. With
+| `globalThis.__fakeFaceNone = true` it sees no face at all, so the check
+| never passes (Phase 2.7's fallback after 20 seconds).
 |
 */
 
@@ -26,6 +28,7 @@ export const FaceLandmarker = {
   createFromOptions: async () => ({
     detectForVideo(video, time) {
       started ??= time;
+      if (globalThis.__fakeFaceNone === true) return { faceLandmarks: [], faceBlendshapes: [] };
       const cycle = (time - started) % 3600;
       // Where the nose sits between the two sides of the face: 0.5 is straight ahead.
       let nose = 0.5;
