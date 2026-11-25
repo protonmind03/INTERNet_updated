@@ -44,10 +44,10 @@ const DEV_ACCOUNTS: Record<Role, { identifier: string; password: string }> = {
   student: { identifier: "student.demo@internet.test", password: "StudentDemo123!" },
   supervisor: { identifier: "supervisor.demo@internet.test", password: "SupervisorDemo123!" },
   coordinator: { identifier: "coordinator.demo@internet.test", password: "CoordinatorDemo123!" },
-  // No demo Director: one is made with npm run director:create.
-  director: { identifier: "", password: "" },
-  // Nor a demo administrator: one is made with npm run admin:create.
-  admin: { identifier: "", password: "" },
+  // The showcase's Director and administrator (scripts/showcase/data.ts), not db:seed-demo: an
+  // active Director takes the office's rules from coordinators, which the CI tests rely on.
+  director: { identifier: "felicidad.mendoza@psu.example", password: "Director2026!" },
+  admin: { identifier: "daniel.soriano@psu.example", password: "Admin2026!" },
 };
 
 /** Each role's words on its sign-in page. */
