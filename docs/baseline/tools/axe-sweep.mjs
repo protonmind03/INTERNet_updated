@@ -6,6 +6,9 @@
 //
 // Needs puppeteer-core and axe-core installed where it is run from (NODE_PATH works), and
 // Chrome at the usual Windows place, or CHROME=<path>.
+//
+// Phase 2.8: with FAIL_ON=serious it ends with exit code 1 when any page or state has a
+// serious or critical violation, and lists them (CI runs it so, after the e2e tests).
 import fs from "node:fs";
 import { createRequire } from "node:module";
 const require = createRequire(process.env.TOOLS_DIR ? `${process.env.TOOLS_DIR}/` : import.meta.url);
@@ -19,6 +22,8 @@ for (const address of [SITE, API]) {
 }
 const OUT = process.env.OUT || "axe-before.json";
 const MAX_STATES = Number(process.env.MAX_STATES || 10);
+const FAIL_ON = process.env.FAIL_ON || "";
+if (FAIL_ON && FAIL_ON !== "serious") throw new Error("FAIL_ON is serious, or not set.");
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const ACCOUNTS = {
@@ -125,7 +130,9 @@ async function clickByName(page, name) {
 const browser = await puppeteer.launch({
   executablePath: process.env.CHROME || "C:/Program Files/Google/Chrome/Application/chrome.exe",
   headless: "new",
-  args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream"],
+  // In CI (Phase 2.8) Chrome's sandbox may not start on the runner; Playwright turns it off
+  // the same way. It only ever opens this computer's own build.
+  args: ["--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", ...(process.env.CI ? ["--no-sandbox"] : [])],
 });
 const results = [];
 const started = Date.now();
@@ -187,3 +194,20 @@ try {
 }
 fs.writeFileSync(OUT, JSON.stringify({ when: new Date().toISOString(), site: SITE, rules: "WCAG 2.1 A and AA (axe-core tags wcag2a, wcag2aa, wcag21a, wcag21aa)", minutes: Math.round((Date.now() - started) / 60000), results }, null, 1));
 console.log(`written ${OUT}`);
+
+if (FAIL_ON === "serious") {
+  const serious = results.flatMap((record) =>
+    record.states.flatMap((state) =>
+      state.violations
+        .filter((violation) => violation.impact === "serious" || violation.impact === "critical")
+        .map((violation) => `${record.width} ${record.role} ${record.path} [${state.state}] ${violation.impact} ${violation.id}: ${violation.help} (${violation.count}) ${violation.nodes[0]?.target ?? ""}`)
+    )
+  );
+  if (serious.length > 0) {
+    console.error(`
+${serious.length} serious or critical violation(s):`);
+    for (const line of serious) console.error(`  ${line}`);
+    process.exit(1);
+  }
+  console.log("No serious or critical violations.");
+}

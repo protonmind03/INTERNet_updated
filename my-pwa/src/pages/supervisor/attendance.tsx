@@ -781,7 +781,7 @@ function ChipButton({ on, label, count, onClick }: { on: boolean; label: string;
     >
       {on && <Icon name="check" size={14} />}
       {label}
-      <span className={`tabular rounded-full px-1.5 text-xs ${on ? "bg-white/20" : "bg-slate-100 text-slate-600"}`}>{count}</span>
+      <span className={`tabular rounded-full px-1.5 text-xs ${on ? "bg-psu-800 text-white" : "bg-slate-100 text-slate-600"}`}>{count}</span>
     </button>
   );
 }

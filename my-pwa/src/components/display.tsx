@@ -200,12 +200,16 @@ export function CountTiles({ label, tiles }: { label: string; tiles: { label: st
   return (
     <dl aria-label={label} className="grid grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fit,minmax(9.5rem,1fr))]">
       {tiles.map((tile) => (
-        <div key={tile.label} className="card-hairline flex min-h-[4.5rem] items-center gap-3 rounded-xl px-3.5 py-2.5">
-          <IconTile icon={tile.icon} tone={tile.tone} size="sm" />
-          <div className="min-w-0">
-            <dd className="font-display tabular text-[22px] font-extrabold leading-none text-slate-900">{tile.count ?? "–"}</dd>
-            <dt className="mt-1 truncate text-[13px] font-semibold text-slate-700">{tile.label}</dt>
-          </div>
+        // Phase 2.8 (axe): each group is a <dt> then its <dd>, straight under the <dl>; the
+        // column is reversed so the count still reads first, and the icon sits in the gutter.
+        <div key={tile.label} className="card-hairline relative flex min-h-[4.5rem] min-w-0 flex-col-reverse justify-center rounded-xl py-2.5 pl-[3.625rem] pr-3.5">
+          <dt className="mt-1 truncate text-[13px] font-semibold text-slate-700">
+            <span aria-hidden="true" className="absolute left-3.5 top-1/2 -translate-y-1/2">
+              <IconTile icon={tile.icon} tone={tile.tone} size="sm" />
+            </span>
+            {tile.label}
+          </dt>
+          <dd className="font-display tabular text-[22px] font-extrabold leading-none text-slate-900">{tile.count ?? "–"}</dd>
         </div>
       ))}
     </dl>

@@ -127,7 +127,7 @@ export default function RequirementGrid({
                               </span>
                             </button>
                           ) : (
-                            <span className="req-cell mx-auto border border-dashed border-slate-300" aria-label={`${label}: none uploaded`} />
+                            <span role="img" className="req-cell mx-auto border border-dashed border-slate-300" aria-label={`${label}: none uploaded`} />
                           )}
                         </td>
                       );
@@ -146,7 +146,7 @@ export default function RequirementGrid({
                             <Icon name={MARK[status].icon} size={14} />
                           </button>
                         ) : (
-                          <span className="req-cell mx-auto border border-dashed border-slate-300" aria-label={`${label}: not uploaded`} />
+                          <span role="img" className="req-cell mx-auto border border-dashed border-slate-300" aria-label={`${label}: not uploaded`} />
                         )}
                       </td>
                     );

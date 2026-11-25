@@ -115,13 +115,13 @@ export function TodayLine({ interns, logs, onOpen }: { interns: Intern[]; logs: 
             <li key={intern.student_id}>
               <Link
                 to={`/supervisor/interns/${encodeURIComponent(intern.student_id)}`}
-                aria-label={`${intern.name}: ${status.text}`}
                 title={`${intern.name}: ${status.text}`}
                 className={`grid h-9 w-9 place-items-center rounded-full text-[11.5px] font-extrabold ring-2 ring-inset ${
                   present ? "bg-psu-600 text-white ring-psu-600" : "bg-white text-slate-500 ring-slate-200"
                 }`}
               >
                 <span aria-hidden="true">{getInitials(intern.name, "IN")}</span>
+                <span className="sr-only">{`${intern.name}: ${status.text}`}</span>
               </Link>
             </li>
           );

@@ -407,6 +407,21 @@ DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
   active, the coordinators lose the office's powers, which other tests use
   (`e2e/tests/director-portal.spec.ts` does this with the script).
 
+## Accessibility in CI (Phase 2.8)
+
+- **CI runs the axe sweep** (`docs/baseline/tools/axe-sweep.mjs`) after
+  the end-to-end tests, against the same built site and API: every page of
+  the three portals and the public pages, at 390 px and 1280 px, with up to
+  three menus, tabs or dialogs each page opens (`MAX_STATES=3`). With
+  `FAIL_ON=serious` it fails on any serious or critical violation and lists
+  them; the full report is kept as the `axe-report` artifact. It uses
+  Playwright's Chromium (`CHROME`), and `--no-sandbox` only when `CI` is set.
+- **Locally**, with the API on 5055 and `vite preview` on 4173:
+  `SITE=http://localhost:4173 API=http://127.0.0.1:5055 TOOLS_DIR=$PWD/e2e MAX_STATES=3 FAIL_ON=serious node docs/baseline/tools/axe-sweep.mjs`
+  (about 10 minutes).
+- The Director and administrator portals are not in the sweep yet: CI has
+  no seeded accounts for them. Their e2e specs run axe on each page instead.
+
 ## A more dependable camera check (Phase 2.7)
 
 - **About 15 readings a second** (`LivenessCamera.tsx`, `READ_EVERY_MS`):

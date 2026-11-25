@@ -145,7 +145,7 @@ jobs:
   e2e:
     name: End-to-end tests
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
 
     services:
       postgres:
@@ -238,6 +238,33 @@ jobs:
       - name: Run the end-to-end tests
         working-directory: e2e
         run: npx playwright test
+
+      # Phase 2.8: axe (WCAG 2.1 A and AA) on every page of the three
+      # portals at 390 px and 1280 px, and on up to three menus, tabs or
+      # dialogs each page opens. Fails on any serious or critical
+      # violation; the full report is kept below.
+      - name: Accessibility sweep (axe)
+        if: ${{ !cancelled() }}
+        working-directory: e2e
+        env:
+          SITE: http://localhost:4173
+          API: http://127.0.0.1:5000
+          MAX_STATES: "3"
+          FAIL_ON: serious
+          OUT: axe-report.json
+        run: |
+          export TOOLS_DIR="$PWD"
+          export CHROME="$(node -e "console.log(require('@playwright/test').chromium.executablePath())")"
+          node ../docs/baseline/tools/axe-sweep.mjs
+
+      - name: Keep the accessibility report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: axe-report
+          path: e2e/axe-report.json
+          retention-days: 30
+          if-no-files-found: warn
 
       # Iteration 14: Lighthouse (mobile) on the sign-in page and each
       # portal's first page, against the same built site. It reports and

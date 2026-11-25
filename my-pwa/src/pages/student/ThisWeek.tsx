@@ -29,7 +29,7 @@ type Stamp = { word: string; icon: IconName; className: string };
 
 function stampOf(log: AttendanceLog | undefined, key: string, today: string, working: boolean): Stamp {
   if (working) return { word: "Working", icon: "clock", className: "bg-psu-700 text-white" };
-  if (!log?.time_in) return key > today ? { word: "Ahead", icon: "calendar", className: "bg-slate-100 text-slate-500" } : { word: "None", icon: "close", className: "bg-slate-100 text-slate-600" };
+  if (!log?.time_in) return key > today ? { word: "Ahead", icon: "calendar", className: "bg-slate-100 text-slate-600" } : { word: "None", icon: "close", className: "bg-slate-100 text-slate-600" };
   if (!log.time_out && key < today) return { word: "No out", icon: "alert", className: "bg-(--status-late-bg) text-(--status-late-ink)" };
   if (log.status === "Verified") return { word: log.auto_counted ? "Counted" : "Verified", icon: "check", className: "bg-(--status-success-bg) text-(--status-success-ink)" };
   if (log.status === "Rejected" || log.status === "Flagged") return { word: log.status, icon: "flag", className: "bg-(--status-late-bg) text-(--status-late-ink)" };

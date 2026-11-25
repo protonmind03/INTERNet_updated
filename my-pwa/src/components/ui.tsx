@@ -1073,7 +1073,7 @@ export function FilterChips<T extends string>({
             {option.count !== undefined && (
               <span
                 className={`tabular rounded-full px-1.5 text-xs ${
-                  active ? "bg-white/20" : "bg-slate-100 text-slate-600"
+                  active ? "bg-psu-800 text-white" : "bg-slate-100 text-slate-600"
                 }`}
               >
                 {option.count}

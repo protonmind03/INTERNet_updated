@@ -319,7 +319,7 @@ html:has(body.land-home) { scrollbar-color: var(--color-silver-deep) var(--color
 .land-home .how .dev { box-shadow: 0 0 0 2px var(--color-silver), 0 0 0 3px color-mix(in oklab, var(--color-silver-deep) 70%, transparent), var(--shadow-float); }
 .land-home .how-device-name { padding: var(--space-2xs) var(--space-sm); border-radius: 8px; background: var(--color-card); box-shadow: 0 0 0 1px var(--color-rule); font-size: var(--text-sm); font-weight: 600; color: var(--color-muted); }
 
-.land-home .how-step { padding: clamp(var(--space-sm), 1.8vh, var(--space-md)) var(--space-md) clamp(var(--space-sm), 2vh, var(--space-lg)); border-radius: 12px; color: var(--color-muted); opacity: 0.7; transform: none; transition: background-color var(--dur-short), opacity var(--dur-short); }
+.land-home .how-step { padding: clamp(var(--space-sm), 1.8vh, var(--space-md)) var(--space-md) clamp(var(--space-sm), 2vh, var(--space-lg)); border-radius: 12px; color: var(--color-muted); opacity: 1; transform: none; transition: background-color var(--dur-short), opacity var(--dur-short); }
 .land-home .how-step:hover { opacity: 1; background: color-mix(in oklab, var(--color-night) 4%, transparent); }
 .land-home .how-step:active { background: color-mix(in oklab, var(--color-night) 8%, transparent); }
 .land-home .how-step[aria-current="step"] { opacity: 1; transform: none; background: var(--color-card); color: var(--color-ink-2); box-shadow: var(--shadow-card); }

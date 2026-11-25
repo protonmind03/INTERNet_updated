@@ -108,8 +108,11 @@ function Hero() {
               return (
                 <div key={role} className="hero-slot" data-role={role} data-pos={pos} data-device={door.heroDevice} data-hero-slot={role}>
                   <div className="hero-slot-inner">
-                    <button type="button" className="hero-device" data-hero-turn={role} aria-label={`Show the ${door.name} portal`} tabIndex={pos === "center" ? -1 : 0}>
-                      <Device role={role} kind={door.heroDevice} />
+                    <button type="button" className="hero-device" data-hero-turn={role} tabIndex={pos === "center" ? -1 : 0}>
+                      <span className="sr-only">Show the {door.name} portal</span>
+                      <span aria-hidden="true" className="contents">
+                        <Device role={role} kind={door.heroDevice} />
+                      </span>
                     </button>
                     <span className="hero-shadow" aria-hidden="true" />
                     {door.notes.map((note, i) => (
