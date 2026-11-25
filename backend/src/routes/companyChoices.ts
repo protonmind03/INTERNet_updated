@@ -261,7 +261,18 @@ export function registerCompanyChoiceRoutes(app: express.Express, deps: Dependen
       if (company.rows.length === 0) return res.status(404).json({ message: "Company not found." });
       const name = company.rows[0].name;
       const done = await withPlacement(pool, name, studentId, async (db) =>
-        (await db.query<{ student_id: string }>(`UPDATE students SET company = $2 WHERE student_id = $1 RETURNING student_id`, [studentId, name])).rows[0] ?? null
+        // A supervisor of another company is not this student's any more: the coordinator assigns one there.
+        (
+          await db.query<{ student_id: string }>(
+            `UPDATE students SET company = $2,
+                    supervisor_id = CASE
+                      WHEN supervisor_id IS NOT NULL
+                       AND (SELECT company_id FROM supervisors WHERE supervisor_id = students.supervisor_id) IS DISTINCT FROM $3::int
+                      THEN NULL ELSE supervisor_id END
+             WHERE student_id = $1 RETURNING student_id`,
+            [studentId, name, companyId]
+          )
+        ).rows[0] ?? null
       );
       if (!done) return res.status(404).json({ message: "Student not found." });
       await createNotification({

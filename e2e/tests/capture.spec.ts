@@ -343,7 +343,7 @@ test.describe("the time-in without a photo, when the camera check is slow", () =
       await fallback.click();
       await expect(dialog.getByText("It is sent now. If the connection drops, it waits on this phone.")).toBeVisible();
       await dialog.getByRole("button", { name: "Time in without a photo" }).click();
-      await expect(page.getByText(/Time-in sent at .*, without a photo\. Your supervisor will confirm it\./)).toBeVisible({ timeout: 20_000 });
+      await expect(page.getByText(/Sending your time-in from .*, without a photo\. Your supervisor will confirm it\./)).toBeVisible({ timeout: 20_000 });
 
       await expect
         .poll(async () => {

@@ -8,7 +8,8 @@ import { coordinatorRequest } from "./request";
 | Phase 2.6: under a term with a semester. Students whose program's OJT is
 | in another semester are named, as a warning. Students in the first part
 | of a two-term program can be carried over into the next term, with their
-| hours and records, before this one is closed.
+| hours and records, before this one is closed. They are grouped by the
+| semester they continue in, since one carry-over moves one group.
 */
 
 type Person = { student_id: string; name: string; program: string | null };
@@ -22,7 +23,8 @@ const names = (people: Person[]) => {
 
 export default function TermSemester({ term, terms, onMoved }: { term: { id: number; semester: Semester }; terms: TermLite[]; onMoved: () => void }) {
   const [check, setCheck] = useState<Check | null>(null);
-  const [carrying, setCarrying] = useState(false);
+  // The group being carried over (its next semester), and the term chosen for it.
+  const [carrying, setCarrying] = useState<Semester | null>(null);
   const [target, setTarget] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -40,8 +42,12 @@ export default function TermSemester({ term, terms, onMoved }: { term: { id: num
   }, [load]);
 
   if (!check || (check.elsewhere.length === 0 && check.continuing.length === 0)) return null;
-  const nextSemester = check.continuing[0]?.next_semester;
-  const targets = terms.filter((other) => other.id !== term.id && !other.is_closed && other.semester === nextSemester);
+  const groups = [...new Set(check.continuing.map((person) => person.next_semester))].map((next) => ({
+    next,
+    people: check.continuing.filter((person) => person.next_semester === next),
+    targets: terms.filter((other) => other.id !== term.id && !other.is_closed && other.semester === next),
+  }));
+  const chosen = groups.find((group) => group.next === carrying);
 
   const carry = async () => {
     setBusy(true);
@@ -49,7 +55,7 @@ export default function TermSemester({ term, terms, onMoved }: { term: { id: num
     try {
       const data = await coordinatorRequest<{ message: string }>(`/api/coordinator/terms/${term.id}/carry-over`, { method: "POST", body: { to_term_id: Number(target) } });
       toast.success(data.message);
-      setCarrying(false);
+      setCarrying(null);
       await load();
       onMoved();
     } catch (carryError) {
@@ -66,11 +72,11 @@ export default function TermSemester({ term, terms, onMoved }: { term: { id: num
           {check.elsewhere.length === 1 ? "1 student is" : `${check.elsewhere.length} students are`} in a program whose OJT is in another semester: {names(check.elsewhere)}.
         </p>
       )}
-      {check.continuing.length > 0 && nextSemester && (
-        <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+      {groups.map(({ next, people, targets }) => (
+        <div key={next} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
           <p>
-            {check.continuing.length === 1 ? "1 student continues" : `${check.continuing.length} students continue`} their OJT in the {SEMESTER_LABELS[nextSemester].toLowerCase()}: {names(check.continuing)}.
-            {targets.length === 0 ? ` Add a ${SEMESTER_LABELS[nextSemester].toLowerCase()} term to carry them over.` : ""}
+            {people.length === 1 ? "1 student continues" : `${people.length} students continue`} their OJT in the {SEMESTER_LABELS[next].toLowerCase()}: {names(people)}.
+            {targets.length === 0 ? ` Add a ${SEMESTER_LABELS[next].toLowerCase()} term to carry them over.` : ""}
           </p>
           {targets.length > 0 && (
             <Button
@@ -78,29 +84,30 @@ export default function TermSemester({ term, terms, onMoved }: { term: { id: num
               className="mt-2"
               onClick={() => {
                 setTarget(String(targets[0].id));
-                setCarrying(true);
+                setCarrying(next);
               }}
             >
               Carry them over
+              {groups.length > 1 && <span className="sr-only"> into the {SEMESTER_LABELS[next].toLowerCase()}</span>}
             </Button>
           )}
         </div>
-      )}
+      ))}
       <ConfirmDialog
-        open={carrying}
+        open={carrying !== null}
         title="Carry the continuing students over?"
-        message="They move into the next term with their hours and records. Do this before closing this term."
+        message="They move into the next term with their hours and records, and leave this term's block. Do this before closing this term."
         confirmLabel="Carry them over"
         busy={busy}
         onConfirm={() => void carry()}
         onCancel={() => {
-          setCarrying(false);
+          setCarrying(null);
           setError("");
         }}
       >
         <FormField label="Into the term" htmlFor={`carry-${term.id}`}>
           <select id={`carry-${term.id}`} className="field min-h-11" value={target} onChange={(event) => setTarget(event.target.value)}>
-            {targets.map((other) => (
+            {(chosen?.targets ?? []).map((other) => (
               <option key={other.id} value={other.id}>{other.name}</option>
             ))}
           </select>

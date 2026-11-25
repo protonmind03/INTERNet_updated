@@ -6,16 +6,9 @@ import { SEMESTER_LABELS, type Semester } from "../../lib/semesters";
 | then carried over, with their hours, from the Terms page).
 */
 
-const CHOICES: Semester[][] = [
-  [],
-  ["first"],
-  ["second"],
-  ["midyear"],
-  ["first", "second"],
-  ["second", "midyear"],
-  ["second", "first"],
-  ["midyear", "first"],
-];
+const ALL: Semester[] = ["first", "second", "midyear"];
+// Not set, each semester, then every order of two different ones (all the server accepts).
+const CHOICES: Semester[][] = [[], ...ALL.map((one) => [one]), ...ALL.flatMap((one) => ALL.filter((two) => two !== one).map((two) => [one, two]))];
 
 const label = (semesters: Semester[]) =>
   semesters.length === 0 ? "Not set" : semesters.map((semester) => SEMESTER_LABELS[semester]).join(", then ").replace(/, then (\w)/, (_all, first: string) => `, then ${first.toLowerCase()}`);

@@ -188,13 +188,14 @@ export default function TimeInDialog({
     setSaving(true);
     setError("");
     try {
-      if (!(await onOffline(note, noConnection ? "no_connection" : (fallback ?? "no_connection")))) {
-        setError("This browser cannot keep a time-in for later. Find a signal, or ask your supervisor to record your time-in.");
+      if (!(await onOffline(note, fallback ?? "no_connection"))) {
+        setError("A time-in is already waiting on this phone, or this browser cannot keep one. Ask your supervisor to record your time-in.");
         return;
       }
       cue("saved");
       if (noConnection) toast.info(`Time-in saved on this phone at ${formatTime(new Date())}. It will be sent when you're back online.`);
-      else toast.info(`Time-in sent at ${formatTime(new Date())}, without a photo. Your supervisor will confirm it.`);
+      // Sent through the queue: a refusal shows there, as for any time-in kept on the phone.
+      else toast.info(`Sending your time-in from ${formatTime(new Date())}, without a photo. Your supervisor will confirm it.`);
       discardNote();
       reset();
       onClose();
@@ -318,7 +319,11 @@ export default function TimeInDialog({
             // The voucher lasts the day; past it there is only the time-in without a photo.
             expiresAt={Date.parse(`${voucher.date}T23:59:59+08:00`)}
             onRenew={() => setWithoutPhoto(true)}
-            onWithoutPhoto={() => setWithoutPhoto(true)}
+            onWithoutPhoto={(reason) => {
+              // Kept, so the supervisor sees the camera was the trouble, not the signal.
+              setFallback(reason);
+              setWithoutPhoto(true);
+            }}
             onPassed={(photo, report) =>
               setCapture({
                 photo,

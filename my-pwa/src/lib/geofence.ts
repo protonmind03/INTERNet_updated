@@ -17,29 +17,41 @@ type FenceAnswer = { mode: GeoMode; fence: Fence | null };
 
 const NAME = "geofence";
 
-/** The rule and the company's point, kept for offline use. */
+/** Settles within `ms`, with `fallback` if the promise has not by then. */
+const within = <T,>(promise: Promise<T>, ms: number, fallback: T): Promise<T> =>
+  Promise.race([promise, new Promise<T>((resolve) => window.setTimeout(() => resolve(fallback), ms))]);
+
+/** The rule and the company's point, kept for offline use. A slow server never holds up a time-in: after 5 s, the kept copy. */
 export async function readGeofence(studentId: string): Promise<FenceAnswer> {
-  try {
-    const response = await savedFetch("student", NAME, `${API_URL}/api/students/${encodeURIComponent(studentId)}/geofence`, withStudentAuth());
-    if (response.ok) return (await response.json()) as FenceAnswer;
-  } catch {
-    /* no connection and nothing kept: the kept copy below, or off */
-  }
-  return (await readRecord<FenceAnswer>("student", NAME)) ?? { mode: "off", fence: null };
+  const fresh = (async () => {
+    try {
+      const response = await savedFetch("student", NAME, `${API_URL}/api/students/${encodeURIComponent(studentId)}/geofence`, withStudentAuth());
+      if (response.ok) return (await response.json()) as FenceAnswer;
+    } catch {
+      /* no connection and nothing kept: the kept copy below, or off */
+    }
+    return null;
+  })();
+  return (await within(fresh, 5_000, null)) ?? (await readRecord<FenceAnswer>("student", NAME)) ?? { mode: "off", fence: null };
 }
 
 type Fix = { latitude: number; longitude: number } | { problem: "denied" | "unavailable" };
 
-/** Asks the phone for its location once. Never throws. */
+/**
+ * Asks the phone for its location once. Never throws, and always settles:
+ * the browser's own timeout does not count the time its permission prompt
+ * is left open, so a hard limit a little past it ends the wait regardless.
+ */
 export function askLocation(timeoutMs = 10_000): Promise<Fix> {
   if (typeof navigator === "undefined" || !navigator.geolocation) return Promise.resolve({ problem: "unavailable" });
-  return new Promise((resolve) => {
+  const asked = new Promise<Fix>((resolve) => {
     navigator.geolocation.getCurrentPosition(
       (position) => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude }),
       (error) => resolve({ problem: error.code === error.PERMISSION_DENIED ? "denied" : "unavailable" }),
       { enableHighAccuracy: true, timeout: timeoutMs, maximumAge: 60_000 }
     );
   });
+  return within(asked, timeoutMs + 2_000, { problem: "unavailable" });
 }
 
 /** The great-circle distance in metres, as the server works it out. */

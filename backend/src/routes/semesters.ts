@@ -131,18 +131,53 @@ export function registerSemesterRoutes(app: express.Express, deps: Dependencies)
       if (!source.semester || !target.semester) return res.status(409).json({ message: "Give both terms a semester first." });
       if (target.is_closed) return res.status(409).json({ message: "That term is closed. Reopen it first." });
       const scope = scopeCondition("s.student_id", 4);
-      const moved = await pool.query<{ student_id: string }>(
-        `UPDATE students s SET term_id = $2
-         WHERE s.term_id = $1 AND s.is_active = TRUE
+      const continuing = `s.term_id = $1 AND s.is_active = TRUE
            AND EXISTS (SELECT 1 FROM program_terms here WHERE here.program_id = s.program_id AND here.part = 1 AND here.semester = $3)
-           AND EXISTS (SELECT 1 FROM program_terms next WHERE next.program_id = s.program_id AND next.part = 2 AND next.semester = $4)${scope.sql}
-         RETURNING TRIM(s.student_id::text) AS student_id`,
-        [from, to, source.semester, target.semester, ...scope.values]
-      );
-      const n = moved.rows.length;
+           AND EXISTS (SELECT 1 FROM program_terms next WHERE next.program_id = s.program_id AND next.part = 2 AND next.semester = $4)${scope.sql}`;
+      const values = [from, to, source.semester, target.semester, ...scope.values];
+      const client = await pool.connect();
+      let moved: { student_id: string }[];
+      try {
+        await client.query("BEGIN");
+        // Slots are counted per term: the companies of the students moving are locked, and
+        // the move is refused if it would put more students at one than it has slots.
+        const over = await client.query<{ name: string; slots: number; would_be: number }>(
+          `WITH moving AS (SELECT s.company_id FROM students s WHERE ${continuing} AND s.company_id IS NOT NULL),
+                locked AS (SELECT c.id, c.name, c.slots FROM companies c WHERE c.id IN (SELECT company_id FROM moving) FOR UPDATE)
+           SELECT l.name, l.slots,
+                  (SELECT COUNT(*)::int FROM students p WHERE p.company_id = l.id AND p.is_active = TRUE AND p.term_id = $2)
+                  + (SELECT COUNT(*)::int FROM moving m WHERE m.company_id = l.id) AS would_be
+           FROM locked l WHERE l.slots IS NOT NULL`,
+          values
+        );
+        const full = over.rows.filter((row) => row.would_be > row.slots);
+        if (full.length > 0) {
+          await client.query("ROLLBACK");
+          return res.status(409).json({
+            code: "NO_SLOTS",
+            message: `Not carried over: ${full.map((row) => `${row.name} would have ${row.would_be} students for ${row.slots} slots`).join("; ")}. Raise its slots or place them elsewhere first.`,
+          });
+        }
+        // A block belongs to its term, and closes with it: the moved students leave theirs.
+        moved = (
+          await client.query<{ student_id: string }>(
+            `UPDATE students s SET term_id = $2, block_id = NULL
+             WHERE ${continuing}
+             RETURNING TRIM(s.student_id::text) AS student_id`,
+            values
+          )
+        ).rows;
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
+      const n = moved.length;
       return res.json({
         message: n === 0 ? "No student continues into that term." : `${n} student${n === 1 ? "" : "s"} carried over, with their hours and records.`,
-        moved: moved.rows.map((row) => row.student_id),
+        moved: moved.map((row) => row.student_id),
       });
     } catch (error) {
       console.error("CARRY OVER ERROR:", error);

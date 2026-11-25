@@ -26,7 +26,7 @@ export default function CompanyLocation({ company, onSaved }: { company: Located
     try {
       const data = await coordinatorRequest<{ message: string }>(`/api/coordinator/company-records/${company.id}/geofence`, {
         method: "PUT",
-        body: { latitude: point?.latitude ?? null, longitude: point?.longitude ?? null, radius_m: Number(radius) },
+        body: { latitude: point?.latitude ?? null, longitude: point?.longitude ?? null, radius_m: radius.trim() === "" ? undefined : Number(radius) },
       });
       toast.success(data.message);
       onSaved();

@@ -15457,3 +15457,88 @@ test("a time-in without a photo keeps why: no connection, a camera problem, or a
     await pool.end();
   }
 });
+
+/*
+| Phase 2 review fixes
+*/
+
+test("phase 2 review: clearing a location needs no radius, and a failed check-in reminder is tried again", async (t) => {
+  require("tsx/cjs");
+  const geo = require("../src/services/geofence.ts");
+  assert.deepEqual(geo.readFence({ latitude: null, longitude: null, radius_m: 0 }), { latitude: null, longitude: null, radius_m: 200 });
+  assert.match(geo.readFence({ latitude: 16, longitude: 120, radius_m: 0 }).problem, /20 to 5000/);
+
+  if (needsWrites(t)) return;
+  const { remindPlannedCheckIns } = require("../src/services/monitoringPlan.ts");
+  const { phToday } = require("../src/services/phTime.ts");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const companyId = (await pool.query(`INSERT INTO companies (name, status) VALUES ($1, 'approved') RETURNING id`, [`Made Up Retry ${stamp}`])).rows[0].id;
+  try {
+    const id = (await pool.query(
+      `INSERT INTO site_visits (company_id, kind, status, planned_on, visited_by, visited_by_name) VALUES ($1, 'call', 'planned', $2::date + 1, 'test', 'Test') RETURNING id`,
+      [companyId, phToday()]
+    )).rows[0].id;
+    await remindPlannedCheckIns(pool, async () => { throw new Error("made up failure"); });
+    assert.equal((await pool.query(`SELECT reminded_at FROM site_visits WHERE id = $1`, [id])).rows[0].reminded_at, null, "claimed back after a failure");
+    const sent = [];
+    await remindPlannedCheckIns(pool, async (note) => sent.push(note));
+    assert.ok(sent.some((note) => note.message.includes(`Made Up Retry ${stamp}`)), "sent on the next round");
+  } finally {
+    await pool.query(`DELETE FROM site_visits WHERE company_id = $1`, [companyId]);
+    await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
+    await pool.end();
+  }
+});
+
+test("phase 2 review: carrying over refuses to overfill a company and leaves the old block; assigning drops another company's supervisor", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const college = (await pool.query(`SELECT id FROM colleges ORDER BY id LIMIT 1`)).rows[0].id;
+  const programId = (await pool.query(`INSERT INTO programs (college_id, name, short_code) VALUES ($1, $2, $3) RETURNING id`, [college, `Made Up Review ${stamp}`, `RV${stamp}`.slice(0, 12)])).rows[0].id;
+  await pool.query(`INSERT INTO program_terms (program_id, part, semester) VALUES ($1, 1, 'first'), ($1, 2, 'second')`, [programId]);
+  const term = async (name, semester) => (await pool.query(`INSERT INTO terms (name, start_date, end_date, semester) VALUES ($1, '2097-08-01', '2097-12-01', $2) RETURNING id`, [name, semester])).rows[0].id;
+  const first = await term(`Review first ${stamp}`, "first");
+  const second = await term(`Review second ${stamp}`, "second");
+  const companyName = `Made Up One Slot ${stamp}`;
+  const companyId = (await pool.query(`INSERT INTO companies (name, status, slots) VALUES ($1, 'approved', 1) RETURNING id`, [companyName])).rows[0].id;
+  const otherCompanyId = (await pool.query(`INSERT INTO companies (name, status) VALUES ($1, 'approved') RETURNING id`, [`Made Up Other ${stamp}`])).rows[0].id;
+  const blockId = (await pool.query(`INSERT INTO blocks (program_id, year_level, section, term_id) VALUES ($1, 4, 'A', $2) RETURNING id`, [programId, first])).rows[0].id;
+  const ids = [`RVA-${stamp}`, `RVB-${stamp}`].map((id) => id.toUpperCase());
+  const supervisorId = (await pool.query(`SELECT supervisor_id FROM supervisors WHERE is_active = TRUE AND company_id IS NOT NULL ORDER BY supervisor_id LIMIT 1`)).rows[0]?.supervisor_id;
+  try {
+    await pool.query(
+      `INSERT INTO students (student_id, email, password, name, is_active, program_id, term_id, block_id, company) VALUES
+         ($1, $2, 'x', 'Made Up Mover', TRUE, $5, $6, $7, $8), ($3, $4, 'x', 'Made Up Already There', TRUE, $5, $9, NULL, $8)`,
+      [ids[0], `${ids[0].toLowerCase()}@demo.invalid`, ids[1], `${ids[1].toLowerCase()}@demo.invalid`, programId, first, blockId, companyName, second]
+    );
+    const carry = () => jsonRequest(`/api/coordinator/terms/${first}/carry-over`, jsonBody(coordinatorToken, "POST", { to_term_id: second }));
+    const full = await carry();
+    assert.equal(full.response.status, 409, JSON.stringify(full.body));
+    assert.match(full.body.message, /would have 2 students for 1 slots/);
+    assert.equal(Number((await pool.query(`SELECT term_id FROM students WHERE student_id = $1`, [ids[0]])).rows[0].term_id), first, "nobody moved");
+
+    await pool.query(`UPDATE companies SET slots = 2 WHERE id = $1`, [companyId]);
+    const moved = await carry();
+    assert.equal(moved.response.status, 200, JSON.stringify(moved.body));
+    const row = (await pool.query(`SELECT term_id, block_id FROM students WHERE student_id = $1`, [ids[0]])).rows[0];
+    assert.deepEqual([Number(row.term_id), row.block_id], [second, null]);
+
+    // Assigning to another company drops a supervisor of a different company.
+    if (supervisorId) {
+      await pool.query(`UPDATE students SET supervisor_id = $2 WHERE student_id = $1`, [ids[1], supervisorId]);
+      const assigned = await jsonRequest(`/api/coordinator/students/${ids[1]}/assign-company`, jsonBody(coordinatorToken, "POST", { company_id: otherCompanyId }));
+      assert.equal(assigned.response.status, 200, JSON.stringify(assigned.body));
+      assert.equal((await pool.query(`SELECT supervisor_id FROM students WHERE student_id = $1`, [ids[1]])).rows[0].supervisor_id, null);
+    }
+  } finally {
+    await pool.query(`DELETE FROM notifications WHERE student_id = ANY($1)`, [ids]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [ids]);
+    await pool.query(`DELETE FROM blocks WHERE id = $1`, [blockId]);
+    await pool.query(`DELETE FROM companies WHERE id = ANY($1)`, [[companyId, otherCompanyId]]);
+    await pool.query(`DELETE FROM terms WHERE id = ANY($1)`, [[first, second]]);
+    await pool.query(`DELETE FROM programs WHERE id = $1`, [programId]);
+    await pool.end();
+  }
+});

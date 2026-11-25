@@ -101,8 +101,10 @@ export function readFence(body: Record<string, unknown>): { latitude: number | n
   const latitude = number(body.latitude);
   const longitude = number(body.longitude);
   const radius = body.radius_m === undefined || body.radius_m === null || body.radius_m === "" ? 200 : Number(body.radius_m);
-  if (!Number.isInteger(radius) || radius < 20 || radius > 5000) return { problem: "The radius is a whole number of metres from 20 to 5000." };
   if ((latitude === null) !== (longitude === null)) return { problem: "Give both the latitude and the longitude, or neither." };
+  // Clearing the point needs no radius: whatever the box says, the default is kept.
+  if (latitude === null) return { latitude: null, longitude: null, radius_m: Number.isInteger(radius) && radius >= 20 && radius <= 5000 ? radius : 200 };
+  if (!Number.isInteger(radius) || radius < 20 || radius > 5000) return { problem: "The radius is a whole number of metres from 20 to 5000." };
   if (latitude !== null && (Math.abs(latitude) > 90 || Math.abs(longitude!) > 180)) return { problem: "That is not a place on Earth: latitude is -90 to 90, longitude -180 to 180." };
   return { latitude: latitude === null ? null : Math.round(latitude * 1e6) / 1e6, longitude: longitude === null ? null : Math.round(longitude! * 1e6) / 1e6, radius_m: radius };
 }

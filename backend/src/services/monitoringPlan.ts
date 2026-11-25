@@ -51,7 +51,11 @@ export async function remindPlannedCheckIns(pool: Pool, createNotification: Writ
       message: `${KIND_WORDS[row.kind] ?? "Check-in"} planned tomorrow: ${row.company}${row.student ? `, about ${row.student}` : ""}.`,
       type: "info",
       link: "/coordinator/monitoring",
-    }).catch((error) => console.error("CHECK-IN REMINDER ERROR:", error));
+    }).catch(async (error) => {
+      // Not sent: claimed back, so the next round tries again.
+      console.error("CHECK-IN REMINDER ERROR:", error);
+      await pool.query(`UPDATE site_visits SET reminded_at = NULL WHERE id = $1`, [row.id]).catch(() => undefined);
+    });
   }
   return due.rows.length;
 }
