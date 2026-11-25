@@ -106,8 +106,15 @@ test("Accounts: a search finds the coordinator, and ending their sessions asks f
   const row = page.getByRole("row").filter({ hasText: "coordinator.demo@internet.test" });
   await expect(row).toBeVisible();
   await expect(row.getByText("Active")).toBeVisible();
-  await row.getByRole("button", { name: /Actions for/ }).click();
-  await page.getByRole("menuitem", { name: "End every session" }).click();
+  // The search reloads the list a moment after typing, and a reload closes an open menu: wait for the
+  // filtered list (only this account left), and open the menu again if a late reload still closed it.
+  await expect(page.getByRole("row").filter({ hasText: "@" })).toHaveCount(1, { timeout: 15_000 });
+  const endSessions = page.getByRole("menuitem", { name: "End every session" });
+  await expect(async () => {
+    if (!(await endSessions.isVisible())) await row.getByRole("button", { name: /Actions for/ }).click();
+    await expect(endSessions).toBeVisible({ timeout: 2_000 });
+  }).toPass({ timeout: 15_000 });
+  await endSessions.click();
   const dialog = page.getByRole("dialog", { name: "End sessions?" });
   await expect(dialog).toContainText(/End every session of .+ \(coordinator\)\. They will have to sign in again\./);
   // Cancelled: the demo coordinator's session in the other journeys stays.
