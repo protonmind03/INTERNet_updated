@@ -6,37 +6,47 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-279 routes in 19 files; 57 services in use.
+347 routes in 29 files; 67 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
 flowchart LR
   subgraph client["my-pwa, the React PWA"]
     landing["index.html, the landing page<br/>pre-rendered at build, src/landing"]
-    doors["The doors<br/>/student/sign-in, /supervisor/sign-in, /coordinator/sign-in, /director/sign-in"]
+    doors["The doors<br/>/student/sign-in, /supervisor/sign-in, /coordinator/sign-in, /director/sign-in, /admin/sign-in"]
     pwa["Student, supervisor and coordinator portals<br/>app.html, offline queue, service worker"]
-    apps["Installable apps<br/>INTERNet Coordinator, INTERNet OJT Office, INTERNet Trainee, INTERNet Supervisor, INTERNet: OJT Monitoring & Analytics"]
+    apps["Installable apps<br/>INTERNet System, INTERNet Coordinator, INTERNet OJT Office, INTERNet Trainee, INTERNet Supervisor, INTERNet: OJT Monitoring & Analytics"]
   end
   landing --> doors
   doors --> pwa
   apps --> doors
   subgraph api["backend, the Express API"]
-    server["server.ts<br/>103 routes: /api/coordinator, /api/attendance, /api/notifications"]
+    server["server.ts<br/>108 routes: /api/coordinator, /api/attendance, /api/notifications"]
     routes_academics["routes/academics.ts<br/>11 routes: /api/coordinator"]
     routes_accountDetails["routes/accountDetails.ts<br/>7 routes: /api/coordinator, /api/me"]
+    routes_admin["routes/admin.ts<br/>9 routes: /api/admin, /api/system-notice"]
     routes_appeals["routes/appeals.ts<br/>4 routes: /api/appeals, /api/coordinator"]
     routes_attachments["routes/attachments.ts<br/>5 routes: /api/attachments"]
     routes_clearance["routes/clearance.ts<br/>8 routes: /api/coordinator, /api/students"]
-    routes_console["routes/console.ts<br/>9 routes: /api/coordinator"]
+    routes_companyChoices["routes/companyChoices.ts<br/>6 routes: /api/coordinator, /api/students"]
+    routes_completionDecision["routes/completionDecision.ts<br/>2 routes: /api/coordinator"]
+    routes_console["routes/console.ts<br/>15 routes: /api/coordinator, /api/admin, /api/privacy"]
     routes_deliverables["routes/deliverables.ts<br/>2 routes: /api/coordinator, /api/students"]
     routes_director["routes/director.ts<br/>3 routes: /api/director"]
     routes_extensions["routes/extensions.ts<br/>71 routes: /api/coordinator, /api/absences, /api/students"]
+    routes_finalGrades["routes/finalGrades.ts<br/>7 routes: /api/coordinator, /api/students"]
+    routes_geofence["routes/geofence.ts<br/>2 routes: /api/coordinator, /api/students"]
+    routes_hardCopies["routes/hardCopies.ts<br/>4 routes: /api/coordinator"]
+    routes_htes["routes/htes.ts<br/>12 routes: /api/coordinator, /api/company-requests, /api/students"]
     routes_institution["routes/institution.ts<br/>2 routes: /api/coordinator"]
     routes_messages["routes/messages.ts<br/>5 routes: /api/messages"]
+    routes_monitoringPlan["routes/monitoringPlan.ts<br/>4 routes: /api/coordinator"]
     routes_offlineTimeIn["routes/offlineTimeIn.ts<br/>4 routes: /api/attendance, /api/offline"]
+    routes_overtime["routes/overtime.ts<br/>7 routes: /api/students, /api/overtime, /api/supervisor"]
     routes_passkeys["routes/passkeys.ts<br/>5 routes: /api/passkeys"]
     routes_programme["routes/programme.ts<br/>9 routes: /api/coordinator"]
     routes_projections["routes/projections.ts<br/>1 routes: /api/students"]
+    routes_semesters["routes/semesters.ts<br/>4 routes: /api/coordinator"]
     routes_supervisorDesk["routes/supervisorDesk.ts<br/>13 routes: /api/supervisor, /api/tasks, /api/student-notes"]
     routes_timeRecord["routes/timeRecord.ts<br/>5 routes: /api/student, /api/students, /api/time-record"]
     routes_traineeRecord["routes/traineeRecord.ts<br/>12 routes: /api/students"]
@@ -44,6 +54,7 @@ flowchart LR
   subgraph services["backend/src/services"]
     services_academics["academics.ts"]
     services_accountRoles["accountRoles.ts"]
+    services_adminAccounts["adminAccounts.ts"]
     services_analyticsRange["analyticsRange.ts"]
     services_audit["audit.ts"]
     services_autoCount["autoCount.ts"]
@@ -51,8 +62,10 @@ flowchart LR
     services_clientErrors["clientErrors.ts"]
     services_coordinatorActions["coordinatorActions.ts"]
     services_coordinatorHome["coordinatorHome.ts"]
+    services_coordinatorName["coordinatorName.ts"]
     services_coordinatorScope["coordinatorScope.ts"]
     services_corsOrigins["corsOrigins.ts"]
+    services_creditedHours["creditedHours.ts"]
     services_dayRules["dayRules.ts"]
     services_deadlineReminders["deadlineReminders.ts"]
     services_deliverables["deliverables.ts"]
@@ -61,6 +74,8 @@ flowchart LR
     services_documentZip["documentZip.ts"]
     services_emailBudget["emailBudget.ts"]
     services_evaluationGrade["evaluationGrade.ts"]
+    services_finalGrade["finalGrade.ts"]
+    services_geofence["geofence.ts"]
     services_ids["ids.ts"]
     services_imageMetadata["imageMetadata.ts"]
     services_insights["insights.ts"]
@@ -71,6 +86,7 @@ flowchart LR
     services_liveness["liveness.ts"]
     services_loopLock["loopLock.ts"]
     services_mailer["mailer.ts"]
+    services_monitoringPlan["monitoringPlan.ts"]
     services_notificationKinds["notificationKinds.ts"]
     services_notificationLinks["notificationLinks.ts"]
     services_notificationPreferences["notificationPreferences.ts"]
@@ -83,6 +99,7 @@ flowchart LR
     services_phTime["phTime.ts"]
     services_photoPurge["photoPurge.ts"]
     services_photoRedo["photoRedo.ts"]
+    services_placement["placement.ts"]
     services_privacy["privacy.ts"]
     services_privateFileStore["privateFileStore.ts"]
     services_problems["problems.ts"]
@@ -91,8 +108,11 @@ flowchart LR
     services_removedRecords["removedRecords.ts"]
     services_schedulePattern["schedulePattern.ts"]
     services_schedules["schedules.ts"]
+    services_semesters["semesters.ts"]
+    services_staffAccounts["staffAccounts.ts"]
     services_studentScope["studentScope.ts"]
     services_supervisorDigest["supervisorDigest.ts"]
+    services_systemStatus["systemStatus.ts"]
     services_taskRelease["taskRelease.ts"]
     services_termSetup["termSetup.ts"]
     services_timeOutReminders["timeOutReminders.ts"]
@@ -117,7 +137,13 @@ flowchart LR
   routes_academics --> services_psuMarks
   routes_accountDetails --> services_coordinatorScope
   routes_accountDetails --> services_kpiDefinitions
+  routes_admin --> services_adminAccounts
+  routes_admin --> services_backups
+  routes_admin --> services_emailBudget
+  routes_admin --> services_privateFileStore
+  routes_admin --> services_systemStatus
   routes_appeals --> services_coordinatorScope
+  routes_appeals --> services_creditedHours
   routes_appeals --> services_liveness
   routes_appeals --> services_photoRedo
   routes_appeals --> services_versions
@@ -132,17 +158,19 @@ flowchart LR
   routes_clearance --> services_ids
   routes_clearance --> services_ojtSettings
   routes_clearance --> services_studentScope
-  routes_console --> services_backups
+  routes_companyChoices --> services_coordinatorScope
+  routes_companyChoices --> services_ids
+  routes_companyChoices --> services_placement
+  routes_completionDecision --> services_coordinatorName
   routes_console --> services_coordinatorActions
   routes_console --> services_coordinatorHome
   routes_console --> services_emailBudget
   routes_console --> services_kpis
   routes_console --> services_mailer
-  routes_console --> services_photoPurge
-  routes_console --> services_privacy
   routes_console --> services_privateFileStore
   routes_console --> services_problems
   routes_console --> services_studentScope
+  routes_console --> services_systemStatus
   routes_console --> services_uploadQuota
   routes_deliverables --> services_deliverables
   routes_deliverables --> services_ids
@@ -155,26 +183,52 @@ flowchart LR
   routes_extensions --> services_notificationKinds
   routes_extensions --> services_notificationPreferences
   routes_extensions --> services_phTime
+  routes_extensions --> services_placement
   routes_extensions --> services_privacy
   routes_extensions --> services_projection
   routes_extensions --> services_removedRecords
+  routes_extensions --> services_semesters
   routes_extensions --> services_studentScope
   routes_extensions --> services_taskRelease
   routes_extensions --> services_uploadQuota
   routes_extensions --> services_versions
+  routes_finalGrades --> services_coordinatorScope
+  routes_finalGrades --> services_finalGrade
+  routes_finalGrades --> services_ids
+  routes_finalGrades --> services_studentScope
+  routes_geofence --> services_geofence
+  routes_geofence --> services_ids
+  routes_geofence --> services_ojtSettings
+  routes_hardCopies --> services_deliverables
+  routes_hardCopies --> services_phTime
+  routes_hardCopies --> services_traineeRecord
+  routes_htes --> services_ids
   routes_institution --> services_psuMarks
   routes_messages --> services_emailBudget
   routes_messages --> services_ids
   routes_messages --> services_mailer
   routes_messages --> services_notificationKinds
+  routes_monitoringPlan --> services_coordinatorName
+  routes_monitoringPlan --> services_coordinatorScope
+  routes_monitoringPlan --> services_kpis
+  routes_monitoringPlan --> services_monitoringPlan
+  routes_monitoringPlan --> services_phTime
+  routes_monitoringPlan --> services_traineeRecord
   routes_offlineTimeIn --> services_dayRules
   routes_offlineTimeIn --> services_deploymentClearance
+  routes_offlineTimeIn --> services_geofence
   routes_offlineTimeIn --> services_liveness
   routes_offlineTimeIn --> services_offlineActions
   routes_offlineTimeIn --> services_offlineAttestation
   routes_offlineTimeIn --> services_passkeys
   routes_offlineTimeIn --> services_phTime
   routes_offlineTimeIn --> services_privacy
+  routes_overtime --> services_creditedHours
+  routes_overtime --> services_ids
+  routes_overtime --> services_ojtSettings
+  routes_overtime --> services_phTime
+  routes_overtime --> services_uploadQuota
+  routes_overtime --> services_versions
   routes_passkeys --> services_passkeys
   routes_programme --> services_academics
   routes_programme --> services_deliverables
@@ -190,6 +244,8 @@ flowchart LR
   routes_programme --> services_termSetup
   routes_projections --> services_ids
   routes_projections --> services_projection
+  routes_semesters --> services_coordinatorScope
+  routes_semesters --> services_semesters
   routes_supervisorDesk --> services_deliverables
   routes_supervisorDesk --> services_ids
   routes_supervisorDesk --> services_insights
@@ -212,12 +268,14 @@ flowchart LR
   server --> services_clientErrors
   server --> services_coordinatorScope
   server --> services_corsOrigins
+  server --> services_creditedHours
   server --> services_dayRules
   server --> services_deadlineReminders
   server --> services_deliverables
   server --> services_deploymentClearance
   server --> services_digests
   server --> services_emailBudget
+  server --> services_geofence
   server --> services_ids
   server --> services_imageMetadata
   server --> services_insights
@@ -234,6 +292,7 @@ flowchart LR
   server --> services_phTime
   server --> services_photoPurge
   server --> services_photoRedo
+  server --> services_placement
   server --> services_privacy
   server --> services_privateFileStore
   server --> services_problems
@@ -245,6 +304,10 @@ flowchart LR
   server --> services_timeOutReminders
   server --> services_uploadQuota
   server --> services_versions
+  services_adminAccounts --> services_accountRoles
+  services_adminAccounts --> services_mailer
+  services_adminAccounts --> services_passwordHash
+  services_adminAccounts --> services_staffAccounts
   services_autoCount --> services_loopLock
   services_autoCount --> services_phTime
   services_backups --> services_phTime
@@ -261,6 +324,7 @@ flowchart LR
   services_deadlineReminders --> services_emailBudget
   services_deadlineReminders --> services_loopLock
   services_deadlineReminders --> services_mailer
+  services_deadlineReminders --> services_monitoringPlan
   services_deadlineReminders --> services_notificationPreferences
   services_deadlineReminders --> services_phTime
   services_deadlineReminders --> services_photoRedo
@@ -274,6 +338,9 @@ flowchart LR
   services_digests --> services_mailer
   services_digests --> services_notificationPreferences
   services_digests --> services_phTime
+  services_finalGrade --> services_ojtSettings
+  services_finalGrade --> services_phTime
+  services_geofence --> services_ojtSettings
   services_insights --> services_deliverables
   services_insights --> services_digests
   services_insights --> services_mailer
@@ -289,6 +356,9 @@ flowchart LR
   services_kpis --> services_studentScope
   services_liveNotifications --> services_accountRoles
   services_mailer --> services_emailBudget
+  services_monitoringPlan --> services_kpis
+  services_monitoringPlan --> services_phTime
+  services_monitoringPlan --> services_traineeRecord
   services_notificationKinds --> services_accountRoles
   services_notificationLinks --> services_accountRoles
   services_notificationPreferences --> services_accountRoles
@@ -302,27 +372,46 @@ flowchart LR
   services_projection --> services_insights
   services_projection --> services_phTime
   services_projection --> services_studentScope
+  services_staffAccounts --> services_passwordHash
   services_studentScope --> services_coordinatorScope
   services_supervisorDigest --> services_loopLock
   services_supervisorDigest --> services_phTime
+  services_systemStatus --> services_backups
+  services_systemStatus --> services_corsOrigins
+  services_systemStatus --> services_emailBudget
+  services_systemStatus --> services_mailer
+  services_systemStatus --> services_photoPurge
+  services_systemStatus --> services_privacy
+  services_systemStatus --> services_privateFileStore
+  services_systemStatus --> services_problems
   services_timeOutReminders --> services_loopLock
   services_timeOutReminders --> services_phTime
   services_uploadQuota --> services_phTime
   routes_academics -.-> ext_postgres
   routes_accountDetails -.-> ext_postgres
+  routes_admin -.-> ext_postgres
   routes_appeals -.-> ext_postgres
   routes_attachments -.-> ext_postgres
   routes_clearance -.-> ext_postgres
+  routes_companyChoices -.-> ext_postgres
+  routes_completionDecision -.-> ext_postgres
   routes_console -.-> ext_postgres
   routes_deliverables -.-> ext_postgres
   routes_director -.-> ext_postgres
   routes_extensions -.-> ext_postgres
+  routes_finalGrades -.-> ext_postgres
+  routes_geofence -.-> ext_postgres
+  routes_hardCopies -.-> ext_postgres
+  routes_htes -.-> ext_postgres
   routes_institution -.-> ext_postgres
   routes_messages -.-> ext_postgres
+  routes_monitoringPlan -.-> ext_postgres
   routes_offlineTimeIn -.-> ext_postgres
+  routes_overtime -.-> ext_postgres
   routes_passkeys -.-> ext_postgres
   routes_programme -.-> ext_postgres
   routes_projections -.-> ext_postgres
+  routes_semesters -.-> ext_postgres
   routes_supervisorDesk -.-> ext_postgres
   routes_timeRecord -.-> ext_postgres
   routes_traineeRecord -.-> ext_postgres
@@ -330,12 +419,14 @@ flowchart LR
   server -.-> ext_postgres
   server -.-> ext_push
   services_academics -.-> ext_postgres
+  services_adminAccounts -.-> ext_postgres
   services_audit -.-> ext_postgres
   services_autoCount -.-> ext_postgres
   services_backups -.-> ext_bucket
   services_backups -.-> ext_postgres
   services_coordinatorActions -.-> ext_postgres
   services_coordinatorHome -.-> ext_postgres
+  services_coordinatorName -.-> ext_postgres
   services_coordinatorScope -.-> ext_postgres
   services_dayRules -.-> ext_postgres
   services_deadlineReminders -.-> ext_postgres
@@ -343,23 +434,29 @@ flowchart LR
   services_deploymentClearance -.-> ext_postgres
   services_digests -.-> ext_postgres
   services_emailBudget -.-> ext_postgres
+  services_finalGrade -.-> ext_postgres
+  services_geofence -.-> ext_postgres
   services_insights -.-> ext_postgres
   services_kpis -.-> ext_postgres
   services_liveNotifications -.-> ext_postgres
   services_loopLock -.-> ext_postgres
   services_mailer -.-> ext_email_api
   services_mailer -.-> ext_smtp
+  services_monitoringPlan -.-> ext_postgres
   services_notificationPreferences -.-> ext_postgres
   services_ojtSettings -.-> ext_postgres
   services_passkeys -.-> ext_postgres
   services_passkeys -.-> ext_webauthn
   services_performance -.-> ext_postgres
   services_photoPurge -.-> ext_postgres
+  services_placement -.-> ext_postgres
   services_privateFileStore -.-> ext_azure
   services_privateFileStore -.-> ext_bucket
   services_problems -.-> ext_postgres
   services_projection -.-> ext_postgres
+  services_staffAccounts -.-> ext_postgres
   services_supervisorDigest -.-> ext_postgres
+  services_systemStatus -.-> ext_postgres
   services_taskRelease -.-> ext_postgres
   services_termSetup -.-> ext_postgres
   services_timeOutReminders -.-> ext_postgres
@@ -371,32 +468,43 @@ flowchart LR
 
 | File | Routes | Address families (most routes first) |
 |---|---|---|
-| `server.ts` | 103 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/students`, `/api/supervisor`, `/api/tasks`, `/api/complaints` |
+| `server.ts` | 108 | `/api/coordinator`, `/api/attendance`, `/api/notifications`, `/api/documents`, `/api/login`, `/api/students`, `/api/supervisor`, `/api/tasks` |
 | `routes/academics.ts` | 11 | `/api/coordinator` |
 | `routes/accountDetails.ts` | 7 | `/api/coordinator`, `/api/me` |
+| `routes/admin.ts` | 9 | `/api/admin`, `/api/system-notice` |
 | `routes/appeals.ts` | 4 | `/api/appeals`, `/api/coordinator` |
 | `routes/attachments.ts` | 5 | `/api/attachments` |
 | `routes/clearance.ts` | 8 | `/api/coordinator`, `/api/students` |
-| `routes/console.ts` | 9 | `/api/coordinator` |
+| `routes/companyChoices.ts` | 6 | `/api/coordinator`, `/api/students` |
+| `routes/completionDecision.ts` | 2 | `/api/coordinator` |
+| `routes/console.ts` | 15 | `/api/coordinator`, `/api/admin`, `/api/privacy` |
 | `routes/deliverables.ts` | 2 | `/api/coordinator`, `/api/students` |
 | `routes/director.ts` | 3 | `/api/director` |
 | `routes/extensions.ts` | 71 | `/api/coordinator`, `/api/absences`, `/api/students`, `/api/journals`, `/api/dtr-certifications`, `/api/tasks`, `/api/complaints`, `/api/evaluations` |
+| `routes/finalGrades.ts` | 7 | `/api/coordinator`, `/api/students` |
+| `routes/geofence.ts` | 2 | `/api/coordinator`, `/api/students` |
+| `routes/hardCopies.ts` | 4 | `/api/coordinator` |
+| `routes/htes.ts` | 12 | `/api/coordinator`, `/api/company-requests`, `/api/students` |
 | `routes/institution.ts` | 2 | `/api/coordinator` |
 | `routes/messages.ts` | 5 | `/api/messages` |
+| `routes/monitoringPlan.ts` | 4 | `/api/coordinator` |
 | `routes/offlineTimeIn.ts` | 4 | `/api/attendance`, `/api/offline` |
+| `routes/overtime.ts` | 7 | `/api/students`, `/api/overtime`, `/api/supervisor` |
 | `routes/passkeys.ts` | 5 | `/api/passkeys` |
 | `routes/programme.ts` | 9 | `/api/coordinator` |
 | `routes/projections.ts` | 1 | `/api/students` |
+| `routes/semesters.ts` | 4 | `/api/coordinator` |
 | `routes/supervisorDesk.ts` | 13 | `/api/supervisor`, `/api/tasks`, `/api/student-notes`, `/api/coordinator` |
 | `routes/timeRecord.ts` | 5 | `/api/student`, `/api/students`, `/api/time-record` |
 | `routes/traineeRecord.ts` | 12 | `/api/students` |
 
 ## The app's pages and installable apps
 
-Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.html`, `for-coordinators.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`, `/director/sign-in`.
+Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.html`, `for-coordinators.html`. Doors: `/student/sign-in`, `/supervisor/sign-in`, `/coordinator/sign-in`, `/director/sign-in`, `/admin/sign-in`.
 
 | Manifest | App | id |
 |---|---|---|
+| `public/manifest-admin.webmanifest` | INTERNet System | `/admin/` |
 | `public/manifest-coordinator.webmanifest` | INTERNet Coordinator | `/coordinator/` |
 | `public/manifest-director.webmanifest` | INTERNet OJT Office | `/director/` |
 | `public/manifest-student.webmanifest` | INTERNet Trainee | `/student/` |
@@ -408,59 +516,69 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | Service | Imported by |
 |---|---|
 | `academics.ts` | `routes/academics.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts` |
-| `accountRoles.ts` | `server.ts`, `services/liveNotifications.ts`, `services/notificationKinds.ts`, `services/notificationLinks.ts`, `services/notificationPreferences.ts` |
+| `accountRoles.ts` | `server.ts`, `services/adminAccounts.ts`, `services/liveNotifications.ts`, `services/notificationKinds.ts`, `services/notificationLinks.ts`, `services/notificationPreferences.ts` |
+| `adminAccounts.ts` | `routes/admin.ts` |
 | `analyticsRange.ts` | `server.ts` |
 | `audit.ts` | `server.ts` |
 | `autoCount.ts` | `server.ts` |
-| `backups.ts` | `routes/console.ts`, `scripts/backup-cron.ts`, `server.ts` |
+| `backups.ts` | `routes/admin.ts`, `scripts/backup-cron.ts`, `server.ts`, `services/systemStatus.ts` |
 | `clientErrors.ts` | `server.ts` |
 | `coordinatorActions.ts` | `routes/console.ts` |
 | `coordinatorHome.ts` | `routes/console.ts` |
-| `coordinatorScope.ts` | `routes/accountDetails.ts`, `routes/appeals.ts`, `routes/attachments.ts`, `routes/clearance.ts`, `routes/extensions.ts`, `server.ts`, `services/studentScope.ts` |
-| `corsOrigins.ts` | `server.ts` |
+| `coordinatorName.ts` | `routes/completionDecision.ts`, `routes/monitoringPlan.ts` |
+| `coordinatorScope.ts` | `routes/accountDetails.ts`, `routes/appeals.ts`, `routes/attachments.ts`, `routes/clearance.ts`, `routes/companyChoices.ts`, `routes/extensions.ts`, `routes/finalGrades.ts`, `routes/monitoringPlan.ts`, `routes/semesters.ts`, `server.ts`, `services/studentScope.ts` |
+| `corsOrigins.ts` | `server.ts`, `services/systemStatus.ts` |
+| `creditedHours.ts` | `routes/appeals.ts`, `routes/overtime.ts`, `server.ts` |
 | `dayRules.ts` | `routes/offlineTimeIn.ts`, `server.ts` |
 | `deadlineReminders.ts` | `server.ts` |
-| `deliverables.ts` | `routes/deliverables.ts`, `routes/extensions.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/deploymentClearance.ts`, `services/digests.ts`, `services/insights.ts`, `services/performance.ts` |
+| `deliverables.ts` | `routes/deliverables.ts`, `routes/extensions.ts`, `routes/hardCopies.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/deploymentClearance.ts`, `services/digests.ts`, `services/insights.ts`, `services/performance.ts` |
 | `deploymentClearance.ts` | `routes/clearance.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
 | `digests.ts` | `server.ts`, `services/insights.ts` |
 | `documentZip.ts` | `routes/programme.ts` |
-| `emailBudget.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/mailer.ts` |
+| `emailBudget.ts` | `routes/admin.ts`, `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/mailer.ts`, `services/systemStatus.ts` |
 | `evaluationGrade.ts` | `routes/extensions.ts` |
-| `ids.ts` | `routes/attachments.ts`, `routes/clearance.ts`, `routes/deliverables.ts`, `routes/extensions.ts`, `routes/messages.ts`, `routes/programme.ts`, `routes/projections.ts`, `routes/supervisorDesk.ts`, `routes/timeRecord.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/coordinatorActions.ts` |
+| `finalGrade.ts` | `routes/finalGrades.ts` |
+| `geofence.ts` | `routes/geofence.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
+| `ids.ts` | `routes/attachments.ts`, `routes/clearance.ts`, `routes/companyChoices.ts`, `routes/deliverables.ts`, `routes/extensions.ts`, `routes/finalGrades.ts`, `routes/geofence.ts`, `routes/htes.ts`, `routes/messages.ts`, `routes/overtime.ts`, `routes/programme.ts`, `routes/projections.ts`, `routes/supervisorDesk.ts`, `routes/timeRecord.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/coordinatorActions.ts` |
 | `imageMetadata.ts` | `routes/attachments.ts`, `server.ts` |
 | `insights.ts` | `routes/extensions.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/kpis.ts`, `services/performance.ts`, `services/projection.ts` |
 | `kpiDefinitions.ts` | `routes/accountDetails.ts`, `services/kpis.ts` |
-| `kpis.ts` | `routes/console.ts` |
+| `kpis.ts` | `routes/console.ts`, `routes/monitoringPlan.ts`, `services/monitoringPlan.ts` |
 | `listQuery.ts` | `server.ts` |
 | `liveNotifications.ts` | `server.ts` |
 | `liveness.ts` | `routes/appeals.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
 | `loopLock.ts` | `services/autoCount.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/supervisorDigest.ts`, `services/timeOutReminders.ts` |
-| `mailer.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
+| `mailer.ts` | `routes/console.ts`, `routes/messages.ts`, `server.ts`, `services/adminAccounts.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/systemStatus.ts` |
+| `monitoringPlan.ts` | `routes/monitoringPlan.ts`, `services/deadlineReminders.ts` |
 | `notificationKinds.ts` | `routes/extensions.ts`, `routes/messages.ts`, `server.ts` |
 | `notificationLinks.ts` | `server.ts` |
 | `notificationPreferences.ts` | `routes/extensions.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts` |
 | `offlineActions.ts` | `routes/attachments.ts`, `routes/offlineTimeIn.ts`, `server.ts` |
 | `offlineAttestation.ts` | `routes/offlineTimeIn.ts` |
-| `ojtSettings.ts` | `routes/clearance.ts`, `services/deploymentClearance.ts` |
+| `ojtSettings.ts` | `routes/clearance.ts`, `routes/geofence.ts`, `routes/overtime.ts`, `services/deploymentClearance.ts`, `services/finalGrade.ts`, `services/geofence.ts` |
 | `passkeys.ts` | `routes/offlineTimeIn.ts`, `routes/passkeys.ts`, `server.ts` |
-| `passwordHash.ts` | `server.ts` |
+| `passwordHash.ts` | `server.ts`, `services/adminAccounts.ts`, `services/staffAccounts.ts` |
 | `performance.ts` | `routes/programme.ts`, `services/insights.ts` |
-| `phTime.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/insights.ts`, `services/kpis.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/supervisorDigest.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
-| `photoPurge.ts` | `routes/console.ts`, `server.ts` |
+| `phTime.ts` | `routes/extensions.ts`, `routes/hardCopies.ts`, `routes/monitoringPlan.ts`, `routes/offlineTimeIn.ts`, `routes/overtime.ts`, `routes/programme.ts`, `routes/supervisorDesk.ts`, `routes/traineeRecord.ts`, `server.ts`, `services/autoCount.ts`, `services/backups.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/dayRules.ts`, `services/deadlineReminders.ts`, `services/digests.ts`, `services/finalGrade.ts`, `services/insights.ts`, `services/kpis.ts`, `services/monitoringPlan.ts`, `services/photoPurge.ts`, `services/projection.ts`, `services/supervisorDigest.ts`, `services/timeOutReminders.ts`, `services/uploadQuota.ts` |
+| `photoPurge.ts` | `server.ts`, `services/systemStatus.ts` |
 | `photoRedo.ts` | `routes/appeals.ts`, `server.ts`, `services/deadlineReminders.ts` |
-| `privacy.ts` | `routes/console.ts`, `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `server.ts`, `services/photoPurge.ts` |
-| `privateFileStore.ts` | `routes/attachments.ts`, `routes/console.ts`, `routes/programme.ts`, `server.ts`, `services/backups.ts`, `services/photoPurge.ts` |
-| `problems.ts` | `routes/console.ts`, `server.ts` |
+| `placement.ts` | `routes/companyChoices.ts`, `routes/extensions.ts`, `server.ts` |
+| `privacy.ts` | `routes/extensions.ts`, `routes/offlineTimeIn.ts`, `server.ts`, `services/photoPurge.ts`, `services/systemStatus.ts` |
+| `privateFileStore.ts` | `routes/admin.ts`, `routes/attachments.ts`, `routes/console.ts`, `routes/programme.ts`, `server.ts`, `services/backups.ts`, `services/photoPurge.ts`, `services/systemStatus.ts` |
+| `problems.ts` | `routes/console.ts`, `server.ts`, `services/systemStatus.ts` |
 | `projection.ts` | `routes/extensions.ts`, `routes/programme.ts`, `routes/projections.ts`, `server.ts`, `services/coordinatorHome.ts`, `services/deadlineReminders.ts` |
 | `psuMarks.ts` | `routes/academics.ts`, `routes/institution.ts` |
 | `removedRecords.ts` | `routes/extensions.ts`, `routes/supervisorDesk.ts` |
 | `schedulePattern.ts` | `services/insights.ts`, `services/kpis.ts`, `services/performance.ts` |
 | `schedules.ts` | `routes/programme.ts`, `server.ts` |
-| `studentScope.ts` | `routes/clearance.ts`, `routes/console.ts`, `routes/extensions.ts`, `routes/programme.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/insights.ts`, `services/kpis.ts`, `services/projection.ts` |
+| `semesters.ts` | `routes/extensions.ts`, `routes/semesters.ts` |
+| `staffAccounts.ts` | `services/adminAccounts.ts` |
+| `studentScope.ts` | `routes/clearance.ts`, `routes/console.ts`, `routes/extensions.ts`, `routes/finalGrades.ts`, `routes/programme.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/insights.ts`, `services/kpis.ts`, `services/projection.ts` |
 | `supervisorDigest.ts` | `server.ts` |
+| `systemStatus.ts` | `routes/admin.ts`, `routes/console.ts` |
 | `taskRelease.ts` | `routes/extensions.ts`, `routes/supervisorDesk.ts`, `server.ts`, `services/deadlineReminders.ts`, `services/performance.ts` |
 | `termSetup.ts` | `routes/programme.ts` |
 | `timeOutReminders.ts` | `server.ts` |
-| `traineeRecord.ts` | `routes/traineeRecord.ts` |
-| `uploadQuota.ts` | `routes/attachments.ts`, `routes/console.ts`, `routes/extensions.ts`, `routes/timeRecord.ts`, `server.ts` |
-| `versions.ts` | `routes/appeals.ts`, `routes/extensions.ts`, `server.ts` |
+| `traineeRecord.ts` | `routes/hardCopies.ts`, `routes/monitoringPlan.ts`, `routes/traineeRecord.ts`, `services/monitoringPlan.ts` |
+| `uploadQuota.ts` | `routes/attachments.ts`, `routes/console.ts`, `routes/extensions.ts`, `routes/overtime.ts`, `routes/timeRecord.ts`, `server.ts` |
+| `versions.ts` | `routes/appeals.ts`, `routes/extensions.ts`, `routes/overtime.ts`, `server.ts` |
