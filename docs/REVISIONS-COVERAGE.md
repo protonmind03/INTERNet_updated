@@ -107,3 +107,16 @@ E2E specs are in `e2e/tests/`. Backend tests are in `backend/test/api.test.cjs`,
 | 1.6 | Director portal and coordinator scopes | Migration 080; `routes/director.ts`; `services/coordinatorScope.ts`; `pages/director/*` | backend: the Director and scope tests; `director-portal.spec.ts` | Done (HTE approval and grade release have no Director page yet) |
 | 1.7 | IT administrator portal with separate duties | Migration 081; `routes/admin.ts`; `services/adminAccounts.ts`; `pages/admin/*` | backend: the admin tests, including the 403 loop; `admin-portal.spec.ts` | Done (no passkeys for staff yet) |
 | 1.8 | Privacy notice, production warnings, queued photo, shared-phone sign-out, Prepare for offline | `services/privacy.ts`; `privacyWarnings`; `offlineQueue.ts`; `StudentLayout.tsx`; `PrepareOffline.tsx` | backend: the notice and warnings tests; `offline-first.spec.ts`, `precache.spec.ts` | Done (notice wording waits for the university) |
+
+## 6. IMPLEMENTATION-PROMPT.md, Phase 2 (25 November 2026)
+
+| # | Asked for | Where it is | Checked by | Status |
+|---|---|---|---|---|
+| 2.1 | Optional geofence at time-in, distance only, never refused | Migration 085; `services/geofence.ts`; `routes/geofence.ts`; `lib/geofence.ts`; `CompanyLocation.tsx`; Director Rules | backend: "the geofence: distance only…"; `capture.spec.ts` (camera) | Done |
+| 2.2 | Agency preference window and assignment | Migration 086; `routes/companyChoices.ts`; `ChooseAgency.tsx`; `AgencyChoices.tsx`; `CompanyPrograms.tsx` | backend: "agency choices: …"; `agency-choice.spec.ts` | Done |
+| 2.3 | Monitoring plan with reminders and a PDF | Migration 087; `routes/monitoringPlan.ts`; `services/monitoringPlan.ts`; `MonitoringPlan.tsx` | backend: "the monitoring plan: …"; `monitoring-plan.spec.ts` | Done |
+| 2.4 | Transmittal and receipt of hard copies | Migration 088; `routes/hardCopies.ts`; `HardCopies.tsx`; `lib/transmittalPdf.ts` | backend: "hard copies: …"; `hard-copies.spec.ts` | Done (a re-upload is a new record) |
+| 2.5 | Completion approved or returned | Migration 089; `routes/completionDecision.ts`; `CompletionDecision.tsx`; `CompletionChecklist.tsx` | backend: "completion: approved once, or returned…"; `completion-decision.spec.ts` | Done (no certificate, by decision) |
+| 2.6 | Semesters and multi-semester programs | Migration 090; `routes/semesters.ts`; `TermSemester.tsx`; `ProgramSemesters.tsx`; the term dialog | backend: "semesters: …" and the carry-over review test; `semesters.spec.ts` | Done (closing a term does not yet stop for students who should carry over) |
+| 2.7 | A more dependable camera check | Migration 091; `LivenessCamera.tsx`; `TimeInDialog.tsx`; `offlineTimeIn.ts` | backend: "a time-in without a photo keeps why…"; `capture.spec.ts` (camera, the fake tracker with no face) | Done |
+| 2.8 | Axe in CI | `.github/workflows/ci.yml`; `docs/baseline/tools/axe-sweep.mjs` (`FAIL_ON=serious`) | The sweep run locally with CI's settings: no violations | Done (Director and admin portals not in the sweep yet) |

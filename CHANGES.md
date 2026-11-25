@@ -2170,3 +2170,54 @@ route checks clean (325 routes); frontend build, lint and `check:pwa`
 supervisor's interns in two programs; layout shift from 38 time-ins today
 on the first page) and one passed alone. CI's fresh database has none of
 that; not rechecked there yet.
+
+
+## 43. Phase 2: the pilot items (25 November 2026)
+
+From `IMPLEMENTATION-PROMPT.md` (version 3), Phase 2, on `ui-redesign`.
+One commit per item; the migrations are 085 to 092.
+
+| Item | What changed | Migration |
+|---|---|---|
+| 2.1 | Location check at time-in, an OJT rule (off, record, or review when outside): only the distance from the company's point is kept, never the coordinates; a time-in is never refused, and one outside the area (or with no location) waits for the supervisor. The company's point is set on its page. Privacy notice `draft-6`. | 085 |
+| 2.2 | Agency choices: a coordinator opens a term's choice window; students rank up to three approved agencies that take their program and have a free slot; the coordinator sees demand against slots and assigns, through the same slot and approval check as every placement. A company's page sets the programs it takes. | 086 |
+| 2.3 | Monitoring plan: visits, calls and message check-ins planned for a company or one student, "Planned this week" and "Overdue check-ins" on Monitoring, a reminder the day before, Mark done into the visit log, and a PDF of the plan. | 087 |
+| 2.4 | Hard copies: for each document and final evaluation, who received the paper copy, when, and an optional transmittal scan; "Hard copy received" on the record and the Documents list; a printable transmittal letter (health and clearance documents never listed). | 088 |
+| 2.5 | Completion: the coordinator approves a completion review, or returns it with what to fix (the student can then ask again). No certificate is generated (decided 25 November). | 089 |
+| 2.6 | Semesters: a term's semester and academic year; the semesters a program's OJT runs in; Terms warns about students in another semester's programs and carries continuing students into the next term, with their hours (refused if a company would overfill). | 090 |
+| 2.7 | Camera check: about 15 readings a second; "Too dark. Face a light"; after 20 seconds without a pass, or when the check cannot run, "Continue without photo. Your supervisor will confirm", with the reason kept (`no_photo_reason`). | 091 |
+| 2.8 | CI runs the axe sweep after the end-to-end tests and fails on serious or critical problems; nine existing ones were fixed so it starts green. | none |
+
+Also: a switched-off requirement's "Submissions for" link filters again
+(`dcd3e5d`); migration 092 indexes two new foreign keys.
+
+**Settings to decide:** the location check (`geofence_mode`, off by
+default) and each company's point and radius; when to open each term's
+choice window; each program's OJT semesters.
+
+**Go-live steps:** migrations 085 to 092 run with the deploy. Privacy
+notice `draft-6` asks every student to agree again when consent is
+required. CI's end-to-end job now takes longer (limit 50 minutes).
+
+Reviewed with `/code-review` (high): ten findings, fixed in `91716da`
+(the location wait, carry-over slots and blocks, assignment and the old
+supervisor, reminder retries, and six smaller ones). `/simplify` ran with
+its four review agents; its cleanup and one scope fix it found (a done
+check-in about one student showed in every coordinator's visit log) are
+`79cc3f7`. `/security-review` of the phase, done in this session: no
+findings.
+
+**Checked** on the local throwaway database (clock on UTC): backend 321 of
+322 (the failure comes from the untracked `seed-showcase.ts`); route check
+clean (347 routes); type errors at the existing 7; frontend lint clean on
+every changed file; the axe sweep with CI's settings: no violations. The
+end-to-end specs for every changed screen pass, apart from
+`journeys.spec:526`, which fails on this database's leftover data, as in
+Phase 1.
+
+**Left open:** closing a term does not stop while students who should
+carry over are still in it (Terms says to carry them over first); a hard
+copy belongs to one upload, so a re-upload shows as not received; a
+no-photo time-in made online still counts as "offline" on some supervisor
+screens (Review says why); the Director and administrator portals are not
+in the CI sweep yet (their specs run axe on each page).
