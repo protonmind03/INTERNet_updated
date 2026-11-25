@@ -11,6 +11,7 @@ import { useDraft } from "../../lib/useDraft";
 import { readRecord } from "../../lib/offlineStore";
 import type { Clearance } from "./attention";
 import type { OfflineVoucher } from "../../lib/offlineTimeIn";
+import type { NoPhotoReason } from "../../lib/offlineQueue";
 import type { LivenessChallenge } from "./useAttendance";
 
 /*
@@ -60,7 +61,7 @@ export default function TimeInDialog({
   /** What the phone says about its connection now. */
   online: boolean;
   /** Keeps the time-in on the phone (and sends it when it can). False when the browser cannot. */
-  onOffline: (note: string, reason?: "no_connection" | WithoutPhotoReason) => Promise<boolean>;
+  onOffline: (note: string, reason?: NoPhotoReason) => Promise<boolean>;
   /** Today's voucher for a time-in with a photo offline, if the phone has one. */
   loadOfflineVoucher: () => Promise<OfflineVoucher | null>;
   /** Keeps a time-in with its photo and signed record on the phone. False when it cannot. */
@@ -309,7 +310,7 @@ export default function TimeInDialog({
             Open documents
           </Link>
         </div>
-      ) : !capture && offlineCamera && voucher && !fallback ? (
+      ) : !capture && offlineCamera && voucher ? (
         <div className="space-y-4">
           <LivenessCamera
             key={voucher.jti}

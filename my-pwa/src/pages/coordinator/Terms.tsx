@@ -20,7 +20,7 @@ import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 import TermSetup from "./TermSetup";
 import TermSemester from "./TermSemester";
-import { SEMESTER_LABELS, type Semester } from "../../lib/semesters";
+import { SEMESTER_LABELS, SEMESTERS, type Semester } from "../../lib/semesters";
 
 /*
 |--------------------------------------------------------------------------
@@ -350,7 +350,7 @@ function TermDialog({
           <FormField label="Semester" htmlFor="term-semester" optional>
             <select id="term-semester" value={semester} onChange={(event) => setSemester(event.target.value)} className="field min-h-11">
               <option value="">Not set</option>
-              {(Object.keys(SEMESTER_LABELS) as Semester[]).map((key) => (
+              {SEMESTERS.map((key) => (
                 <option key={key} value={key}>{SEMESTER_LABELS[key]}</option>
               ))}
             </select>

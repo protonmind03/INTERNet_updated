@@ -5,6 +5,7 @@ import { notifyDataChanged } from "../../lib/navCounts";
 import { savedFetch } from "../../lib/offlineStore";
 import { errorText, withWorkingToast } from "../../lib/toast";
 import type { OfflineAttestation } from "../../components/AttestedNote";
+import type { NoPhotoReason } from "../../lib/offlineQueue";
 
 /*
 |--------------------------------------------------------------------------
@@ -89,7 +90,7 @@ export type AttendanceEntry = {
   /** The time-in itself was recorded with no connection: no photo and no camera check. */
   offline_time_in?: boolean;
   /** Phase 2.7: why there is no photo (no connection, the camera check could not run, or it took too long). */
-  no_photo_reason?: "no_connection" | "camera_problem" | "check_too_long" | null;
+  no_photo_reason?: NoPhotoReason | null;
   /**
    * How far the intern's phone clock was from the server's when offline steps
    * of this log were sent, in seconds; positive when the phone was ahead.

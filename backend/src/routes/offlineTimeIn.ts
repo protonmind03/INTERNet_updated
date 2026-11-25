@@ -79,7 +79,8 @@ type Dependencies = {
 };
 
 /** Phase 2.7 (migration 091): why a time-in came without a photo. */
-const NO_PHOTO_REASONS: unknown[] = ["no_connection", "camera_problem", "check_too_long"];
+const NO_PHOTO_REASONS = ["no_connection", "camera_problem", "check_too_long"] as const;
+const isNoPhotoReason = (value: unknown): value is (typeof NO_PHOTO_REASONS)[number] => NO_PHOTO_REASONS.includes(value as (typeof NO_PHOTO_REASONS)[number]);
 
 const LOG_COLUMNS = `
   id, student_id, TO_CHAR(date, 'YYYY-MM-DD') AS date, time_in, break_time, break_end_time,
@@ -462,7 +463,7 @@ export function registerOfflineTimeInRoutes(app: express.Express, deps: Dependen
       // Phase 2.1: where it was made, as the phone worked it out (never the coordinates).
       const geo = await judgeGeo(pool, auth.id, req.body, "offline");
       // Phase 2.7: why there is no photo. Older phones send nothing: they only had no connection.
-      const noPhotoReason = NO_PHOTO_REASONS.includes(req.body?.no_photo_reason) ? (req.body.no_photo_reason as string) : "no_connection";
+      const noPhotoReason = isNoPhotoReason(req.body?.no_photo_reason) ? req.body.no_photo_reason : "no_connection";
 
       const existingFor = async () =>
         pool.query<{ id: number; offline_time_in_request: string | null }>(

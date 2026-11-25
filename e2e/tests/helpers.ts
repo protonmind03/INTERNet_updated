@@ -1,4 +1,8 @@
+import { createRequire } from "node:module";
 import { expect, type Page } from "@playwright/test";
+
+// axe-core comes with the e2e packages (a dependency of lighthouse).
+const axeSource = createRequire(__filename).resolve("axe-core/axe.min.js");
 
 export const API = (process.env.E2E_API_URL || "http://127.0.0.1:5000").replace(/\/+$/, "");
 
@@ -116,4 +120,18 @@ export async function openProfileGroup(page: Page, title: string): Promise<void>
   await row.waitFor();
   await row.click();
   await page.getByRole("dialog", { name: title }).waitFor();
+}
+
+/**
+ * Axe (WCAG 2.1 A and AA) on the page as it is: no serious or critical
+ * violations. Phase 2: one copy for the specs, in place of a pasted one each.
+ */
+export async function expectAccessible(page: Page, where: string): Promise<void> {
+  await page.addScriptTag({ path: axeSource });
+  const violations = await page.evaluate(async () => {
+    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: unknown[] }[] }> } }).axe;
+    const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
+    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length})`);
+  });
+  expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
 }

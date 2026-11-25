@@ -1,8 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
 import path from "node:path";
-import { expect, test, type Page } from "@playwright/test";
-import { ACCOUNTS, API, api, apiSession, signIn } from "./helpers";
+import { expect, test } from "@playwright/test";
+import { ACCOUNTS, API, api, apiSession, signIn, expectAccessible } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -18,7 +17,6 @@ import { ACCOUNTS, API, api, apiSession, signIn } from "./helpers";
 |
 */
 
-const axeSource = createRequire(__filename).resolve("axe-core/axe.min.js");
 const backend = path.resolve(__dirname, "..", "..", "backend");
 const stamp = Date.now().toString(36);
 const studentId = `CDE-${stamp}`.toUpperCase();
@@ -38,16 +36,6 @@ const askForReview = () =>
     ],
     { cwd: backend, env: process.env, encoding: "utf8" }
   );
-
-async function expectAccessible(page: Page, where: string) {
-  await page.addScriptTag({ path: axeSource });
-  const violations = await page.evaluate(async () => {
-    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: unknown[] }[] }> } }).axe;
-    const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
-    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length})`);
-  });
-  expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
-}
 
 test.describe.configure({ mode: "serial" });
 

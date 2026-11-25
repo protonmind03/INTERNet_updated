@@ -1,5 +1,8 @@
 import type express from "express";
 import type { Pool } from "pg";
+import { coordinatorName } from "../services/coordinatorName";
+import { addDays } from "../services/kpis";
+import { calendarDay } from "../services/traineeRecord";
 import { currentScope, scopeCondition, studentInScope } from "../services/coordinatorScope";
 import { CHECK_IN_KINDS, weekOf, type CheckInKind } from "../services/monitoringPlan";
 import { phToday } from "../services/phTime";
@@ -24,10 +27,7 @@ import { phToday } from "../services/phTime";
 type Authed = express.Request & { auth?: { role: string; id: string } };
 type Dependencies = { pool: Pool; requireCoordinator: express.RequestHandler };
 
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
-const validDate = (value: string) => DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 const text = (value: unknown) => (typeof value === "string" ? value.trim() : "");
-const addDays = (day: string, days: number) => new Date(Date.parse(`${day}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
 
 const PLAN_COLUMNS = `
   v.id, v.kind, TO_CHAR(v.planned_on, 'YYYY-MM-DD') AS planned_on, v.plan_note,
@@ -42,7 +42,7 @@ function readPlan(body: unknown, today: string): { plan: { kind: CheckInKind; pl
   const plannedOn = text(input.planned_on);
   const note = text(input.note);
   if (!CHECK_IN_KINDS.includes(kind)) return { problem: "Choose a visit, a call or a message check-in." };
-  if (!validDate(plannedOn)) return { problem: "Give the day, written as YYYY-MM-DD." };
+  if (!calendarDay(plannedOn)) return { problem: "Give the day, written as YYYY-MM-DD." };
   if (plannedOn < today) return { problem: "Plan it for today or later." };
   if (plannedOn > addDays(today, 366)) return { problem: "Plan it within the next year." };
   if (note.length > 500) return { problem: "Keep the note to 500 characters." };
@@ -51,9 +51,6 @@ function readPlan(body: unknown, today: string): { plan: { kind: CheckInKind; pl
 
 export function registerMonitoringPlanRoutes(app: express.Express, deps: Dependencies): void {
   const { pool, requireCoordinator } = deps;
-
-  const coordinatorName = async (id: string) =>
-    (await pool.query<{ name: string }>(`SELECT name FROM coordinators WHERE coordinator_id = $1`, [id])).rows[0]?.name || "OJT coordinator";
 
   app.get("/api/coordinator/monitoring-plan", requireCoordinator, async (_req, res) => {
     try {
@@ -118,7 +115,7 @@ export function registerMonitoringPlanRoutes(app: express.Express, deps: Depende
         `INSERT INTO site_visits (company_id, student_id, kind, status, planned_on, plan_note, visited_by, visited_by_name)
          VALUES ($1, (SELECT student_id FROM students WHERE TRIM(student_id::text) = TRIM($2)), $3, 'planned', $4, $5, $6, $7)
          RETURNING id`,
-        [companyId, studentId, read.plan.kind, read.plan.plannedOn, read.plan.note, auth.id, await coordinatorName(auth.id)]
+        [companyId, studentId, read.plan.kind, read.plan.plannedOn, read.plan.note, auth.id, await coordinatorName(pool, auth.id)]
       );
       const plan = await pool.query(`SELECT ${PLAN_COLUMNS} FROM ${PLAN_FROM} WHERE v.id = $1`, [saved.rows[0].id]);
       return res.status(201).json({ message: "Check-in planned.", plan: plan.rows[0] });
@@ -157,7 +154,7 @@ export function registerMonitoringPlanRoutes(app: express.Express, deps: Depende
       const doneOn = text(req.body?.done_on) || today;
       const findings = text(req.body?.findings);
       const followUp = text(req.body?.follow_up);
-      if (!validDate(doneOn)) return res.status(400).json({ message: "Give the day it was done, written as YYYY-MM-DD." });
+      if (!calendarDay(doneOn)) return res.status(400).json({ message: "Give the day it was done, written as YYYY-MM-DD." });
       if (doneOn > today) return res.status(400).json({ message: "A check-in is marked done after it happens; that day has not come yet." });
       if (findings.length < 10 || findings.length > 3000) return res.status(400).json({ message: "Say what you found (10 to 3000 characters)." });
       if (followUp.length > 1000) return res.status(400).json({ message: "Keep the follow-up to 1000 characters." });
@@ -165,7 +162,7 @@ export function registerMonitoringPlanRoutes(app: express.Express, deps: Depende
         `UPDATE site_visits SET status = 'done', visit_date = $2, findings = $3, follow_up = $4,
                 visited_by = $5, visited_by_name = $6, updated_at = NOW()
          WHERE id = $1 AND status = 'planned' RETURNING id`,
-        [Number(req.params.id), doneOn, findings, followUp || null, auth.id, await coordinatorName(auth.id)]
+        [Number(req.params.id), doneOn, findings, followUp || null, auth.id, await coordinatorName(pool, auth.id)]
       );
       if (done.rows.length === 0) return res.status(404).json({ message: "Check-in not found." });
       return res.json({ message: "Marked done. It is in the visit log.", id: done.rows[0].id });

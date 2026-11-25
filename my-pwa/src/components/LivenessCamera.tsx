@@ -16,6 +16,7 @@ import {
 import Icon, { type IconName } from "./Icon";
 import { Button } from "./ui";
 import { useWakeLock } from "../lib/useWakeLock";
+import type { NoPhotoReason } from "../lib/offlineQueue";
 
 /*
 |--------------------------------------------------------------------------
@@ -96,7 +97,8 @@ const READ_EVERY_MS = 1000 / 15;
 // Phase 2.7: after this long without a pass, the time-in without a photo is offered.
 const SLOW_AFTER_MS = 20_000;
 
-export type WithoutPhotoReason = "camera_problem" | "check_too_long";
+/** Why the camera check offered the time-in without a photo (the rest of NoPhotoReason is "no connection"). */
+export type WithoutPhotoReason = Exclude<NoPhotoReason, "no_connection">;
 const WITHOUT_PHOTO_LABEL = "Continue without photo. Your supervisor will confirm";
 
 const PROMPT_TEXT: Record<Prompt, { text: string; icon: IconName; flip?: boolean }> = {

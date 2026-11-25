@@ -1,5 +1,6 @@
 import type express from "express";
 import type { Pool } from "pg";
+import { coordinatorName } from "../services/coordinatorName";
 
 /*
 |--------------------------------------------------------------------------
@@ -27,14 +28,11 @@ type Dependencies = {
 export function registerCompletionDecisionRoutes(app: express.Express, deps: Dependencies): void {
   const { pool, requireCoordinator, createNotification } = deps;
 
-  const coordinatorName = async (id: string) =>
-    (await pool.query<{ name: string }>(`SELECT name FROM coordinators WHERE coordinator_id = $1`, [id])).rows[0]?.name || "OJT coordinator";
-
   app.post("/api/coordinator/students/:studentId/completion/approve", requireCoordinator, async (req, res) => {
     try {
       const auth = (req as Authed).auth!;
       const studentId = String(req.params.studentId).trim();
-      const name = await coordinatorName(auth.id);
+      const name = await coordinatorName(pool, auth.id);
       const approved = await pool.query<{ student_id: string; completion_approved_at: string }>(
         `UPDATE students SET completion_approved_at = NOW(), completion_approved_by = $2, completion_approved_by_name = $3,
                 completion_returned_at = NULL, completion_return_note = NULL

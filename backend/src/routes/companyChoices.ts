@@ -228,14 +228,17 @@ export function registerCompanyChoiceRoutes(app: express.Express, deps: Dependen
           [termId, ...scope.values]
         ),
         pool.query(
-          `SELECT c.id, c.name, c.slots,
+          // The term's choices counted once per company; only companies someone chose are listed.
+          `WITH ch AS (
+             SELECT company_id, COUNT(*) FILTER (WHERE rank = 1)::int AS first_choice, COUNT(*)::int AS any_choice
+             FROM company_choices WHERE term_id = $1 GROUP BY company_id
+           )
+           SELECT c.id, c.name, c.slots,
                   (SELECT COUNT(*)::int FROM students p WHERE p.company_id = c.id AND p.is_active = TRUE AND p.term_id = $1) AS placed,
-                  (SELECT COUNT(*)::int FROM company_choices ch WHERE ch.company_id = c.id AND ch.term_id = $1 AND ch.rank = 1) AS first_choice,
-                  (SELECT COUNT(*)::int FROM company_choices ch WHERE ch.company_id = c.id AND ch.term_id = $1) AS any_choice
-           FROM companies c
+                  ch.first_choice, ch.any_choice
+           FROM companies c JOIN ch ON ch.company_id = c.id
            WHERE c.is_active = TRUE AND c.status = 'approved'
-             AND EXISTS (SELECT 1 FROM company_choices ch WHERE ch.company_id = c.id AND ch.term_id = $1)
-           ORDER BY first_choice DESC, LOWER(c.name)`,
+           ORDER BY ch.first_choice DESC, LOWER(c.name)`,
           [termId]
         ),
       ]);

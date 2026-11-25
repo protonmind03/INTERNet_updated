@@ -1,6 +1,7 @@
 import type express from "express";
 import type { Pool } from "pg";
 import { scopeCondition } from "../services/coordinatorScope";
+import { isSemester, SEMESTER_WORDS, type Semester } from "../services/semesters";
 
 /*
 |--------------------------------------------------------------------------
@@ -20,10 +21,7 @@ import { scopeCondition } from "../services/coordinatorScope";
 
 type Dependencies = { pool: Pool; requireCoordinator: express.RequestHandler };
 
-export const SEMESTERS = ["first", "second", "midyear"] as const;
-export const SEMESTER_WORDS: Record<string, string> = { first: "first semester", second: "second semester", midyear: "midyear" };
-
-const termId = (value: unknown): number | null => (/^\d{1,9}$/.test(String(value)) ? Number(value) : null);
+const idParam = (value: unknown): number | null => (/^\d{1,9}$/.test(String(value)) ? Number(value) : null);
 
 export function registerSemesterRoutes(app: express.Express, deps: Dependencies): void {
   const { pool, requireCoordinator } = deps;
@@ -42,10 +40,10 @@ export function registerSemesterRoutes(app: express.Express, deps: Dependencies)
   });
 
   app.put("/api/coordinator/programs/:id/ojt-semesters", requireCoordinator, async (req, res) => {
-    const id = termId(req.params.id);
+    const id = idParam(req.params.id);
     if (id === null) return res.status(404).json({ message: "Program not found." });
     const given: unknown = req.body?.semesters;
-    if (!Array.isArray(given) || given.length > 2 || given.some((item) => !SEMESTERS.includes(item as (typeof SEMESTERS)[number]))) {
+    if (!Array.isArray(given) || given.length > 2 || given.some((item) => !isSemester(item))) {
       return res.status(400).json({ message: "Choose up to two semesters, in order." });
     }
     if (new Set(given).size !== given.length) return res.status(400).json({ message: "Choose each semester once." });
@@ -62,7 +60,7 @@ export function registerSemesterRoutes(app: express.Express, deps: Dependencies)
         await client.query(`INSERT INTO program_terms (program_id, part, semester) VALUES ($1, $2, $3)`, [id, index + 1, semester]);
       }
       await client.query("COMMIT");
-      const words = (given as string[]).map((item) => SEMESTER_WORDS[item]);
+      const words = (given as Semester[]).map((item) => SEMESTER_WORDS[item]);
       return res.json({
         message: words.length === 0 ? "OJT semesters cleared." : words.length === 1 ? `OJT runs in the ${words[0]}.` : `OJT runs in the ${words[0]}, then continues in the ${words[1]}.`,
         semesters: given,
@@ -78,7 +76,7 @@ export function registerSemesterRoutes(app: express.Express, deps: Dependencies)
 
   app.get("/api/coordinator/terms/:id/semester-check", requireCoordinator, async (req, res) => {
     try {
-      const id = termId(req.params.id);
+      const id = idParam(req.params.id);
       if (id === null) return res.status(404).json({ message: "Term not found." });
       const term = await pool.query<{ semester: string | null }>(`SELECT semester FROM terms WHERE id = $1`, [id]);
       if (term.rows.length === 0) return res.status(404).json({ message: "Term not found." });
@@ -117,8 +115,8 @@ export function registerSemesterRoutes(app: express.Express, deps: Dependencies)
 
   app.post("/api/coordinator/terms/:id/carry-over", requireCoordinator, async (req, res) => {
     try {
-      const from = termId(req.params.id);
-      const to = termId(req.body?.to_term_id);
+      const from = idParam(req.params.id);
+      const to = idParam(req.body?.to_term_id);
       if (from === null) return res.status(404).json({ message: "Term not found." });
       if (to === null || to === from) return res.status(400).json({ message: "Choose the term they continue in." });
       const terms = await pool.query<{ id: number; semester: string | null; is_closed: boolean; start_date: string }>(

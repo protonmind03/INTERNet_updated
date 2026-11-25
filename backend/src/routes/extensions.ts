@@ -18,6 +18,7 @@ import { sameId, sqlSameId } from "../services/ids";
 import { PlacementError, withPlacement } from "../services/placement";
 import { markActed } from "../services/notificationKinds";
 import { scopeCondition } from "../services/coordinatorScope";
+import { isSemester } from "../services/semesters";
 
 /*
 |--------------------------------------------------------------------------
@@ -2085,7 +2086,7 @@ export function registerExtensionRoutes(
     const given = "semester" in input || "academic_year" in input;
     const semester = text(input.semester) || null;
     const academicYear = text(input.academic_year) || null;
-    if (semester && !["first", "second", "midyear"].includes(semester)) return { problem: "Choose the first semester, the second, or midyear." };
+    if (semester && !isSemester(semester)) return { problem: "Choose the first semester, the second, or midyear." };
     if (academicYear && !(/^\d{4}-\d{4}$/.test(academicYear) && Number(academicYear.slice(5)) === Number(academicYear.slice(0, 4)) + 1)) {
       return { problem: "Write the academic year as 2026-2027." };
     }
@@ -3135,11 +3136,17 @@ export function registerExtensionRoutes(
     ready: boolean;
     requested_at: string | null;
     name: string;
+    /** Phase 2.5: the coordinator's decision on the request. */
+    decision: { approved_at: string | null; approved_by: string | null; returned_at: string | null; return_note: string | null };
   } | null> {
     const result = await pool.query<{
       name: string;
       required_hours: number | null;
       completion_requested_at: string | null;
+      approved_at: string | null;
+      approved_by: string | null;
+      returned_at: string | null;
+      return_note: string | null;
       hours: string;
       waiting_logs: number;
       requirements: number;
@@ -3150,6 +3157,8 @@ export function registerExtensionRoutes(
     }>(
       `
       SELECT s.name, s.required_hours, s.completion_requested_at,
+        s.completion_approved_at AS approved_at, s.completion_approved_by_name AS approved_by,
+        s.completion_returned_at AS returned_at, s.completion_return_note AS return_note,
         (SELECT COALESCE(SUM(a.hours), 0) FROM attendance a
           WHERE a.student_id = s.student_id AND a.status = 'Verified') AS hours,
         (SELECT COUNT(*)::int FROM attendance a
@@ -3235,6 +3244,7 @@ export function registerExtensionRoutes(
       ready: items.every((item) => item.done),
       requested_at: row.completion_requested_at,
       name: row.name,
+      decision: { approved_at: row.approved_at, approved_by: row.approved_by, returned_at: row.returned_at, return_note: row.return_note },
     };
   }
 
@@ -3246,18 +3256,11 @@ export function registerExtensionRoutes(
       }
       const checklist = await completionChecklist(auth.id);
       if (!checklist) return res.status(404).json({ message: "Student not found." });
-      // Phase 2.5: the coordinator's decision on the request.
-      const decision = await pool.query<{ approved_at: string | null; approved_by: string | null; returned_at: string | null; return_note: string | null }>(
-        `SELECT completion_approved_at AS approved_at, completion_approved_by_name AS approved_by,
-                completion_returned_at AS returned_at, completion_return_note AS return_note
-         FROM students WHERE student_id = $1`,
-        [auth.id]
-      );
       return res.json({
         items: checklist.items,
         ready: checklist.ready,
         requested_at: checklist.requested_at,
-        ...decision.rows[0],
+        ...checklist.decision,
       });
     } catch (error) {
       console.error("COMPLETION CHECKLIST ERROR:", error);
@@ -4164,11 +4167,13 @@ export function registerExtensionRoutes(
       if (company !== undefined && !/^\d{1,9}$/.test(String(company))) {
         return res.status(400).json({ message: "That is not a company." });
       }
+      // Phase 2.3: a visit about one student (a check-in marked done) is shown only within the coordinator's scope.
+      const scope = scopeCondition("v.student_id", 1);
       const result = await pool.query(
         `SELECT ${VISIT_COLUMNS} FROM ${VISIT_FROM}
-         WHERE ($1::int IS NULL OR v.company_id = $1::int) AND v.status = 'done'
+         WHERE ($1::int IS NULL OR v.company_id = $1::int) AND v.status = 'done'${scope.sql ? ` AND (v.student_id IS NULL OR (TRUE${scope.sql}))` : ""}
          ORDER BY v.visit_date DESC, v.id DESC LIMIT 500`,
-        [company === undefined ? null : Number(company)]
+        [company === undefined ? null : Number(company), ...scope.values]
       );
       return res.json({ visits: result.rows });
     } catch (error) {

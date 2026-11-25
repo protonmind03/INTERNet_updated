@@ -51,7 +51,7 @@ export default function CompletionChecklist({ title = "Completion checklist" }: 
   const [ready, setReady] = useState(false);
   const [requestedAt, setRequestedAt] = useState<string | null>(null);
   // Phase 2.5: the coordinator approves the review, or returns it with what to fix.
-  const [decision, setDecision] = useState<{ approved_at: string | null; approved_by: string | null; returned_at: string | null; return_note: string | null }>({ approved_at: null, approved_by: null, returned_at: null, return_note: null });
+  const [decision, setDecision] = useState<{ approved_at?: string | null; approved_by?: string | null; returned_at?: string | null; return_note?: string | null } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
@@ -71,7 +71,7 @@ export default function CompletionChecklist({ title = "Completion checklist" }: 
       setItems(data.items || []);
       setReady(Boolean(data.ready));
       setRequestedAt(data.requested_at || null);
-      setDecision({ approved_at: data.approved_at ?? null, approved_by: data.approved_by ?? null, returned_at: data.returned_at ?? null, return_note: data.return_note ?? null });
+      setDecision(data);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "Could not load your checklist."));
@@ -179,7 +179,7 @@ export default function CompletionChecklist({ title = "Completion checklist" }: 
         {!loading && items.length > 0 && (
           <div className="border-t border-slate-100 p-4 sm:p-5">
             <h3 className="text-sm font-semibold text-slate-900">Completion review</h3>
-            {requestedAt && decision.approved_at ? (
+            {requestedAt && decision?.approved_at ? (
               <p className="mt-2 flex items-start gap-2 text-sm text-slate-700">
                 <Icon name="check-circle" size={17} className="mt-0.5 shrink-0 text-emerald-600" />
                 <span>
@@ -197,7 +197,7 @@ export default function CompletionChecklist({ title = "Completion checklist" }: 
               </p>
             ) : (
               <>
-                {decision.returned_at && decision.return_note && (
+                {decision?.returned_at && decision.return_note && (
                   <p className="mt-2 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
                     Your coordinator returned your review on {formatLongDate(decision.returned_at)}: {decision.return_note} Fix it, then ask again.
                   </p>

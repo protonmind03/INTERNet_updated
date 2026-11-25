@@ -3,6 +3,7 @@ import type express from "express";
 import type { Pool } from "pg";
 import { restrictedDocument } from "../services/deliverables";
 import { phToday } from "../services/phTime";
+import { calendarDay } from "../services/traineeRecord";
 
 /*
 |--------------------------------------------------------------------------
@@ -36,7 +37,6 @@ type Dependencies = {
 const RECORD_TYPES = ["document", "final_evaluation"] as const;
 type RecordType = (typeof RECORD_TYPES)[number];
 const SCAN_TYPES: Record<string, string> = { ".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png" };
-const DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 const HARD_COPY = `JSON_BUILD_OBJECT('received_on', TO_CHAR(h.received_on, 'YYYY-MM-DD'), 'received_by_name', h.received_by_name,
                    'note', h.note, 'has_scan', h.scan_path IS NOT NULL)`;
@@ -65,14 +65,15 @@ export function registerHardCopyRoutes(app: express.Express, deps: Dependencies)
     try {
       const auth = (req as Authed).auth!;
       const student = await pool.query(
-        `SELECT TRIM(s.student_id::text) AS student_id, s.name, s.company, p.short_code AS program, p.name AS program_name,
+        `SELECT TRIM(s.student_id::text) AS student_id, s.student_id AS stored_id, s.name, s.company, p.short_code AS program, p.name AS program_name,
                 (SELECT name FROM coordinators WHERE coordinator_id = $2) AS coordinator
          FROM students s LEFT JOIN programs p ON p.id = s.program_id
          WHERE TRIM(s.student_id::text) = TRIM($1)`,
         [req.params.studentId, auth.id]
       );
       if (student.rows.length === 0) return res.status(404).json({ message: "Student not found." });
-      const id = student.rows[0].student_id;
+      // The id as stored, so the lookups below use their student_id indexes.
+      const { stored_id: id, ...about } = student.rows[0];
       const [documents, evaluations] = await Promise.all([
         pool.query(
           `SELECT 'document' AS record_type, d.id AS record_id, d.doc_type AS label, d.status,
@@ -80,7 +81,7 @@ export function registerHardCopyRoutes(app: express.Express, deps: Dependencies)
                   CASE WHEN h.id IS NULL THEN NULL ELSE ${HARD_COPY} END AS hard_copy
            FROM documents d
            LEFT JOIN hard_copies h ON h.record_type = 'document' AND h.record_id = d.id
-           WHERE TRIM(d.student_id::text) = $1
+           WHERE d.student_id = $1
            ORDER BY d.uploaded_at DESC, d.id DESC`,
           [id]
         ),
@@ -91,12 +92,12 @@ export function registerHardCopyRoutes(app: express.Express, deps: Dependencies)
                   CASE WHEN h.id IS NULL THEN NULL ELSE ${HARD_COPY} END AS hard_copy
            FROM final_evaluations f
            LEFT JOIN hard_copies h ON h.record_type = 'final_evaluation' AND h.record_id = f.id
-           WHERE TRIM(f.student_id::text) = $1
+           WHERE f.student_id = $1
            ORDER BY f.submitted_at DESC`,
           [id]
         ),
       ]);
-      return res.json({ student: student.rows[0], items: [...evaluations.rows, ...documents.rows] });
+      return res.json({ student: about, items: [...evaluations.rows, ...documents.rows] });
     } catch (error) {
       console.error("GET HARD COPIES ERROR:", error);
       return res.status(500).json({ message: "Failed to load the hard copies." });
@@ -116,7 +117,7 @@ export function registerHardCopyRoutes(app: express.Express, deps: Dependencies)
         const receivedOn = String(req.body?.received_on ?? "").trim();
         const receivedBy = String(req.body?.received_by_name ?? "").trim();
         const note = String(req.body?.note ?? "").trim();
-        if (!DATE.test(receivedOn) || Number.isNaN(Date.parse(`${receivedOn}T00:00:00Z`))) return res.status(400).json({ message: "Give the day it was received, as YYYY-MM-DD." });
+        if (!calendarDay(receivedOn)) return res.status(400).json({ message: "Give the day it was received, as YYYY-MM-DD." });
         if (receivedOn > phToday()) return res.status(400).json({ message: "That day has not come yet." });
         if (receivedBy.length < 2 || receivedBy.length > 150) return res.status(400).json({ message: "Say who received it." });
         if (note.length > 500) return res.status(400).json({ message: "Keep the note to 500 characters." });

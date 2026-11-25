@@ -15542,3 +15542,42 @@ test("phase 2 review: carrying over refuses to overfill a company and leaves the
     await pool.end();
   }
 });
+
+test("phase 2 review: the visit log shows a visit about one student only within the coordinator's scope", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const coordinatorId = `VSC-${stamp}`.toUpperCase();
+  const inside = `VSI-${stamp}`.toUpperCase();
+  const outside = `VSO-${stamp}`.toUpperCase();
+  const bsit = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BSIT'`)).rows[0].id;
+  const bpa = (await pool.query(`SELECT id FROM programs WHERE short_code = 'BPA'`)).rows[0].id;
+  const companyId = (await pool.query(`INSERT INTO companies (name, status) VALUES ($1, 'approved') RETURNING id`, [`Made Up Scoped Visits ${stamp}`])).rows[0].id;
+  await pool.query(`INSERT INTO coordinators (coordinator_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Made Up Scoped', FALSE)`, [coordinatorId, `${coordinatorId.toLowerCase()}@demo.invalid`, await bcrypt.hash("ScopedVisits123", 4)]);
+  await pool.query(`INSERT INTO coordinator_scopes (coordinator_id, program_id) VALUES ($1, $2)`, [coordinatorId, bsit]);
+  for (const [sid, program] of [[inside, bsit], [outside, bpa]]) {
+    await pool.query(`INSERT INTO students (student_id, email, password, name, is_active, program_id) VALUES ($1, $2, 'x', 'Made Up Visited', TRUE, $3)`, [sid, `${sid.toLowerCase()}@demo.invalid`, program]);
+  }
+  const visit = async (studentId, findings) =>
+    (await pool.query(
+      `INSERT INTO site_visits (company_id, student_id, visit_date, visited_by, visited_by_name, findings) VALUES ($1, $2, CURRENT_DATE, 'test', 'Test', $3) RETURNING id`,
+      [companyId, studentId, findings]
+    )).rows[0].id;
+  try {
+    const ids = { company: await visit(null, "About the whole company."), inside: await visit(inside, "About the student inside."), outside: await visit(outside, "About the student outside.") };
+    const token = (await jsonRequest("/api/login/coordinator", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email: `${coordinatorId.toLowerCase()}@demo.invalid`, password: "ScopedVisits123" }) })).body.token;
+    const seen = (await jsonRequest(`/api/coordinator/site-visits?company_id=${companyId}`, { headers: authHeaders(token) })).body.visits.map((row) => row.id);
+    assert.ok(seen.includes(ids.company) && seen.includes(ids.inside), JSON.stringify(seen));
+    assert.equal(seen.includes(ids.outside), false, "a visit about a student outside the scope is not shown");
+    const all = (await jsonRequest(`/api/coordinator/site-visits?company_id=${companyId}`, { headers: authHeaders(coordinatorToken) })).body.visits.map((row) => row.id);
+    assert.equal(all.length, 3, "an unscoped coordinator sees all three");
+  } finally {
+    await pool.query(`DELETE FROM site_visits WHERE company_id = $1`, [companyId]);
+    await pool.query(`DELETE FROM coordinator_scopes WHERE coordinator_id = $1`, [coordinatorId]);
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [coordinatorId]);
+    await pool.query(`DELETE FROM students WHERE student_id = ANY($1)`, [[inside, outside]]);
+    await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
+    await pool.end();
+  }
+});

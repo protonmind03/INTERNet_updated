@@ -1,6 +1,5 @@
-import { createRequire } from "node:module";
-import { expect, test, type Page } from "@playwright/test";
-import { api, apiSession, signIn } from "./helpers";
+import { expect, test } from "@playwright/test";
+import { api, apiSession, signIn, expectAccessible } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -14,20 +13,9 @@ import { api, apiSession, signIn } from "./helpers";
 |
 */
 
-const axeSource = createRequire(__filename).resolve("axe-core/axe.min.js");
 const stamp = Date.now().toString(36);
 const companyName = `Made Up Planned Office ${stamp}`;
 let companyId = 0;
-
-async function expectAccessible(page: Page, where: string) {
-  await page.addScriptTag({ path: axeSource });
-  const violations = await page.evaluate(async () => {
-    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: unknown[] }[] }> } }).axe;
-    const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
-    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length})`);
-  });
-  expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
-}
 
 test.beforeAll(async () => {
   const coordinator = await apiSession("coordinator");
@@ -71,12 +59,12 @@ test("the coordinator plans a call, exports the plan, and marks it done", async 
 
   await row.getByRole("button", { name: /^Mark done/ }).click();
   const done = page.getByRole("dialog", { name: `Mark done: ${companyName}` });
-  await done.getByLabel("What you found").fill("The trainee is settled and has a desk.");
+  await done.getByLabel("What you found").fill(`The trainee is settled and has a desk (${stamp}).`);
   await done.getByRole("button", { name: "Mark done" }).click();
   await expect(done).toBeHidden();
   await expect(page.getByText("Marked done. It is in the visit log.")).toBeVisible();
   await expect(card.getByRole("listitem").filter({ hasText: companyName })).toHaveCount(0);
 
   await page.goto("/coordinator/site-visits");
-  await expect(page.getByText("The trainee is settled and has a desk.")).toBeVisible({ timeout: 20_000 });
+  await expect(page.getByText(`The trainee is settled and has a desk (${stamp}).`)).toBeVisible({ timeout: 20_000 });
 });

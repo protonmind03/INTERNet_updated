@@ -76,6 +76,8 @@ export async function studentInScope(pool: Pool, scope: CoordinatorScope, studen
  */
 /** A concern's student: its filer, or the intern a supervisor's concern is about (reported_student_id). */
 const CONCERN_STUDENT = "SELECT COALESCE(student_id, reported_student_id) AS student_id FROM complaints WHERE id::text = $1";
+/** A site visit or planned check-in's student, when it is about one (Phase 2.3). */
+const VISIT_STUDENT = "SELECT student_id FROM site_visits WHERE id::text = $1";
 
 const SCOPED_RECORDS: Record<string, { param: string; student: string }> = {
   "/api/attendance/:id/status": { param: "id", student: "SELECT student_id FROM attendance WHERE id::text = $1" },
@@ -92,9 +94,9 @@ const SCOPED_RECORDS: Record<string, { param: string; student: string }> = {
   // Phase 1.4: an overtime request's signed form.
   "/api/overtime/:id/form": { param: "id", student: "SELECT student_id FROM overtime_requests WHERE id::text = $1" },
   // Phase 2.3: a check-in about one student (none: about the whole company).
-  "/api/coordinator/monitoring-plan/:id": { param: "id", student: "SELECT student_id FROM site_visits WHERE id::text = $1" },
-  "/api/coordinator/monitoring-plan/:id/done": { param: "id", student: "SELECT student_id FROM site_visits WHERE id::text = $1" },
-  "/api/coordinator/site-visits/:id": { param: "id", student: "SELECT student_id FROM site_visits WHERE id::text = $1" },
+  "/api/coordinator/monitoring-plan/:id": { param: "id", student: VISIT_STUDENT },
+  "/api/coordinator/monitoring-plan/:id/done": { param: "id", student: VISIT_STUDENT },
+  "/api/coordinator/site-visits/:id": { param: "id", student: VISIT_STUDENT },
 };
 
 /** Routes that name a person by kind and id: only a student is scoped. */

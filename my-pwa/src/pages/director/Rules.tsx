@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Card, ConfirmDialog, ErrorNotice, FormError, FormField, SkeletonRows, StatusBadge } from "../../components/ui";
 import DirectorLayout from "../../layouts/DirectorLayout";
 import { errorText, toast } from "../../lib/toast";
+import type { GeoMode } from "../../lib/geofence";
 import { directorRead, directorWrite } from "./request";
 
 /*
@@ -12,7 +13,6 @@ import { directorRead, directorWrite } from "./request";
 */
 
 type Settings = { deployment_gate_enabled: boolean; grade_split_hte: number; geofence_mode?: GeoMode };
-type GeoMode = "off" | "record" | "review_outside";
 const GEO_WORDS: Record<GeoMode, { name: string; effect: string }> = {
   off: { name: "Off", effect: "No location is asked for at time-in." },
   record: { name: "Record the distance", effect: "At time-in the phone asks for its location once; only the distance from the company is kept and shown to the supervisor." },

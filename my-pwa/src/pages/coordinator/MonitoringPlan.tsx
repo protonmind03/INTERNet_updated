@@ -111,7 +111,7 @@ export default function MonitoringPlan() {
           {plans.map((plan) => (
             <li key={plan.id} className="py-3">
               <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-slate-900">
-                {formatDayDate(`${plan.planned_on}T00:00:00+08:00`)}, {plan.company}
+                {formatDayDate(plan.planned_on)}, {plan.company}
                 <StatusBadge status={KIND_WORDS[plan.kind]} tone={overdue ? "waiting" : "neutral"} />
               </p>
               <p className="mt-0.5 text-sm text-slate-600">

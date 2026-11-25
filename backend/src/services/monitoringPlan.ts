@@ -1,5 +1,7 @@
 import type { Pool } from "pg";
+import { addDays } from "./kpis";
 import { phToday } from "./phTime";
+import { mondayOfDay } from "./traineeRecord";
 
 /*
 |--------------------------------------------------------------------------
@@ -24,11 +26,8 @@ export const KIND_WORDS: Record<CheckInKind, string> = {
 
 /** Monday and Sunday of the Philippine week holding `day` (YYYY-MM-DD). */
 export function weekOf(day: string): { start: string; end: string } {
-  const date = new Date(`${day}T00:00:00Z`);
-  const fromMonday = (date.getUTCDay() + 6) % 7;
-  const start = new Date(date.getTime() - fromMonday * 86_400_000);
-  const end = new Date(start.getTime() + 6 * 86_400_000);
-  return { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+  const start = mondayOfDay(day);
+  return { start, end: addDays(start, 6) };
 }
 
 type Writer = (notification: { coordinatorId?: string; title: string; message: string; type: string; link?: string }) => Promise<unknown>;
