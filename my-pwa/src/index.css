@@ -506,7 +506,7 @@ body {
 .att-row--waiting td:first-child { box-shadow: inset 3px 0 0 #0ea5e9; }
 .att-date { display: grid; width: 46px; flex-shrink: 0; place-items: center; padding: 4px 0; border-radius: 12px; background: color-mix(in srgb, var(--role-primary, #0f5f4f) 8%, white); color: var(--role-ink, #0f172a); line-height: 1.1; }
 .att-date b { font-family: var(--font-display); font-size: 18px; font-weight: 800; }
-.att-date i { font-size: 11px; font-style: normal; font-weight: 700; text-transform: uppercase; color: #64748b; }
+.att-date i { font-size: 11px; font-style: normal; font-weight: 700; text-transform: uppercase; color: #475569; }
 .week-cell { display: grid; min-height: 44px; width: 100%; place-content: center; border-radius: 10px; padding: 4px 6px; text-align: center; transition: transform 150ms, box-shadow 150ms; }
 button.week-cell:hover { transform: translateY(-1px); box-shadow: 0 8px 16px -12px rgb(15 23 42 / 0.5); }
 @media (prefers-reduced-motion: reduce) { .att-more, .att-tile, button.week-cell { animation: none; transition: none; } }

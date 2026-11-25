@@ -231,18 +231,20 @@ export default function SupervisorJournals() {
                           </span>
                         </span>
                         <StatusBadge status={STATE[journal.status].label} tone={STATE[journal.status].tone} />
-                        {journal.status === "Submitted" && (
-                          <Link
-                            to={`/supervisor/dashboard?focus=journal-${journal.id}`}
-                            onClick={(event) => event.stopPropagation()}
-                            className="inline-flex min-h-9 items-center rounded-lg bg-psu-600 px-3 text-[13px] font-bold text-white hover:bg-psu-700"
-                          >
-                            Review now
-                          </Link>
-                        )}
                         <Icon name="chevron-down" size={18} className="text-slate-400 transition-transform group-open:rotate-180" />
                       </summary>
                       <div className="space-y-2.5 border-t border-slate-100 bg-slate-50/40 px-4 py-4 sm:px-5">
+                      {/* Not in the summary: a link inside the control that opens the report is a control in a control (axe). A waiting report starts open. */}
+                      {journal.status === "Submitted" && (
+                        <div className="flex justify-end">
+                          <Link
+                            to={`/supervisor/dashboard?focus=journal-${journal.id}`}
+                            className="inline-flex min-h-11 items-center rounded-lg bg-psu-600 px-4 text-sm font-bold text-white hover:bg-psu-700"
+                          >
+                            Review now
+                          </Link>
+                        </div>
+                      )}
                       <ReportParts report={journal} />
                       <EntryPictures role="supervisor" owner="journal" ownerId={journal.id} count={journal.pictures} className="" />
                       <DailyAccomplishments
