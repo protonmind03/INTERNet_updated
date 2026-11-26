@@ -1,10 +1,11 @@
 # Go-live checklist: ui-redesign to production
 
-Production (`main`) was last updated on 11 October 2026. Going live brings the following:
+Production (`main`) went live with this checklist on 8 November 2026 and was last updated on 25 November 2026 (`23d68da`). Going live from 11 October brought the following:
 
-- Everything built since then: 233 commits.
-- 43 database migrations, numbered 035 to 077.
+- 58 database migrations, numbered 035 to 092 (077 to 092 came with `docs/IMPLEMENTATION-PROMPT.md`, Phases 0 to 2).
 - The scheduled backups. These need the new code before they can run.
+
+For a later update, check which migrations `ui-redesign` adds since `main` (`git diff --stat main ui-redesign -- backend/migrations`) and rehearse those.
 
 Do the steps in order. Do not skip ahead.
 
@@ -16,7 +17,7 @@ Do the steps in order. Do not skip ahead.
 
 **2. Rehearse the migrations on a copy.**
 - Restore the backup into a throwaway local database.
-- Run `npm run db:migrate` against it, with all 43 migrations.
+- Run `npm run db:migrate` against it, with every pending migration (035 to 092 the first time).
 - Check that the app signs in and the record counts match.
 - Done on this computer only. The copy holds real students' data: never put it in seed data, screenshots or the repository, and drop it afterwards.
 
