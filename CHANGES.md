@@ -2221,3 +2221,34 @@ copy belongs to one upload, so a re-upload shows as not received; a
 no-photo time-in made online still counts as "offline" on some supervisor
 screens (Review says why); the Director and administrator portals are not
 in the CI sweep yet (their specs run axe on each page).
+
+## 44. The Director's approvals: agencies and grades (26 November 2026)
+
+Phase 1.6 asked the Director's Approvals page for three things; only the
+clearance overrides were there. Once a Director exists only they may
+change an agency's status, so until now no one could approve an agency
+in the app.
+
+- **Agencies** (`GET /api/director/htes`, `ApprovalAgencies.tsx`): every
+  active agency, waiting ones first, with its status, kind, MOA, slots
+  taken and latest screening. One action a row: Approve, Approve again or
+  Suspend, confirmed with the status now and after. A private agency with
+  no passed screening says it needs one instead.
+- **Grades** (`ApprovalGrades.tsx`): the grade sheet by program and
+  block, with "Release grades for BSIT 4A" for each section that has final
+  grades not yet released; the dialog gives the count released now and
+  after. It uses the release route the coordinators already had.
+- **Cleared anyway**: as before, now scoped by the college marks.
+
+The college marks scope all three; the part shown is in the address
+(`?part=`). Reads go through `savedFetch`; decisions need a connection.
+The "what this status means" words moved to `lib/hte.ts` for both portals.
+
+**Checked** (fresh database, clock on UTC): backend 319 passed, 3 skipped
+(too near midnight), 1 failed: the notification-contract test, which
+fails only because of the untracked `seed-showcase.ts` and passes with it
+set aside; route check (348 routes) and time-zone lint clean; frontend
+build, lint and `check:pwa` (198 of 198) clean; `director-portal.spec.ts`
+5 of 5 with the new Approvals test (axe on each part at 390 and 1280 px).
+
+Also: the go-live checklist now counts migrations 035 to 092.
