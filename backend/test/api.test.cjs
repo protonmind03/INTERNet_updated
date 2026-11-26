@@ -13613,7 +13613,7 @@ test("the OJT Director signs in, is locked out after repeated wrong passwords, c
     assert.equal((await jsonRequest("/api/director/overview", { headers: authHeaders(token) })).response.status, 200);
     const supervisor = await supervisorSession();
     for (const [who, other] of [["student", studentToken], ["supervisor", supervisor.token], ["coordinator", coordinatorToken]]) {
-      for (const path of ["/api/director/overview", "/api/director/coordinators", `/api/directors/${id}/profile`, `/api/notifications/director/${id}`]) {
+      for (const path of ["/api/director/overview", "/api/director/coordinators", "/api/director/htes", `/api/directors/${id}/profile`, `/api/notifications/director/${id}`]) {
         assert.equal((await jsonRequest(path, { headers: authHeaders(other) })).response.status, 403, `${who}: ${path}`);
       }
       assert.equal(
@@ -13647,6 +13647,79 @@ test("the OJT Director signs in, is locked out after repeated wrong passwords, c
   } finally {
     await pool.query(`DELETE FROM login_attempts`);
     await pool.query(`DELETE FROM directors WHERE director_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+test("the Director's agencies: listed with what approving needs; the Director approves a private one only after a passed screening, and suspends it; no one else reads the list", async (t) => {
+  if (needsWrites(t)) return;
+  const bcrypt = require("bcryptjs");
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const directorId = `HTE-D-${stamp}`.toUpperCase();
+  const email = `${directorId.toLowerCase()}@demo.invalid`;
+  await pool.query(
+    `INSERT INTO directors (director_id, email, password, name, must_change_password) VALUES ($1, $2, $3, 'Agency Director', FALSE)`,
+    [directorId, email, await bcrypt.hash("AgencyDirector123", 4)]
+  );
+  const companyId = (await pool.query(
+    `INSERT INTO companies (name, hte_type, status, slots) VALUES ($1, 'private', 'screening', 3) RETURNING id`,
+    [`Agency Director Co ${stamp}`]
+  )).rows[0].id;
+  try {
+    const director = (await jsonRequest("/api/login/director", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password: "AgencyDirector123" }) })).body.token;
+    const listed = async () => (await jsonRequest("/api/director/htes", { headers: authHeaders(director) })).body.companies.find((row) => row.id === companyId);
+
+    const supervisor = await supervisorSession();
+    for (const [who, other] of [["student", studentToken], ["supervisor", supervisor.token], ["coordinator", coordinatorToken]]) {
+      assert.equal((await jsonRequest("/api/director/htes", { headers: authHeaders(other) })).response.status, 403, who);
+    }
+
+    let row = await listed();
+    assert.equal(row.status, "screening");
+    assert.equal(row.hte_type, "private");
+    assert.equal(row.screening_passed, false);
+    assert.equal(row.last_screening, null);
+    assert.equal(row.active_students, 0);
+    assert.ok(Array.isArray(row.college_ids));
+
+    const change = (status, version, token = director) =>
+      jsonRequest(`/api/coordinator/company-records/${companyId}/hte-status`, jsonBody(token, "PUT", { status, expected_version: version }));
+
+    // With a Director, the coordinators no longer decide.
+    const byCoordinator = await change("approved", row.version, coordinatorToken);
+    assert.equal(byCoordinator.response.status, 403);
+    assert.equal(byCoordinator.body.code, "DIRECTOR_MANAGES");
+
+    // Private: a passed screening first.
+    const refused = await change("approved", row.version);
+    assert.equal(refused.response.status, 409);
+    assert.equal(refused.body.code, "SCREENING_REQUIRED");
+
+    await pool.query(
+      `INSERT INTO company_screenings (company_id, screened_by, screened_on, standing, work_environment, space_capacity, safety, decision, notes)
+       VALUES ($1, 'COORD-0001', CURRENT_DATE, 4, 4, 4, 4, 'conditional', 'A desk for each intern')`,
+      [companyId]
+    );
+    row = await listed();
+    assert.equal(row.screening_passed, true);
+    assert.equal(row.last_screening.decision, "conditional");
+    assert.equal(row.last_screening.notes, "A desk for each intern");
+
+    // From the version read: an old one is refused.
+    assert.equal((await change("approved", row.version - 1)).response.status, 409);
+    const approved = await change("approved", row.version);
+    assert.equal(approved.response.status, 200, JSON.stringify(approved.body));
+    assert.equal(approved.body.old, "screening");
+    row = await listed();
+    assert.equal(row.status, "approved");
+
+    const suspended = await change("suspended", row.version);
+    assert.equal(suspended.response.status, 200, JSON.stringify(suspended.body));
+    assert.equal((await listed()).status, "suspended");
+  } finally {
+    await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
+    await pool.query(`DELETE FROM directors WHERE director_id = $1`, [directorId]);
     await pool.end();
   }
 });

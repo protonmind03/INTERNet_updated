@@ -13,6 +13,7 @@ import type { Pool } from "pg";
 |
 |   the campus at a glance, by college
 |   which colleges or programs each coordinator looks after (their scope)
+|   the agencies, with what approving one needs
 |
 */
 
@@ -112,6 +113,41 @@ export function registerDirectorRoutes(app: express.Express, deps: Dependencies)
     } catch (error) {
       console.error("DIRECTOR COORDINATORS ERROR:", error);
       return res.status(500).json({ message: "Failed to load the coordinators." });
+    }
+  });
+
+  /*
+  | The agencies the Director approves or suspends (Phase 1.3): each
+  | company's kind, status and the version it was read at (the change goes
+  | through PUT /api/coordinator/company-records/:id/hte-status), its MOA,
+  | its slots against its active students, its latest screening, and the
+  | colleges it serves (its programs, or its students' programs) for the
+  | college marks. Waiting ones first.
+  */
+  app.get("/api/director/htes", requireDirector, async (_req, res) => {
+    try {
+      const result = await pool.query(
+        `SELECT c.id, c.name, c.address, c.hte_type, c.status, c.version, c.is_active, c.slots,
+                c.moa_notarized, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
+                (c.moa_document_name IS NOT NULL) AS moa_on_file,
+                (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id AND s.is_active = TRUE) AS active_students,
+                EXISTS (SELECT 1 FROM company_screenings cs WHERE cs.company_id = c.id AND cs.decision IN ('pass', 'conditional')) AS screening_passed,
+                (SELECT JSON_BUILD_OBJECT('screened_on', TO_CHAR(cs.screened_on, 'YYYY-MM-DD'), 'decision', cs.decision, 'notes', cs.notes)
+                   FROM company_screenings cs WHERE cs.company_id = c.id
+                   ORDER BY cs.screened_on DESC, cs.id DESC LIMIT 1) AS last_screening,
+                COALESCE((SELECT ARRAY_AGG(DISTINCT p.college_id) FROM programs p
+                   WHERE p.college_id IS NOT NULL
+                     AND (p.id IN (SELECT program_id FROM company_programs WHERE company_id = c.id)
+                          OR p.id IN (SELECT program_id FROM students WHERE company_id = c.id AND is_active = TRUE))), '{}') AS college_ids
+         FROM companies c
+         ORDER BY c.is_active DESC,
+                  CASE c.status WHEN 'screening' THEN 0 WHEN 'applied' THEN 1 WHEN 'suspended' THEN 2 ELSE 3 END,
+                  LOWER(c.name)`
+      );
+      return res.json({ companies: result.rows });
+    } catch (error) {
+      console.error("DIRECTOR HTES ERROR:", error);
+      return res.status(500).json({ message: "Failed to load the agencies." });
     }
   });
 

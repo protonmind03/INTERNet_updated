@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-347 routes in 29 files; 67 services in use.
+348 routes in 29 files; 67 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -32,7 +32,7 @@ flowchart LR
     routes_completionDecision["routes/completionDecision.ts<br/>2 routes: /api/coordinator"]
     routes_console["routes/console.ts<br/>15 routes: /api/coordinator, /api/admin, /api/privacy"]
     routes_deliverables["routes/deliverables.ts<br/>2 routes: /api/coordinator, /api/students"]
-    routes_director["routes/director.ts<br/>3 routes: /api/director"]
+    routes_director["routes/director.ts<br/>4 routes: /api/director"]
     routes_extensions["routes/extensions.ts<br/>71 routes: /api/coordinator, /api/absences, /api/students"]
     routes_finalGrades["routes/finalGrades.ts<br/>7 routes: /api/coordinator, /api/students"]
     routes_geofence["routes/geofence.ts<br/>2 routes: /api/coordinator, /api/students"]
@@ -479,7 +479,7 @@ flowchart LR
 | `routes/completionDecision.ts` | 2 | `/api/coordinator` |
 | `routes/console.ts` | 15 | `/api/coordinator`, `/api/admin`, `/api/privacy` |
 | `routes/deliverables.ts` | 2 | `/api/coordinator`, `/api/students` |
-| `routes/director.ts` | 3 | `/api/director` |
+| `routes/director.ts` | 4 | `/api/director` |
 | `routes/extensions.ts` | 71 | `/api/coordinator`, `/api/absences`, `/api/students`, `/api/journals`, `/api/dtr-certifications`, `/api/tasks`, `/api/complaints`, `/api/evaluations` |
 | `routes/finalGrades.ts` | 7 | `/api/coordinator`, `/api/students` |
 | `routes/geofence.ts` | 2 | `/api/coordinator`, `/api/students` |
