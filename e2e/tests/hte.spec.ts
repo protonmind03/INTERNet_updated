@@ -58,7 +58,7 @@ test("a private company is approved only after a passed screening, recorded on i
   // Approving before any screening: refused, and the page says why.
   await approval.getByRole("button", { name: "Approve" }).click();
   await page.getByRole("dialog", { name: /Make .* approved\?/ }).getByRole("button", { name: "Approve" }).click();
-  await expect(page.getByText(/record a screening that passed before approving it/)).toBeVisible();
+  await expect(page.getByText(/its latest screening must have passed before it is approved/)).toBeVisible();
 
   // The screening, then the approval.
   await page.getByRole("button", { name: "Record a screening" }).click();
