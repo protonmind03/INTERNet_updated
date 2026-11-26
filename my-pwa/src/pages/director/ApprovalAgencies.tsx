@@ -11,7 +11,9 @@ import { directorRead, directorWrite } from "./request";
 | PUT .../hte-status with the version read). Waiting ones come first. A
 | private agency is approved only after a screening that passed; the
 | coordinators record screenings on the agency's page, so here it only
-| says so. The college marks keep the agencies that serve that college.
+| says so; "passed" is the latest screening's decision, as on the server.
+| The college marks keep the agencies that serve that college, and those
+| with no program list (they take any program).
 */
 
 type Decision = "pass" | "conditional" | "fail";
@@ -31,6 +33,8 @@ type Agency = {
   screening_passed: boolean;
   last_screening: { screened_on: string; decision: Decision; notes: string | null } | null;
   college_ids: number[];
+  /** No program list: it takes students of any program, so it serves every college. */
+  takes_any_program: boolean;
 };
 
 const DECISION_WORDS: Record<Decision, string> = { pass: "passed", conditional: "passed with conditions", fail: "failed" };
@@ -71,7 +75,7 @@ export default function ApprovalAgencies({ college }: { college: number | null }
     void Promise.resolve().then(load);
   }, [load]);
 
-  const shown = (agencies ?? []).filter((row) => college === null || row.college_ids.includes(college));
+  const shown = (agencies ?? []).filter((row) => college === null || row.takes_any_program || row.college_ids.includes(college));
 
   const save = async () => {
     if (!change) return;
@@ -100,10 +104,12 @@ export default function ApprovalAgencies({ college }: { college: number | null }
         </div>
       )}
       <Card>
-        {!agencies && !error ? (
-          <div className="p-4">
-            <SkeletonRows rows={3} />
-          </div>
+        {!agencies ? (
+          error ? null : (
+            <div className="p-4">
+              <SkeletonRows rows={3} />
+            </div>
+          )
         ) : shown.length === 0 ? (
           <EmptyState
             icon="building"

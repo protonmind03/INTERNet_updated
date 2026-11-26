@@ -1,5 +1,6 @@
 import type express from "express";
 import type { Pool } from "pg";
+import { latestScreeningPassed } from "./htes";
 
 /*
 |--------------------------------------------------------------------------
@@ -120,9 +121,10 @@ export function registerDirectorRoutes(app: express.Express, deps: Dependencies)
   | The agencies the Director approves or suspends (Phase 1.3): each
   | company's kind, status and the version it was read at (the change goes
   | through PUT /api/coordinator/company-records/:id/hte-status), its MOA,
-  | its slots against its active students, its latest screening, and the
-  | colleges it serves (its programs, or its students' programs) for the
-  | college marks. Waiting ones first.
+  | its slots against its active students, its latest screening (approving
+  | a private one needs it to have passed), and the colleges it serves (its
+  | programs, or its students' programs; with no program list it takes any,
+  | takes_any_program) for the college marks. Waiting ones first.
   */
   app.get("/api/director/htes", requireDirector, async (_req, res) => {
     try {
@@ -131,7 +133,8 @@ export function registerDirectorRoutes(app: express.Express, deps: Dependencies)
                 c.moa_notarized, TO_CHAR(c.moa_expiry, 'YYYY-MM-DD') AS moa_expiry,
                 (c.moa_document_name IS NOT NULL) AS moa_on_file,
                 (SELECT COUNT(*)::int FROM students s WHERE s.company_id = c.id AND s.is_active = TRUE) AS active_students,
-                EXISTS (SELECT 1 FROM company_screenings cs WHERE cs.company_id = c.id AND cs.decision IN ('pass', 'conditional')) AS screening_passed,
+                ${latestScreeningPassed("c.id")} AS screening_passed,
+                NOT EXISTS (SELECT 1 FROM company_programs cp WHERE cp.company_id = c.id) AS takes_any_program,
                 (SELECT JSON_BUILD_OBJECT('screened_on', TO_CHAR(cs.screened_on, 'YYYY-MM-DD'), 'decision', cs.decision, 'notes', cs.notes)
                    FROM company_screenings cs WHERE cs.company_id = c.id
                    ORDER BY cs.screened_on DESC, cs.id DESC LIMIT 1) AS last_screening,

@@ -10,7 +10,7 @@ import { sameId } from "../services/ids";
 |
 |   status       applied, screening, approved or suspended, changed by the
 |                office (requireOffice) with the version it was read at. A
-|                private company is approved only after a screening that
+|                private company is approved only when its latest screening
 |                passed, or passed with conditions.
 |   screenings   a visit's four ratings (1 to 5, a note each) and the
 |                decision; written by coordinators, read by the office.
@@ -48,6 +48,15 @@ const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const MOA_TYPES: Record<string, string> = { ".pdf": "application/pdf", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png" };
 /** A student may have this many suggestions waiting at once. */
 const OPEN_REQUESTS_PER_STUDENT = 3;
+
+/**
+ * SQL: true when the company's latest screening (by date, then the last
+ * recorded) passed or passed with conditions. A pass followed by a failed
+ * re-screening is not enough. `companyId` is a column or a $ parameter.
+ */
+export const latestScreeningPassed = (companyId: string) =>
+  `COALESCE((SELECT ls.decision IN ('pass', 'conditional') FROM company_screenings ls
+     WHERE ls.company_id = ${companyId} ORDER BY ls.screened_on DESC, ls.id DESC LIMIT 1), FALSE)`;
 
 const text = (value: unknown, max: number) => (typeof value === "string" ? value.trim().slice(0, max) : "");
 const realDate = (value: string) => DATE.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
@@ -109,13 +118,10 @@ export function registerHteRoutes(app: express.Express, deps: Dependencies): voi
         return res.status(409).json({ code: "STALE", message: `Someone changed ${company.name} after you opened it. It is reloaded; check it again.`, status: company.status, version: company.version });
       }
       if (status === "approved" && company.hte_type === "private") {
-        const passed = await client.query(
-          `SELECT 1 FROM company_screenings WHERE company_id = $1 AND decision IN ('pass', 'conditional') LIMIT 1`,
-          [id]
-        );
-        if (passed.rows.length === 0) {
+        const passed = await client.query<{ passed: boolean }>(`SELECT ${latestScreeningPassed("$1")} AS passed`, [id]);
+        if (!passed.rows[0].passed) {
           await client.query("ROLLBACK");
-          return res.status(409).json({ code: "SCREENING_REQUIRED", message: `${company.name} is a private company: record a screening that passed before approving it.` });
+          return res.status(409).json({ code: "SCREENING_REQUIRED", message: `${company.name} is a private company: its latest screening must have passed before it is approved.` });
         }
       }
       const saved = await client.query<{ version: number }>(

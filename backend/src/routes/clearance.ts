@@ -71,7 +71,8 @@ export function registerClearanceRoutes(app: express.Express, deps: Dependencies
     return true;
   }
 
-  // The board: every active student in the filters, with their readiness.
+  // The board: every active student in the filters, with their readiness (at most BOARD_LIMIT).
+  const BOARD_LIMIT = 2000;
   app.get("/api/coordinator/clearance", requireStaff, async (req, res) => {
     try {
       const read = readStudentFilters(req.query as Record<string, unknown>);
@@ -81,14 +82,17 @@ export function registerClearanceRoutes(app: express.Express, deps: Dependencies
          FROM students s
          WHERE s.is_active = TRUE${filterConditions(read.filters, "s")}
          ORDER BY s.name, s.student_id
-         LIMIT 2000`,
+         LIMIT ${BOARD_LIMIT + 1}`,
         [],
         read.filters
       );
       const [rows, gate] = await Promise.all([pool.query(bound.text, bound.values), ojtSetting(pool, "deployment_gate_enabled")]);
-      const students: Readiness[] = rows.rows.map(readinessOf);
+      // One more than shown says the list was cut, so the page can say so.
+      const truncated = rows.rows.length > BOARD_LIMIT;
+      const students: Readiness[] = rows.rows.slice(0, BOARD_LIMIT).map(readinessOf);
       return res.json({
         gate_enabled: gate,
+        truncated,
         students,
         counts: {
           students: students.length,

@@ -1063,7 +1063,7 @@ export function FilterChips<T extends string>({
             role="tab"
             aria-selected={active}
             onClick={() => onChange(option.value)}
-            className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
+            className={`inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-full px-3.5 text-sm font-medium transition-colors ${
               active
                 ? "bg-psu-600 text-white"
                 : "border border-slate-300 bg-white text-slate-600 hover:border-slate-400 hover:bg-slate-50"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { Card, EmptyState, ErrorNotice, FilterChips, SkeletonRows } from "../../components/ui";
 import DirectorLayout from "../../layouts/DirectorLayout";
@@ -41,20 +41,32 @@ type Overview = { colleges: { college_id: number | null; college: string | null;
 
 function Overrides({ college }: { college: number | null }) {
   const [students, setStudents] = useState<Student[] | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState("");
+  // Only the latest load is shown: a slow answer for a college chosen before does not replace it.
+  const latest = useRef(0);
 
   const load = useCallback(async () => {
     const query = college === null ? "" : `?college=${college}`;
+    const call = ++latest.current;
     try {
-      setStudents((await directorRead<{ students: Student[] }>(`clearance${query}`, `/api/coordinator/clearance${query}`)).students);
+      const data = await directorRead<{ students: Student[]; truncated?: boolean }>(`clearance${query}`, `/api/coordinator/clearance${query}`);
+      if (call !== latest.current) return;
+      setStudents(data.students);
+      setTruncated(Boolean(data.truncated));
       setError("");
     } catch (loadError) {
+      if (call !== latest.current) return;
       setError(errorText(loadError, "The clearances could not be loaded. Check your connection and try again."));
     }
   }, [college]);
 
   useEffect(() => {
-    void Promise.resolve().then(load);
+    void Promise.resolve().then(() => {
+      setStudents(null);
+      setError("");
+      return load();
+    });
   }, [load]);
 
   const overrides = (students ?? []).filter((row) => row.cleared && row.clearance_override_reason);
@@ -66,11 +78,18 @@ function Overrides({ college }: { college: number | null }) {
           <ErrorNotice message={error} onRetry={() => void load()} />
         </div>
       )}
+      {truncated && (
+        <p role="status" className="mb-3 max-w-[65ch] text-sm font-medium text-amber-800">
+          Only the first 2,000 students were looked through. Choose a college above to see the rest.
+        </p>
+      )}
       <Card>
-        {!students && !error ? (
-          <div className="p-4">
-            <SkeletonRows rows={3} />
-          </div>
+        {!students ? (
+          error ? null : (
+            <div className="p-4">
+              <SkeletonRows rows={3} />
+            </div>
+          )
         ) : overrides.length === 0 ? (
           <EmptyState icon="check" title="No clearance given anyway" description="When a coordinator clears a student who is not ready, it shows here with their reason." />
         ) : (

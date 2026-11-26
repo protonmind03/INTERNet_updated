@@ -53,6 +53,8 @@ type Dependencies = {
 };
 
 const MAX_RELEASE = 500;
+/** The grade sheet shows at most this many students; past it, truncated is true. */
+const SHEET_LIMIT = 2000;
 
 export function registerFinalGradeRoutes(app: express.Express, deps: Dependencies): void {
   const { pool, requireRole, requireCoordinator, requireStaff, requireOffice, createNotification } = deps;
@@ -74,14 +76,17 @@ export function registerFinalGradeRoutes(app: express.Express, deps: Dependencie
         `SELECT ${GRADE_COLUMNS} FROM students s ${GRADE_JOINS}
          WHERE s.is_active = TRUE${filterConditions(read.filters, "s")}
          ORDER BY p.short_code NULLS LAST, s.name, s.student_id
-         LIMIT 2000`,
+         LIMIT ${SHEET_LIMIT + 1}`,
         [],
         read.filters
       );
       const [rows, split] = await Promise.all([pool.query<GradeRow>(bound.text, bound.values), gradeSplit(pool)]);
-      const students = rows.rows.map((row) => gradeOf(row, split));
+      // One more than shown says the sheet was cut, so the page can say so.
+      const truncated = rows.rows.length > SHEET_LIMIT;
+      const students = rows.rows.slice(0, SHEET_LIMIT).map((row) => gradeOf(row, split));
       return res.json({
         split,
+        truncated,
         students,
         counts: {
           students: students.length,

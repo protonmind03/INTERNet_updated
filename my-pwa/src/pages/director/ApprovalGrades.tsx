@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, SkeletonRows } from "../../components/ui";
 import { errorText, toast } from "../../lib/toast";
 import { directorRead, directorWrite } from "./request";
@@ -47,25 +47,37 @@ function sectionsOf(rows: GradeRow[]): Section[] {
 
 export default function ApprovalGrades({ college }: { college: number | null }) {
   const [rows, setRows] = useState<GradeRow[] | null>(null);
-  const [split, setSplit] = useState(50);
+  const [split, setSplit] = useState<number | null>(null);
+  const [truncated, setTruncated] = useState(false);
   const [error, setError] = useState("");
+  // Only the latest load is shown: a slow answer for a college chosen before does not replace it.
+  const latest = useRef(0);
   const [releasing, setReleasing] = useState<Section | null>(null);
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
     const query = college === null ? "" : `?college=${college}`;
+    const call = ++latest.current;
     try {
-      const data = await directorRead<{ split: number; students: GradeRow[] }>(`approvals-grades${query}`, `/api/coordinator/grade-sheet${query}`);
+      const data = await directorRead<{ split: number; truncated?: boolean; students: GradeRow[] }>(`approvals-grades${query}`, `/api/coordinator/grade-sheet${query}`);
+      if (call !== latest.current) return;
       setRows(data.students);
       setSplit(data.split);
+      setTruncated(Boolean(data.truncated));
       setError("");
     } catch (loadError) {
+      if (call !== latest.current) return;
       setError(errorText(loadError, "The grades could not be loaded. Check your connection and try again."));
     }
   }, [college]);
 
   useEffect(() => {
-    void Promise.resolve().then(load);
+    // Another college: its own rows, never the last one's while it loads.
+    void Promise.resolve().then(() => {
+      setRows(null);
+      setError("");
+      return load();
+    });
   }, [load]);
 
   const sections = useMemo(() => sectionsOf(rows ?? []), [rows]);
@@ -73,8 +85,8 @@ export default function ApprovalGrades({ college }: { college: number | null }) 
   const release = async () => {
     if (!releasing) return;
     setBusy(true);
+    let done = 0;
     try {
-      let done = 0;
       let changed = 0;
       for (let start = 0; start < releasing.ready.length; start += BATCH) {
         const result = await directorWrite<Released>("/api/coordinator/grades/release", "POST", { student_ids: releasing.ready.slice(start, start + BATCH) });
@@ -87,7 +99,9 @@ export default function ApprovalGrades({ college }: { college: number | null }) 
           : `Grades released for ${releasing.name}.`
       );
     } catch (releaseError) {
-      toast.error(errorText(releaseError, "The grades could not be released. Check your connection and try again."));
+      const why = errorText(releaseError, "The grades could not be released. Check your connection and try again.");
+      // Each batch is released on its own: say what went through before the failure.
+      toast.error(done > 0 ? `${students(done)} in ${releasing.name} released before this stopped. ${why}` : why);
     } finally {
       setBusy(false);
       setReleasing(null);
@@ -106,19 +120,28 @@ export default function ApprovalGrades({ college }: { college: number | null }) 
 
   return (
     <>
-      <p className="mb-3 max-w-[65ch] text-sm text-slate-700">
-        Final grade: HTE {split}%, instructor {100 - split}% (pending the university's confirmation). A student sees theirs only once it is released.
-      </p>
+      {split !== null && (
+        <p className="mb-3 max-w-[65ch] text-sm text-slate-700">
+          Final grade: HTE {split}%, instructor {100 - split}% (pending the university's confirmation). A student sees theirs only once it is released.
+        </p>
+      )}
+      {truncated && (
+        <p role="status" className="mb-3 max-w-[65ch] text-sm font-medium text-amber-800">
+          Only the first 2,000 students are shown. Choose a college above to see the rest.
+        </p>
+      )}
       {error && (
         <div className="mb-4">
           <ErrorNotice message={error} onRetry={() => void load()} />
         </div>
       )}
       <Card className="overflow-hidden">
-        {!rows && !error ? (
-          <div className="p-4">
-            <SkeletonRows rows={3} />
-          </div>
+        {!rows ? (
+          error ? null : (
+            <div className="p-4">
+              <SkeletonRows rows={3} />
+            </div>
+          )
         ) : sections.length === 0 ? (
           <EmptyState icon="cap" title="No students here yet" description="Coordinators add students on their Students page. Their grades show here by program and block." />
         ) : (

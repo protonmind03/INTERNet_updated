@@ -160,7 +160,8 @@ test("Approvals: an agency's change and a section's release say the value now an
     await expect(page.getByText(/Final grade: HTE \d+%, instructor \d+%/)).toBeVisible();
     await expect(page.locator(".animate-skeleton")).toHaveCount(0, { timeout: 15_000 });
     // Every section either offers its release or says why not.
-    const release = page.getByRole("button", { name: /^Release grades for / }).first();
+    // The table on a computer, the list on a phone: the one that is shown.
+    const release = page.getByRole("button", { name: /^Release grades for / }).filter({ visible: true }).first();
     if (await release.isVisible()) {
       const name = ((await release.textContent()) ?? "").replace("Release grades for ", "").trim();
       await release.click();

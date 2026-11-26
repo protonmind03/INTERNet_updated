@@ -2252,3 +2252,19 @@ build, lint and `check:pwa` (198 of 198) clean; `director-portal.spec.ts`
 5 of 5 with the new Approvals test (axe on each part at 390 and 1280 px).
 
 Also: the go-live checklist now counts migrations 035 to 092.
+
+**Review round** (`/code-review` high, then `/hallmark` audit), 26 November:
+- Approving a private agency now needs its **latest** screening to have
+  passed (`latestScreeningPassed` in `routes/htes.ts`, used by the status
+  change and the Director's list); a pass followed by a failed
+  re-screening is refused.
+- An agency with no program list takes any program, so it shows under
+  every college (`takes_any_program`).
+- The grade sheet and the clearance board say when they were cut at 2,000
+  students (`truncated`); Approvals asks to choose a college.
+- Choosing colleges quickly no longer shows a slower, older answer; a
+  failed load no longer also shows an empty state; a release that stops
+  part-way says how many went through; the split shows only once loaded.
+- The tab chips (`FilterChips`, every portal) are 44 px tall, the
+  project's tap-target rule; they were 36 px.
+- e2e: the release dialog is checked at both widths.

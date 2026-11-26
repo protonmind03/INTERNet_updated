@@ -13682,6 +13682,10 @@ test("the Director's agencies: listed with what approving needs; the Director ap
     assert.equal(row.last_screening, null);
     assert.equal(row.active_students, 0);
     assert.ok(Array.isArray(row.college_ids));
+    assert.equal(row.takes_any_program, true, "no program list: it takes any program, so every college shows it");
+    // The lists the page reads say whether they were cut.
+    assert.equal((await jsonRequest("/api/coordinator/grade-sheet", { headers: authHeaders(director) })).body.truncated, false);
+    assert.equal((await jsonRequest("/api/coordinator/clearance", { headers: authHeaders(director) })).body.truncated, false);
 
     const change = (status, version, token = director) =>
       jsonRequest(`/api/coordinator/company-records/${companyId}/hte-status`, jsonBody(token, "PUT", { status, expected_version: version }));
@@ -13717,6 +13721,19 @@ test("the Director's agencies: listed with what approving needs; the Director ap
     const suspended = await change("suspended", row.version);
     assert.equal(suspended.response.status, 200, JSON.stringify(suspended.body));
     assert.equal((await listed()).status, "suspended");
+
+    // A later re-screening that failed: the pass before it no longer counts.
+    await pool.query(
+      `INSERT INTO company_screenings (company_id, screened_by, screened_on, standing, work_environment, space_capacity, safety, decision, notes)
+       VALUES ($1, 'COORD-0001', CURRENT_DATE + 1, 2, 2, 2, 2, 'fail', 'No supervisor on site')`,
+      [companyId]
+    );
+    row = await listed();
+    assert.equal(row.screening_passed, false);
+    assert.equal(row.last_screening.decision, "fail");
+    const again = await change("approved", row.version);
+    assert.equal(again.response.status, 409);
+    assert.equal(again.body.code, "SCREENING_REQUIRED");
   } finally {
     await pool.query(`DELETE FROM companies WHERE id = $1`, [companyId]);
     await pool.query(`DELETE FROM directors WHERE director_id = $1`, [directorId]);
