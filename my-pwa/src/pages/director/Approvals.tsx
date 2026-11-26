@@ -1,16 +1,33 @@
 import { useCallback, useEffect, useState } from "react";
-import { Card, EmptyState, ErrorNotice, SkeletonRows } from "../../components/ui";
+import { useSearchParams } from "react-router-dom";
+import { Card, EmptyState, ErrorNotice, FilterChips, SkeletonRows } from "../../components/ui";
 import DirectorLayout from "../../layouts/DirectorLayout";
 import { formatDate } from "../../lib/format";
 import { errorText } from "../../lib/toast";
+import ApprovalAgencies from "./ApprovalAgencies";
+import ApprovalGrades from "./ApprovalGrades";
+import CollegeRail from "./CollegeRail";
+import { useChosenCollege, type RailCollege } from "./useChosenCollege";
 import { directorRead } from "./request";
 
 /*
-| What the Director looks over (Phase 1.6). For now: every student cleared
-| for deployment without everything in ("clear anyway"), with the
-| coordinator's reason. Agency approvals (1.3) and grade release (1.5)
-| join this page with their items.
+|--------------------------------------------------------------------------
+| APPROVALS (Phase 1.6)
+|--------------------------------------------------------------------------
+|
+| What the Director decides or looks over, under the college marks:
+|
+|   Agencies       approve or suspend a Host Training Establishment (1.3)
+|   Grades         release final grades by program and block (1.5)
+|   Cleared anyway every student cleared for deployment without
+|                  everything in, with the coordinator's reason (1.2)
+|
+| The part shown is in the address (?part=), like the college.
+|
 */
+
+type Part = "agencies" | "grades" | "overrides";
+const PARTS: Part[] = ["agencies", "grades", "overrides"];
 
 type Student = {
   student_id: string;
@@ -20,28 +37,30 @@ type Student = {
   cleared_for_deployment_at: string | null;
   clearance_override_reason: string | null;
 };
+type Overview = { colleges: { college_id: number | null; college: string | null; short_name: string | null; mark_key: string | null }[] };
 
-export default function DirectorApprovals() {
+function Overrides({ college }: { college: number | null }) {
   const [students, setStudents] = useState<Student[] | null>(null);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
+    const query = college === null ? "" : `?college=${college}`;
     try {
-      setStudents((await directorRead<{ students: Student[] }>("clearance", "/api/coordinator/clearance")).students);
+      setStudents((await directorRead<{ students: Student[] }>(`clearance${query}`, `/api/coordinator/clearance${query}`)).students);
       setError("");
     } catch (loadError) {
       setError(errorText(loadError, "The clearances could not be loaded. Check your connection and try again."));
     }
-  }, []);
+  }, [college]);
 
   useEffect(() => {
     void Promise.resolve().then(load);
   }, [load]);
 
   const overrides = (students ?? []).filter((row) => row.cleared && row.clearance_override_reason);
+
   return (
-    <DirectorLayout title="Approvals">
-      <h2 className="mb-2 font-display text-lg font-bold text-(--role-ink)">Cleared without everything in</h2>
+    <>
       {error && (
         <div className="mb-4">
           <ErrorNotice message={error} onRetry={() => void load()} />
@@ -69,6 +88,60 @@ export default function DirectorApprovals() {
           </ul>
         )}
       </Card>
+    </>
+  );
+}
+
+export default function DirectorApprovals() {
+  const [params, setParams] = useSearchParams();
+  const [chosen, choose] = useChosenCollege();
+  const part = (PARTS as string[]).includes(params.get("part") ?? "") ? (params.get("part") as Part) : "agencies";
+  const [rail, setRail] = useState<RailCollege[]>([]);
+
+  useEffect(() => {
+    directorRead<Overview>("overview", "/api/director/overview")
+      .then((overview) =>
+        setRail(
+          overview.colleges
+            .filter((row) => row.college_id !== null)
+            .map((row) => ({ id: row.college_id!, name: row.college!, short_name: row.short_name, mark_key: row.mark_key }))
+        )
+      )
+      // Without the marks the page still works for every college.
+      .catch(() => setRail([]));
+  }, []);
+
+  const show = (next: Part) =>
+    setParams(
+      (current) => {
+        const query = new URLSearchParams(current);
+        if (next === "agencies") query.delete("part");
+        else query.set("part", next);
+        return query;
+      },
+      { replace: true }
+    );
+
+  return (
+    <DirectorLayout title="Approvals">
+      <div className="space-y-5">
+        {rail.length > 0 && <CollegeRail colleges={rail} chosen={chosen} onChoose={choose} />}
+        <FilterChips
+          label="What to decide"
+          value={part}
+          onChange={show}
+          options={[
+            { value: "agencies", label: "Agencies" },
+            { value: "grades", label: "Grades" },
+            { value: "overrides", label: "Cleared anyway" },
+          ]}
+        />
+        <div>
+          {part === "agencies" && <ApprovalAgencies college={chosen} />}
+          {part === "grades" && <ApprovalGrades college={chosen} />}
+          {part === "overrides" && <Overrides college={chosen} />}
+        </div>
+      </div>
     </DirectorLayout>
   );
 }

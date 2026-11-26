@@ -27,6 +27,14 @@ export const HTE_STATUS_TONE: Record<HteStatus, "good" | "waiting" | "bad" | "ne
   suspended: "bad",
 };
 
+/** What a status means for placing students, said before it is changed. */
+export const HTE_STATUS_EFFECT: Record<HteStatus, string> = {
+  approved: "Students can be placed there, up to its slots.",
+  screening: "No student can be placed there until it is approved.",
+  applied: "No student can be placed there until it is approved.",
+  suspended: "No new student can be placed there. Students already there stay.",
+};
+
 /** Why a company cannot take another student, or null when it can. */
 export function placementBlock(company: { status?: string; is_active?: boolean; slots: number | null; active_students?: number }): string | null {
   if (company.is_active === false) return "inactive";

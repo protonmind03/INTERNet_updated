@@ -135,3 +135,46 @@ test("a coordinator's colleges are chosen with the value now and after shown bef
   await dialog.getByRole("button", { name: "Save colleges and programs" }).click();
   await expect(row.getByText("Looks after: Every student")).toBeVisible();
 });
+
+test("Approvals: an agency's change and a section's release say the value now and after; each part is axe clean", async ({ page }) => {
+  await signInAsDirector(page);
+  for (const [width, height] of [[1280, 900], [390, 844]] as const) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/director/approvals");
+    const parts = page.getByRole("tablist", { name: "What to decide" });
+    await expect(parts.getByRole("tab", { name: "Agencies" })).toHaveAttribute("aria-selected", "true");
+
+    // A seeded government agency is approved: its one action is Suspend, said before it is done.
+    const agency = page.getByRole("listitem").filter({ hasText: "Provincial Government of Pangasinan" });
+    await expect(agency.getByText("Approved", { exact: true })).toBeVisible({ timeout: 15_000 });
+    await agency.getByRole("button", { name: /^Suspend/ }).click();
+    const dialog = page.getByRole("dialog", { name: "Suspend Provincial Government of Pangasinan?" });
+    await expect(dialog.getByText(/Now: Approved\. After: Suspended\. No new student can be placed there/)).toBeVisible();
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    await expect(dialog).toHaveCount(0);
+    await expect(page.locator(".animate-skeleton")).toHaveCount(0, { timeout: 15_000 });
+    await expectAccessible(page, `Approvals, agencies, at ${width} px`);
+
+    await parts.getByRole("tab", { name: "Grades" }).click();
+    await expect(page).toHaveURL(/part=grades/);
+    await expect(page.getByText(/Final grade: HTE \d+%, instructor \d+%/)).toBeVisible();
+    await expect(page.locator(".animate-skeleton")).toHaveCount(0, { timeout: 15_000 });
+    // Every section either offers its release or says why not.
+    const release = page.getByRole("button", { name: /^Release grades for / }).first();
+    if (await release.isVisible()) {
+      const name = ((await release.textContent()) ?? "").replace("Release grades for ", "").trim();
+      await release.click();
+      const confirm = page.getByRole("dialog", { name: `Release grades for ${name}?` });
+      await expect(confirm.getByText(/^Now: \d+ of \d+ students? released\. After: \d+ of \d+\./)).toBeVisible();
+      await confirm.getByRole("button", { name: "Cancel" }).click();
+    }
+    await expectAccessible(page, `Approvals, grades, at ${width} px`);
+
+    await parts.getByRole("tab", { name: "Cleared anyway" }).click();
+    await expect(page).toHaveURL(/part=overrides/);
+    await expect(page.locator(".animate-skeleton")).toHaveCount(0, { timeout: 15_000 });
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, "Approvals scrolls sideways").toBeLessThanOrEqual(0);
+    await expectAccessible(page, `Approvals, cleared anyway, at ${width} px`);
+  }
+});

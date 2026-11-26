@@ -3,7 +3,7 @@ import { Button, Card, CardHeader, ConfirmDialog, EmptyState, ErrorNotice, FormE
 import { API_URL, withCoordinatorAuth } from "../../lib/api";
 import { formatDate } from "../../lib/format";
 import { saveFile } from "../../lib/saveFile";
-import { HTE_STATUS_TONE, HTE_STATUS_WORDS, HTE_TYPE_WORDS, type HteStatus, type HteType } from "../../lib/hte";
+import { HTE_STATUS_EFFECT as STATUS_EFFECT, HTE_STATUS_TONE, HTE_STATUS_WORDS, HTE_TYPE_WORDS, type HteStatus, type HteType } from "../../lib/hte";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
 
@@ -64,13 +64,6 @@ type CriterionKey = (typeof CRITERIA)[number]["key"];
 
 const DECISION_WORDS: Record<Screening["decision"], string> = { pass: "Passed", conditional: "Passed with conditions", fail: "Failed" };
 const DECISION_TONE: Record<Screening["decision"], "good" | "waiting" | "bad"> = { pass: "good", conditional: "waiting", fail: "bad" };
-
-const STATUS_EFFECT: Record<HteStatus, string> = {
-  approved: "Students can be placed there, up to its slots.",
-  screening: "No student can be placed there until it is approved.",
-  applied: "No student can be placed there until it is approved.",
-  suspended: "No new student can be placed there. Students already there stay.",
-};
 
 const saveMoaFile = (companyId: number) =>
   saveFile(`${API_URL}/api/coordinator/company-records/${companyId}/moa`, withCoordinatorAuth(), "agreement");
