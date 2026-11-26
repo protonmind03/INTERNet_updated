@@ -36,8 +36,21 @@ let studentToken;
 let coordinator;
 let coordinatorToken;
 
+// The API closes a connection after 5 s idle (Node's keepAliveTimeout). A
+// test that waits longer (the CORS start-up test starts a second server)
+// can leave the next request on a connection the server just closed: it
+// fails with ECONNRESET before reaching the server, so it is sent once more.
+async function sendOnce(url, options) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    if (error?.cause?.code !== "ECONNRESET") throw error;
+    return fetch(url, options);
+  }
+}
+
 async function jsonRequest(path, options = {}) {
-  const response = await fetch(new URL(path, apiBaseUrl), options);
+  const response = await sendOnce(new URL(path, apiBaseUrl), options);
   let body = {};
   const text = await response.text();
 
@@ -8150,6 +8163,13 @@ test("a time-in recorded with no connection: checked like the other offline step
   assert.match(old.body.message, /This time-in was recorded more than 12 hours ago/);
 
   if (needsWrites(t)) return;
+  // The two time-ins below must fall on the same Philippine day: 90 and 30
+  // minutes ago, or, less than 91 minutes after midnight in Manila, minutes
+  // of today. Too near midnight there is no room: skipped, like the others.
+  const manilaMinutes = Math.floor((Date.now() / 60_000 + 8 * 60) % (24 * 60));
+  if (manilaMinutes < 4) return t.skip("too near midnight in Manila for two time-ins on one day");
+  const firstAgo = manilaMinutes > 91 ? 90 : manilaMinutes - 2;
+  const secondAgo = Math.min(30, firstAgo - 1);
   // A student of the demo supervisor with no log on any day, made for this test.
   const bcrypt = require("bcryptjs");
   const pool = localTestPool();
@@ -8165,7 +8185,7 @@ test("a time-in recorded with no connection: checked like the other offline step
     const send = (body) => jsonRequest(path, jsonBody(mine.token, "POST", body));
 
     // RECORDED: the phone's time, the day it falls on in the Philippines, no photo, no camera check, waiting for review.
-    const first = stamp(90);
+    const first = stamp(firstAgo);
     const made = await send({ ...first, note: "  Signal was down at the site.  " });
     assert.equal(made.response.status, 201, JSON.stringify(made.body));
     const log = made.body.attendance;
@@ -8188,7 +8208,7 @@ test("a time-in recorded with no connection: checked like the other offline step
     const again = await send(first);
     assert.deepEqual([again.response.status, again.body.attendance.id, again.body.replayed], [200, log.id, true]);
     // ANOTHER time-in for the same day: refused, with the day's log so the phone can attach its later steps to it.
-    const second = await send(stamp(30));
+    const second = await send(stamp(secondAgo));
     assert.deepEqual([second.response.status, second.body.code, second.body.attendance.id], [409, "DAY_HAS_LOG", log.id]);
     assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM attendance WHERE student_id = $1`, [sid])).rows[0].n, 1);
     // Two at once for a day with no log yet would be the same race; the day's unique index decides it.
@@ -10378,9 +10398,10 @@ test("expected end: the pattern saved, the projection's route, and every recompu
   const path = `/api/coordinator/students/${encodeURIComponent(f.sid)}/schedule`;
   const shift = (name) => ({ day: name, start_time: "08:00", end_time: "16:00" });
   const kept = async () => (await pool.query(`SELECT * FROM student_projections WHERE student_id = $1`, [f.sid])).rows[0];
-  // Recomputes run after the answer; wait for the one a change causes.
+  // Recomputes run after the answer; wait for the one a change causes (up
+  // to 15 s: under a full run on a slow machine 5 s was sometimes short).
   const waitFor = async (check, label) => {
-    for (let i = 0; i < 50; i += 1) {
+    for (let i = 0; i < 150; i += 1) {
       const row = await kept();
       if (row && check(row)) return row;
       await new Promise((resolve) => setTimeout(resolve, 100));
