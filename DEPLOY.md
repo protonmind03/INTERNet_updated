@@ -9,6 +9,10 @@ the frontend URL is needed by the backend.
 Things only the project owner can do, kept here so none is forgotten. Each
 links to its full steps below.
 
+0. **Before 1 December 2026: apply the Railway settings as code.** Railway
+   stops reading `railway.json` that day; without this the API stops
+   running migrations before a deploy and the backup loses its schedule.
+   (Section "Railway settings as code".)
 1. **Check the content security policy in production.** It is already
    enforced (`my-pwa/vercel.json`). On the live site, open the browser's
    developer tools, sign in as each role and open a few pages: the Console
@@ -194,6 +198,61 @@ from that person's row, and every reminder still appears in the app (and
 on phones, once push is on).
 
 If both this and the five `SMTP_*` are set, the provider's API is used.
+
+## Railway settings as code (run by you, once, before 1 December 2026)
+
+Railway stops reading `railway.json` files on 1 December 2026. Until now the
+API's settings were in `backend/railway.json` (migrations before each
+deploy, the ready check, restart on failure) and the backup service's in the
+root `railway.json` (its Dockerfile, the 01:30 Manila schedule, no
+restarts). They are now in `.railway/railway.ts`, which describes the whole
+Railway project: the API, Postgres, both volumes, and the backup service in
+production. Variables are not in it: every secret stays in the dashboard.
+
+`railway config plan` only looks; `railway config apply` changes Railway.
+Because the file describes the whole project, an apply deletes anything the
+file leaves out: never apply a plan that says anything "to destroy".
+
+In PowerShell, from the repository root (the folder with `.railway`). The
+first line works around the CLI's own version check, which cannot run the
+npm-installed `railway` on Windows:
+
+```powershell
+npm install
+$env:_ = "$env:APPDATA\npm\node_modules\@railway\cli\bin\railway.exe"
+railway link --project 2dc65d25-6681-46ea-b663-521af3c53316 --environment staging --service INTERNet_updated
+railway config plan
+```
+
+The plan must read `Plan: 0 to add, 1 to change, 0 to destroy`, the change
+setting the API's health check, timeout, pre-deploy command, restart policy
+and start command. Then:
+
+```powershell
+railway config apply
+```
+
+Then the same for production:
+
+```powershell
+railway environment production
+railway config plan
+```
+
+It must read `Plan: 0 to add, 3 to change, 0 to destroy`: the API as on
+staging, and the backup service's builder, Dockerfile, schedule, restart
+policy and start command. Then `railway config apply`.
+
+**After both:** the dashboard holds what the files held, so the files can go.
+Delete `railway.json` and `backend/railway.json` in a commit, push it to the
+test site, and check that staging still deploys and `/api/health/ready`
+answers. The next morning, check the backup ran (Profile settings > What is
+switched on > Database backup).
+
+**From then on,** a change to a service's settings is made in
+`.railway/railway.ts` and applied with plan, then apply, in each
+environment; a change made only in the dashboard is undone by the next
+apply.
 
 ## 3. Vercel: frontend
 

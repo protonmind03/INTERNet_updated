@@ -1,0 +1,8 @@
+{
+  "name": "internet-railway-config",
+  "private": true,
+  "description": "Only for .railway/railway.ts (Railway's settings as code). The app's own packages are in backend/, my-pwa/ and e2e/.",
+  "devDependencies": {
+    "railway": "3.18.0"
+  }
+}
