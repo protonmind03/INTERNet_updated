@@ -52,6 +52,14 @@ async function signInAsDirector(page: Page) {
 }
 
 async function expectAccessible(page: Page, where: string) {
+  // A dialog still fading out (or a part fading in) dims the text under it, and axe reads that as
+  // low contrast: on a slow machine (CI) the check came before the fade ended. Wait for every
+  // finite animation to end; endless ones (a spinner) are left.
+  await page.waitForFunction(
+    () => document.getAnimations().every((animation) => animation.playState !== "running" || animation.effect?.getComputedTiming().iterations === Infinity),
+    null,
+    { timeout: 10_000 }
+  );
   await page.addScriptTag({ path: axeSource });
   const violations = await page.evaluate(async () => {
     const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: unknown[] }[] }> } }).axe;
@@ -168,6 +176,7 @@ test("Approvals: an agency's change and a section's release say the value now an
       const confirm = page.getByRole("dialog", { name: `Release grades for ${name}?` });
       await expect(confirm.getByText(/^Now: \d+ of \d+ students? released\. After: \d+ of \d+\./)).toBeVisible();
       await confirm.getByRole("button", { name: "Cancel" }).click();
+      await expect(confirm).toHaveCount(0);
     }
     await expectAccessible(page, `Approvals, grades, at ${width} px`);
 
