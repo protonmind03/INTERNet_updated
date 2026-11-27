@@ -12,13 +12,21 @@ import {
   withRoleAuth,
 } from "../lib/api";
 import { signOut as endSession } from "../lib/session";
+import { HOME_PATH } from "../lib/homePages";
 
-type Role = "student" | "supervisor" | "coordinator";
+type Role = "student" | "supervisor" | "coordinator" | "director" | "admin";
 
-const roles: Record<Role, { plural: string; home: string }> = {
-  student: { plural: "students", home: "/student/dashboard" },
-  supervisor: { plural: "supervisors", home: "/supervisor/dashboard" },
-  coordinator: { plural: "coordinators", home: "/coordinator/dashboard" },
+/**
+ * Every role whose account can be made with a temporary password. The Director
+ * and the IT administrator were missing: their first sign-in was sent here, then
+ * on to the landing page, and every page of their portal sent them back.
+ */
+const roles: Record<Role, { plural: string; home: string; givenBy: string }> = {
+  student: { plural: "students", home: HOME_PATH.student, givenBy: "your OJT coordinator gave you" },
+  supervisor: { plural: "supervisors", home: HOME_PATH.supervisor, givenBy: "your OJT coordinator gave you" },
+  coordinator: { plural: "coordinators", home: HOME_PATH.coordinator, givenBy: "you were given" },
+  director: { plural: "directors", home: HOME_PATH.director, givenBy: "you were given" },
+  admin: { plural: "admins", home: HOME_PATH.admin, givenBy: "you were given" },
 };
 
 /**
@@ -93,7 +101,7 @@ export default function ChangePassword() {
   return (
     <AuthShell
       title="Set your own password"
-      description={`Your account still has the password your OJT coordinator gave you. Replace it to continue. ${PASSWORD_POLICY_HINT}`}
+      description={`Your account still has the password ${roles[role].givenBy}. Replace it to continue. ${PASSWORD_POLICY_HINT}`}
     >
       <form className="mt-6 space-y-4" onSubmit={submit} noValidate>
         <FormField

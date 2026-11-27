@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { expectAccessible } from "./helpers";
+import { expectAccessible, firstSignInSetsOwnPassword } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -143,4 +143,10 @@ test("the maintenance notice shows in a portal once set, and goes when taken dow
   await page.getByRole("button", { name: "Take the notice down" }).click();
   await page.getByRole("dialog", { name: "Take the notice down?" }).getByRole("button", { name: "Take the notice down" }).click();
   await expect(page.getByRole("status").filter({ hasText: message })).toHaveCount(0);
+});
+
+// Last in this file: the account's password is its own from here on.
+test("a new IT administrator's first sign-in opens Set your own password, and the new one leads to the portal", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  password = await firstSignInSetsOwnPassword(page, "admin", { email, password }, /\/admin\/accounts$/);
 });

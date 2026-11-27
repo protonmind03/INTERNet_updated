@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { expectAccessible } from "./helpers";
+import { expectAccessible, firstSignInSetsOwnPassword } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -171,4 +171,10 @@ test("Approvals: an agency's change and a section's release say the value now an
     expect(overflow, "Approvals scrolls sideways").toBeLessThanOrEqual(0);
     await expectAccessible(page, `Approvals, cleared anyway, at ${width} px`);
   }
+});
+
+// Last in this file: the account's password is its own from here on.
+test("a new Director's first sign-in opens Set your own password, and the new one leads to the portal", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  password = await firstSignInSetsOwnPassword(page, "director", { email, password }, /\/director\/overview$/);
 });

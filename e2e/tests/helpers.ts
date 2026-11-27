@@ -153,3 +153,38 @@ async function runAxe(page: Page, where: string): Promise<void> {
   });
   expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
 }
+
+/**
+ * A first sign-in with a temporary password, as production has it: the sign-in
+ * answer says a new password must be set (only production's server enforces it,
+ * so the answer is changed here to say so), the change-password page opens for
+ * this role, and the new password, saved through the real API, leads to the
+ * portal. Returns the new password: the old one no longer works.
+ */
+export async function firstSignInSetsOwnPassword(
+  page: Page,
+  role: "director" | "admin",
+  account: { email: string; password: string },
+  home: RegExp
+): Promise<string> {
+  await page.route(`**/api/login/${role}`, async (route) => {
+    const response = await route.fetch();
+    const body = await response.json();
+    await route.fulfill({ response, json: { ...body, must_change_password: true } });
+  });
+  await page.goto(`/${role}/sign-in`);
+  await page.locator("#inb-login-id").fill(account.email);
+  await page.locator("#inb-login-pw").fill(account.password);
+  await page.locator('button[type="submit"]').click();
+  await expect(page).toHaveURL((url) => url.pathname === "/change-password" && url.searchParams.get("role") === role, { timeout: 20_000 });
+  await expect(page.getByRole("heading", { name: "Set your own password" })).toBeVisible();
+  await page.unroute(`**/api/login/${role}`);
+
+  const chosen = `Own${role}Pass${Date.now().toString(36)}9`;
+  await page.getByLabel("Current password").fill(account.password);
+  await page.getByLabel("New password", { exact: true }).fill(chosen);
+  await page.getByLabel("Confirm new password").fill(chosen);
+  await page.getByRole("button", { name: "Save and continue" }).click();
+  await expect(page).toHaveURL(home, { timeout: 20_000 });
+  return chosen;
+}
