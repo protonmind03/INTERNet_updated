@@ -1,6 +1,5 @@
-import { createRequire } from "node:module";
 import { expect, test, type Page } from "@playwright/test";
-import { api, apiSession, signIn } from "./helpers";
+import { api, apiSession, signIn, expectAccessible } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -15,17 +14,7 @@ import { api, apiSession, signIn } from "./helpers";
 |
 */
 
-const axeSource = createRequire(__filename).resolve("axe-core/axe.min.js");
 
-async function expectAccessible(page: Page, where: string) {
-  await page.addScriptTag({ path: axeSource });
-  const violations = await page.evaluate(async () => {
-    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: { target: unknown[]; html: string; failureSummary?: string }[] }[] }> } }).axe;
-    const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
-    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length}): ${item.nodes.map((node) => `${node.target.join(" ")} ${node.html.slice(0, 160)} ${(node.failureSummary ?? "").replace(/\s+/g, " ").slice(0, 300)}`).join(" | ")}`);
-  });
-  expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
-}
 
 test("the coordinator gives the instructor's scores from the grade sheet, and the record shows the breakdown", async ({ page }) => {
   const student = await apiSession("student");

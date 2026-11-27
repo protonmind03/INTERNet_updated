@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { expectAccessible } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -26,7 +26,6 @@ const script = (...args: string[]) =>
     encoding: "utf8",
   });
 // axe-core comes with the e2e packages (a dependency of lighthouse).
-const axeSource = createRequire(__filename).resolve("axe-core/axe.min.js");
 
 const email = `e2e.director.${Date.now().toString(36)}@demo.invalid`;
 let password = "";
@@ -51,23 +50,6 @@ async function signInAsDirector(page: Page) {
   await expect(page).toHaveURL(/\/director\/overview$/, { timeout: 20_000 });
 }
 
-async function expectAccessible(page: Page, where: string) {
-  // A dialog still fading out (or a part fading in) dims the text under it, and axe reads that as
-  // low contrast: on a slow machine (CI) the check came before the fade ended. Wait for every
-  // finite animation to end; endless ones (a spinner) are left.
-  await page.waitForFunction(
-    () => document.getAnimations().every((animation) => animation.playState !== "running" || animation.effect?.getComputedTiming().iterations === Infinity),
-    null,
-    { timeout: 10_000 }
-  );
-  await page.addScriptTag({ path: axeSource });
-  const violations = await page.evaluate(async () => {
-    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: { target: unknown[]; html: string; failureSummary?: string }[] }[] }> } }).axe;
-    const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
-    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length}): ${item.nodes.map((node) => `${node.target.join(" ")} ${node.html.slice(0, 160)} ${(node.failureSummary ?? "").replace(/\s+/g, " ").slice(0, 300)}`).join(" | ")}`);
-  });
-  expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
-}
 
 const PAGES: [string, string][] = [
   ["/director/overview", "Overview"],
@@ -84,6 +66,8 @@ const PAGES: [string, string][] = [
 
 for (const [width, height] of [[1280, 900], [390, 844]] as const) {
   test(`at ${width} px: every page opens, fits the screen and is axe clean`, async ({ page }) => {
+    // Every page of the portal, each with its own axe check: longer than one journey.
+    test.slow();
     await page.setViewportSize({ width, height });
     await signInAsDirector(page);
     if (width >= 768) {

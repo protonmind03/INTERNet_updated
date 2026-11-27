@@ -127,6 +127,24 @@ export async function openProfileGroup(page: Page, title: string): Promise<void>
  * violations. Phase 2: one copy for the specs, in place of a pasted one each.
  */
 export async function expectAccessible(page: Page, where: string): Promise<void> {
+  // Axe reads colours as they are drawn at that moment: a fade or a colour transition still
+  // running (slower machines, as on CI) reads as low contrast. With reduced motion every
+  // animation and transition is 0.01 ms (index.css), so the page is checked as it settles.
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  try {
+    await page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+    await page.waitForFunction(
+      () => document.getAnimations().every((animation) => animation.playState !== "running" || animation.effect?.getComputedTiming().iterations === Infinity),
+      null,
+      { timeout: 10_000 }
+    );
+    await runAxe(page, where);
+  } finally {
+    await page.emulateMedia({ reducedMotion: null });
+  }
+}
+
+async function runAxe(page: Page, where: string): Promise<void> {
   await page.addScriptTag({ path: axeSource });
   const violations = await page.evaluate(async () => {
     const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: { target: unknown[]; html: string; failureSummary?: string }[] }[] }> } }).axe;

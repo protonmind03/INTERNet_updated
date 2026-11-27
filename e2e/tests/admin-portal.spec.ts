@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
+import { expectAccessible } from "./helpers";
 
 /*
 |--------------------------------------------------------------------------
@@ -26,7 +26,6 @@ const script = (...args: string[]) =>
     env: process.env,
     encoding: "utf8",
   });
-const axeSource = createRequire(__filename).resolve("axe-core/axe.min.js");
 
 const email = `e2e.admin.${Date.now().toString(36)}@demo.invalid`;
 let password = "";
@@ -51,15 +50,6 @@ async function signInAsAdmin(page: Page) {
   await expect(page).toHaveURL(/\/admin\/accounts$/, { timeout: 20_000 });
 }
 
-async function expectAccessible(page: Page, where: string) {
-  await page.addScriptTag({ path: axeSource });
-  const violations = await page.evaluate(async () => {
-    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: { target: unknown[]; html: string; failureSummary?: string }[] }[] }> } }).axe;
-    const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
-    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length}): ${item.nodes.map((node) => `${node.target.join(" ")} ${node.html.slice(0, 160)} ${(node.failureSummary ?? "").replace(/\s+/g, " ").slice(0, 300)}`).join(" | ")}`);
-  });
-  expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
-}
 
 const PAGES: [string, string][] = [
   ["/admin/accounts", "Accounts"],
@@ -75,6 +65,8 @@ const PAGES: [string, string][] = [
 
 for (const [width, height] of [[1280, 900], [390, 844]] as const) {
   test(`at ${width} px: every page opens, fits the screen and is axe clean`, async ({ page }) => {
+    // Every page of the portal, each with its own axe check: longer than one journey.
+    test.slow();
     await page.setViewportSize({ width, height });
     await signInAsAdmin(page);
     await expect(page.getByText("This portal cannot open students' records, documents, photos or grades.")).toBeVisible();
