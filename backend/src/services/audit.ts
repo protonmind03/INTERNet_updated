@@ -1071,8 +1071,9 @@ export const AUDIT_RULES: Rule[] = [
     path: "/api/coordinator/coordinators",
     action: "account.create",
     entityType: "coordinator",
-    entityId: (source) => source.body.coordinator_id,
-    keep: ["name", "department"],
+    // The system gives the ID (services/staffIds.ts): it is in the answer, not the request.
+    entityId: (source) => nested(source.result.coordinator, "coordinator_id"),
+    keep: ["name", "department", "campus"],
   },
   {
     method: "PATCH",

@@ -6,7 +6,7 @@ packages that reach outside systems. **Do not edit by hand**: run
 `npm run docs:architecture` in `backend` after a change. CI runs it with
 `--check` and fails when this file no longer matches the code.
 
-348 routes in 29 files; 67 services in use.
+348 routes in 29 files; 68 services in use.
 Solid arrows are imports; dotted arrows reach a system outside the code.
 
 ```mermaid
@@ -110,6 +110,7 @@ flowchart LR
     services_schedules["schedules.ts"]
     services_semesters["semesters.ts"]
     services_staffAccounts["staffAccounts.ts"]
+    services_staffIds["staffIds.ts"]
     services_studentScope["studentScope.ts"]
     services_supervisorDigest["supervisorDigest.ts"]
     services_systemStatus["systemStatus.ts"]
@@ -141,6 +142,7 @@ flowchart LR
   routes_admin --> services_backups
   routes_admin --> services_emailBudget
   routes_admin --> services_privateFileStore
+  routes_admin --> services_staffIds
   routes_admin --> services_systemStatus
   routes_appeals --> services_coordinatorScope
   routes_appeals --> services_creditedHours
@@ -188,6 +190,7 @@ flowchart LR
   routes_extensions --> services_projection
   routes_extensions --> services_removedRecords
   routes_extensions --> services_semesters
+  routes_extensions --> services_staffIds
   routes_extensions --> services_studentScope
   routes_extensions --> services_taskRelease
   routes_extensions --> services_uploadQuota
@@ -308,6 +311,7 @@ flowchart LR
   services_adminAccounts --> services_mailer
   services_adminAccounts --> services_passwordHash
   services_adminAccounts --> services_staffAccounts
+  services_adminAccounts --> services_staffIds
   services_autoCount --> services_loopLock
   services_autoCount --> services_phTime
   services_backups --> services_phTime
@@ -373,6 +377,7 @@ flowchart LR
   services_projection --> services_phTime
   services_projection --> services_studentScope
   services_staffAccounts --> services_passwordHash
+  services_staffAccounts --> services_staffIds
   services_studentScope --> services_coordinatorScope
   services_supervisorDigest --> services_loopLock
   services_supervisorDigest --> services_phTime
@@ -455,6 +460,7 @@ flowchart LR
   services_problems -.-> ext_postgres
   services_projection -.-> ext_postgres
   services_staffAccounts -.-> ext_postgres
+  services_staffIds -.-> ext_postgres
   services_supervisorDigest -.-> ext_postgres
   services_systemStatus -.-> ext_postgres
   services_taskRelease -.-> ext_postgres
@@ -573,6 +579,7 @@ Pages built: `index.html`, `app.html`, `for-trainees.html`, `for-supervisors.htm
 | `schedules.ts` | `routes/programme.ts`, `server.ts` |
 | `semesters.ts` | `routes/extensions.ts`, `routes/semesters.ts` |
 | `staffAccounts.ts` | `services/adminAccounts.ts` |
+| `staffIds.ts` | `routes/admin.ts`, `routes/extensions.ts`, `services/adminAccounts.ts`, `services/staffAccounts.ts` |
 | `studentScope.ts` | `routes/clearance.ts`, `routes/console.ts`, `routes/extensions.ts`, `routes/finalGrades.ts`, `routes/programme.ts`, `server.ts`, `services/coordinatorActions.ts`, `services/coordinatorHome.ts`, `services/insights.ts`, `services/kpis.ts`, `services/projection.ts` |
 | `supervisorDigest.ts` | `server.ts` |
 | `systemStatus.ts` | `routes/admin.ts`, `routes/console.ts` |

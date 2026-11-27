@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, FormError, FormField, Modal, RowMenu, SkeletonRows, StatusBadge } from "../../components/ui";
 import DirectorLayout from "../../layouts/DirectorLayout";
 import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
+import { CAMPUSES, HOME_CAMPUS, staffIdShape, type CampusCode } from "../../lib/campuses";
 import { errorText, toast } from "../../lib/toast";
 import { directorRead, directorWrite } from "./request";
 
@@ -135,10 +136,11 @@ export default function DirectorCoordinators() {
 }
 
 function AddDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
-  const [form, setForm] = useState({ coordinator_id: "", name: "", email: "", password: "" });
+  // The ID is the system's: the year, this campus and its next number (lib/campuses.ts).
+  const [form, setForm] = useState({ campus: HOME_CAMPUS as CampusCode, name: "", email: "", password: "" });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const set = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const set = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setForm((current) => ({ ...current, [key]: event.target.value }));
 
   const save = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -147,8 +149,8 @@ function AddDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
     setSaving(true);
     setError("");
     try {
-      await directorWrite("/api/coordinator/coordinators", "POST", { ...form, coordinator_id: form.coordinator_id.trim(), name: form.name.trim(), email: form.email.trim() });
-      toast.success(`${form.name.trim()} added. Give them their starting password.`);
+      const made = await directorWrite<{ coordinator: { coordinator_id: string } }>("/api/coordinator/coordinators", "POST", { ...form, name: form.name.trim(), email: form.email.trim() });
+      toast.success(`${form.name.trim()} added as ${made.coordinator.coordinator_id}. Give them their starting password.`);
       onSaved();
     } catch (saveError) {
       setError(errorText(saveError, "The coordinator could not be added. Try again."));
@@ -171,8 +173,14 @@ function AddDialog({ onClose, onSaved }: { onClose: () => void; onSaved: () => v
       }
     >
       <form id="add-coordinator" onSubmit={save} className="grid gap-4 sm:grid-cols-2" noValidate>
-        <FormField label="Account ID" htmlFor="coord-id" hint="Letters, digits, dots or dashes, such as COORD-0004.">
-          <input id="coord-id" className="field" maxLength={50} value={form.coordinator_id} onChange={set("coordinator_id")} />
+        <FormField label="Campus" htmlFor="coord-campus" hint={`Their account ID is given in order, such as ${staffIdShape("coordinator", form.campus)}.`}>
+          <select id="coord-campus" className="field" value={form.campus} onChange={set("campus")}>
+            {CAMPUSES.map((campus) => (
+              <option key={campus.code} value={campus.code}>
+                {campus.name} ({campus.code})
+              </option>
+            ))}
+          </select>
         </FormField>
         <FormField label="Full name" htmlFor="coord-name">
           <input id="coord-name" className="field" maxLength={150} value={form.name} onChange={set("name")} />

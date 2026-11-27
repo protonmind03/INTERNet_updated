@@ -1193,9 +1193,15 @@ the university's IT/MIS person. It manages accounts, system status,
 backups, the production warnings, the maintenance notice and the audit
 log, and cannot open students' records, documents, photos or grades.
 
-1. `railway run --service Postgres npm run admin:create <port> email=<their email> name="<their full name>"`
-2. It prints a temporary password once: give it to them. They must set
-   their own at first sign-in.
+1. `railway run --service Postgres npm run admin:create <port> email=<their email> name="<their full name>" campus=LN`
+2. It prints the account's ID and a temporary password once: give the
+   password to them. They must set their own at first sign-in.
+
+The ID is the system's: the year, the campus (`campus=`, Lingayen `LN` when
+left out; AC, AS, BGU, BIN, IN, LN, SC, SM, UR) and the next administrator
+number there, 001 to 099, such as `26-LN-002`. Coordinators get the next
+number in their campus's block the same way (Lingayen 600-699), chosen by
+campus on the coordinators page (`backend/src/services/staffIds.ts`).
 
 When an administrator makes or reactivates an OJT Director or
 administrator account, every other active Director and administrator is

@@ -173,6 +173,26 @@ test("Approvals: an agency's change and a section's release say the value now an
   }
 });
 
+test("a new coordinator's ID is given by the system: the year, the campus chosen and its next number", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await signInAsDirector(page);
+  await page.goto("/director/coordinators");
+  await page.getByRole("button", { name: "Add coordinator" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add a coordinator" });
+  // No ID to type: the campus, Lingayen to start with, says what it will look like.
+  await expect(dialog.getByLabel("Account ID")).toHaveCount(0);
+  await expect(dialog.getByLabel("Campus")).toHaveValue("LN");
+  await dialog.getByLabel("Campus").selectOption("BGU");
+  await expect(dialog.getByText(/such as \d{2}-BGU-3NN/)).toBeVisible();
+  const stamp = Date.now().toString(36);
+  await dialog.getByLabel("Full name").fill("Bayambang Coordinator");
+  await dialog.getByLabel("Email").fill(`bgu.coord.${stamp}@demo.invalid`);
+  await dialog.getByLabel("Starting password").fill("StartingPass123!");
+  await dialog.getByRole("button", { name: "Add coordinator" }).click();
+  await expect(page.getByText(/Bayambang Coordinator added as \d{2}-BGU-3\d\d\./)).toBeVisible();
+  await expect(dialog).toHaveCount(0);
+});
+
 // Last in this file: the account's password is its own from here on.
 test("a new Director's first sign-in opens Set your own password, and the new one leads to the portal", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });

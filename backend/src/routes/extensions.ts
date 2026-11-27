@@ -19,6 +19,7 @@ import { PlacementError, withPlacement } from "../services/placement";
 import { markActed } from "../services/notificationKinds";
 import { scopeCondition } from "../services/coordinatorScope";
 import { isSemester } from "../services/semesters";
+import { StaffIdError, campusOf, lockStaffIds, nextStaffId } from "../services/staffIds";
 
 /*
 |--------------------------------------------------------------------------
@@ -4012,15 +4013,18 @@ export function registerExtensionRoutes(
 
   app.post("/api/coordinator/coordinators", requireOffice, async (req, res) => {
     try {
-      const id = text(req.body?.coordinator_id);
       const name = text(req.body?.name);
       const email = text(req.body?.email).toLowerCase();
       const department = text(req.body?.department);
       const password = typeof req.body?.password === "string" ? req.body.password : "";
-      if (!/^[\w.-]{3,50}$/.test(id)) {
-        return res.status(400).json({
-          message: "Give the account an ID of 3 to 50 letters, digits, dots, dashes or underscores.",
-        });
+      // The ID is the system's: the year, the campus and its next coordinator
+      // number, such as 26-LN-601 (services/staffIds.ts). One typed in is refused.
+      if (req.body?.coordinator_id !== undefined) {
+        return res.status(400).json({ message: "The account ID is given by the system. Choose the campus instead." });
+      }
+      const campus = campusOf(req.body?.campus);
+      if (!campus) {
+        return res.status(400).json({ message: "Choose the coordinator's campus." });
       }
       if (name.length < 2 || name.length > 150) {
         return res.status(400).json({ message: "Enter the coordinator's name." });
@@ -4035,27 +4039,42 @@ export function registerExtensionRoutes(
       if (policyError) {
         return res.status(400).json({ message: `Starting password: ${policyError}` });
       }
-      const taken = await pool.query(
-        `SELECT 1 FROM coordinators WHERE coordinator_id = $1 OR LOWER(email) = $2`,
-        [id, email]
-      );
+      const taken = await pool.query(`SELECT 1 FROM coordinators WHERE LOWER(email) = $1`, [email]);
       if (taken.rows.length > 0) {
-        return res.status(409).json({ message: "A coordinator with that ID or email already exists." });
+        return res.status(409).json({ message: "A coordinator with that email already exists." });
       }
-      const result = await pool.query(
-        `INSERT INTO coordinators AS c
-           (coordinator_id, email, password, name, department, is_active, must_change_password)
-         VALUES ($1, $2, $3, $4, $5, TRUE, TRUE)
-         RETURNING ${COORDINATOR_COLUMNS}`,
-        [id, email, await hashPassword(password), name, department || null]
-      );
+      const hashed = await hashPassword(password);
+      const client = await pool.connect();
+      let made;
+      try {
+        await client.query("BEGIN");
+        // Two made at once would read the same next number: one waits for the other.
+        await lockStaffIds(client, "coordinator");
+        const id = await nextStaffId(client, "coordinator", campus);
+        made = await client.query(
+          `INSERT INTO coordinators AS c
+             (coordinator_id, email, password, name, department, is_active, must_change_password)
+           VALUES ($1, $2, $3, $4, $5, TRUE, TRUE)
+           RETURNING ${COORDINATOR_COLUMNS}`,
+          [id, email, hashed, name, department || null]
+        );
+        await client.query("COMMIT");
+      } catch (error) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw error;
+      } finally {
+        client.release();
+      }
       return res.status(201).json({
-        message: "Coordinator account created. They must set their own password at first sign-in.",
-        coordinator: result.rows[0],
+        message: `Coordinator account ${made.rows[0].coordinator_id} created. They must set their own password at first sign-in.`,
+        coordinator: made.rows[0],
       });
     } catch (error) {
+      if (error instanceof StaffIdError) {
+        return res.status(409).json({ message: error.message });
+      }
       if ((error as { code?: string }).code === "23505") {
-        return res.status(409).json({ message: "A coordinator with that ID or email already exists." });
+        return res.status(409).json({ message: "A coordinator with that email already exists." });
       }
       console.error("CREATE COORDINATOR ERROR:", error);
       return res.status(500).json({ message: "Failed to create the coordinator account." });

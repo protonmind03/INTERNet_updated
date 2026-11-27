@@ -1,5 +1,6 @@
 import { connect } from "./fk-shared";
 import { STAFF_KINDS, createStaffAccount, type StaffKind } from "../services/staffAccounts";
+import { CAMPUSES, HOME_CAMPUS, campusOf } from "../services/staffIds";
 
 // What npm run director:create and npm run admin:create share
 // (scripts/create-director.ts, scripts/create-admin.ts).
@@ -53,9 +54,15 @@ export function runStaffAccountCli(kind: StaffKind): void {
 
     const name = option("name");
     if (name.length < 2) throw new Error('Give the account\'s full name: --name "Full Name"');
+    // An administrator's ID is YY-CODE-0NN on its campus (services/staffIds.ts): campus=LN by default.
+    const campusGiven = option("campus");
+    const campus = campusGiven ? campusOf(campusGiven) : HOME_CAMPUS;
+    if (kind === "admin" && !campus) {
+      throw new Error(`Give the campus as one of ${CAMPUSES.map((one) => one.code).join(", ")}: campus=LN`);
+    }
     const client = await connect();
     try {
-      const made = await createStaffAccount(client, kind, email, name);
+      const made = await createStaffAccount(client, kind, email, name, campus);
       console.log(`${Label} account ${made.id} created for ${made.email}.`);
       console.log(`Temporary password (shown once; they must change it at first sign-in): ${made.password}`);
     } finally {

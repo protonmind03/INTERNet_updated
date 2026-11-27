@@ -4,6 +4,7 @@ import type { AccountRole } from "./accountRoles";
 import type { Email } from "./mailer";
 import { BCRYPT_ROUNDS } from "./passwordHash";
 import { STAFF_KINDS, StaffAccountError, createStaffAccount, temporaryPassword, type StaffKind } from "./staffAccounts";
+import type { Campus } from "./staffIds";
 
 /*
 |--------------------------------------------------------------------------
@@ -237,7 +238,9 @@ export async function createAccount(
   deps: AccountDeps,
   kind: StaffKind,
   email: string,
-  name: string
+  name: string,
+  /** An administrator's campus, for its ID (services/staffIds.ts). */
+  campus: Campus | null = null
 ): Promise<{ message: string; account: { role: StaffKind; id: string; name: string } }> {
   if (!deps.emailConfigured()) {
     throw new AccountActionError(503, "Email is not set up, so the new account's temporary password cannot reach its owner.", "EMAIL_OFF");
@@ -247,7 +250,7 @@ export async function createAccount(
     await client.query("BEGIN");
     let made;
     try {
-      made = await createStaffAccount(client, kind, email, name);
+      made = await createStaffAccount(client, kind, email, name, campus);
     } catch (error) {
       if (error instanceof StaffAccountError) throw new AccountActionError(400, error.message);
       throw error;

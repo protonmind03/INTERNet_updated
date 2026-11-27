@@ -2268,3 +2268,43 @@ Also: the go-live checklist now counts migrations 035 to 092.
 - The tab chips (`FilterChips`, every portal) are 44 px tall, the
   project's tap-target rule; they were 36 px.
 - e2e: the release dialog is checked at both widths.
+
+## 45. Go-live day: CI, Railway, first sign-in, staff IDs (27 November 2026)
+
+**CI made dependable.** The failures that came and went were found and fixed,
+not retried:
+- e2e: every axe check goes through one `expectAccessible` (`e2e/tests/helpers.ts`)
+  that checks with reduced motion on and waits for animations to end. Each
+  layout fades a page in from transparent, and on CI's slower machines axe
+  measured it mid-fade as low contrast. Failures now name the element, and CI
+  reports each one as a public annotation (Playwright's `github` reporter).
+- API tests: the audit log is written just after the answer is sent, so the
+  17 reads that came straight after a change wait for their rows
+  (`auditOnceWritten`), in place of nothing or a fixed 400 ms.
+
+**Railway settings are code.** `.railway/railway.ts` was applied in staging and
+production; both `railway.json` files are deleted (Railway stops reading them
+on 1 December 2026). The readiness test reads the API's deploy block there.
+
+**First sign-in for the Director and the IT administrator.** "Set your own
+password" knew only students, supervisors and coordinators: a new admin on
+production (where the change is enforced) went round in a loop with no form.
+It now takes both. e2e signs in as production would and changes the password.
+
+**Production reset** (the owner's request): backed up, emptied, migrated
+again, uploads removed. Now: IT administrator 26-LN-001 and coordinator
+26-LN-600 (PSU Lingayen's Internship Coordinator); the default COORD-0001,
+whose password is in migration 002, is deactivated.
+
+**Staff account IDs are the system's** (`services/staffIds.ts`,
+`my-pwa/src/lib/campuses.ts`): `YY-CODE-NNN`, the year the account is made,
+the campus (AC, AS, BGU, BIN, IN, LN, SC, SM, UR) and its next number in
+order. Coordinators: each campus a block of 100 in that order (Alaminos
+100-199 ... Lingayen 600-699 ... Urdaneta 900-999). Administrators: 001-099.
+The coordinators page (office and Director) and the Admin portal's New
+account choose a campus instead of typing an ID; an ID sent by hand is
+refused; a full block says so; two made at once get two numbers (an
+advisory lock). `admin:create` takes `campus=` (Lingayen when left out).
+Directors keep DIR-0001. Older IDs in other forms stay as they are.
+
+Temporary passwords are now random throughout; every one used to end "Aa7".

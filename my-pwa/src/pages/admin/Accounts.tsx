@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import Icon from "../../components/Icon";
 import { Button, Card, ConfirmDialog, EmptyState, ErrorNotice, FormError, FormField, RowMenu, SearchField, SkeletonRows, StatusBadge, type RowMenuItem } from "../../components/ui";
 import AdminLayout from "../../layouts/AdminLayout";
+import { CAMPUSES, HOME_CAMPUS, staffIdShape, type CampusCode } from "../../lib/campuses";
 import { useAccount } from "../../lib/session";
 import { errorText, toast } from "../../lib/toast";
 import { adminRequest } from "./request";
@@ -251,6 +252,8 @@ function States({ account }: { account: Account }) {
 /** A new OJT Director or administrator; the temporary password goes to them by email. */
 function NewAccount({ open, onClose, onMade }: { open: boolean; onClose: () => void; onMade: () => void }) {
   const [kind, setKind] = useState<"director" | "admin">("director");
+  // An administrator's ID is the year, this campus and its next number (lib/campuses.ts).
+  const [campus, setCampus] = useState<CampusCode>(HOME_CAMPUS);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
@@ -269,7 +272,7 @@ function NewAccount({ open, onClose, onMade }: { open: boolean; onClose: () => v
     setBusy(true);
     setError("");
     try {
-      const data = await adminRequest<{ message: string }>("/api/admin/accounts", { method: "POST", body: { kind, name: name.trim(), email: email.trim() } });
+      const data = await adminRequest<{ message: string }>("/api/admin/accounts", { method: "POST", body: { kind, name: name.trim(), email: email.trim(), ...(kind === "admin" ? { campus } : {}) } });
       toast.success(data.message);
       setName("");
       setEmail("");
@@ -302,6 +305,17 @@ function NewAccount({ open, onClose, onMade }: { open: boolean; onClose: () => v
         ))}
       </fieldset>
       <div className="mt-3 space-y-3">
+        {kind === "admin" && (
+          <FormField label="Campus" htmlFor="new-account-campus" hint={`Their account ID is given in order, such as ${staffIdShape("admin", campus)}.`}>
+            <select id="new-account-campus" className="field" value={campus} onChange={(event) => setCampus(event.target.value as CampusCode)}>
+              {CAMPUSES.map((one) => (
+                <option key={one.code} value={one.code}>
+                  {one.name} ({one.code})
+                </option>
+              ))}
+            </select>
+          </FormField>
+        )}
         <FormField label="Full name" htmlFor="new-account-name">
           <input id="new-account-name" className="field" maxLength={150} autoComplete="off" value={name} onChange={(event) => setName(event.target.value)} />
         </FormField>

@@ -14,6 +14,7 @@ import {
 } from "../../components/ui";
 import CoordinatorLayout from "../../layouts/CoordinatorLayout";
 import { PASSWORD_POLICY_HINT, passwordPolicyError } from "../../lib/api";
+import { CAMPUSES, HOME_CAMPUS, staffIdShape, type CampusCode } from "../../lib/campuses";
 import { formatDate } from "../../lib/format";
 import { errorText, toast } from "../../lib/toast";
 import { coordinatorRequest } from "./request";
@@ -201,7 +202,8 @@ export default function Coordinators() {
 
 function AddCoordinator({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const [form, setForm] = useState({
-    coordinator_id: "",
+    // The ID is the system's: the year, this campus and its next number (lib/campuses.ts).
+    campus: HOME_CAMPUS as CampusCode,
     name: "",
     email: "",
     department: "",
@@ -209,13 +211,13 @@ function AddCoordinator({ onClose, onSaved }: { onClose: () => void; onSaved: ()
   });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const set = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement>) =>
+  const set = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((current) => ({ ...current, [key]: event.target.value }));
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!form.coordinator_id.trim() || !form.name.trim() || !form.email.trim()) {
-      return setError("The ID, name and email are all needed.");
+    if (!form.name.trim() || !form.email.trim()) {
+      return setError("The name and email are both needed.");
     }
     const policy = passwordPolicyError(form.password);
     if (policy) return setError(`Starting password: ${policy}`);
@@ -255,8 +257,14 @@ function AddCoordinator({ onClose, onSaved }: { onClose: () => void; onSaved: ()
     >
       <form id="coordinator-form" onSubmit={submit} className="space-y-4">
         <div className="grid gap-4 sm:grid-cols-2">
-          <FormField label="Account ID" htmlFor="coordinator-id" hint="For example COORD-002.">
-            <input id="coordinator-id" type="text" maxLength={50} value={form.coordinator_id} onChange={set("coordinator_id")} className="field" />
+          <FormField label="Campus" htmlFor="coordinator-campus" hint={`Their account ID is given in order, such as ${staffIdShape("coordinator", form.campus)}.`}>
+            <select id="coordinator-campus" value={form.campus} onChange={set("campus")} className="field">
+              {CAMPUSES.map((campus) => (
+                <option key={campus.code} value={campus.code}>
+                  {campus.name} ({campus.code})
+                </option>
+              ))}
+            </select>
           </FormField>
           <FormField label="Name" htmlFor="coordinator-name">
             <input id="coordinator-name" type="text" maxLength={150} value={form.name} onChange={set("name")} className="field" />

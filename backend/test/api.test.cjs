@@ -4470,15 +4470,15 @@ test("coordinator accounts are managed only by coordinators, with the same passw
     assert.deepEqual(Object.keys(row).sort(), ["coordinator_id", "created_at", "department", "email", "is_active", "is_self", "name"]);
   }
 
-  const good = { coordinator_id: "COORD-TEST", name: "Second Coordinator", email: "second@example.com", password: "StartingPass123!" };
+  // The system gives the ID from the campus (services/staffIds.ts); none is sent.
+  const good = { campus: "LN", name: "Second Coordinator", email: "second@example.com", password: "StartingPass123!" };
   const post = (body, token = coordinatorToken) => jsonRequest(path, jsonBody(token, "POST", body));
   assert.equal((await post(good, supervisor.token)).response.status, 403);
-  for (const bad of [{}, { ...good, coordinator_id: "x" }, { ...good, coordinator_id: "has space" }, { ...good, name: "" },
+  for (const bad of [{}, { ...good, coordinator_id: "26-LN-699" }, { ...good, campus: "XX" }, { ...good, campus: undefined }, { ...good, name: "" },
     { ...good, email: "nope" }, { ...good, password: "short" }, { ...good, password: undefined }, { ...good, department: "x".repeat(151) }]) {
     assert.equal((await post(bad)).response.status, 400, JSON.stringify(bad).slice(0, 70));
   }
-  // An ID or email already in use.
-  assert.equal((await post({ ...good, coordinator_id: coordinator.coordinator_id })).response.status, 409);
+  // An email already in use.
   assert.equal((await post({ ...good, email: coordinatorEmail.toUpperCase() })).response.status, 409);
 
   // Not yourself, by either route.
@@ -4501,12 +4501,14 @@ test("a second coordinator is created, must change their password, and can be de
   }
   const pool = localTestPool();
   const stamp = Date.now();
-  const id = `COORD-${stamp}`;
+  let id = "";
   const email = `coord.${stamp}@example.com`;
   const path = "/api/coordinator/coordinators";
   try {
-    const made = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { coordinator_id: id, name: "Second Coordinator", email, department: "CCS", password: "StartingPass123!" }));
+    const made = await jsonRequest(path, jsonBody(coordinatorToken, "POST", { campus: "LN", name: "Second Coordinator", email, department: "CCS", password: "StartingPass123!" }));
     assert.equal(made.response.status, 201, JSON.stringify(made.body));
+    id = made.body.coordinator.coordinator_id;
+    assert.match(id, /^\d{2}-LN-6\d\d$/, "the system gives a Lingayen coordinator ID");
     assert.equal(made.body.coordinator.is_active, true);
     assert.equal("password" in made.body.coordinator, false);
     assert.equal((await pool.query(`SELECT must_change_password FROM coordinators WHERE coordinator_id = $1`, [id])).rows[0].must_change_password, true);
@@ -4547,6 +4549,81 @@ test("a second coordinator is created, must change their password, and can be de
     assert.ok(audit.body.entries.filter((entry) => entry.entity_id === id).every((entry) => entry.entity_type === "coordinator"));
   } finally {
     await pool.query(`DELETE FROM coordinators WHERE coordinator_id = $1`, [id]);
+    await pool.end();
+  }
+});
+
+/*
+| Staff account IDs (27 November 2026): YY-CODE-NNN, given by the system
+*/
+
+test("a coordinator's ID is the year, the campus and its next number in the campus's block, in order", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const year = new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", year: "2-digit" }).format(new Date());
+  const path = "/api/coordinator/coordinators";
+  const add = (campus, n) =>
+    jsonRequest(path, jsonBody(coordinatorToken, "POST", { campus, name: `Numbered ${n}`, email: `numbered.${n}.${stamp}@demo.invalid`, password: "StartingPass123!" }));
+  const made = [];
+  try {
+    // Bayambang: three letters, and its block starts at 300. Lower case is taken.
+    const first = await add("bgu", 1);
+    assert.equal(first.response.status, 201, JSON.stringify(first.body));
+    made.push(first.body.coordinator.coordinator_id);
+    assert.match(made[0], new RegExp(`^${year}-BGU-3\\d\\d$`));
+    const second = await add("BGU", 2);
+    assert.equal(second.response.status, 201, JSON.stringify(second.body));
+    made.push(second.body.coordinator.coordinator_id);
+    assert.equal(Number(made[1].slice(-3)), Number(made[0].slice(-3)) + 1, "the next one is one more");
+
+    // In order across years: a number used in an earlier year is not given again.
+    await pool.query(`INSERT INTO coordinators (coordinator_id, email, password, name) VALUES ($1, $2, 'x', 'Earlier Year')`, ["20-SM-850", `earlier.${stamp}@demo.invalid`]);
+    made.push("20-SM-850");
+    const after = await add("SM", 3);
+    assert.equal(after.response.status, 201, JSON.stringify(after.body));
+    made.push(after.body.coordinator.coordinator_id);
+    assert.equal(after.body.coordinator.coordinator_id, `${year}-SM-851`);
+
+    // A campus whose block is used up says so, and nothing is made.
+    await pool.query(`INSERT INTO coordinators (coordinator_id, email, password, name) VALUES ($1, $2, 'x', 'Last Number')`, [`${year}-UR-999`, `last.${stamp}@demo.invalid`]);
+    made.push(`${year}-UR-999`);
+    const full = await add("UR", 4);
+    assert.equal(full.response.status, 409);
+    assert.match(full.body.message, /Every coordinator number for Urdaneta City \(900 to 999\) is used/);
+    assert.equal((await pool.query(`SELECT COUNT(*)::int AS n FROM coordinators WHERE email = $1`, [`numbered.4.${stamp}@demo.invalid`])).rows[0].n, 0);
+
+    // Two at the same moment get two numbers, never the same one.
+    const both = await Promise.all([add("AC", 5), add("AC", 6)]);
+    for (const one of both) {
+      assert.equal(one.response.status, 201, JSON.stringify(one.body));
+      made.push(one.body.coordinator.coordinator_id);
+    }
+    assert.notEqual(both[0].body.coordinator.coordinator_id, both[1].body.coordinator.coordinator_id);
+
+    // The audit log names the ID the system gave.
+    const audit = await auditOnceWritten("action=account.create&limit=20", authHeaders(coordinatorToken), (entries) => entries.some((entry) => entry.entity_id === made[0]));
+    assert.ok(audit.body.entries.some((entry) => entry.entity_id === made[0] && entry.entity_type === "coordinator"));
+  } finally {
+    await pool.query(`DELETE FROM coordinators WHERE coordinator_id = ANY($1) OR email LIKE $2`, [made, `%.${stamp}@demo.invalid`]);
+    await pool.end();
+  }
+});
+
+test("admin:create takes the campus, and gives administrators 001 to 099 there", async (t) => {
+  if (needsWrites(t)) return;
+  const pool = localTestPool();
+  const stamp = Date.now().toString(36);
+  const emails = [`campus.a.${stamp}@demo.invalid`, `campus.b.${stamp}@demo.invalid`];
+  try {
+    runBackendScript("create-admin.ts", "--email", emails[0], "--name", "Bayambang Admin", "--campus", "BGU");
+    runBackendScript("create-admin.ts", "--email", emails[1], "--name", "Bayambang Admin Two", "--campus", "bgu");
+    const ids = (await pool.query(`SELECT admin_id FROM system_admins WHERE email = ANY($1) ORDER BY id`, [emails])).rows.map((row) => row.admin_id);
+    assert.match(ids[0], /^\d{2}-BGU-0\d\d$/);
+    assert.equal(Number(ids[1].slice(-3)), Number(ids[0].slice(-3)) + 1);
+    assert.throws(() => runBackendScript("create-admin.ts", "--email", `campus.c.${stamp}@demo.invalid`, "--name", "Nowhere", "--campus", "XX"), "an unknown campus is refused");
+  } finally {
+    await pool.query(`DELETE FROM system_admins WHERE email LIKE $1`, [`campus.%.${stamp}@demo.invalid`]);
     await pool.end();
   }
 });
@@ -14032,7 +14109,8 @@ test("admin:create makes an administrator account that must change its password,
     const row = (await pool.query(`SELECT must_change_password, is_active, password, admin_id FROM system_admins WHERE email = $1`, [email])).rows[0];
     assert.equal(row.must_change_password, true);
     assert.equal(row.is_active, true);
-    assert.match(row.admin_id, /^ADM-\d{4}$/);
+    assert.match(row.admin_id, /^\d{2}-LN-0\d\d$/, "an administrator's ID: the year, Lingayen by default, 001 to 099");
+    assert.match(password, /^(?=.*[A-Z])(?=.*[a-z])(?=.*\d)[A-Za-z\d]{14}$/, "14 characters, every kind the policy asks for");
     assert.match(row.password, /^\$2[aby]\$12\$/, "stored hashed");
     const signIn = await jsonRequest("/api/login/admin", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email, password }) });
     assert.equal(signIn.response.status, 200);
@@ -14145,6 +14223,10 @@ test("the administrator unlocks a login, ends sessions, deactivates and reactiva
     const made = await jsonRequest("/api/admin/accounts", jsonBody(admin.token, "POST", { kind: "director", email: `new.dir.${stamp}@demo.invalid`, name: "New Director" }));
     assert.equal(made.response.status, 503, "a new account needs email for its temporary password");
     assert.equal((await jsonRequest("/api/admin/accounts", jsonBody(admin.token, "POST", { kind: "student", email: "x@demo.invalid", name: "Student" }))).response.status, 400, "students are made by coordinators");
+    for (const campus of [undefined, "XX"]) {
+      const noCampus = await jsonRequest("/api/admin/accounts", jsonBody(admin.token, "POST", { kind: "admin", email: `new.adm.${stamp}@demo.invalid`, name: "New Admin", campus }));
+      assert.equal(noCampus.response.status, 400, `an administrator needs a known campus (${campus})`);
+    }
 
     // Each change is in the audit log, as the administrator's, and the Director's Audit can read it.
     const logged = (

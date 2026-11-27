@@ -1,7 +1,8 @@
-import { randomBytes } from "node:crypto";
+import { randomInt } from "node:crypto";
 import bcrypt from "bcryptjs";
 import type { Pool, PoolClient } from "pg";
 import { BCRYPT_ROUNDS } from "./passwordHash";
+import { StaffIdError, lockStaffIds, nextStaffId, type Campus } from "./staffIds";
 
 /*
 |--------------------------------------------------------------------------
@@ -26,12 +27,24 @@ export const STAFF_KINDS: Record<StaffKind, { table: string; idColumn: string; p
 
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** 14 characters with upper and lower case and a digit, as the password policy asks. */
+const UPPER = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+const LOWER = "abcdefghijkmnpqrstuvwxyz";
+const DIGITS = "23456789";
+const pick = (from: string) => from[randomInt(from.length)];
+
+/**
+ * 14 characters with upper and lower case and a digit, as the password policy
+ * asks. Every character is random, the three kinds included, and so is where
+ * each lands (until 27 November 2026 every one ended in "Aa7").
+ */
 export function temporaryPassword(): string {
-  const letters = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789";
-  const bytes = randomBytes(14);
-  const body = [...bytes].map((byte) => letters[byte % letters.length]).join("");
-  return `${body.slice(0, 11)}Aa7`;
+  const all = UPPER + LOWER + DIGITS;
+  const characters = [pick(UPPER), pick(LOWER), pick(DIGITS), ...Array.from({ length: 11 }, () => pick(all))];
+  for (let at = characters.length - 1; at > 0; at -= 1) {
+    const other = randomInt(at + 1);
+    [characters[at], characters[other]] = [characters[other], characters[at]];
+  }
+  return characters.join("");
 }
 
 export class StaffAccountError extends Error {}
@@ -46,7 +59,9 @@ export async function createStaffAccount(
   db: Db,
   kind: StaffKind,
   emailGiven: string,
-  nameGiven: string
+  nameGiven: string,
+  /** An administrator's campus: its ID is YY-CODE-0NN (services/staffIds.ts). A Director's ID stays DIR-0001. */
+  campus?: Campus | null
 ): Promise<{ id: string; email: string; name: string; password: string }> {
   const { table, idColumn, prefix, label } = STAFF_KINDS[kind];
   const email = emailGiven.trim().toLowerCase();
@@ -55,8 +70,20 @@ export async function createStaffAccount(
   if (name.length < 2 || name.length > 150) throw new StaffAccountError("Give the account's full name.");
   const taken = await db.query(`SELECT 1 FROM ${table} WHERE LOWER(email) = $1`, [email]);
   if (taken.rows.length > 0) throw new StaffAccountError(`An ${label} account already has that email.`);
-  const count = Number((await db.query<{ n: string }>(`SELECT COALESCE(MAX(id), 0) AS n FROM ${table}`)).rows[0].n);
-  const id = `${prefix}-${String(count + 1).padStart(4, "0")}`;
+  let id: string;
+  if (kind === "admin") {
+    if (!campus) throw new StaffAccountError("Choose the administrator's campus.");
+    await lockStaffIds(db, "admin");
+    try {
+      id = await nextStaffId(db, "admin", campus);
+    } catch (error) {
+      if (error instanceof StaffIdError) throw new StaffAccountError(error.message);
+      throw error;
+    }
+  } else {
+    const count = Number((await db.query<{ n: string }>(`SELECT COALESCE(MAX(id), 0) AS n FROM ${table}`)).rows[0].n);
+    id = `${prefix}-${String(count + 1).padStart(4, "0")}`;
+  }
   const password = temporaryPassword();
   await db.query(
     `INSERT INTO ${table} (${idColumn}, email, password, name, must_change_password, is_active)

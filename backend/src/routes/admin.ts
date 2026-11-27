@@ -17,6 +17,7 @@ import {
 import { backupStatus, runUploadsPackIfDue } from "../services/backups";
 import { EmailLimitError } from "../services/emailBudget";
 import { fileStoreKind } from "../services/privateFileStore";
+import { campusOf } from "../services/staffIds";
 import { productionWarnings } from "../services/systemStatus";
 
 /*
@@ -105,7 +106,12 @@ export function registerAdminRoutes(app: express.Express, deps: Dependencies): v
       }
       const email = typeof req.body?.email === "string" ? req.body.email : "";
       const name = typeof req.body?.name === "string" ? req.body.name : "";
-      const made = await createAccount(accountDeps, kind, email, name);
+      // An administrator's ID is YY-CODE-0NN on its campus (services/staffIds.ts).
+      const campus = campusOf(req.body?.campus);
+      if (kind === "admin" && !campus) {
+        return res.status(400).json({ message: "Choose the administrator's campus." });
+      }
+      const made = await createAccount(accountDeps, kind, email, name, campus);
       // A new Director or administrator: the rest of the office is told.
       await tellTheOffice(deps, { what: "made", kind, account: made.account, actor: { id: (req as Authed).auth!.id } });
       return res.status(201).json(made);
