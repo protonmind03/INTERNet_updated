@@ -79,6 +79,23 @@ function authHeaders(token) {
   return { Authorization: ["Bearer", token].join(" ") };
 }
 
+/**
+ * The audit log, read once what the test expects is in it. A row is written
+ * just after the answer is sent (services/audit.ts, on "finish"), so a read
+ * straight after a change can come before it: on a slow runner it did. Reads
+ * again for up to 5 seconds until ready(entries, body); then returns the last
+ * read, and the test's own assertions say what is missing.
+ */
+async function auditOnceWritten(query, headers, ready) {
+  let last;
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    last = await jsonRequest(`/api/coordinator/audit?${query}`, { headers });
+    if (last.response.status === 200 && ready(last.body.entries ?? [], last.body)) return last;
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return last;
+}
+
 async function login(role, email, password) {
   const { response, body } = await jsonRequest(`/api/login/${role}`, {
     method: "POST",
@@ -2545,11 +2562,9 @@ test("an audited action writes exactly one row, with who did it", async (t) => {
   assert.equal(off.response.status, 200, JSON.stringify(off.body));
   const on = await jsonRequest(`/api/coordinator/students/${id}/status`, jsonBody(coordinatorToken, "PATCH", { is_active: true }));
   assert.equal(on.response.status, 200, JSON.stringify(on.body));
-  // The row is written after the answer is sent; give it a moment.
-  await new Promise((resolve) => setTimeout(resolve, 400));
-
+  await auditOnceWritten("action=account.deactivate", headers, (_entries, body) => body.total >= before + 1);
   assert.equal(await count("action=account.deactivate"), before + 1);
-  const latest = await jsonRequest("/api/coordinator/audit?action=account&limit=2", { headers });
+  const latest = await auditOnceWritten("action=account&limit=2", headers, (entries) => entries[0]?.action === "account.activate");
   assert.deepEqual(latest.body.entries.map((row) => row.action), ["account.activate", "account.deactivate"]);
   for (const row of latest.body.entries) {
     assert.equal(row.actor_role, "coordinator");
@@ -3395,7 +3410,9 @@ test("a holiday is added, edited and removed, one per date", async (t) => {
 
   // Each change is in the audit log.
   await new Promise((resolve) => setTimeout(resolve, 400));
-  const audit = await jsonRequest("/api/coordinator/audit?action=holiday&limit=20", { headers: authHeaders(coordinatorToken) });
+  const audit = await auditOnceWritten("action=holiday&limit=20", authHeaders(coordinatorToken), (entries) =>
+    ["holiday.create", "holiday.edit", "holiday.remove"].every((action) => entries.some((entry) => String(entry.entity_id) === String(id) && entry.action === action))
+  );
   const actions = audit.body.entries.filter((entry) => String(entry.entity_id) === String(id)).map((entry) => entry.action);
   for (const action of ["holiday.create", "holiday.edit", "holiday.remove"]) assert.ok(actions.includes(action), action);
   const removal = audit.body.entries.find((entry) => String(entry.entity_id) === String(id) && entry.action === "holiday.remove");
@@ -3541,7 +3558,7 @@ test("a journal goes from the student to the supervisor and back, and closes onc
 
     // The decisions are in the audit log; the student's own writing is not.
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=journal&limit=20", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=journal&limit=20", authHeaders(coordinatorToken), (entries) => entries.filter((entry) => String(entry.entity_id) === String(journal.id)).length >= 3);
     const actions = audit.body.entries.filter((entry) => String(entry.entity_id) === String(journal.id)).map((entry) => entry.action);
     assert.deepEqual([...actions].sort(), ["journal.return", "journal.review", "journal.undo"]);
   } finally {
@@ -3922,7 +3939,7 @@ test("a correction recomputes the hours, tells the intern, and is closed once th
 
     // Before and after are in the audit log.
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=attendance.correct_times&limit=10", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=attendance.correct_times&limit=10", authHeaders(coordinatorToken), (entries) => entries.some((entry) => String(entry.entity_id) === String(id)));
     const first = audit.body.entries.filter((entry) => String(entry.entity_id) === String(id)).pop();
     assert.equal(first.details.before, "in 08:00, no break, out 17:00, 9 h");
     assert.equal(first.details.after, "in 08:30, break 12:00 to 13:00, out 17:00, 7.5 h");
@@ -4025,7 +4042,9 @@ test("a month is certified once, only when its logs are settled, and can be with
     assert.equal((await certify()).response.status, 201);
 
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=dtr&limit=10", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=dtr&limit=10", authHeaders(coordinatorToken), (entries) =>
+      entries.filter((entry) => entry.entity_id === student.student_id).slice(0, 3).map((entry) => entry.action).join() === "dtr.certify,dtr.withdraw,dtr.certify"
+    );
     const actions = audit.body.entries.filter((entry) => entry.entity_id === student.student_id).slice(0, 3).map((entry) => entry.action);
     assert.deepEqual(actions, ["dtr.certify", "dtr.withdraw", "dtr.certify"]);
   } finally {
@@ -4425,7 +4444,7 @@ test("supervisors are imported from a file like students, each with a password t
     assert.notEqual(stored.rows[0].password, done.body.results[0].password, "the password is stored hashed");
 
     // The import is in the audit log once; the check before it is not.
-    await new Promise((resolve) => setTimeout(resolve, 400));
+    await auditOnceWritten("action=account.import&limit=1", authHeaders(coordinatorToken), (_entries, body) => body.total >= before + 1);
     assert.equal(await count(), before + 1);
   } finally {
     await pool.query(`DELETE FROM supervisors WHERE supervisor_id = ANY($1::text[])`, [ids]);
@@ -4520,7 +4539,9 @@ test("a second coordinator is created, must change their password, and can be de
     assert.equal((await pool.query(`SELECT is_active FROM coordinators WHERE coordinator_id = $1`, [id])).rows[0].is_active, true);
 
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=account&limit=30", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=account&limit=30", authHeaders(coordinatorToken), (entries) =>
+      ["account.create", "account.password_reset", "account.deactivate", "account.activate"].every((action) => entries.some((entry) => entry.entity_id === id && entry.action === action))
+    );
     const actions = audit.body.entries.filter((entry) => entry.entity_id === id).map((entry) => entry.action);
     for (const action of ["account.create", "account.password_reset", "account.deactivate", "account.activate"]) assert.ok(actions.includes(action), action);
     assert.ok(audit.body.entries.filter((entry) => entry.entity_id === id).every((entry) => entry.entity_type === "coordinator"));
@@ -4594,7 +4615,7 @@ test("a visit is logged against a company, shows on the company, and can be corr
     assert.equal((await record()).visits, 1);
 
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=site_visit&limit=10", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=site_visit&limit=10", authHeaders(coordinatorToken), (entries) => entries.filter((entry) => String(entry.entity_id) === String(companyId)).length >= 4);
     const actions = audit.body.entries.filter((entry) => String(entry.entity_id) === String(companyId)).map((entry) => entry.action);
     assert.deepEqual(actions, ["site_visit.remove", "site_visit.edit", "site_visit.log", "site_visit.log"]);
   } finally {
@@ -6679,7 +6700,8 @@ test("notes about a student are for their supervisor and the coordinators, and n
     assert.ok(!JSON.stringify(exported.body).includes(String(stamp)), "notes are not in the student's download");
 
     // Each note is in the audit log, without its words.
-    const audit = await jsonRequest("/api/coordinator/audit?action=note.create&limit=20", { headers: authHeaders(coordinatorToken) });
+    const noteIds = [wrote.body.note.id, answered.body.note.id];
+    const audit = await auditOnceWritten("action=note.create&limit=20", authHeaders(coordinatorToken), (entries) => entries.filter((entry) => noteIds.includes(Number(entry.details?.note_id))).length >= 2);
     const entries = audit.body.entries.filter((entry) => [wrote.body.note.id, answered.body.note.id].includes(Number(entry.details?.note_id)));
     assert.equal(entries.length, 2);
     assert.ok(entries.every((entry) => entry.entity_type === "student" && String(entry.entity_id) === student.student_id));
@@ -6740,7 +6762,9 @@ test("a coordinator reminds a supervisor with reviews waiting, once a day, and i
     assert.equal((await person()).reminded_today, true);
 
     // Logged once: the refused one is not an action.
-    const audit = await jsonRequest("/api/coordinator/audit?action=supervisor.remind&limit=50", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=supervisor.remind&limit=50", authHeaders(coordinatorToken), (entries) =>
+      entries.some((entry) => String(entry.entity_id) === supervisorId && Number(entry.details?.items) === sent.body.items)
+    );
     const mine = audit.body.entries.filter((entry) => String(entry.entity_id) === supervisorId && Number(entry.details?.items) === sent.body.items);
     assert.ok(mine.length >= 1 && mine[0].entity_type === "supervisor", JSON.stringify(audit.body.entries.slice(0, 2)));
 
@@ -7262,7 +7286,7 @@ test("one schedule is set for a block: a preview first, then those with a differ
     assert.deepEqual(told.rows.map((row) => row.student_id).sort(), [ids.none, ids.different].sort());
 
     await new Promise((resolve) => setTimeout(resolve, 300));
-    const audit = await jsonRequest("/api/coordinator/audit?action=schedule.bulk_set&limit=10", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=schedule.bulk_set&limit=10", authHeaders(coordinatorToken), (entries) => entries.filter((entry) => String(entry.entity_id) === String(blockId)).length >= 2);
     const mine = audit.body.entries.filter((entry) => String(entry.entity_id) === String(blockId));
     assert.equal(mine.length, 2);
     assert.ok(mine.some((entry) => entry.details.existing === "skip" && entry.details.applied === 1 && entry.details.skipped === 1));
@@ -7482,7 +7506,7 @@ test("the coordinator downloads the filtered documents as one ZIP, named for peo
     await refused(`?supervisor=none&doc_type=${encodeURIComponent(requirement)}&company=999999999`, 404);
 
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=document.bulk_download&limit=5", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=document.bulk_download&limit=5", authHeaders(coordinatorToken), (found) => found.filter((entry) => String(entry.details?.filters || "").includes(`doc_type=${requirement}`)).length >= 2);
     const entries = audit.body.entries.filter((entry) => String(entry.details?.filters || "").includes(`doc_type=${requirement}`));
     assert.ok(entries.length >= 2, JSON.stringify(audit.body.entries.slice(0, 2)));
     const logged = entries.find((entry) => String(entry.details.filters).includes("status=Approved"));
@@ -7695,7 +7719,7 @@ test("a deliverable applies to who it names, is reviewed by who it says, comes d
     assert.equal((await approve(coordinatorToken, stray.body.document.id)).response.status, 409);
 
     await new Promise((resolve) => setTimeout(resolve, 300));
-    const audit = await jsonRequest("/api/coordinator/audit?action=requirement.deliverable&limit=20", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=requirement.deliverable&limit=20", authHeaders(coordinatorToken), (entries) => entries.some((entry) => String(entry.entity_id) === String(ids.weekly)));
     const logged = audit.body.entries.find((entry) => String(entry.entity_id) === String(ids.weekly));
     assert.deepEqual([logged.details.name, logged.details.settings], [names.weekly, "Due every week; reviewed by the supervisor; for everyone"]);
   } finally {
@@ -10874,7 +10898,7 @@ test("the coordinator's ZIP with Include pictures: time-out and weekly report pi
     assert.deepEqual(Buffer.from(files[mine[0]]), jpeg, "the picture itself, byte for byte");
     // Logged as part of the download.
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=document.bulk_download&limit=5", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=document.bulk_download&limit=5", authHeaders(coordinatorToken), (entries) => entries.some((entry) => String(entry.details?.filters || "").includes("include_pictures")));
     const logged = audit.body.entries.find((entry) => String(entry.details?.filters || "").includes("include_pictures"));
     assert.ok(logged && logged.details.pictures >= 3, JSON.stringify(audit.body.entries.slice(0, 2)));
   } finally {
@@ -11107,7 +11131,7 @@ test("backup runs on the status card: the last good one, a failure, a missed nig
     assert.match(card.restore_drill.last.detail, /row counts matched/);
     assert.equal(card.database.last_run.status, "failed");
     await new Promise((resolve) => setTimeout(resolve, 400));
-    const audit = await jsonRequest("/api/coordinator/audit?action=backup.restore_drill&limit=3", { headers: authHeaders(coordinatorToken) });
+    const audit = await auditOnceWritten("action=backup.restore_drill&limit=3", authHeaders(coordinatorToken), (entries) => entries.some((entry) => String(entry.details?.detail || "").includes("row counts matched")));
     assert.ok(audit.body.entries.some((entry) => String(entry.details?.detail || "").includes("row counts matched")), JSON.stringify(audit.body.entries.slice(0, 1)));
   } finally {
     await pool.query(`DELETE FROM backup_runs`);
@@ -11845,7 +11869,7 @@ test("the institution's lines: coordinator only, checked, audited, and restored"
   assert.equal(changed.response.status, 200, JSON.stringify(changed.body));
   assert.equal(changed.body.institution.campus_name, "LINGAYEN CAMPUS (TEST)", "spaces tidied");
   await new Promise((resolve) => setTimeout(resolve, 300));
-  const audit = await jsonRequest("/api/coordinator/audit?action=institution.edit&limit=5", { headers: authHeaders(coordinatorToken) });
+  const audit = await auditOnceWritten("action=institution.edit&limit=5", authHeaders(coordinatorToken), (entries) => entries.some((entry) => String(entry.details?.campus_name).includes("CAMPUS (TEST)")));
   assert.ok(audit.body.entries.some((entry) => String(entry.details.campus_name).includes("CAMPUS (TEST)")), "the change is audited");
   const restored = await put({
     republic_line: original.republic_line,
@@ -11873,7 +11897,7 @@ test("a program's formal name is saved with it, and audited", async () => {
   assert.equal(saved.body.program.formal_name, "Bachelor of Science in Testing");
   assert.equal(saved.body.program.name, program.name, "nothing else changes");
   await new Promise((resolve) => setTimeout(resolve, 300));
-  const audit = await jsonRequest("/api/coordinator/audit?action=program.edit&limit=5", { headers: authHeaders(coordinatorToken) });
+  const audit = await auditOnceWritten("action=program.edit&limit=5", authHeaders(coordinatorToken), (entries) => entries.some((entry) => entry.details?.formal_name === "Bachelor of Science in Testing"));
   assert.ok(audit.body.entries.some((entry) => entry.details.formal_name === "Bachelor of Science in Testing"));
   await put(before);
 });
