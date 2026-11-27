@@ -365,8 +365,8 @@ Notes:
 DEPLOY.md, "Scheduled backups", has the setup on Railway and Cloudflare.
 
 - The nightly database backup is a separate Railway service
-  (`railway.json` and `backup.Dockerfile` at the repository root; the API
-  keeps `backend/railway.json`): `pg_dump -Fc`
+  (the `backup` service in `.railway/railway.ts`, built from
+  `backup.Dockerfile` at the repository root): `pg_dump -Fc`
   streamed through age encryption (the `age-encryption` package, to a
   public key) into a multipart upload, never held whole in memory or on
   disk. A dump that fails is abandoned before the upload is made final.

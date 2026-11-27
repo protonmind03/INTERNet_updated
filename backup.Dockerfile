@@ -1,10 +1,9 @@
 # The nightly database backup service, not the API.
 #
-# Railway's "backup" service has the repository root as its Root Directory,
-# so it reads railway.json beside this file on its own (no config-file path
-# to set, which Railway's dashboard would not keep), while the API service
-# keeps /backend and its own backend/railway.json. This builds from the
-# repository root, so the backend's files are copied from backend/.
+# Railway's "backup" service has the repository root as its Root Directory;
+# its settings (this Dockerfile, the nightly schedule, no restarts) are in
+# .railway/railway.ts, while the API service keeps /backend. This builds
+# from the repository root, so the backend's files are copied from backend/.
 #
 # Node to run backend/src/scripts/backup-cron.ts, and PostgreSQL's own client
 # tools for pg_dump: version 18 from the PostgreSQL project's repository,

@@ -58,7 +58,7 @@ Do the steps in order. Do not skip ahead.
 ## After
 
 **7. Turn on the backup service.**
-- In Railway, set the `backup` service's Root Directory to `/` (the repository root) and deploy. It then reads the root `railway.json` (the backup job, its Dockerfile and the nightly schedule). Its six variables are already set. (A config-file path is not kept by the dashboard for this service, so it is not used.)
+- In Railway, set the `backup` service's Root Directory to `/` (the repository root) and deploy. Its settings (the backup job, its Dockerfile and the nightly schedule) come from `.railway/railway.ts`, applied with `railway config apply` (DEPLOY.md, "Railway settings as code"). Its six variables are already set.
 - Test it once: set Cron Schedule to a few minutes from now in UTC (Philippine time minus 8 hours).
 - Check that the run succeeded in its Deployments log.
 - Check that `backups/database/daily/<date>.dump.age` appears in the Cloudflare bucket.

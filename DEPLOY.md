@@ -9,9 +9,10 @@ the frontend URL is needed by the backend.
 Things only the project owner can do, kept here so none is forgotten. Each
 links to its full steps below.
 
-0. **Before 1 December 2026: apply the Railway settings as code.** Railway
-   stops reading `railway.json` that day; without this the API stops
-   running migrations before a deploy and the backup loses its schedule.
+0. **Done 2026-11-27: the Railway settings are code.** Railway stopped
+   reading `railway.json` on 1 December 2026; the settings were applied from
+   `.railway/railway.ts` in both environments and the two `railway.json`
+   files deleted. A settings change now goes through that file.
    (Section "Railway settings as code".)
 1. **Check the content security policy in production.** It is already
    enforced (`my-pwa/vercel.json`). On the live site, open the browser's
@@ -48,9 +49,10 @@ and push this folder. The root `.gitignore` already keeps `.env` files,
 
 1. In the same project: New > **GitHub Repo** > select the repository.
 2. Service Settings > **Root Directory**: `backend`.
-   `backend/railway.json` then supplies the rest: it runs the database
+   `.railway/railway.ts` then supplies the rest (applied with `railway
+   config apply`, section "Railway settings as code"): it runs the database
    migrations before each deploy, starts the server with `npm start`, and
-   uses `/api/health` as the health check.
+   uses `/api/health/ready` as the health check.
 3. Service > **Volumes** > add a volume mounted at `/data`.
 4. Service > **Variables**:
 
@@ -244,10 +246,10 @@ staging, and the backup service's builder, Dockerfile, schedule, restart
 policy and start command. Then `railway config apply`.
 
 **After both:** the dashboard holds what the files held, so the files can go.
-Delete `railway.json` and `backend/railway.json` in a commit, push it to the
-test site, and check that staging still deploys and `/api/health/ready`
-answers. The next morning, check the backup ran (Profile settings > What is
-switched on > Database backup).
+(Done 2026-11-27: both applied, both `railway.json` files deleted.) After
+such a change, check that staging still deploys and `/api/health/ready`
+answers, and the next morning that the backup ran (Profile settings > What
+is switched on > Database backup).
 
 **From then on,** a change to a service's settings is made in
 `.railway/railway.ts` and applied with plan, then apply, in each
@@ -416,10 +418,9 @@ paste them into a chat.
 1. New > GitHub Repo > this repository. Rename the new service `backup`.
 2. Service > Settings:
    - Source > **Root Directory**: `/` (the repository root, not `backend`).
-     Railway then reads `railway.json` at the root on its own; no config
-     file path is needed (the dashboard does not keep one for this service).
-     The API service keeps `/backend` and its own `backend/railway.json`.
-     The root `railway.json` sets everything else: it builds `backup.Dockerfile` (Node
+     The API service keeps `/backend`. The rest is in `.railway/railway.ts`
+     (the `backup` service, production only; applied with `railway config
+     apply`, section "Railway settings as code"): it builds `backup.Dockerfile` (Node
      and PostgreSQL 18's `pg_dump`), runs `npm run backup:database`, on the
      cron schedule `30 17 * * *` (17:30 UTC is 01:30 in the Philippines),
      and never restarts a run that ended.
@@ -1026,10 +1027,10 @@ Railway for the same label.
 **For the host.** `/api/health` says the server is running.
 `/api/health/ready` also asks the database and answers 503 when it does
 not reply within three seconds. Railway checks `/api/health/ready` when it
-deploys the backend (`backend/railway.json`, since Iteration 16), so a
-deploy that cannot reach its database is not put into service and the
-running version stays. If the Railway dashboard shows a different
-Healthcheck Path, the file wins at the next deploy.
+deploys the backend (`.railway/railway.ts`; before it, `backend/railway.json`
+since Iteration 16), so a deploy that cannot reach its database is not put
+into service and the running version stays. A Healthcheck Path changed only
+in the dashboard is undone by the next `railway config apply`.
 
 **No outside monitoring service is used.** Nothing about faults leaves
 the system, so there is no account to create and nothing to add to the
