@@ -11385,9 +11385,14 @@ test("audit: a message records who wrote to whom and about what, never the subje
 });
 
 test("Railway checks the readiness route when it deploys the backend", () => {
+  // The settings are code since 2026-11-27 (.railway/railway.ts; railway.json is gone): the API's
+  // deploy block, read as text, keeps the ready check and the migrations before each deploy.
   const fs = require("node:fs");
-  const config = JSON.parse(fs.readFileSync(nodePath.join(__dirname, "..", "railway.json"), "utf8"));
-  assert.equal(config.deploy.healthcheckPath, "/api/health/ready");
+  const source = fs.readFileSync(nodePath.join(__dirname, "..", "..", ".railway", "railway.ts"), "utf8");
+  const api = source.slice(source.indexOf('service("INTERNet_updated"'), source.indexOf('service("backup"'));
+  assert.ok(api.length > 0, "the API service is in .railway/railway.ts");
+  assert.match(api, /healthcheckPath: "\/api\/health\/ready"/);
+  assert.match(api, /preDeployCommand: \["npm run db:migrate"\]/);
 });
 
 
