@@ -62,9 +62,9 @@ async function expectAccessible(page: Page, where: string) {
   );
   await page.addScriptTag({ path: axeSource });
   const violations = await page.evaluate(async () => {
-    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: unknown[] }[] }> } }).axe;
+    const axe = (window as unknown as { axe: { run: (context: Document, options: unknown) => Promise<{ violations: { id: string; impact: string; nodes: { target: unknown[]; html: string; failureSummary?: string }[] }[] }> } }).axe;
     const result = await axe.run(document, { runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] } });
-    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length})`);
+    return result.violations.filter((item) => item.impact === "serious" || item.impact === "critical").map((item) => `${item.id} (${item.nodes.length}): ${item.nodes.map((node) => `${node.target.join(" ")} ${node.html.slice(0, 160)} ${(node.failureSummary ?? "").replace(/\s+/g, " ").slice(0, 300)}`).join(" | ")}`);
   });
   expect(violations, `${where}: serious or critical axe violations`).toEqual([]);
 }
