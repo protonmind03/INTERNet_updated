@@ -2308,3 +2308,11 @@ advisory lock). `admin:create` takes `campus=` (Lingayen when left out).
 Directors keep DIR-0001. Older IDs in other forms stay as they are.
 
 Temporary passwords are now random throughout; every one used to end "Aa7".
+
+**No default coordinator on a new install.** Migration 002 seeded COORD-0001
+("OJT Coordinator", coordinator@internet.psu.edu.ph) with a password written
+in the repository, so every fresh database had it, production after its reset
+too. 002 no longer makes it; migration 093 deletes it where it is still that
+untouched default (same email and original password hash), so a COORD-0001
+used for something else stays. The tests' coordinator now comes from
+`npm run db:seed-demo`, which CI already runs after migrating.

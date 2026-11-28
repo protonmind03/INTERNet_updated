@@ -34,8 +34,19 @@ const demoStudentTwo = {
   company: demoSupervisor.company,
 };
 
+// The coordinator the API and e2e tests sign in as. Migration 002 used to
+// seed it into every database, production included; it now exists only
+// where this script runs (see migration 093).
+const testCoordinator = {
+  id: "COORD-0001",
+  email: "coordinator@internet.psu.edu.ph",
+  password: "Coordinator123!",
+  name: "OJT Coordinator",
+  department: "College of Computing Sciences",
+};
+
 // A coordinator of its own, so the coordinator sign-in can be filled in
-// locally without touching the default COORD-0001 account.
+// locally without touching the test coordinator.
 const demoCoordinator = {
   id: "DEMO-COORD-0001",
   email: "coordinator.demo@internet.test",
@@ -271,6 +282,7 @@ async function seedDemoData() {
 
   // Files stored during the run, removed again if the transaction fails.
   const written: string[] = [];
+  let testCoordinatorSeeded = false;
   try {
     await client.query("BEGIN");
 
@@ -394,6 +406,32 @@ async function seedDemoData() {
       );
     }
 
+    // A database whose COORD-0001 is someone else (the showcase data) keeps
+    // it: the tests are not run there, so the account is left out.
+    const testCoordinatorResult = await client.query(
+      `
+      INSERT INTO coordinators
+        (coordinator_id, email, password, name, department, is_active, must_change_password)
+      VALUES ($1, $2, $3, $4, $5, TRUE, FALSE)
+      ON CONFLICT (coordinator_id) DO UPDATE SET
+        password = EXCLUDED.password,
+        name = EXCLUDED.name,
+        department = EXCLUDED.department,
+        is_active = TRUE,
+        must_change_password = FALSE
+      WHERE LOWER(coordinators.email) = LOWER(EXCLUDED.email)
+      RETURNING coordinator_id
+      `,
+      [
+        testCoordinator.id,
+        testCoordinator.email,
+        await bcrypt.hash(testCoordinator.password, 10),
+        testCoordinator.name,
+        testCoordinator.department,
+      ]
+    );
+    testCoordinatorSeeded = testCoordinatorResult.rows.length === 1;
+
     // The second intern is placed where the first is (program, major, block),
     // when the coordinator has placed the first.
     await client.query(
@@ -453,6 +491,11 @@ async function seedDemoData() {
   );
   console.log(
     `Coordinator: ${demoCoordinator.email} / ${demoCoordinator.password} (${demoCoordinator.id})`
+  );
+  console.log(
+    testCoordinatorSeeded
+      ? `Test coordinator: ${testCoordinator.email} / ${testCoordinator.password} (${testCoordinator.id})`
+      : `Test coordinator left out: ${testCoordinator.id} is a different account here.`
   );
   console.log(
     `PSU Lingayen demo: ${demoAgencies.length} agencies, ${demoAgencySupervisors.length} agency supervisors and ` +

@@ -28,20 +28,12 @@ CREATE TABLE IF NOT EXISTS coordinators (
   created_at     TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
--- Seed one coordinator account so there is a way to log in for the
--- first time. Change this password immediately after first login —
--- it is stored hashed (bcrypt) by the seed below, NOT in plain text.
--- Default login: coordinator@internet.psu.edu.ph / Coordinator123!
--- (hash generated for "Coordinator123!")
-INSERT INTO coordinators (coordinator_id, email, password, name, department)
-VALUES (
-  'COORD-0001',
-  'coordinator@internet.psu.edu.ph',
-  '$2b$10$dj4vBZz0AoFZhj4bIR6nJ.K/boFkQDbpy2I4YHQStjbxSduxqBiEa',
-  'OJT Coordinator',
-  'College of Computing Sciences'
-)
-ON CONFLICT (email) DO NOTHING;
+-- This migration used to seed a default coordinator (COORD-0001,
+-- coordinator@internet.psu.edu.ph, password in the repository), so every
+-- fresh install, production included, came with it. It no longer does:
+-- the first accounts are made with `npm run admin:create` and the Admin
+-- portal, and the test databases get that account from `db:seed-demo`.
+-- Migration 093 removes it where it was made and never used.
 
 -- ---------------------------------------------------------------------
 -- ACCOUNT STATUS (for User Management / Edit-Deactivate Account)
