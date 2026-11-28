@@ -10302,11 +10302,16 @@ test("the coordinator edits someone else's details; the audit log names the fiel
     const saved = await jsonRequest(path, jsonBody(coordinatorToken, "PUT", { work_phone: "(075) 522 0000", office_hours: read.body.details.office_hours ?? null }));
     assert.equal(saved.response.status, 200, JSON.stringify(saved.body));
     assert.deepEqual(saved.body.changed, before === "(075) 522 0000" ? [] : ["work_phone"], "only what changed");
-    const audit = await pool.query(
-      `SELECT action, entity_type, entity_id, details FROM audit_log
-       WHERE action = 'account.details_edit' AND entity_id = $1 ORDER BY id DESC LIMIT 1`,
-      [String(supervisor.supervisor.supervisor_id)]
-    );
+    // The audit row is written just after the answer is sent: wait for it.
+    let audit;
+    for (let i = 0; i < 20 && !audit?.rows.length; i += 1) {
+      if (i) await new Promise((resolve) => setTimeout(resolve, 100));
+      audit = await pool.query(
+        `SELECT action, entity_type, entity_id, details FROM audit_log
+         WHERE action = 'account.details_edit' AND entity_id = $1 ORDER BY id DESC LIMIT 1`,
+        [String(supervisor.supervisor.supervisor_id)]
+      );
+    }
     assert.equal(audit.rows.length, 1);
     assert.equal(audit.rows[0].entity_type, "supervisor");
     assert.equal(JSON.stringify(audit.rows[0].details).includes("522 0000"), false, "never the value");
